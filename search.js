@@ -1,5 +1,5 @@
 async function loadContent() {
-  const res = await fetch('data/content.json');
+  const res = await fetch('data/nav.json');
   const data = await res.json();
 
   const conceptList = document.getElementById("conceptList");
