@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apache Kafka — Staff Engineer Interview Deep-Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=IBM+Plex+Mono:wght@300;400;500;600&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --bg2: #12151c;
+    --bg3: #181c26;
+    --bg4: #1e2330;
+    --surface: #232838;
+    --surface2: #2a3040;
+    --border: #2e3650;
+    --border2: #3a4560;
+    --text: #e8ecf5;
+    --text2: #a8b4cc;
+    --text3: #6a7a99;
+    --accent: #4f8cff;
+    --accent2: #7b5ea7;
+    --gold: #d4a94a;
+    --gold2: #f0c96a;
+    --green: #3dba7f;
+    --green2: #5dd9a0;
+    --red: #e05566;
+    --red2: #ff7080;
+    --orange: #e8834a;
+    --orange2: #ffaa70;
+    --tier1: #e05566;
+    --tier2: #e8834a;
+    --tier3: #4f8cff;
+    --tier4: #3dba7f;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 18px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* HERO */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 80px 40px 70px;
+    background: linear-gradient(135deg, #0a0c14 0%, #131928 50%, #0e1120 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 30%, rgba(79,140,255,0.10) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 60% at 80% 70%, rgba(123,94,167,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79,140,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,140,255,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; max-width: 960px; margin: 0 auto; }
+  .hero-tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(79,140,255,0.10);
+    border: 1px solid rgba(79,140,255,0.25);
+    padding: 5px 14px;
+    border-radius: 3px;
+    margin-bottom: 28px;
+  }
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(38px, 6vw, 68px);
+    font-weight: 900;
+    line-height: 1.05;
+    color: var(--text);
+    margin-bottom: 20px;
+    letter-spacing: -1px;
+  }
+  .hero h1 em { font-style: italic; color: var(--gold); }
+  .hero-sub {
+    font-family: 'Crimson Pro', serif;
+    font-size: 20px;
+    color: var(--text2);
+    max-width: 620px;
+    font-style: italic;
+    margin-bottom: 40px;
+  }
+  .hero-meta { display: flex; gap: 32px; flex-wrap: wrap; }
+  .meta-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--text3);
+  }
+  .meta-badge span { color: var(--text2); font-weight: 500; }
+
+  /* LAYOUT */
+  .main-wrap { max-width: 960px; margin: 0 auto; padding: 60px 40px 100px; }
+
+  /* TOC */
+  .toc {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 28px 32px;
+    margin-bottom: 70px;
+  }
+  .toc h3 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 40px;
+  }
+  .toc li {
+    counter-increment: toc;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--text2);
+  }
+  .toc li::before {
+    content: counter(toc, decimal-leading-zero) '.';
+    color: var(--text3);
+    margin-right: 8px;
+    font-size: 11px;
+  }
+  .toc a { color: inherit; text-decoration: none; transition: color 0.2s; }
+  .toc a:hover { color: var(--accent); }
+
+  /* SECTION */
+  .section { margin-bottom: 80px; }
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .phase-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text3);
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .section-hr { flex: 1; height: 1px; background: var(--border); }
+  .section h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(26px, 4vw, 40px);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+  .section h2 em { font-style: italic; color: var(--gold); }
+  .section-intro {
+    font-size: 18px;
+    color: var(--text2);
+    margin-bottom: 32px;
+    font-style: italic;
+  }
+
+  /* CODE / MONO */
+  pre, .mono-block {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border2);
+    border-radius: 6px;
+    padding: 20px 22px;
+    overflow-x: auto;
+    color: #c8d4f0;
+    margin: 20px 0;
+    white-space: pre;
+  }
+
+  /* TIER CARDS */
+  .tier-grid { display: grid; gap: 16px; margin: 28px 0; }
+  .tier-card { border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .tier-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .tier-badge { font-size: 18px; flex-shrink: 0; }
+  .tier-label { flex: 1; }
+  .tier-verdict {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    opacity: 0.8;
+    background: rgba(0,0,0,0.2);
+    padding: 3px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .tier-body { padding: 18px 22px 20px; background: var(--bg3); }
+  .tier-card.t1 { border-color: rgba(224,85,102,0.35); }
+  .tier-card.t1 .tier-header { background: rgba(224,85,102,0.12); color: var(--red2); }
+  .tier-card.t2 { border-color: rgba(232,131,74,0.35); }
+  .tier-card.t2 .tier-header { background: rgba(232,131,74,0.10); color: var(--orange2); }
+  .tier-card.t3 { border-color: rgba(79,140,255,0.35); }
+  .tier-card.t3 .tier-header { background: rgba(79,140,255,0.10); color: var(--accent); }
+  .tier-card.t4 { border-color: rgba(61,186,127,0.35); }
+  .tier-card.t4 .tier-header { background: rgba(61,186,127,0.10); color: var(--green2); }
+
+  .quote-block {
+    font-size: 15.5px;
+    color: var(--text2);
+    background: var(--bg4);
+    border-left: 3px solid var(--border2);
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-style: italic;
+    border-radius: 0 4px 4px 0;
+  }
+  .fail-reason { font-size: 15px; color: var(--text2); margin-top: 10px; }
+
+  /* CALLOUT */
+  .callout {
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 28px 0;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .callout.lesson { background: rgba(212,169,74,0.07); border: 1px solid rgba(212,169,74,0.25); }
+  .callout.insight { background: rgba(79,140,255,0.07); border: 1px solid rgba(79,140,255,0.20); }
+  .callout.warning { background: rgba(224,85,102,0.07); border: 1px solid rgba(224,85,102,0.22); }
+  .callout.success { background: rgba(61,186,127,0.07); border: 1px solid rgba(61,186,127,0.22); }
+  .callout-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+  .callout-inner { flex: 1; }
+  .callout-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .callout.lesson .callout-title { color: var(--gold); }
+  .callout.insight .callout-title { color: var(--accent); }
+  .callout.warning .callout-title { color: var(--red2); }
+  .callout.success .callout-title { color: var(--green2); }
+  .callout p { font-size: 16px; color: var(--text2); line-height: 1.65; }
+
+  /* KEY SENTENCE */
+  .key-sentence {
+    background: linear-gradient(135deg, rgba(61,186,127,0.08), rgba(61,186,127,0.04));
+    border: 1px solid rgba(61,186,127,0.25);
+    border-left: 4px solid var(--green);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    font-size: 16px;
+    color: var(--green2);
+    font-style: italic;
+  }
+  .key-sentence::before {
+    content: '★ ONE SENTENCE THAT SIGNALS THIS TIER: ';
+    display: block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 8px;
+  }
+
+  /* COVERAGE GRID */
+  .coverage-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .coverage-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .coverage-item h4 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    margin-bottom: 8px;
+  }
+  .coverage-item p { font-size: 14.5px; color: var(--text3); line-height: 1.55; }
+  .coverage-item .mastery-line {
+    margin-top: 10px;
+    font-size: 13.5px;
+    color: var(--accent);
+    font-style: italic;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+  .coverage-item .when { font-size: 12px; color: var(--text3); margin-top: 4px; }
+
+  /* NFR TABLE */
+  .nfr-table { width: 100%; border-collapse: collapse; font-size: 15.5px; margin: 20px 0; }
+  .nfr-table th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    background: var(--bg3);
+  }
+  .nfr-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(46,54,80,0.5);
+    color: var(--text2);
+    vertical-align: top;
+  }
+  .nfr-table tr:hover td { background: var(--bg3); }
+  .nfr-table td:first-child {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  /* SCORECARD */
+  .scorecard { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 28px 0; }
+  .scorecard-header {
+    background: linear-gradient(90deg, rgba(79,140,255,0.12), rgba(123,94,167,0.10));
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .scorecard-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 24px;
+    border-bottom: 1px solid rgba(46,54,80,0.5);
+    font-size: 15.5px;
+    color: var(--text2);
+    transition: background 0.15s;
+  }
+  .scorecard-row:last-child { border-bottom: none; }
+  .scorecard-row:hover { background: var(--bg4); }
+  .score-val { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--green2); font-weight: 600; }
+  .scorecard-total {
+    background: linear-gradient(90deg, rgba(61,186,127,0.12), rgba(61,186,127,0.06));
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 2px solid rgba(61,186,127,0.3);
+  }
+  .total-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--green2);
+  }
+  .total-val {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--green2);
+  }
+
+  /* COVERAGE LIST */
+  .coverage-list { margin: 12px 0; }
+  .coverage-line {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 7px 0;
+    font-size: 15.5px;
+    color: var(--text2);
+    border-bottom: 1px solid rgba(46,54,80,0.3);
+  }
+  .cov-icon { flex-shrink: 0; width: 20px; text-align: center; margin-top: 2px; }
+  .cov-ok { color: var(--green); }
+  .cov-warn { color: var(--orange); }
+
+  /* SUB-HEAD */
+  h3.sub-head {
+    font-family: 'Playfair Display', serif;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 36px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* STUDY ITEM */
+  .study-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 24px;
+    margin-bottom: 14px;
+  }
+  .study-item h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .study-item h4 .num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    color: var(--text3);
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-weight: 400;
+  }
+  .study-item p { font-size: 15.5px; color: var(--text2); line-height: 1.65; margin-bottom: 10px; }
+  .study-item .study-q {
+    font-size: 14px;
+    color: var(--text3);
+    font-style: italic;
+    border-left: 2px solid var(--border2);
+    padding-left: 12px;
+    margin-top: 8px;
+  }
+
+  /* QA accordion */
+  .qa-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .qa-q {
+    padding: 14px 18px;
+    font-size: 15.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg3);
+    color: var(--text);
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .qa-q:hover { background: var(--bg4); }
+  .qa-arrow { font-size: 11px; color: var(--text3); transition: transform 0.2s; }
+  .qa-a {
+    display: none;
+    padding: 14px 18px;
+    font-size: 15.5px;
+    color: var(--text2);
+    line-height: 1.7;
+    border-top: 1px solid var(--border);
+    background: var(--bg2);
+  }
+  .qa-item.open .qa-a { display: block; }
+  .qa-item.open .qa-arrow { transform: rotate(90deg); }
+
+  /* FAILURE SCENARIO CARDS */
+  .scenario-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0; }
+  .scenario-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .scenario-card h4 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .s-row { display: flex; gap: 8px; margin-bottom: 6px; font-size: 14px; }
+  .s-label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; min-width: 58px; color: var(--text3); padding-top: 2px; text-transform: uppercase; }
+  .s-val { color: var(--text2); line-height: 1.5; }
+
+  /* TAGS */
+  .tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+  }
+  .tag.blue { background: rgba(79,140,255,0.12); color: var(--accent); border: 1px solid rgba(79,140,255,0.25); }
+  .tag.green { background: rgba(61,186,127,0.12); color: var(--green2); border: 1px solid rgba(61,186,127,0.25); }
+  .tag.gold { background: rgba(212,169,74,0.12); color: var(--gold2); border: 1px solid rgba(212,169,74,0.25); }
+  .tag.red { background: rgba(224,85,102,0.12); color: var(--red2); border: 1px solid rgba(224,85,102,0.25); }
+
+  /* DIVIDER */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 60px 0;
+  }
+
+  /* FOOTER */
+  footer {
+    text-align: center;
+    padding: 40px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text3);
+    border-top: 1px solid var(--border);
+    letter-spacing: 1px;
+  }
+
+  strong { color: var(--text); font-weight: 600; }
+  em.hl { color: var(--gold); font-style: normal; }
+  p + p { margin-top: 12px; }
+  .section > p { font-size: 17px; color: var(--text2); margin-bottom: 12px; }
+
+  @media (max-width: 700px) {
+    .toc ol { grid-template-columns: 1fr; }
+    .coverage-grid { grid-template-columns: 1fr; }
+    .scenario-grid { grid-template-columns: 1fr; }
+    .main-wrap { padding: 40px 20px 80px; }
+    .hero { padding: 50px 20px 50px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-tag">Distributed Systems · L6 / Staff Engineer Interview Guide</div>
+    <h1>Apache <em>Kafka</em></h1>
+    <p class="hero-sub">A complete 8-pillar deep-dive — from first principles to Google-scale — with tier-by-tier answer breakdowns, failure mode analysis, and a full interview simulation.</p>
+    <div class="hero-meta">
+      <div class="meta-badge">🎯 Target: <span>Google L6/L7 · Staff Backend / Infra</span></div>
+      <div class="meta-badge">📊 Pillars: <span>8 Deep-Dive Sections</span></div>
+      <div class="meta-badge">⚡ Focus: <span>Distributed Streaming at Scale</span></div>
+      <div class="meta-badge">🏆 Verdict: <span>Strong Hire Calibration</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="main-wrap">
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#p1">Pillar 1 — Core Concepts &amp; Mental Models</a></li>
+      <li><a href="#p2">Pillar 2 — Architecture Deep Dive</a></li>
+      <li><a href="#p3">Pillar 3 — Trade-offs &amp; Design Decisions</a></li>
+      <li><a href="#p4">Pillar 4 — Failure Modes &amp; Resilience</a></li>
+      <li><a href="#p5">Pillar 5 — Scaling Strategies</a></li>
+      <li><a href="#p6">Pillar 6 — Real-World Engineering Decisions</a></li>
+      <li><a href="#p7">Pillar 7 — Google-Scale &amp; Beyond</a></li>
+      <li><a href="#p8">Pillar 8 — Interview Simulation</a></li>
+    </ol>
+  </div>
+
+  <!-- ═══════════════════════ PILLAR 1 ═══════════════════════ -->
+  <div class="section" id="p1">
+    <div class="section-label">
+      <span class="phase-num">Pillar 01</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Core Concepts &amp; <em>Mental Models</em></h2>
+    <p class="section-intro">Before understanding Kafka, you must understand the problem it was invented to solve — and why the abstraction it chose is so powerful.</p>
+
+    <h3 class="sub-head">What Problem Does Kafka Solve?</h3>
+    <p>Before Kafka (circa 2011), systems communicated via point-to-point pipelines. If you had N producers and M consumers, you needed N×M custom connectors. Any schema change broke everything downstream. LinkedIn's data pipelines were a tangled web that couldn't scale. Kafka replaces all of that with a single, durable, ordered log as the universal integration bus.</p>
+    <p>Producers write to topics. Consumers read at their own pace. The log is the source of truth — not the database it feeds. This is the same insight that makes database WALs (write-ahead logs) so reliable: Kafka is that WAL, exposed as a distributed service for the entire organization.</p>
+
+    <h3 class="sub-head">The Core Abstraction: The Commit Log</h3>
+    <p>Every write is appended to an immutable, ordered, partitioned log. An <strong>offset</strong> is a cursor into that log. Any consumer can replay from any offset at any time. This is not a queue — messages are not deleted on consumption. They expire based on time or size retention policy. This seemingly simple choice — "don't delete on read" — enables replay, event sourcing, audit trails, and fan-out to unlimited consumer groups simultaneously.</p>
+
+    <div class="callout insight">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-inner">
+        <div class="callout-title">L7/L8 Differentiator</div>
+        <p>Kafka's log abstraction unifies batch and stream processing, event sourcing, CDC (change data capture), and audit trails under one primitive. That's why it became infrastructure, not just a queue. The abstraction's power is its universality — one interface for all temporal data movement patterns.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Guarantees Kafka DOES Make</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Guarantee</th><th>What It Means</th><th>Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Ordering within partition</td><td>Messages in a partition are totally ordered. Consumers always see them in write order.</td><td>Single-writer append-only log per partition</td></tr>
+        <tr><td>Durability via replication</td><td>A write is acknowledged only after min.insync.replicas have persisted it.</td><td>ISR (In-Sync Replica) tracking + WAL</td></tr>
+        <tr><td>At-least-once delivery</td><td>Default semantics. A message may be delivered more than once on retry.</td><td>Producer retries + consumer offset management</td></tr>
+        <tr><td>Exactly-once (configurable)</td><td>No duplicates. No losses. Available since 0.11 with idempotent producers + transactions.</td><td>Producer ID + sequence number + 2PC coordinator</td></tr>
+        <tr><td>Consumer replay</td><td>Each consumer group has independent offsets. Replay from any point in history.</td><td>Offset stored in __consumer_offsets topic</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Guarantees Kafka Does NOT Make</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Non-Guarantee</th><th>Why It Doesn't</th></tr></thead>
+      <tbody>
+        <tr><td>Global ordering across partitions</td><td>Partitions are independent. Cross-partition total order would require a global sequencer — a single-writer bottleneck.</td></tr>
+        <tr><td>Exactly-once by default</td><td>Requires explicit idempotent producer + transaction config + read_committed isolation on consumer.</td></tr>
+        <tr><td>Message priority / selective consumption</td><td>Kafka is a log, not a priority queue. Consumers read in offset order only.</td></tr>
+        <tr><td>Per-message TTL</td><td>Retention is log-segment-level (time or bytes), not per-message. Use log compaction for "last value wins" semantics.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning">
+      <div class="callout-icon">🔥</div>
+      <div class="callout-inner">
+        <div class="callout-title">Common Interview Mistake</div>
+        <p>Candidates conflate Kafka with a traditional message queue (like RabbitMQ). <strong>Kafka is a log, not a queue.</strong> Messages are not deleted on consumption — they are retained until the log segment expires. This single distinction drives every architectural difference: replayability, consumer group fan-out, zero-copy reads, and why Kafka can serve unlimited consumers with no additional write cost.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Mental Model: The Partition as the Unit of Everything</h3>
+<pre>
+Topic: "user-events"   (replication factor = 3, 4 partitions)
+
+  Partition 0:  [offset 0] → [offset 1] → [offset 2] → [offset 3] ...
+  Partition 1:  [offset 0] → [offset 1] → [offset 2] → [offset 3] ...
+  Partition 2:  [offset 0] → [offset 1] → [offset 2] → [offset 3] ...
+  Partition 3:  [offset 0] → [offset 1] → [offset 2] → [offset 3] ...
+
+  Each partition:
+  ├── Lives on one broker (leader) + N-1 replicas (followers)
+  ├── Is the atomic unit of ordering
+  ├── Is the atomic unit of parallelism (one consumer per partition in a group)
+  └── Is the atomic unit of replication
+
+  Invariant:  #partitions ≥ #consumers-in-group  for full parallelism
+  Invariant:  Offset is strictly monotonic within a partition (never reused)
+  Invariant:  A message is durable only when ≥ min.insync.replicas have it in WAL
+</pre>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 1</div>
+        <p>Kafka is an immutable, distributed, partitioned commit log. The partition is the atomic unit of ordering, parallelism, and replication. If you understand that, every other design decision in Kafka becomes derivable from first principles.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 2 ═══════════════════════ -->
+  <div class="section" id="p2">
+    <div class="section-label">
+      <span class="phase-num">Pillar 02</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Architecture <em>Deep Dive</em></h2>
+    <p class="section-intro">Every Kafka performance characteristic — high throughput, low latency, durability — is a direct consequence of its architecture. Understand the components and the data flows will be obvious.</p>
+
+    <h3 class="sub-head">Cluster Architecture</h3>
+<pre>
+  Producers                          Brokers (Kafka Cluster)
+  ┌──────────┐                      ┌───────────────────────────────────────────┐
+  │Producer A│ ──batch+compress───► │ Broker 1          Broker 2          Broker 3│
+  │(keyed)   │                      │ Leader: P0, P3    Leader: P1, P4    Leader: P2│
+  └──────────┘                      │ Follower: P1, P2  Follower: P2, P3  Follower: P0, P1│
+  ┌──────────┐                      │                                           │
+  │Producer B│ ──────────────────►  │  ┌─────────────────────────────────────┐  │
+  └──────────┘                      │  │    ZooKeeper / KRaft Controller     │  │
+                                    │  │  - Broker registration              │  │
+  Consumer Groups                   │  │  - Leader election                  │  │
+  ┌────────────────────────────┐    │  │  - ISR tracking                    │  │
+  │ Group A                    │    │  │  - Topic/partition metadata         │  │
+  │  Consumer1 → P0, P1        │ ◄──│  └─────────────────────────────────────┘  │
+  │  Consumer2 → P2, P3        │    └───────────────────────────────────────────┘
+  └────────────────────────────┘
+  ┌────────────────────────────┐
+  │ Group B  (independent)     │    On-disk per partition:
+  │  Consumer1 → P0,P1,P2,P3  │ ◄──  00000000000000000000.log       (segment file)
+  └────────────────────────────┘      00000000000000000000.index     (sparse offset index)
+                                      00000000000000000000.timeindex (sparse timestamp index)
+                                      leader-epoch-checkpoint        (fencing stale leaders)
+</pre>
+
+    <h3 class="sub-head">Write Path — Step by Step</h3>
+<pre>
+1.  Producer serializes record, computes target partition:
+      - Keyed message:    murmur2(key) % num_partitions
+      - Unkeyed message:  round-robin or sticky partition
+
+2.  Producer batches records in memory:
+      - batch.size (default 16KB):   fill until this size
+      - linger.ms  (default 0ms):    wait this long before sending
+      - gzip/snappy/lz4 compression applied to entire batch
+
+3.  Producer sends batch to partition LEADER broker (fetched from metadata cache)
+
+4.  Leader appends batch to segment .log file — SEQUENTIAL WRITE (fast)
+      - OS page cache absorbs the write (no fsync per message)
+      - Segment rolls when segment.bytes (default 1GB) is reached
+
+5.  Leader replicates to ISR followers via PULL:
+      - Followers fetch from leader (pull model, not push)
+      - Leader tracks high watermark = lowest LEO (log end offset) across ISR
+
+6.  Leader waits for acknowledgment based on acks setting:
+      - acks=0:   no wait (fire-and-forget)
+      - acks=1:   wait for leader only
+      - acks=all: wait for min.insync.replicas to confirm
+
+7.  Leader advances high watermark, sends ack to producer
+
+8.  Async: cross-region replication via MirrorMaker 2 (if configured)
+
+LATENCY BUDGET (typical production):
+  Producer batch fill:         0–5ms (linger.ms)
+  Network to leader:           0.5–2ms (intra-region)
+  Leader append to page cache: 0.1ms
+  Follower replication fetch:  1–5ms
+  Total end-to-end:            2–15ms typical, acks=all
+</pre>
+
+    <h3 class="sub-head">Read Path — Step by Step</h3>
+<pre>
+1.  Consumer sends FETCH request to partition leader (or any replica for follower reads):
+      { partition: P0, offset: 12345, max_bytes: 1MB, min_bytes: 1KB }
+
+2.  Broker locates target segment file using the SPARSE INDEX:
+      - .index file maps offset → byte position (every ~4KB of data)
+      - Binary search in .index, then sequential scan forward in .log file
+
+3.  Broker performs ZERO-COPY transfer (sendfile syscall):
+      - Data moves directly from OS page cache → NIC buffer
+      - No user-space copy. This is why Kafka reads are so fast.
+
+4.  Consumer deserializes records, processes them
+
+5.  Consumer commits offset:
+      - To __consumer_offsets topic (default)
+      - Or externally (for exactly-once with transactional systems)
+
+WHY PAGE CACHE MATTERS:
+  Consumer that reads within seconds of writes will ALWAYS hit page cache.
+  Consumer lag = reading old data = likely cache miss = disk I/O.
+  Monitoring lag tells you whether reads are hot (cache) or cold (disk).
+</pre>
+
+    <h3 class="sub-head">Internal Components &amp; Responsibilities</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Component</th><th>Role</th><th>Critical Detail</th></tr></thead>
+      <tbody>
+        <tr><td>Broker</td><td>Stores partitions, serves reads/writes</td><td>A partition's leader handles all reads+writes for that partition. Followers only replicate.</td></tr>
+        <tr><td>Controller (ZK/KRaft)</td><td>Cluster coordinator: leader election, ISR management, topic lifecycle</td><td>KRaft (Kafka 3.x+): metadata stored in __cluster_metadata topic. Failover &lt;1s vs 30–60s for ZooKeeper.</td></tr>
+        <tr><td>Log Segment</td><td>On-disk storage unit: .log + .index + .timeindex files</td><td>Immutable once closed. OS manages page cache for hot segments.</td></tr>
+        <tr><td>ISR (In-Sync Replicas)</td><td>Set of replicas fully caught up to leader</td><td>Only ISR members eligible for leader election. Tracked by controller. ISR shrinkage = durability alarm.</td></tr>
+        <tr><td>High Watermark</td><td>Highest committed offset visible to consumers</td><td>= min(LEO across all ISR). Consumers only read up to HW. Prevents reading uncommitted data.</td></tr>
+        <tr><td>Log End Offset (LEO)</td><td>Next offset to be written on each replica</td><td>Leader LEO advances on every write. Follower LEO advances on every fetch+persist.</td></tr>
+        <tr><td>__consumer_offsets</td><td>Internal topic storing consumer group offsets</td><td>Compacted topic. 50 partitions default. Consumer commits are just writes to this topic.</td></tr>
+        <tr><td>Group Coordinator</td><td>Manages consumer group membership, rebalances</td><td>One broker per consumer group (hashed by group.id). Manages heartbeats and partition assignment.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Back-Pressure &amp; Flow Control</h3>
+    <p><strong>Producer back-pressure:</strong> If the producer's in-memory buffer (<code>buffer.memory</code>, default 32MB) fills up because the broker is slow, the producer blocks for up to <code>max.block.ms</code> (default 60s). This is the only back-pressure mechanism for producers. If the broker is still slow after that, the producer throws <code>TimeoutException</code>.</p>
+    <p><strong>Broker-side:</strong> Kafka has no broker-initiated back-pressure to slow producers. If a follower falls too far behind, it is removed from ISR — the broker does not slow down to accommodate it.</p>
+    <p><strong>Consumer-side:</strong> Consumer lag is the natural buffer. Consumers process at their own pace. The risk is lag growing unboundedly if a consumer can't keep up — this leads to cold reads and eventually OOM if the consumer buffers too aggressively.</p>
+
+    <div class="callout insight">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-inner">
+        <div class="callout-title">L7/L8 Differentiator</div>
+        <p>KRaft mode (Kafka 3.x, GA in 3.3+) eliminates ZooKeeper entirely. Metadata is stored in a Kafka topic (<code>__cluster_metadata</code>) replicated via Raft across controller quorum nodes. Controller failover drops from 30–60 seconds to under 1 second. Knowing this transition — and why it enables millions of partitions vs. ~200K for ZooKeeper — signals operational currency that interviewers notice.</p>
+      </div>
+    </div>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 2</div>
+        <p>Kafka's performance derives from sequential disk I/O (append-only writes), zero-copy reads (sendfile syscall), OS page cache exploitation, and batched replication — not from keeping data in memory. Understanding this makes every tuning decision intuitive: you're always asking "what is in the page cache right now?"</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 3 ═══════════════════════ -->
+  <div class="section" id="p3">
+    <div class="section-label">
+      <span class="phase-num">Pillar 03</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Trade-offs &amp; <em>Design Decisions</em></h2>
+    <p class="section-intro">Every Kafka configuration knob is a point on the durability-latency-throughput triangle. Knowing the default, the reason for the default, and the cost of moving it is what separates senior from staff.</p>
+
+    <h3 class="sub-head">CAP &amp; PACELC Positioning</h3>
+    <p>Kafka prioritizes <strong>CP (Consistency + Partition Tolerance)</strong>. When a partition occurs and the leader is on the minority side, that partition becomes unavailable rather than electing a stale replica as leader. You can shift to AP behavior by setting <code>unclean.leader.election.enable=true</code> — but this risks data loss.</p>
+    <p>Under <strong>PACELC</strong>: even without a partition, Kafka trades <em>latency for consistency</em>. Waiting for ISR acknowledgments adds latency proportional to replication lag. You reduce latency by weakening durability (<code>acks=1</code>) — but now a leader crash before replication can silently lose data.</p>
+
+    <h3 class="sub-head">Complete Trade-off Map</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Trade-off Axis</th><th>Default</th><th>Why This Default</th><th>How to Change</th><th>Cost of Change</th></tr></thead>
+      <tbody>
+        <tr><td>Durability vs Latency</td><td>acks=all, min.insync.replicas=2</td><td>Safe for financial/critical data; most Kafka use cases cannot afford data loss</td><td>acks=1 or acks=0</td><td>Data loss on leader crash; acks=0 loses data on any network blip</td></tr>
+        <tr><td>Throughput vs Latency</td><td>linger.ms=0</td><td>Lowest latency by default — send immediately without batching</td><td>Set linger.ms=5–20ms</td><td>Added 5–20ms producer latency; significantly higher throughput</td></tr>
+        <tr><td>Parallelism vs Ordering</td><td>Ordered within partition only</td><td>Global ordering requires single partition = single writer = no scale</td><td>Use single partition for global order</td><td>Destroys horizontal throughput scaling</td></tr>
+        <tr><td>Availability vs Consistency</td><td>unclean.leader.election=false</td><td>Never elect a stale replica; prefer unavailability to data loss</td><td>Set true</td><td>Stale data visible; duplicates possible; message loss</td></tr>
+        <tr><td>Retention vs Disk Cost</td><td>7 days or size-based</td><td>Enable replay by default; most use cases need &gt;1 hour replay window</td><td>Reduce retention.ms or enable tiered storage</td><td>Lose replay ability / higher cost</td></tr>
+        <tr><td>Exactly-once vs Throughput</td><td>Off (at-least-once)</td><td>EOS has ~10–20% overhead; most pipelines tolerate idempotent processing</td><td>enable.idempotence=true + transactions + isolation.level=read_committed</td><td>Latency + throughput overhead; operational complexity</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Consistency Models</h3>
+    <p><strong>Strong consistency (default for writes):</strong> With <code>acks=all</code> + <code>min.insync.replicas=2</code>, a write is not acknowledged until it is in at least 2 WALs. A leader crash cannot lose it. Reads from the leader always return the latest committed value.</p>
+    <p><strong>Eventual consistency (follower reads):</strong> Kafka 2.4+ supports reading from the nearest follower replica. Followers may lag the leader by up to <code>replica.lag.time.max.ms</code>. This reduces cross-AZ latency for reads but may return stale data.</p>
+    <p><strong>Exactly-once semantics (EOS):</strong> Requires all three layers — (1) idempotent producer (PID + sequence number dedup), (2) transactional producer (atomic multi-partition writes via 2PC with transaction coordinator), and (3) consumer with <code>isolation.level=read_committed</code>. All three must be configured. Missing any one breaks EOS.</p>
+
+    <div class="callout warning">
+      <div class="callout-icon">🔥</div>
+      <div class="callout-inner">
+        <div class="callout-title">Common Interview Mistake</div>
+        <p>Claiming Kafka is "exactly-once by default" or that EOS is "just a config flag." EOS requires idempotent producers AND transactional APIs AND a consumer that reads only committed data (<code>isolation.level=read_committed</code>). A Kafka Streams app also needs to commit both output records AND input offsets atomically in the same transaction. All parts must be correct — any gap reopens the window for duplicates or data loss.</p>
+      </div>
+    </div>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 3</div>
+        <p>There is no "correct" Kafka configuration. There is only the configuration appropriate for your durability and latency SLA. The staff-level answer always starts with "it depends on acks and min.insync.replicas" — and then derives every other choice from those two parameters.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 4 ═══════════════════════ -->
+  <div class="section" id="p4">
+    <div class="section-label">
+      <span class="phase-num">Pillar 04</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Failure Modes &amp; <em>Resilience</em></h2>
+    <p class="section-intro">Most Kafka failures are recoverable automatically. The dangerous ones involve ISR shrinkage combined with an unclean leader election — which is why that setting is non-negotiable for durability-sensitive workloads.</p>
+
+    <div class="scenario-grid">
+      <div class="scenario-card">
+        <h4>Leader crash</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">ZK/KRaft session timeout (~6s default session; ~1s with KRaft)</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Controller elects new leader from ISR (highest LEO wins)</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">~6s unavailability for that partition; no data loss if acks=all + unclean=false</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Run kafka-preferred-replica-election after recovery to rebalance leaders</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Follower crash</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Leader tracks ISR; follower removed after replica.lag.time.max.ms (default 30s)</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">ISR shrinks; leader continues writing to smaller ISR</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">If ISR shrinks below min.insync.replicas, producers get NotEnoughReplicasException</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Alert on UnderReplicatedPartitions metric; investigate broker health</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Network partition (quorum side)</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Majority-side brokers continue; minority side loses controller connectivity</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Minority-side partition leaders become unavailable; CP behavior</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Unavailability on minority side; no data loss. Producers get connection errors.</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Investigate after healing; verify ISR fully restored before proceeding</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Even split / no quorum</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Controller cannot achieve quorum; all affected partitions stall</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Cluster stalls writes entirely; CP: prefers unavailability to inconsistency</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Full write unavailability until partition heals. Reads may still succeed from leaders.</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Always deploy odd number of brokers (3, 5, 7) to make this impossible</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Split-brain (two leaders)</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Leader epoch increments; stale leader's writes rejected by followers</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Stale leader fenced via leader epoch check on every ISR fetch</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Old leader's non-replicated writes are truncated on reconnection — potential data loss</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Monitor LeaderElectionRateAndTimeMs; investigate unclean leader election alerts</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Slow / degraded follower</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Follower's replica lag exceeds replica.lag.time.max.ms → removed from ISR</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Removed from ISR; leader continues with reduced ISR size</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Durability reduced. If slow node becomes new leader, lag propagates to consumers.</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Alert on IsrShrinkRate; throttle replication catch-up (kafka-configs --replication-throttle)</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Disk corruption / partial write</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">CRC-32 check on every message read; broker logs error and halts the partition</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Partition fails over to a healthy replica via leader election</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">If all replicas corrupted (hardware failure across AZ): data loss. Use RF=3 minimum.</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Replace disk; allow replica to catch up via full partition replication from leader</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Thundering herd after recovery</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">All consumers rejoin group simultaneously after a broker restart → rebalance storm</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">Group coordinator sequences rebalances; uses incremental cooperative protocol if configured</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Minutes of stop-the-world rebalancing; all consumers paused during eager rebalance</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Use CooperativeStickyAssignor (Kafka 2.4+); set group.instance.id for static membership</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Clock skew between nodes</h4>
+        <div class="s-row"><span class="s-label">Detect</span><span class="s-val">Not directly detected by Kafka; manifests as incorrect timestamp-based retention/queries</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">No automatic mitigation; Kafka uses CreateTime or LogAppendTime per configuration</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Incorrect time-based segment deletion; wrong results from timeindex lookups (seekToTimestamp)</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Use NTP/chrony strictly; prefer LogAppendTime (broker-stamped) over CreateTime for retention</span></div>
+      </div>
+      <div class="scenario-card">
+        <h4>Cascading failure</h4>
+        <div class="s-row"><span class="s-label">Pattern</span><span class="s-val">Slow consumer → lag grows → consumer OOM → crash → rebalance → other consumers overloaded → cascade</span></div>
+        <div class="s-row"><span class="s-label">Auto</span><span class="s-val">None — Kafka will not rate-limit a consumer or apply back-pressure upstream</span></div>
+        <div class="s-row"><span class="s-label">Risk</span><span class="s-val">Full consumer group outage; lag can reach hours or days if not caught early</span></div>
+        <div class="s-row"><span class="s-label">Manual</span><span class="s-val">Dead-letter topics for poison messages; lag-based autoscaling; consumer circuit breakers</span></div>
+      </div>
+    </div>
+
+    <div class="callout insight">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-inner">
+        <div class="callout-title">L7/L8 Differentiator — Leader Epoch</div>
+        <p>Pre-Kafka 0.11, split-brain could cause silent data loss. The <strong>leader epoch</strong> mechanism solves this: every time a new leader is elected, the epoch counter increments. Followers only replicate from the current epoch. If a stale leader tries to replicate, followers reject it. The leader-epoch-checkpoint file on each broker records the epoch-to-offset mapping so replicas can safely truncate their logs to the correct position on recovery. Knowing this mechanism — not just the symptom — is what an L7 answer includes.</p>
+      </div>
+    </div>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 4</div>
+        <p>The most dangerous Kafka failure is not broker death — it's ISR shrinkage combined with <code>unclean.leader.election.enable=true</code>. Broker death is recoverable. Silent data loss from a stale leader election is not. This is why <code>unclean.leader.election.enable=false</code> is non-negotiable for any durability-sensitive workload.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 5 ═══════════════════════ -->
+  <div class="section" id="p5">
+    <div class="section-label">
+      <span class="phase-num">Pillar 05</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Scaling <em>Strategies</em></h2>
+    <p class="section-intro">The partition count is the most consequential, hardest-to-change decision in Kafka. Set it too low and you can't scale parallelism. Set it too high and metadata overhead kills small clusters.</p>
+
+    <h3 class="sub-head">Vertical Scaling</h3>
+    <p>A single broker can handle ~1–2 GB/s with large NVMe SSDs and sufficient RAM for page cache. Page cache is the primary bottleneck — if your working set (recent writes + active reads) doesn't fit in RAM, you hit disk seeks. Upgrade RAM before CPU. A broker with 256 GB RAM + 8TB NVMe can be formidable, but adds single-point-of-failure risk and violates Google SRE blast radius principles. Vertical scaling is a short-term optimization, not a strategy.</p>
+
+    <h3 class="sub-head">Horizontal Scaling: Adding Brokers</h3>
+    <p>Adding brokers requires <strong>partition reassignment</strong> — Kafka's equivalent of resharding. During reassignment, the new broker replicates assigned partitions from existing leaders, causing a replication traffic spike. Always throttle this: <code>kafka-reassign-partitions.sh --throttle 50000000</code> (50 MB/s).</p>
+    <p><strong>Critical constraint: you cannot reduce partition count after creation.</strong> You can only increase it. And existing messages are not re-keyed — so adding partitions breaks key-based ordering for any messages produced after the change. Over-partition aggressively on day one: plan for 2–3× your expected peak consumer count.</p>
+
+    <div class="callout insight">
+      <div class="callout-icon">📐</div>
+      <div class="callout-inner">
+        <div class="callout-title">Back-of-Envelope — Broker Sizing</div>
+        <p>A single broker: ~100 MB/s write throughput (conservative). 1 TB/day ingest = 11.6 MB/s × RF3 = ~35 MB/s. Needs 3+ brokers with headroom.</p>
+        <p style="margin-top:8px;">At 1 PB/day (hyperscaler): 1PB / 86400s = ~11.6 GB/s. × RF3 = 35 GB/s raw replication. 350 brokers at 100 MB/s each. LinkedIn runs 1,800+ brokers serving 7T+ messages/day.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Replication Strategies</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Config</th><th>Latency</th><th>Durability</th><th>Use Case</th></tr></thead>
+      <tbody>
+        <tr><td>RF=1 (no replication)</td><td>Lowest</td><td>None — single disk failure = data loss</td><td>Dev/test, ephemeral metrics, scratch topics</td></tr>
+        <tr><td>RF=2, acks=1</td><td>Low</td><td>Medium — tolerates 1 failure after ack</td><td>Non-critical events, application logs</td></tr>
+        <tr><td>RF=3, acks=all, min.isr=2</td><td>Medium (~5–15ms)</td><td>High — tolerates 1 failure before/after ack</td><td>Production default: user data, financial events</td></tr>
+        <tr><td>RF=5, acks=all, min.isr=3</td><td>Higher</td><td>Very high — tolerates 2 simultaneous failures</td><td>Compliance, banking, healthcare audit trails</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Partitioning Strategy &amp; Hotspot Avoidance</h3>
+    <p>Default partitioning: <code>murmur2(key) % num_partitions</code>. This ensures ordering per key but can create hotspots — a celebrity user generating 1000× more events than average will hammer one partition. Mitigations:</p>
+    <table class="nfr-table">
+      <thead><tr><th>Mitigation</th><th>Mechanism</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr><td>Key salting</td><td>Append random suffix to hot key: user_123_0, user_123_1, etc. Fan-in at consumer.</td><td>Breaks per-key ordering; consumer must merge</td></tr>
+        <tr><td>Custom partitioner</td><td>Implement Partitioner interface; route hot keys to dedicated partitions</td><td>Operational complexity; must maintain hotkey list</td></tr>
+        <tr><td>Separate topic for hot keys</td><td>Detect hot keys in producer, route to a separate high-partition-count topic</td><td>Consumer must read from two topics</td></tr>
+        <tr><td>Sticky partitioner (unkeyed)</td><td>Default for null-key messages since 2.4: fill one partition's batch before switching</td><td>None — strictly better than round-robin for throughput</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Cross-Region Replication: MirrorMaker 2</h3>
+    <p>MirrorMaker 2 (MM2) uses Kafka Connect internally to replicate topics across clusters. <strong>Active-passive:</strong> one source cluster, read replicas in other regions for DR. <strong>Active-active:</strong> bidirectional replication with topic prefixing (<code>us-east.orders</code>, <code>eu-west.orders</code>) to prevent infinite replication loops. Conflict resolution is application-level — Kafka provides no built-in CRDT or vector clock. Replication lag is typically 100ms–2s depending on inter-region RTT.</p>
+    <p>MM2 also maintains offset translation: a consumer failing over from primary to replica can continue from the correct offset via the checkpoint topic, rather than replaying from the beginning.</p>
+
+    <h3 class="sub-head">Read Scaling vs Write Scaling</h3>
+    <p><strong>Write scaling</strong> is bounded by partition leadership distribution. More partitions = more brokers = more parallelism. Adding partitions or brokers scales writes. Adding consumers within a group does not scale writes.</p>
+    <p><strong>Read scaling</strong> is effectively unlimited via consumer groups. Each consumer group gets a full, independent copy of all data — Kafka delivers it with zero marginal cost via zero-copy reads. You can add 100 consumer groups and Kafka handles all of them with one additional read of the page cache per group, not 100 copies of the data.</p>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 5</div>
+        <p>Kafka's read fan-out is essentially free. Its write scale requires careful partition planning that can't be undone. The asymmetry between trivial read scaling and painful write scaling resharding is Kafka's defining operational characteristic at growth companies.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 6 ═══════════════════════ -->
+  <div class="section" id="p6">
+    <div class="section-label">
+      <span class="phase-num">Pillar 06</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Real-World <em>Engineering Decisions</em></h2>
+    <p class="section-intro">Kafka wins when you need durable, replayable, high-throughput event streaming. It loses when you need simple queuing, request-reply, or minimal operational overhead.</p>
+
+    <h3 class="sub-head">Where Kafka Shines</h3>
+    <p><strong>Event streaming at scale:</strong> High-throughput, low-latency ingest from many producers — the canonical use case. <strong>CDC / data integration:</strong> Debezium + Kafka streams database changes to data warehouses and caches in near-real-time. <strong>Event sourcing:</strong> Kafka as the source of truth; rebuild any service's state by replaying its topic. <strong>Log aggregation:</strong> Centralize logs from thousands of microservices. <strong>Real-time ML pipelines:</strong> Kafka → Flink → feature store → model serving, all with sub-second latency.</p>
+
+    <h3 class="sub-head">Production Examples at Scale</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Company</th><th>Use Case</th><th>Scale</th><th>Why Kafka Won</th></tr></thead>
+      <tbody>
+        <tr><td><strong>LinkedIn</strong></td><td>Activity stream, site analytics, operational metrics, A/B test events</td><td>7T+ msgs/day, 1,800+ brokers</td><td>Kafka was built here. The log abstraction unified N×M pipeline spaghetti into one bus. Every LinkedIn service publishes to and consumes from Kafka.</td></tr>
+        <tr><td><strong>Uber</strong></td><td>Real-time surge pricing, driver location tracking, fraud detection, dispatch</td><td>1T+ msgs/day</td><td>Sub-second event propagation across global microservices. Apache Flink reads from Kafka to compute real-time ML features (ETA, surge). Exactly-once for financial events.</td></tr>
+        <tr><td><strong>Netflix</strong></td><td>Playback events, personalization signals, A/B test tracking, billing</td><td>Petabytes/day</td><td>Kafka → Flink → feature store enables sub-100ms recommendation updates. Tiered storage for 7-year billing audit trail. Exactly-once for all billing events.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">When NOT to Use Kafka</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Anti-Pattern</th><th>Why Kafka Is Wrong Here</th><th>Better Alternative</th></tr></thead>
+      <tbody>
+        <tr><td>Small-scale task queues</td><td>Kafka's operational overhead (cluster, ZK/KRaft, replication, monitoring) is too high for 100 msg/s</td><td>RabbitMQ, SQS, Celery</td></tr>
+        <tr><td>Request/response RPC</td><td>Kafka is fire-and-forget. Implementing synchronous request-reply over Kafka (reply topics, correlation IDs) is painful and unreliable.</td><td>gRPC, REST</td></tr>
+        <tr><td>Complex routing / dead-letter logic</td><td>Kafka has no exchange/routing model. All routing is application-level.</td><td>RabbitMQ exchanges</td></tr>
+        <tr><td>Long-running job orchestration</td><td>Kafka has no native job state machine, timeout handling, or retry scheduling</td><td>Temporal, Airflow, Step Functions</td></tr>
+        <tr><td>Using Kafka as a database</td><td>Compacted topics lose history. Random-access lookups are O(n). No secondary indexes.</td><td>RocksDB, Redis, Cassandra</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Decision Matrix vs Alternatives</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Dimension</th><th>Kafka</th><th>RabbitMQ</th><th>AWS Kinesis</th><th>Apache Pulsar</th></tr></thead>
+      <tbody>
+        <tr><td>Throughput</td><td><span class="tag green">Very High</span></td><td><span class="tag gold">Medium</span></td><td><span class="tag blue">High</span></td><td><span class="tag green">Very High</span></td></tr>
+        <tr><td>Latency (P99)</td><td>5–50ms</td><td>1–5ms</td><td>50–200ms</td><td>5–30ms</td></tr>
+        <tr><td>Ordering</td><td>Per partition</td><td>Per queue</td><td>Per shard</td><td>Per partition</td></tr>
+        <tr><td>Exactly-once</td><td><span class="tag green">Yes (v0.11+)</span></td><td><span class="tag red">No</span></td><td><span class="tag red">No</span></td><td><span class="tag green">Yes</span></td></tr>
+        <tr><td>Replay</td><td><span class="tag green">Yes (by retention)</span></td><td><span class="tag red">No (deleted on ack)</span></td><td><span class="tag blue">Yes (7 days)</span></td><td><span class="tag green">Yes (tiered storage)</span></td></tr>
+        <tr><td>Ops Complexity</td><td><span class="tag red">High</span></td><td><span class="tag gold">Medium</span></td><td><span class="tag green">Low (managed)</span></td><td><span class="tag red">Very High</span></td></tr>
+        <tr><td>Multi-tenancy</td><td><span class="tag red">Limited</span></td><td><span class="tag red">Limited</span></td><td><span class="tag red">Limited</span></td><td><span class="tag green">Native (namespaces)</span></td></tr>
+        <tr><td>Ecosystem</td><td><span class="tag green">Huge (Flink, Spark, Debezium, Schema Registry)</span></td><td><span class="tag gold">Moderate</span></td><td><span class="tag gold">AWS-native</span></td><td><span class="tag blue">Growing</span></td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">Day 1 Monitoring — Non-Negotiable Alerts</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Metric</th><th>Alert Threshold</th><th>Why It Matters</th></tr></thead>
+      <tbody>
+        <tr><td>consumer-fetch-manager-metrics:records-lag-max</td><td>&gt;10,000 (tune per use case)</td><td>The most critical consumer metric. Lag growing = consumer falling behind = eventual OOM or stale processing.</td></tr>
+        <tr><td>kafka.server:UnderReplicatedPartitions</td><td>&gt;0 for &gt;1 min</td><td>Durability alarm. Any value above 0 means you have fewer replicas than configured. Fix immediately.</td></tr>
+        <tr><td>kafka.server:IsrShrinkRate</td><td>&gt;0 sustained</td><td>ISR churn indicates broker instability — network, disk, or GC issues on a follower.</td></tr>
+        <tr><td>kafka.network:NetworkProcessorAvgIdlePercent</td><td>&lt;30%</td><td>Broker CPU saturation. Below 30%, broker threads are too busy to handle requests at full speed.</td></tr>
+        <tr><td>kafka.server:RequestQueueSize</td><td>&gt;50</td><td>Request queue buildup = broker overloaded. Leads to timeouts and producer blocking.</td></tr>
+        <tr><td>Producer: record-error-rate</td><td>&gt;0</td><td>Any producer errors indicate broker failures, quota violations, or serialization bugs.</td></tr>
+        <tr><td>kafka.controller:ActiveControllerCount</td><td>≠ 1</td><td>Must always be exactly 1. 0 = no controller (cluster stalled). 2 = split-brain.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warning">
+      <div class="callout-icon">🔥</div>
+      <div class="callout-inner">
+        <div class="callout-title">Most Common Production Mistakes</div>
+        <p><strong>1. Not enough partitions at launch:</strong> Setting 8 partitions and then needing 80 consumers 6 months later. Adding partitions breaks key ordering for existing keys.</p>
+        <p style="margin-top:8px;"><strong>2. No dead-letter topic:</strong> A single poison message causes a consumer to crash loop, blocking all messages behind it on that partition. Always implement DLT for production consumers.</p>
+        <p style="margin-top:8px;"><strong>3. Using Kafka as a database:</strong> Log compaction ≠ database. Compaction is asynchronous, not instantaneous. You cannot do random lookups efficiently.</p>
+        <p style="margin-top:8px;"><strong>4. Ignoring consumer group rebalances:</strong> Using eager rebalancing on large groups causes stop-the-world pauses during every deployment. Migrate to CooperativeStickyAssignor.</p>
+      </div>
+    </div>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 6</div>
+        <p>The two metrics that define Kafka health in production are <code>UnderReplicatedPartitions</code> (durability) and <code>records-lag-max</code> (consumer health). If both are zero and trending flat, your cluster is healthy. Everything else is a detail.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 7 ═══════════════════════ -->
+  <div class="section" id="p7">
+    <div class="section-label">
+      <span class="phase-num">Pillar 07</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Google-Scale <em>&amp; Beyond</em></h2>
+    <p class="section-intro">At hyperscale, Kafka's partition immutability and metadata scaling limits become the ceiling. The solution is tiered storage, cluster federation, and a global control plane built on top of vanilla Kafka.</p>
+
+    <h3 class="sub-head">What Breaks at Each Scale Tier</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Scale</th><th>What Breaks First</th><th>Architectural Pivot Required</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1M msgs/day</strong></td><td>Nothing — a 3-broker cluster handles this trivially</td><td>Start with 3 brokers for HA; monitor from day 1</td></tr>
+        <tr><td><strong>100M msgs/day</strong></td><td>ZooKeeper latency under write-heavy metadata churn; consumer rebalance storms on deployments</td><td>Migrate to KRaft; use static consumer membership; adopt cooperative sticky rebalance</td></tr>
+        <tr><td><strong>1B msgs/day</strong></td><td>Broker JVM GC pauses; page cache eviction under mixed read/write; partition count ceiling</td><td>Tiered storage to S3/GCS; tune GC (G1 → ZGC); 10+ broker cluster; dedicated controller nodes</td></tr>
+        <tr><td><strong>1T msgs/day (LinkedIn-scale)</strong></td><td>Per-cluster partition metadata overhead; cross-DC fan-out latency; leader imbalance at this scale causes hot brokers</td><td>Kafka federation (multiple independent clusters per team); MirrorMaker 2 cross-DC; dedicated metadata cluster; custom tiered storage</td></tr>
+      </tbody>
+    </table>
+
+    <h3 class="sub-head">How Hyperscalers Solve Kafka's Limits</h3>
+    <p><strong>Tiered storage (Kafka 3.6+ GA, Confluent since 2022):</strong> Decouples log retention from broker disk. Hot segments (last N hours) stay on broker NVMe for low-latency reads. Older segments offload to S3/GCS at ~$0.023/GB/month vs $0.10+/GB for SSD. Brokers maintain a remote log metadata store (a Kafka topic) mapping offsets to object storage locations. Consumers transparently fetch old data from object storage — at 50–200ms latency vs 1–5ms for local reads. This enables infinite retention at object storage costs.</p>
+    <p><strong>Multi-tenancy at hyperscale:</strong> Vanilla Kafka has no namespace isolation. At Google scale, you'd build a control plane that provisions topics with per-tenant quota enforcement, per-tenant encryption keys (BYOK via KMS), rate limiting at the network layer, and chargeback metering. Pulsar's tenant/namespace model is closer to this natively — it's a key reason large cloud providers prefer Pulsar for internal multi-tenant infrastructure.</p>
+    <p><strong>Global coordination:</strong> Kafka has no global leader election or global partition map. A Google-scale equivalent would use Spanner for metadata (strong consistency, globally distributed, no ZooKeeper partitioning limits) and geo-sharded topic routing where the producer SDK automatically routes to the correct regional cluster based on the user's data residency requirements.</p>
+
+    <h3 class="sub-head">Data Residency &amp; Global Regulatory Compliance</h3>
+    <p>For GDPR/CCPA compliance, you need per-region clusters with no cross-border replication of PII. Implement at the application layer: topic naming convention (<code>eu-west.user-events</code>), a producer SDK that routes by the user's regulatory region, a global schema registry that enforces PII field annotations (via Avro field metadata), and a separate audit log cluster per regulatory zone. Cross-region analytics are done on anonymized/aggregated data only.</p>
+
+    <h3 class="sub-head">What a "Google Kafka" Would Look Like</h3>
+    <p>Google's internal equivalent is <strong>Pub/Sub</strong> (global, serverless, no partition management, auto-scaling) and <strong>Dataflow</strong> for stream processing. A "Google Kafka" would add: strongly consistent global offsets via Spanner (no partition ceiling), automatic partition splitting/merging (no fixed shard count — Kafka's deepest limitation), per-message TTL as first-class primitive, multi-region topics as first-class primitives (not bolted-on MirrorMaker), and SLO-driven tiered storage that automatically migrates segments based on ML-predicted access patterns.</p>
+
+    <div class="callout insight">
+      <div class="callout-icon">⚡</div>
+      <div class="callout-inner">
+        <div class="callout-title">L7/L8 Differentiator — The Fundamental Constraint</div>
+        <p>Kafka's deepest constraint at hyperscale is the <strong>partition as a fixed sharding unit</strong>. You cannot split a hot partition without downtime and breaking key-ordering guarantees. A truly Google-scale streaming system would use consistent hashing with virtual nodes (like Cassandra's vnodes) for seamless repartitioning, or a hierarchical partition tree that splits automatically when a partition exceeds a throughput threshold. This is the key innovation gap between Kafka and a next-generation streaming backbone — and stating it unprompted in an interview is a strong L8 signal.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Cost Optimization at Scale</h3>
+    <table class="nfr-table">
+      <thead><tr><th>Optimization</th><th>Scale Threshold</th><th>Savings Mechanism</th></tr></thead>
+      <tbody>
+        <tr><td>Tiered storage (S3 offload)</td><td>&gt;10TB retention</td><td>Replace expensive broker SSDs with $0.02/GB S3 for cold segments. 70–80% storage cost reduction.</td></tr>
+        <tr><td>LZ4/Zstd compression</td><td>Any scale</td><td>Typical 3–5× compression on JSON payloads. Reduces network, storage, and I/O costs.</td></tr>
+        <tr><td>Larger batches (higher linger.ms)</td><td>Any scale</td><td>Better compression ratio. Fewer broker socket operations. Set linger.ms=5–20ms in non-latency-critical producers.</td></tr>
+        <tr><td>Spot instances for consumers</td><td>&gt;100 consumer instances</td><td>Consumers are stateless (offsets in Kafka). Safe to run on spot. 60–80% compute cost reduction.</td></tr>
+        <tr><td>Reduce replication factor for cold topics</td><td>Any scale</td><td>Archival/compliance topics can use RF=2 + tiered storage instead of RF=3. 33% storage reduction.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout lesson">
+      <div class="callout-icon">🎯</div>
+      <div class="callout-inner">
+        <div class="callout-title">Key Takeaway — Pillar 7</div>
+        <p>At hyperscale, tiered storage and federation solve Kafka's disk and metadata limits. The unsolved problem — the one that would require a fundamentally new system — is the immutability of the partition as the sharding unit. That's the frontier of distributed streaming research.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════ PILLAR 8 ═══════════════════════ -->
+  <div class="section" id="p8">
+    <div class="section-label">
+      <span class="phase-num">Pillar 08</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Interview <em>Simulation</em></h2>
+    <p class="section-intro">A complete Staff-level design problem, a strong candidate answer with critique, and 10 rapid-fire Q&amp;As calibrated to L7/L8.</p>
+
+    <h3 class="sub-head">The Design Problem</h3>
+    <div class="quote-block" style="font-style:normal; font-size:17px; border-left-color: var(--gold); background: rgba(212,169,74,0.05);">
+      <strong>Design a real-time fraud detection system for a payments company processing 500,000 transactions per second globally.</strong> The system must flag suspicious transactions within 500ms end-to-end, support ML model hot-swaps without downtime, handle regulatory data residency requirements across 30 countries, and provide an audit trail that is tamper-evident and replayable for 7 years. Kafka is available. Walk me through your design.
+    </div>
+
+    <h3 class="sub-head">Strong Candidate Answer (L7/L8 Level)</h3>
+
+    <p><strong>Clarifying questions first:</strong> What is the false positive tolerance — 0.1%? 1%? What's the cost of a false positive (declined transaction) vs a false negative (missed fraud)? Is the block synchronous (hold the transaction until decision) or asynchronous (allow and flag)? Are we building the ML models or integrating existing ones? What's the P99 latency budget breakdown — network + Kafka + model inference = 500ms total?</p>
+
+    <p><strong>Stated assumptions:</strong> 500K TPS peak, P99 decision latency 500ms end-to-end, false positive rate &lt;0.1%, synchronous block for high-risk scores only (async flag for medium-risk), transactions contain PII governed by GDPR/CCPA, 30 regional data residency zones.</p>
+
+    <p><strong>High-level architecture:</strong></p>
+<pre>
+Payment Gateway (30 regions, each with local Kafka cluster)
+       │
+       ▼ (1) Produce to regional topic: {region}.transactions.raw (RF=3, acks=all)
+Kafka Cluster (per-region, data never leaves region)
+       │
+       ▼ (2) Flink job: feature extraction (velocity, device fingerprint, merchant history)
+       │      → produces to: {region}.transactions.enriched
+       │
+       ▼ (3) ML scoring service (Flink stateful function or sidecar):
+       │      → Feature vector from RocksDB state store (backed by Kafka changelog)
+       │      → Model inference: P99 &lt;50ms (ONNX runtime, GPU-accelerated)
+       │      → Produces score to: {region}.fraud.scores
+       │
+       ▼ (4) Decision service (microservice, not Kafka):
+       │      → Reads score synchronously via gRPC from scoring service
+       │      → Applies business rules (threshold, velocity caps)
+       │      → Writes decision to: {region}.fraud.decisions (for audit)
+       │      → Returns allow/block synchronously to payment gateway
+       │
+Audit Trail:
+  All topics: RF=3, acks=all, exactly-once, retained 7 years via tiered storage (S3)
+  Tamper-evidence: HMAC chain — each segment signs previous segment's hash (Merkle-tree-lite)
+  Immutable: S3 object lock (WORM) for compliance segments
+
+Model Hot-Swap (zero-downtime):
+  1. Deploy new model version as a SHADOW consumer group on {region}.transactions.enriched
+  2. Shadow group scores in parallel, writes to {region}.fraud.scores.shadow
+  3. Compare shadow vs production scores for 24 hours (statistical divergence test)
+  4. Flip production traffic via feature flag (atomic, per-region)
+  5. Old consumer group drains and stops — no downtime, no rebalance on production
+</pre>
+
+    <div class="callout insight">
+      <div class="callout-icon">📐</div>
+      <div class="callout-inner">
+        <div class="callout-title">Back-of-Envelope</div>
+        <p>500K TPS × 1KB avg = 500MB/s raw. × RF3 = 1.5GB/s replication. ÷ 30 regions = ~50MB/s per region on average. Each regional cluster: 10 brokers at 100MB/s each, 6GB RAM page cache, NVMe SSDs. Flink parallelism: 50 operators per region (matches partition count). Model inference: 500ms budget − 50ms network − 50ms Kafka − 50ms feature fetch = 350ms for inference. GPU-accelerated ONNX: ~5ms. Budget met with 30× headroom.</p>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Interviewer Critique</h3>
+    <div class="tier-grid">
+      <div class="tier-card t4">
+        <div class="tier-header"><span class="tier-badge">✅</span><span class="tier-label">What They Did Well</span><span class="tier-verdict">Strong Signal</span></div>
+        <div class="tier-body">
+          <p class="fail-reason">Correctly identified data residency → regional clusters (not one global cluster). Used Kafka changelog + RocksDB for stateful ML features — shows stream processing depth. Proposed shadow scoring for zero-downtime model swap — operationally mature. Addressed audit with exactly-once + tiered storage + WORM. Separated the decision service (synchronous, gRPC) from the Kafka async audit trail — avoids the common mistake of trying to do synchronous RPC over Kafka.</p>
+        </div>
+      </div>
+      <div class="tier-card t3">
+        <div class="tier-header"><span class="tier-badge">⚠️</span><span class="tier-label">What They Missed / Follow-up Pressure</span><span class="tier-verdict">L7 Gap Areas</span></div>
+        <div class="tier-body">
+          <p class="fail-reason"><strong>1. Enrichment lag cascade:</strong> If the Flink enrichment job lags, the decision misses the 500ms SLA. A staff answer includes a degraded mode: score on raw transaction features alone if enrichment lag exceeds 200ms. Implement a circuit breaker in the decision service that falls back to a simpler model.</p>
+          <p style="margin-top:10px;"><strong>2. Tamper-evidence depth:</strong> HMAC on individual events isn't sufficient for compliance. Need a Merkle tree over each segment's events, with the root hash stored in an append-only audit log (separate from the data log). This allows proving no insertion or deletion without replaying everything.</p>
+          <p style="margin-top:10px;"><strong>3. Cross-region model consistency:</strong> 30 regional models can drift — a fraud pattern detected in Europe may not be in the US model for hours. Need a federated learning pipeline that aggregates fraud signals cross-region without transferring PII. The model synchronization SLO should be explicit.</p>
+          <p style="margin-top:10px;"><strong>4. Partition count and consumer scaling:</strong> At 500K TPS per region, how many partitions? 500K TPS × 1KB = 500MB/s → need at least 10 partitions at 50MB/s each. But with 30 regions × 10 partitions × multiple topics = thousands of partitions. Was the metadata cost considered?</p>
+        </div>
+      </div>
+      <div class="tier-card t1">
+        <div class="tier-header"><span class="tier-badge">🏆</span><span class="tier-label">What an L8 Answer Would Add</span><span class="tier-verdict">L8 Differentiator</span></div>
+        <div class="tier-body">
+          <p class="fail-reason">An L8 candidate proactively addresses the back-pressure cascade: if the Flink enrichment job falls behind by 10 minutes due to a model inference spike, enriched-topic lag grows. Without rate limiting on the ML inference service, it will OOM. L8 proposes: per-partition processing SLO with Prometheus alerting, a lag-based Flink parallelism autoscaler (KEDA or custom), and an explicit degraded-mode policy documented as a runbook — "if enrichment lag &gt;2min, scoring service switches to raw-feature-only model, alert fires, on-call investigates." The L8 answer also addresses the global feedback loop: how do confirmed fraud labels (from human review) flow back into the training pipeline to continuously improve the model, and how that feedback is itself governed by data residency rules.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-head">Rapid-Fire Q&amp;A — 10 Questions</h3>
+    <p style="font-style:italic; color: var(--text3); margin-bottom: 18px;">Click each question to reveal the model answer.</p>
+
+    <div id="qa-list"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- FINAL SCORECARD -->
+  <div class="section" id="scorecard">
+    <div class="section-label">
+      <span class="phase-num">Final Scorecard</span>
+      <div class="section-hr"></div>
+    </div>
+    <h2>Staff-Level <em>Calibration</em></h2>
+    <p class="section-intro">How to self-assess your Kafka depth against L6/L7/L8 expectations.</p>
+
+    <div class="scorecard">
+      <div class="scorecard-header">Kafka Staff Engineer — Evaluation Rubric</div>
+      <div class="scorecard-row"><span>Core abstraction: log vs queue distinction</span><span class="score-val">L5 baseline</span></div>
+      <div class="scorecard-row"><span>Write/read path with page cache + zero-copy reasoning</span><span class="score-val">L6 baseline</span></div>
+      <div class="scorecard-row"><span>ISR mechanics: HW, LEO, ISR shrinkage implications</span><span class="score-val">L6 strong</span></div>
+      <div class="scorecard-row"><span>EOS: all three layers (idempotent + transactional + read_committed)</span><span class="score-val">L6 strong</span></div>
+      <div class="scorecard-row"><span>KRaft vs ZooKeeper: why KRaft eliminates ZK and the operational improvement</span><span class="score-val">L7 signal</span></div>
+      <div class="scorecard-row"><span>Leader epoch: how it fences stale leaders and prevents silent data loss</span><span class="score-val">L7 signal</span></div>
+      <div class="scorecard-row"><span>Partition immutability as the fundamental hyperscale constraint</span><span class="score-val">L7/L8 signal</span></div>
+      <div class="scorecard-row"><span>Tiered storage: mechanics, cost model, latency implications</span><span class="score-val">L7 signal</span></div>
+      <div class="scorecard-row"><span>Cross-region MM2: offset translation, bidirectional dedup, failover SLO</span><span class="score-val">L7 signal</span></div>
+      <div class="scorecard-row"><span>Complete fraud detection design: degraded mode, back-pressure cascade, federated learning</span><span class="score-val">L8 signal</span></div>
+      <div class="scorecard-total">
+        <span class="total-label">Target for Strong Hire (L6/Staff) — 7+ of 10</span>
+        <span class="total-val">/ 10</span>
+      </div>
+    </div>
+
+    <div class="callout success">
+      <div class="callout-icon">🏆</div>
+      <div class="callout-inner">
+        <div class="callout-title">Final Assessment</div>
+        <p>A candidate who can explain the partition as the unit of everything, derive Kafka's performance characteristics from first principles (sequential I/O + zero-copy + page cache), reason about ISR shrinkage and leader epoch for durability, explain exactly-once as three co-dependent layers, and design a system with explicit degraded modes and back-pressure handling — that candidate will pass a Google L6 Kafka interview with strong signal toward L7.</p>
+        <p style="margin-top:8px;"><strong>The L8 differentiator: knowing what Kafka fundamentally cannot do (seamless repartitioning without downtime) and articulating what a next-generation system would need to solve it.</strong></p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  Apache Kafka Staff Engineer Interview Guide · 8 Pillars · L6 / L7 / L8 Calibration
+</footer>
+
+<script>
+const qas = [
+  {
+    q: "Q1 — What is the difference between acks=1 and acks=all, and when would you choose each?",
+    a: "acks=1 means the partition leader acknowledges after writing to its local log, without waiting for follower replication. If the leader crashes before replication completes, the message is lost — the new leader won't have it. Use acks=1 for high-throughput, loss-tolerant workloads: metrics, application logs, non-financial event streams. acks=all waits for all in-sync replicas to acknowledge — combined with min.insync.replicas=2, this guarantees no data loss on leader crash. Use for financial transactions, user actions, audit trails. The trade-off is ~2–5ms additional latency per batch, which is acceptable for most production workloads. acks=0 (fire-and-forget) should almost never be used in production — it provides no guarantee even that the message reached the broker."
+  },
+  {
+    q: "Q2 — A consumer group is falling behind. How do you diagnose and fix it?",
+    a: "First, check consumer lag via kafka-consumer-groups.sh --describe or records-lag-max metric. Identify which partitions have the highest lag — uneven lag across partitions suggests a hot partition or a slow consumer instance. Then diagnose root cause: (1) Processing speed — is the consumer CPU-bound, I/O-bound, or blocked on a slow external call (DB, API)? (2) Poison message — one bad message causing retry loops, blocking all subsequent messages on that partition; fix with a dead-letter topic. (3) Consumer count < partition count — some partitions have no assigned consumer; add more consumer instances. Fixes in order: add DLT for poison messages, add consumer instances up to partition count, optimize processing logic (async processing, batch DB calls), increase partition count if consumers are maxed out and processing is already optimal."
+  },
+  {
+    q: "Q3 — Explain how log compaction works and when you would use it.",
+    a: "Log compaction runs a background cleaner thread that merges old log segments, retaining only the latest message per key. This enables Kafka to function as a changelog store — you can rebuild a service's state by replaying the compacted topic, knowing you'll see the final value for every key. A tombstone (message with null value) marks a key for deletion. Use cases: Kafka Streams state store backing (the changelog topic is automatically compacted), CDC topics where only the current row value matters, configuration/entity stores where you want 'last write wins' semantics. Limitations: compaction is asynchronous and not instantaneous — there's a window (min.cleanable.dirty.ratio controls when it triggers) where old values persist. Compacted topics should never be used as a primary database — random lookups are O(n). And compaction doesn't work with null keys."
+  },
+  {
+    q: "Q4 — What is ISR and why does monitoring it matter more than any other metric?",
+    a: "ISR (In-Sync Replicas) is the set of replicas fully caught up with the leader within replica.lag.time.max.ms (default 30s). Only ISR members are eligible for leader election. When you configure acks=all and min.insync.replicas=2, the broker only acknowledges a write when at least 2 ISR members have persisted it. If ISR shrinks below min.insync.replicas, producers receive NotEnoughReplicasException and writes fail. ISR shrinkage is the canary for cluster health: a follower falls out of ISR when it's slow (GC pause, disk I/O saturation, network congestion). An ISR at 1 (just the leader) means your cluster is one leader crash away from data loss — even with RF=3. UnderReplicatedPartitions > 0 must be a P1 alert that wakes someone up."
+  },
+  {
+    q: "Q5 — Explain Kafka's exactly-once semantics end-to-end.",
+    a: "EOS requires three co-dependent layers. Layer 1: Idempotent producer (enable.idempotence=true) — each producer session gets a PID (producer ID) and per-partition sequence number. The broker deduplicates messages with the same PID + sequence, preventing duplicates from producer retries. Layer 2: Transactional producer — the producer.initTransactions() / beginTransaction() / commitTransaction() API enables atomic writes across multiple partitions via a two-phase commit protocol coordinated by a transaction coordinator broker (hashed by transactional.id). Either all writes in a transaction are visible, or none. Layer 3: Consumer isolation — consumers must set isolation.level=read_committed to only read messages from committed transactions. Without this, a consumer reads both committed and aborted transaction data. For Kafka Streams, the framework atomically commits both the output records AND the input consumer offsets in a single transaction. All three layers must be correctly configured — any gap reopens the window for duplicates or loss."
+  },
+  {
+    q: "Q6 — How would you handle a hot partition in production?",
+    a: "A hot partition occurs when one key generates disproportionate traffic — a celebrity user, a viral product, a popular merchant. murmur2(hot_key) always maps to the same partition, creating a single write bottleneck. Solutions in order of invasiveness: (1) Key salting — append a random suffix: user_123_0 through user_123_7. Fan-in at the consumer by stripping the suffix. Breaks per-key ordering but distributes load. (2) Custom partitioner — implement the Partitioner interface; maintain a dynamic hotkey list and route those keys round-robin across a dedicated partition range. (3) Separate topic for hot keys — producer SDK detects hot keys by throughput threshold and routes them to a high-partition-count overflow topic. Consumer reads from both topics. (4) Pre-aggregation — aggregate high-frequency events (e.g., view counts) before producing: one message per second instead of one per view. The root cause is always key design — the best time to fix it is before launch."
+  },
+  {
+    q: "Q7 — What happens during a Kafka consumer group rebalance and how do you minimize disruption?",
+    a: "A rebalance triggers when a consumer joins, leaves, or times out (session.timeout.ms exceeded), or when partitions are added to a subscribed topic. In the default eager protocol, all consumers stop processing, surrender their partitions to the group coordinator, wait for a new partition assignment, and restart — a stop-the-world pause that can take 30–60 seconds for large groups. Minimize impact with: (1) Incremental cooperative rebalance (Kafka 2.4+ CooperativeStickyAssignor) — only the consumers whose partitions are being reassigned pause; the rest continue processing. This converts a full stop-the-world into a small targeted pause. (2) Static group membership (group.instance.id) — a consumer with a static ID rejoins with the same partition assignment after a restart, bypassing rebalance entirely for planned restarts. (3) Tune session.timeout.ms and heartbeat.interval.ms — default session timeout is 45s; reduce to 15–20s for faster failure detection, but don't go below 3× heartbeat interval."
+  },
+  {
+    q: "Q8 — How does KRaft differ from ZooKeeper and what are the real operational improvements?",
+    a: "ZooKeeper is an external dependency with its own cluster, own failure modes, own security model, and own operational expertise requirement — a second complex distributed system to run alongside Kafka. Controller failover with ZooKeeper takes 30–60 seconds (ZK session timeout + leader election + metadata reload). KRaft (Kafka Raft Metadata mode, GA in Kafka 3.3+) stores all cluster metadata in a Kafka topic (__cluster_metadata) replicated across a dedicated controller quorum using the Raft consensus protocol. Failover drops to under 1 second. The metadata topic can hold millions of partitions vs. ~200K in ZooKeeper (ZK's in-memory model caps at ~200K partitions before latency degrades). Operationally: one less cluster to provision, monitor, upgrade, and secure. Single auth model. No ZK expertise required. The migration path is: start in combined mode (broker + controller on same nodes), then separate into dedicated controller quorum nodes for large clusters."
+  },
+  {
+    q: "Q9 — How would you design a multi-region active-active Kafka setup?",
+    a: "Use MirrorMaker 2 (MM2) for bidirectional replication with topic prefixing to prevent loops: us-east.orders and eu-west.orders are distinct topics in both clusters; MM2 knows not to re-replicate what it received from the other side. Each region produces to its local cluster only — this enforces data residency and keeps write latency local. MM2 handles offset translation via an offset-sync topic, so a consumer failing over from primary to secondary can resume from the correct position without replaying from the beginning. Conflict resolution is always application-level — Kafka provides no built-in CRDT or vector clock. Design writes to be region-local (no cross-region writes to the same key), or use last-write-wins with event timestamps for entities that can be written from any region. Monitor replication lag as an SLO — acceptable lag defines your RPO for disaster recovery. Alert if lag exceeds your RPO threshold (typically 30–60s for most use cases)."
+  },
+  {
+    q: "Q10 — What is Kafka's fundamental constraint at hyperscale, and how would you architect around it?",
+    a: "The fundamental constraint is partition immutability: a partition is a fixed sharding unit that cannot be split without downtime and without breaking key-ordering guarantees for messages produced after the split. At 500K TPS per key space, you might need to split a hot partition in production — and you can't, without a full topic migration (create new topic with more partitions, dual-write during migration, cut over consumers, decommission old topic). Architectural mitigations: over-partition aggressively on day one (2–3× expected peak consumers); use key salting for known high-cardinality hotkeys; design topics at the granularity of the anticipated maximum parallelism. The deeper fix requires a fundamentally different architecture — consistent hashing with virtual nodes (like Cassandra), where the physical-to-logical mapping can be updated without stopping writes. A Google-scale streaming system would also need the controller plane (today Raft-based KRaft) to use a globally distributed metadata store (like Spanner) to remove the per-cluster partition count ceiling and enable global topic namespaces."
+  }
+];
+
+const list = document.getElementById('qa-list');
+qas.forEach((qa, i) => {
+  const item = document.createElement('div');
+  item.className = 'qa-item';
+  item.innerHTML = `
+    <div class="qa-q" onclick="this.parentElement.classList.toggle('open')">
+      <span>${qa.q}</span>
+      <span class="qa-arrow">▶</span>
+    </div>
+    <div class="qa-a">${qa.a}</div>
+  `;
+  list.appendChild(item);
+});
+</script>
+
+</body>
+</html>
