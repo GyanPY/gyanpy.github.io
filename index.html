@@ -2,21 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>System Design Hub</title>
+  <title>System Design L6 Prep</title>
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
-<h1>🚀 System Design Knowledge Hub</h1>
+<div class="container">
+  
+  <div class="sidebar">
+    <h2>📚 Topics</h2>
+    <ul id="nav"></ul>
+  </div>
 
-<input type="text" id="searchBox" placeholder="Search concepts or interview questions..." />
+  <div class="content">
+    <iframe id="viewer"></iframe>
+  </div>
 
-<h2>📚 Concepts</h2>
-<ul id="conceptList"></ul>
+</div>
 
-<h2>🎯 Interview Questions</h2>
-<ul id="interviewList"></ul>
-
-<script src="assets/js/search.js"></script>
+<script src="assets/js/app.js"></script>
 </body>
 </html>
