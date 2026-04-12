@@ -1,0 +1,24 @@
+{
+  "Kafka": [
+    {
+      "title": "Overview",
+      "file": "pages/kafka/overview.html"
+    },
+    {
+      "title": "Internals",
+      "file": "pages/kafka/internals.html"
+    }
+  ],
+  "MySQL": [
+    {
+      "title": "Internals",
+      "file": "pages/mysql/internals.html"
+    }
+  ],
+  "Redis": [
+    {
+      "title": "Insights",
+      "file": "pages/redis/insights.html"
+    }
+  ]
+}
