@@ -78,3 +78,52 @@ iframe {
   border: none;
   background: white;
 }
+
+/* FOLDER HEADER (System Design, Twitter, Rate Limiter) */
+.folder-header {
+  cursor: pointer;
+  padding: 6px 10px;
+  color: #cbd5f5;
+  transition: background 0.2s ease;
+}
+
+/* hover effect */
+.folder-header:hover {
+  background-color: #1e293b;
+}
+
+/* nested indentation handled via JS padding-left */
+
+/* submenu animation feel */
+.submenu {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 4px;
+}
+
+/* file items */
+.nav-item {
+  margin: 4px 0;
+  cursor: pointer;
+  color: #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+/* hover */
+.nav-item:hover {
+  color: #22c55e;
+  transform: translateX(3px);
+}
+
+/* active file */
+.nav-item.active {
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.folder-header::before {
+  content: "▶ ";
+  font-size: 10px;
+  margin-right: 4px;
+  transition: transform 0.2s;
+}
