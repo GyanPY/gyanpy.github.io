@@ -1,14 +1,24 @@
 {
-  "Kafka": [
-    {
-      "title": "Internals",
-      "file": "pages/kafka/kafka.html"
-    }
-  ],
-  "Cassandra" : [
-    {
-      "title": "Internals",
-      "file": "pages/cassandra/cassandra.html"
-    }
-  ]
+  "Concepts": {
+    "Kafka": [
+      {
+        "title": "Internals",
+        "file": "pages/kafka/kafka.html"
+      }
+    ],
+    "Cassandra": [
+      {
+        "title": "Internals",
+        "file": "pages/cassandra/cassandra.html"
+      }
+    ]
+  },
+  "Interview": {
+    "System Design": [
+      {
+        "title": "Design Twitter",
+        "file": "pages/interview/twitter.html"
+      }
+    ]
+  }
 }
