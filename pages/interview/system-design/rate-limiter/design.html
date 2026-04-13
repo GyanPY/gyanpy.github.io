@@ -1,0 +1,2698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rate Limiter — System Design Interview Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent-blue: #58a6ff;
+    --strong-hire: #F5A623;
+    --hire: #00BFA5;
+    --lean-hire: #FFD700;
+    --no-hire: #FF6B6B;
+    --sidebar-w: 280px;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    line-height: 1.7;
+    opacity: 0;
+    animation: fadeIn 0.6s ease forwards;
+  }
+
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  /* ── Progress bar ── */
+  #progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--hire));
+    width: 0%;
+    z-index: 1000;
+    transition: width 0.1s;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: var(--sidebar-w);
+    height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  #sidebar-header {
+    padding: 20px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+  }
+
+  #sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 10px;
+  }
+
+  #search-box {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 7px 12px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #search-box:focus { border-color: var(--accent-blue); }
+  #search-box::placeholder { color: var(--text-muted); }
+
+  #nav-list {
+    list-style: none;
+    padding: 8px 0;
+    flex: 1;
+  }
+
+  .nav-item a {
+    display: block;
+    padding: 6px 16px;
+    font-family: 'Source Serif 4', serif;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    line-height: 1.4;
+  }
+  .nav-item a:hover {
+    color: var(--text);
+    background: rgba(88,166,255,0.06);
+    border-left-color: var(--accent-blue);
+  }
+  .nav-item.active a {
+    color: var(--accent-blue);
+    border-left-color: var(--accent-blue);
+    background: rgba(88,166,255,0.08);
+  }
+
+  .nav-item.sub a { padding-left: 28px; font-size: 12px; }
+  .nav-item.tier-no-hire.active a { color: var(--no-hire); border-left-color: var(--no-hire); }
+  .nav-item.tier-lean-hire.active a { color: var(--lean-hire); border-left-color: var(--lean-hire); }
+  .nav-item.tier-hire.active a { color: var(--hire); border-left-color: var(--hire); }
+  .nav-item.tier-strong-hire.active a { color: var(--strong-hire); border-left-color: var(--strong-hire); }
+
+  .nav-section-label {
+    padding: 10px 16px 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  /* ── Hamburger ── */
+  #hamburger {
+    display: none;
+    position: fixed;
+    top: 12px; left: 12px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    cursor: pointer;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  /* ── Main content ── */
+  #main {
+    margin-left: var(--sidebar-w);
+    padding: 60px 64px;
+    max-width: calc(var(--sidebar-w) + 900px);
+  }
+
+  /* ── Hero ── */
+  #hero {
+    margin-bottom: 72px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .hero-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  h1.hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(36px, 5vw, 64px);
+    font-weight: 900;
+    line-height: 1.1;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+
+  h1.hero-title em {
+    font-style: italic;
+    color: var(--accent-blue);
+  }
+
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+
+  .meta-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ── Section headers ── */
+  .section-wrapper {
+    margin-bottom: 80px;
+    scroll-margin-top: 24px;
+  }
+
+  .section-header {
+    margin-bottom: 36px;
+  }
+
+  .section-number {
+    font-family: 'Playfair Display', serif;
+    font-size: 72px;
+    font-weight: 900;
+    color: var(--surface2);
+    line-height: 1;
+    margin-bottom: -12px;
+    display: block;
+    user-select: none;
+  }
+
+  h2.section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(24px, 3vw, 36px);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .section-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-blue);
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+    display: block;
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, var(--accent-blue), transparent);
+    margin: 20px 0 36px;
+  }
+
+  /* ── Phase prompt blockquote ── */
+  .phase-prompt {
+    border-left: 3px solid var(--accent-blue);
+    padding: 16px 20px;
+    background: rgba(88,166,255,0.05);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin-bottom: 36px;
+    font-style: italic;
+    color: var(--text-muted);
+    position: relative;
+  }
+  .phase-prompt::before {
+    content: '"';
+    font-family: 'Playfair Display', serif;
+    font-size: 60px;
+    color: var(--accent-blue);
+    opacity: 0.3;
+    position: absolute;
+    top: -8px; left: 10px;
+    line-height: 1;
+  }
+  .phase-prompt p { padding-left: 20px; }
+
+  /* ── Tier cards ── */
+  .tier-card {
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    margin-bottom: 28px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, transform 0.2s;
+    scroll-margin-top: 24px;
+  }
+  .tier-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+
+  .tier-card[data-tier="no-hire"] { border-left: 4px solid var(--no-hire); }
+  .tier-card[data-tier="lean-hire"] { border-left: 4px solid var(--lean-hire); }
+  .tier-card[data-tier="hire"] { border-left: 4px solid var(--hire); }
+  .tier-card[data-tier="strong-hire"] { border-left: 4px solid var(--strong-hire); }
+
+  .tier-card-header {
+    padding: 20px 24px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    cursor: pointer;
+    user-select: none;
+    gap: 16px;
+  }
+
+  .tier-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .tier-card[data-tier="no-hire"] .tier-title { color: var(--no-hire); }
+  .tier-card[data-tier="lean-hire"] .tier-title { color: var(--lean-hire); }
+  .tier-card[data-tier="hire"] .tier-title { color: var(--hire); }
+  .tier-card[data-tier="strong-hire"] .tier-title { color: var(--strong-hire); }
+
+  .tier-badge {
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .tier-card[data-tier="no-hire"] .tier-badge { background: rgba(255,107,107,0.15); color: var(--no-hire); border: 1px solid rgba(255,107,107,0.3); }
+  .tier-card[data-tier="lean-hire"] .tier-badge { background: rgba(255,215,0,0.12); color: var(--lean-hire); border: 1px solid rgba(255,215,0,0.3); }
+  .tier-card[data-tier="hire"] .tier-badge { background: rgba(0,191,165,0.12); color: var(--hire); border: 1px solid rgba(0,191,165,0.3); }
+  .tier-card[data-tier="strong-hire"] .tier-badge { background: rgba(245,166,35,0.12); color: var(--strong-hire); border: 1px solid rgba(245,166,35,0.3); }
+
+  .collapse-icon {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform 0.3s;
+    flex-shrink: 0;
+  }
+  .tier-card.collapsed .collapse-icon { transform: rotate(-90deg); }
+
+  .tier-card-body {
+    padding: 0 24px 24px;
+    overflow: hidden;
+    transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s;
+  }
+  .tier-card.collapsed .tier-card-body {
+    max-height: 0 !important;
+    opacity: 0;
+    padding-bottom: 0;
+  }
+
+  /* ── Callout boxes ── */
+  .callout {
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .callout-why {
+    background: rgba(255,107,107,0.07);
+    border: 1px solid rgba(255,107,107,0.2);
+    border-left: 3px solid var(--no-hire);
+  }
+  .callout-success {
+    background: rgba(0,191,165,0.07);
+    border: 1px solid rgba(0,191,165,0.2);
+    border-left: 3px solid var(--hire);
+  }
+  .callout-upgrade {
+    background: rgba(255,215,0,0.06);
+    border: 1px solid rgba(255,215,0,0.2);
+    border-left: 3px solid var(--lean-hire);
+  }
+  .callout-wow {
+    background: rgba(245,166,35,0.07);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-left: 3px solid var(--strong-hire);
+  }
+  .callout-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .callout-why .callout-title { color: var(--no-hire); }
+  .callout-success .callout-title { color: var(--hire); }
+  .callout-upgrade .callout-title { color: var(--lean-hire); }
+  .callout-wow .callout-title { color: var(--strong-hire); }
+
+  /* ── Interviewer quote ── */
+  .interviewer-quote {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin: 16px 0;
+    position: relative;
+    font-style: italic;
+    color: var(--text-muted);
+  }
+  .interviewer-quote::before {
+    content: '"';
+    font-family: 'Playfair Display', serif;
+    font-size: 80px;
+    color: var(--accent-blue);
+    opacity: 0.15;
+    position: absolute;
+    top: -10px;
+    left: 12px;
+    line-height: 1;
+  }
+  .interviewer-quote p { padding-left: 24px; }
+  .interviewer-quote-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: block;
+    padding-left: 24px;
+    opacity: 0.7;
+  }
+
+  /* ── Code blocks ── */
+  .code-wrapper {
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 16px 0;
+    border: 1px solid var(--border);
+  }
+  .code-header {
+    background: #1e2430;
+    padding: 8px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-lang {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+  }
+  .copy-btn {
+    background: rgba(88,166,255,0.12);
+    border: 1px solid rgba(88,166,255,0.25);
+    color: var(--accent-blue);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { background: rgba(88,166,255,0.2); }
+  .copy-btn.copied { color: var(--hire); border-color: var(--hire); background: rgba(0,191,165,0.12); }
+
+  pre {
+    background: #010409;
+    padding: 18px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #cdd9e5;
+    margin: 0;
+    white-space: pre;
+  }
+
+  /* ── Diagram blocks ── */
+  .diagram-wrapper {
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 16px 0;
+    border: 1px solid var(--border);
+  }
+  .diagram-header {
+    background: #1a1a2e;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .diagram-badge {
+    background: rgba(88,166,255,0.15);
+    border: 1px solid rgba(88,166,255,0.3);
+    color: var(--accent-blue);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+  .diagram-wrapper pre {
+    background: #010409;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* ── Tables ── */
+  .table-wrapper {
+    overflow-x: auto;
+    margin: 20px 0;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  thead tr {
+    background: linear-gradient(135deg, #1a2744, #1c2a3a);
+    border-bottom: 2px solid var(--border);
+  }
+  th {
+    padding: 12px 16px;
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+  td { padding: 11px 16px; color: var(--text-muted); vertical-align: top; }
+  td:first-child { color: var(--text); font-weight: 500; }
+
+  /* Tier-colored cells */
+  .cell-no-hire { color: var(--no-hire) !important; }
+  .cell-lean-hire { color: var(--lean-hire) !important; }
+  .cell-hire { color: var(--hire) !important; }
+  .cell-strong-hire { color: var(--strong-hire) !important; }
+
+  /* ── Prose ── */
+  p { margin-bottom: 14px; color: var(--text-muted); }
+  
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 28px 0 12px;
+  }
+  h4 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 20px 0 8px;
+    letter-spacing: 0.01em;
+  }
+
+  mark {
+    background: rgba(245,166,35,0.2);
+    color: var(--strong-hire);
+    border-radius: 3px;
+    padding: 0 3px;
+    font-style: normal;
+  }
+
+  ul, ol {
+    padding-left: 20px;
+    margin-bottom: 14px;
+  }
+  li {
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  li strong { color: var(--text); }
+
+  strong { color: var(--text); }
+  em { color: var(--text); font-style: italic; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--accent-blue);
+  }
+
+  /* ── Key phrases ── */
+  .key-phrases {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .key-phrase {
+    background: rgba(88,166,255,0.1);
+    border: 1px solid rgba(88,166,255,0.2);
+    color: var(--accent-blue);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 13px;
+    font-style: italic;
+    font-family: 'Source Serif 4', serif;
+  }
+
+  /* ── Fatal mistakes / signals ── */
+  .signal-list {
+    list-style: none;
+    padding: 0;
+  }
+  .signal-list li {
+    padding: 5px 0 5px 20px;
+    position: relative;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .signal-list.bad li::before { content: '✗'; position: absolute; left: 0; color: var(--no-hire); }
+  .signal-list.good li::before { content: '✓'; position: absolute; left: 0; color: var(--hire); }
+  .signal-list.wow li::before { content: '★'; position: absolute; left: 0; color: var(--strong-hire); }
+
+  /* ── Progression summary ── */
+  .progression-card {
+    background: linear-gradient(135deg, #161b22, #1c2128);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin: 24px 0;
+  }
+  .progression-card h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-top: 0;
+  }
+
+  /* ── Deep dive section ── */
+  .deep-dive-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .deep-dive-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+  }
+  .deep-dive-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+  .deep-dive-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* ── Algorithm approach cards ── */
+  .approach-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .approach-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .approach-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  }
+  .approach-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    margin-bottom: 8px;
+  }
+
+  /* ── Priority cards ── */
+  .priority-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .priority-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .priority-card::before {
+    content: attr(data-num);
+    position: absolute;
+    top: -10px; right: -5px;
+    font-family: 'Playfair Display', serif;
+    font-size: 80px;
+    font-weight: 900;
+    color: rgba(88,166,255,0.06);
+    line-height: 1;
+  }
+  .priority-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .priority-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* ── Scorecard ── */
+  .scorecard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    margin: 20px 0;
+  }
+  .score-cell {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .score-dim { font-size: 12px; color: var(--text-muted); }
+  .score-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--strong-hire);
+  }
+
+  /* ── Back to top ── */
+  #back-to-top {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    font-size: 18px;
+    transition: all 0.2s;
+    z-index: 50;
+    cursor: pointer;
+    opacity: 0;
+  }
+  #back-to-top.visible {
+    opacity: 1;
+  }
+  #back-to-top:hover {
+    background: var(--accent-blue);
+    color: white;
+    border-color: var(--accent-blue);
+    transform: translateY(-2px);
+  }
+
+  /* ── Config answer block ── */
+  .config-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .config-block h4 {
+    color: var(--accent-blue);
+    margin-top: 0;
+  }
+  .config-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  .config-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-blue);
+    min-width: 160px;
+    flex-shrink: 0;
+  }
+  .config-value { color: var(--text-muted); }
+
+  /* ── Mobile ── */
+  @media (max-width: 768px) {
+    #sidebar {
+      transform: translateX(calc(-1 * var(--sidebar-w)));
+    }
+    #sidebar.open {
+      transform: translateX(0);
+      box-shadow: 4px 0 30px rgba(0,0,0,0.5);
+    }
+    #hamburger { display: flex; }
+    #main {
+      margin-left: 0;
+      padding: 48px 20px;
+    }
+    .approach-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Search highlighting */
+  .search-highlight { background: rgba(245,166,35,0.3); border-radius: 2px; }
+  .nav-item.hidden { display: none; }
+
+  /* Overlay for mobile */
+  #sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+  #sidebar-overlay.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<button id="hamburger" aria-label="Toggle navigation">☰</button>
+<div id="sidebar-overlay"></div>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div id="sidebar-header">
+    <div id="sidebar-title">Rate Limiter · Study Guide</div>
+    <input id="search-box" type="search" placeholder="Search sections..." aria-label="Search sections">
+  </div>
+  <ul id="nav-list">
+    <li class="nav-section-label">Introduction</li>
+    <li class="nav-item"><a href="#session-config">Session Configuration</a></li>
+
+    <li class="nav-section-label">Phase 1 · 0–5 min</li>
+    <li class="nav-item"><a href="#phase1">Problem Clarification</a></li>
+    <li class="nav-item sub tier-no-hire"><a href="#p1-no-hire">❌ No Hire</a></li>
+    <li class="nav-item sub tier-lean-hire"><a href="#p1-lean-hire">⚠️ Lean Hire</a></li>
+    <li class="nav-item sub tier-hire"><a href="#p1-hire">✅ Hire (L6)</a></li>
+    <li class="nav-item sub tier-strong-hire"><a href="#p1-strong-hire">🏆 Strong Hire</a></li>
+
+    <li class="nav-section-label">Phase 2 · 5–10 min</li>
+    <li class="nav-item"><a href="#phase2">Requirements Gathering</a></li>
+    <li class="nav-item sub tier-no-hire"><a href="#p2-no-hire">❌ No Hire</a></li>
+    <li class="nav-item sub tier-lean-hire"><a href="#p2-lean-hire">⚠️ Lean Hire</a></li>
+    <li class="nav-item sub tier-hire"><a href="#p2-hire">✅ Hire (L6)</a></li>
+    <li class="nav-item sub tier-strong-hire"><a href="#p2-strong-hire">🏆 Strong Hire</a></li>
+
+    <li class="nav-section-label">Phase 3 · 10–25 min</li>
+    <li class="nav-item"><a href="#phase3">High-Level Design</a></li>
+    <li class="nav-item sub tier-no-hire"><a href="#p3-no-hire">❌ No Hire</a></li>
+    <li class="nav-item sub tier-lean-hire"><a href="#p3-lean-hire">⚠️ Lean Hire</a></li>
+    <li class="nav-item sub tier-hire"><a href="#p3-hire">✅ Hire (L6)</a></li>
+    <li class="nav-item sub tier-strong-hire"><a href="#p3-strong-hire">🏆 Strong Hire</a></li>
+    <li class="nav-item sub"><a href="#algorithms">🔬 Algorithm Deep Dive</a></li>
+
+    <li class="nav-section-label">Phase 4 · 25–45 min</li>
+    <li class="nav-item"><a href="#phase4">Deep Dive: Hot Keys</a></li>
+    <li class="nav-item sub tier-no-hire"><a href="#p4-no-hire">❌ No Hire</a></li>
+    <li class="nav-item sub tier-lean-hire"><a href="#p4-lean-hire">⚠️ Lean Hire</a></li>
+    <li class="nav-item sub tier-hire"><a href="#p4-hire">✅ Hire (L6)</a></li>
+    <li class="nav-item sub tier-strong-hire"><a href="#p4-strong-hire">🏆 Strong Hire</a></li>
+    <li class="nav-item"><a href="#phase4b">Curveball: Org Limits</a></li>
+    <li class="nav-item sub tier-no-hire"><a href="#p4b-no-hire">❌ No Hire</a></li>
+    <li class="nav-item sub tier-lean-hire"><a href="#p4b-lean-hire">⚠️ Lean Hire</a></li>
+    <li class="nav-item sub tier-hire"><a href="#p4b-hire">✅ Hire (L6)</a></li>
+    <li class="nav-item sub tier-strong-hire"><a href="#p4b-strong-hire">🏆 Strong Hire</a></li>
+
+    <li class="nav-section-label">Phase 5 · 45–55 min</li>
+    <li class="nav-item"><a href="#phase5">Bottlenecks &amp; Scale</a></li>
+    <li class="nav-item sub"><a href="#100x">100x Traffic</a></li>
+    <li class="nav-item sub"><a href="#debug-3am">3am Debugging</a></li>
+    <li class="nav-item sub"><a href="#thundering-herd">Thundering Herd</a></li>
+
+    <li class="nav-section-label">Phase 6 · Debrief</li>
+    <li class="nav-item"><a href="#phase6">Final Debrief</a></li>
+    <li class="nav-item sub"><a href="#scorecard">Scorecard</a></li>
+    <li class="nav-item sub"><a href="#study-priorities">Study Priorities</a></li>
+    <li class="nav-item sub"><a href="#advanced-topics">Advanced Topics</a></li>
+  </ul>
+</nav>
+
+<main id="main">
+
+  <section id="hero">
+    <span class="hero-label">System Design Interview Guide · L6 / L7 Bar</span>
+    <h1 class="hero-title">Rate<br><em>Limiter</em></h1>
+    <p style="max-width:560px;font-size:16px;">A complete answer progression from No Hire to Strong Hire across all six interview phases. Study mode (aomb) — every tier shown.</p>
+    <div class="hero-meta">
+      <span class="meta-pill">⏱ 60 min interview</span>
+      <span class="meta-pill">🎯 L6 target (L7 signals noted)</span>
+      <span class="meta-pill">📋 6 phases covered</span>
+      <span class="meta-pill">🔬 Algorithms deep-dived</span>
+    </div>
+  </section>
+
+  <!-- SESSION CONFIG -->
+  <section class="section-wrapper" id="session-config">
+    <div class="section-header">
+      <span class="section-number">00</span>
+      <h2 class="section-title">Session Configuration</h2>
+      <span class="section-subtitle">Level 2 · Balanced · Study Mode (aomb)</span>
+    </div>
+    <div class="section-divider"></div>
+    <div class="config-block">
+      <h4>Interview Context</h4>
+      <div class="config-item"><span class="config-label">Preparation Level</span><span class="config-value">Level 2 — Practicing for L6 (held to L6 bar)</span></div>
+      <div class="config-item"><span class="config-label">Focus Area</span><span class="config-value">No preference — balanced across all dimensions</span></div>
+      <div class="config-item"><span class="config-label">Mode</span><span class="config-value">Study (aomb) — answer progressions shown for each phase</span></div>
+    </div>
+    <div class="config-block">
+      <h4>Interviewer-Provided Context</h4>
+      <div class="config-item"><span class="config-label">Business goal</span><span class="config-value">API quota enforcement for a multi-tenant SaaS platform (think Stripe, Twilio)</span></div>
+      <div class="config-item"><span class="config-label">Scale</span><span class="config-value">500K requests/second globally, 10M unique API keys</span></div>
+      <div class="config-item"><span class="config-label">Deployment</span><span class="config-value">Globally distributed, 5 regions</span></div>
+      <div class="config-item"><span class="config-label">Accuracy tolerance</span><span class="config-value">Soft limits okay (±5% acceptable)</span></div>
+      <div class="config-item"><span class="config-label">Failure mode</span><span class="config-value">Fail open — availability over protection</span></div>
+      <div class="config-item"><span class="config-label">Existing infra</span><span class="config-value">No existing rate limiter; regional API gateways available</span></div>
+    </div>
+  </section>
+
+  <!-- PHASE 1 -->
+  <section class="section-wrapper" id="phase1">
+    <div class="section-header">
+      <span class="section-number">01</span>
+      <h2 class="section-title">Problem Clarification</h2>
+      <span class="section-subtitle">Phase 1 · 0–5 minutes</span>
+    </div>
+    <div class="section-divider"></div>
+
+    <div class="phase-prompt">
+      <p>The interviewer leans back and says: <strong>"Design a rate limiter."</strong> That's it. That's all you're given. The clock is ticking. What do you do first?</p>
+    </div>
+
+    <!-- No Hire -->
+    <div class="tier-card" data-tier="no-hire" id="p1-no-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div>
+          <div class="tier-title">❌ No Hire</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L4 / Weak L5 response</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="tier-badge">NO HIRE</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p><em>What they say:</em> "Okay, so a rate limiter limits the rate of requests. We'll need to track how many requests each user makes. I'm thinking we can use Redis to store counters — it's fast and supports atomic increments. We'll have an API gateway that checks Redis before forwarding requests. If the count exceeds the limit, we return a 429. For the algorithm, I'll use a sliding window because it's more accurate than fixed windows. Let me draw the architecture..."</p>
+
+        <div class="callout callout-why">
+          <div class="callout-title">Why this fails</div>
+          <ul class="signal-list bad">
+            <li>Jumps straight to solution without understanding the problem</li>
+            <li>Assumes "user" is the rate limit key without asking</li>
+            <li>Assumes single algorithm fits all cases</li>
+            <li>No clarification on where this runs (API gateway? Service level? Client?)</li>
+            <li>Picked Redis and sliding window without knowing requirements</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Jumped to implementation. No requirements gathering. Concerning — likely builds features without understanding problem space."</p>
+        </div>
+
+        <h4>Fatal Mistakes</h4>
+        <ul class="signal-list bad">
+          <li>Zero clarifying questions asked</li>
+          <li>Technology choices made with no context</li>
+          <li>Assumed scope (user-based rate limiting only)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Lean Hire -->
+    <div class="tier-card" data-tier="lean-hire" id="p1-lean-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div>
+          <div class="tier-title">⚠️ Lean Hire</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L5, not L6</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="tier-badge">LEAN HIRE</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p><em>What they say:</em> "Before I dive in, I'd like to ask some clarifying questions. First, what's the scale we're designing for — how many requests per second? Second, is this for a specific service or a general-purpose rate limiter? Third, what should happen when a user is rate limited — hard reject or graceful degradation? And what are we rate limiting by — user ID, IP address, API key?"</p>
+
+        <div class="callout callout-success">
+          <div class="callout-title">What's good</div>
+          <ul class="signal-list good">
+            <li>Pauses to ask questions (good instinct)</li>
+            <li>Thinks about scale</li>
+            <li>Considers the rate limit key dimension</li>
+          </ul>
+        </div>
+
+        <div class="callout callout-why">
+          <div class="callout-title">What's missing for L6</div>
+          <ul class="signal-list bad">
+            <li>Questions are a checklist, not structured thinking</li>
+            <li>Doesn't categorize questions (functional vs. non-functional)</li>
+            <li>Doesn't ask about existing infrastructure or constraints</li>
+            <li>Doesn't ask WHY we need a rate limiter (threat model, cost control, fairness?)</li>
+            <li>Misses distributed systems complexity (is this single-node or global?)</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Asked questions, which is good. But felt like a memorized checklist. Didn't demonstrate deep understanding of problem space."</p>
+        </div>
+
+        <div class="callout callout-upgrade">
+          <div class="callout-title">Upgrade needed</div>
+          <p>To reach L6: structured approach to clarification, understanding of business context (WHY), and awareness of where the hard problems lie in distributed rate limiting.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hire L6 -->
+    <div class="tier-card" data-tier="hire" id="p1-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div>
+          <div class="tier-title">✅ Hire</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L6 bar</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="tier-badge">HIRE · L6</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p><em>What they say:</em> "Thanks for the problem. Rate limiting is deceptively complex because the hard parts depend heavily on context. Before I architect anything, I want to make sure I understand the problem space.</p>
+        <p>Let me structure my questions into three areas:</p>
+        <p><strong>First, the business context:</strong> What's the primary goal here? Are we protecting against abuse and DDoS? Enforcing API quotas for a paid tier system? Ensuring fairness across tenants? Or protecting downstream services from overload? The goal shapes everything.</p>
+        <p><strong>Second, the scope:</strong> Is this a centralized rate limiting service that multiple teams will use, or embedded rate limiting for a specific API? Will this run at the edge, at the API gateway level, or within individual services? And what's our deployment model — single region or globally distributed?</p>
+        <p><strong>Third, constraints:</strong> Do we have existing infrastructure I should leverage — an API gateway like Kong, a service mesh like Istio? What's our tolerance for false positives versus false negatives? In other words, is it worse to accidentally rate limit a legitimate user, or to let some abuse through?</p>
+        <p>The reason I ask these upfront is that a rate limiter for a single-region API with 10K QPS looks completely different from a globally distributed system handling millions of QPS with strict consistency requirements."</p>
+
+        <div class="callout callout-success">
+          <div class="callout-title">L6 signals demonstrated</div>
+          <ul class="signal-list good">
+            <li>Structured thinking (three clear categories)</li>
+            <li>Business context awareness (asks WHY, not just WHAT)</li>
+            <li>Understands where complexity hides (distributed, consistency, edge vs. origin)</li>
+            <li>Shows experience by noting the problem is "deceptively complex"</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Strong start. Structured approach to ambiguity. Understands that requirements drive architecture. Has clearly thought about rate limiting before."</p>
+        </div>
+
+        <h4>Key phrases that signal L6</h4>
+        <div class="key-phrases">
+          <span class="key-phrase">"The goal shapes everything"</span>
+          <span class="key-phrase">"Let me structure my questions into..."</span>
+          <span class="key-phrase">"A rate limiter for X looks completely different from Y"</span>
+          <span class="key-phrase">"What's our tolerance for false positives vs. false negatives?"</span>
+        </div>
+
+        <div class="callout callout-upgrade">
+          <div class="callout-title">What separates this from L5</div>
+          <p>"L5 asks WHAT questions (scale, format, features). L6 asks WHY questions (business goal, tradeoff preferences) and shows awareness of WHERE the hard problems are."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strong Hire -->
+    <div class="tier-card" data-tier="strong-hire" id="p1-strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div>
+          <div class="tier-title">🏆 Strong Hire</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L7 signal — Exceptional</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="tier-badge">STRONG HIRE · L7</span>
+          <span class="collapse-icon">▼</span>
+        </div>
+      </div>
+      <div class="tier-card-body" style="max-height:4000px">
+        <p><em>What they say:</em> "Great problem — rate limiting sits at an interesting intersection of distributed systems, product policy, and operational reality. Before I go anywhere, I want to understand what success looks like.</p>
+        <p><strong>On the problem itself:</strong> Rate limiters serve different masters. If we're protecting against DDoS, we care about L3/L4 rate limiting at the edge — probably not what you want me to design. If we're enforcing API quotas for a SaaS product, we care about accuracy, fairness, and customer experience. If we're protecting a fragile downstream service, we care about load shedding and backpressure. Each of these has a different architecture. Which flavor are we discussing?</p>
+        <p><strong>On the distributed systems angle:</strong> The fundamental tension in distributed rate limiting is that truly accurate global rate limiting requires coordination, but coordination kills performance and availability. Most real systems accept some inaccuracy — the question is how much. Should I assume we're okay with a system that might let through 105 requests when the limit is 100, in exchange for being highly available and low-latency?</p>
+        <p><strong>On the deployment context:</strong> Where does this run in the request path? If we're building into an existing API gateway, I'll focus on the algorithm and storage layer. If we're building a standalone rate limiting service that other services call, I need to think about the additional network hop, failure modes, and whether this becomes a SPOF.</p>
+        <p><strong>On operational maturity:</strong> Rate limiters are one of those things that seem simple but cause severe incidents when they misbehave. I've seen rate limiters that failed closed and caused total outages, and ones that failed open and let DDoS traffic through. What's the blast radius if this component fails? That shapes how much redundancy and graceful degradation I build in."</p>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">What makes this exceptional</div>
+          <ul class="signal-list wow">
+            <li>Opens with insight about why rate limiting is interesting (shows depth)</li>
+            <li>Explicitly names the core distributed systems tradeoff (accuracy vs. availability)</li>
+            <li>Brings in operational experience (failure modes, blast radius)</li>
+            <li>Offers a framework, then asks for guidance (collaborative, not performative)</li>
+            <li>Distinguishes between L3/L4 vs. L7 rate limiting (technical precision)</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Exceptional problem decomposition. Has clearly built and operated rate limiters. Understands failure modes. Want this person on my team."</p>
+        </div>
+
+        <h4>The "wow" moments</h4>
+        <div class="key-phrases">
+          <span class="key-phrase">"Rate limiters serve different masters"</span>
+          <span class="key-phrase">"Truly accurate global rate limiting requires coordination, but coordination kills performance"</span>
+          <span class="key-phrase">"I've seen rate limiters that failed closed and caused total outages"</span>
+        </div>
+
+        <div class="callout callout-upgrade">
+          <div class="callout-title">What separates L6 from L7</div>
+          <p>"L6 asks good questions and shows structure. L7 offers insight — they name the core tensions, share relevant experience, and help the interviewer understand that they've internalized the problem space at a deep level. They're teaching, not just asking."</p>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">The non-obvious insight</div>
+          <p>"Most candidates ask 'how many requests per second?' L7 candidates ask 'what's our tolerance for inaccuracy?' because they know that's the question that actually determines the architecture."</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="progression-card">
+      <h3>Progression Summary — Phase 1</h3>
+      <div class="table-wrapper" style="margin:16px 0 0">
+        <table>
+          <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+          <tbody>
+            <tr><td class="cell-no-hire">No Hire → Lean Hire</td><td>Stop. Ask questions. Don't jump to Redis.</td></tr>
+            <tr><td class="cell-lean-hire">Lean Hire → Hire (L6)</td><td>Structure your questions. Ask WHY (business context). Show you know WHERE the hard parts are.</td></tr>
+            <tr><td class="cell-hire">Hire → Strong Hire (L7)</td><td>Offer insight, not just questions. Name the core tradeoffs. Bring operational experience. Collaborate with the interviewer.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:16px;font-size:13px;color:var(--text-muted)"><strong style="color:var(--strong-hire)">The one thing to practice:</strong> Before asking any question, state which CATEGORY it falls into (business context, scope, constraints, operational). This signals structured thinking.</p>
+    </div>
+  </section>
+
+  <!-- PHASE 2 -->
+  <section class="section-wrapper" id="phase2">
+    <div class="section-header">
+      <span class="section-number">02</span>
+      <h2 class="section-title">Requirements Gathering</h2>
+      <span class="section-subtitle">Phase 2 · 5–10 minutes</span>
+    </div>
+    <div class="section-divider"></div>
+    <div class="phase-prompt">
+      <p>"Okay, you understand the context — multi-tenant SaaS, 500K RPS globally, 10M API keys, 5 regions, soft limits acceptable, fail open. Now define your functional and non-functional requirements."</p>
+    </div>
+
+    <!-- No Hire -->
+    <div class="tier-card" data-tier="no-hire" id="p2-no-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">❌ No Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L4 / Weak L5 response</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">NO HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p><em>What they say:</em></p>
+        <p>"Okay, so the functional requirements are: Rate limit requests. Return 429 when limit exceeded. Track requests per API key. For non-functional requirements: High availability. Low latency. Scalable. Should I start on the design now?"</p>
+        <div class="callout callout-why">
+          <div class="callout-title">Why this fails</div>
+          <ul class="signal-list bad">
+            <li>Requirements are vague and generic (could describe any system)</li>
+            <li>No specific numbers or SLAs</li>
+            <li>No prioritization</li>
+            <li>Doesn't distinguish between must-haves and nice-to-haves</li>
+            <li>"High availability" and "low latency" are meaningless without numbers</li>
+            <li>Missing critical requirements (multi-region, configuration, analytics)</li>
+          </ul>
+        </div>
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Requirements were a checkbox exercise. No depth. Couldn't translate business context into technical requirements. Concerning for L5+."</p>
+        </div>
+        <h4>Fatal Mistakes</h4>
+        <ul class="signal-list bad">
+          <li>No quantified SLAs</li>
+          <li>Missed multi-tenancy and configuration requirements entirely</li>
+          <li>Tried to rush past requirements to "the fun part"</li>
+          <li>Zero prioritization</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Lean Hire -->
+    <div class="tier-card" data-tier="lean-hire" id="p2-lean-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">⚠️ Lean Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L5, not L6</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">LEAN HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p><em>What they say:</em> Functional requirements include: rate limit by API key, support different limits per customer tier, return 429 with Retry-After, include rate limit headers, support multiple time windows. Non-functional: handle 500K RPS, under 10ms latency, 99.9% uptime, work across 5 regions, accuracy within 5%.</p>
+        <div class="callout callout-success">
+          <div class="callout-title">What's good</div>
+          <ul class="signal-list good">
+            <li>Clear FR vs NFR separation</li>
+            <li>Included some specific numbers</li>
+            <li>Thought about customer tiers</li>
+            <li>Included rate limit headers (practical detail)</li>
+          </ul>
+        </div>
+        <div class="callout callout-why">
+          <div class="callout-title">What's missing for L6</div>
+          <ul class="signal-list bad">
+            <li>No prioritization (P0 vs P1 vs P2)</li>
+            <li>99.9% availability is arbitrary — that's 8.7 hours downtime/year</li>
+            <li>Didn't explicitly state what's OUT of scope</li>
+            <li>Missing: configuration management, analytics, quota reset behavior</li>
+            <li>Latency SLA lacks nuance (P50 vs P99?)</li>
+          </ul>
+        </div>
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Competent requirements gathering. Has the right instincts. But felt like a list, not a thoughtful analysis. Missing the 'why' behind the numbers."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hire L6 -->
+    <div class="tier-card" data-tier="hire" id="p2-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L6 bar</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:4000px">
+        <h4>Functional Requirements</h4>
+        <p><strong>P0 — Must have for launch:</strong></p>
+        <ul><li>Enforce rate limits by API key — this is the core function</li><li>Support configurable limits per customer tier (free: 100 req/min, pro: 1000 req/min, enterprise: custom)</li><li>Return HTTP 429 with Retry-After header when limit exceeded</li><li>Support at least two time windows: per-second (burst protection) and per-day (quota enforcement)</li></ul>
+        <p><strong>P1 — Important but can fast-follow:</strong></p>
+        <ul><li>Rate limit response headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)</li><li>Configuration API to update limits without deployment</li><li>Per-endpoint rate limiting</li></ul>
+        <p><strong>P2 — Nice to have:</strong></p>
+        <ul><li>Real-time analytics dashboard for rate limit events</li><li>Alerting when customers approach limits</li><li>Quota pooling across API keys for enterprise (org-level limits)</li></ul>
+
+        <h4>Non-Functional Requirements</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Requirement</th><th>Target</th><th>Rationale</th></tr></thead>
+            <tbody>
+              <tr><td>Latency P50</td><td>&lt; 5ms</td><td>In the critical path of every API call</td></tr>
+              <tr><td>Latency P99</td><td>&lt; 20ms</td><td>Tail latency matters at scale</td></tr>
+              <tr><td>Availability</td><td>99.99%</td><td>~52 min/year downtime. Fail open mitigates blast radius.</td></tr>
+              <tr><td>Throughput</td><td>500K RPS sustained</td><td>Handle 3x burst for traffic spikes</td></tr>
+              <tr><td>Accuracy</td><td>±5%</td><td>Agreed soft limits acceptable</td></tr>
+              <tr><td>Data durability</td><td>Config = durable; counters = ephemeral</td><td>Losing counts on failure is acceptable</td></tr>
+              <tr><td>Global consistency</td><td>Eventual, converge in 1-2 seconds</td><td>CAP tradeoff: availability over consistency</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Explicitly out of scope</h4>
+        <ul><li>DDoS protection / L3-L4 rate limiting (handled by CDN/WAF)</li><li>Request throttling / queuing (we reject, not delay)</li><li>Machine learning-based anomaly detection</li><li>Rate limiting by IP address (API key only)</li></ul>
+
+        <div class="callout callout-success">
+          <div class="callout-title">L6 signals demonstrated</div>
+          <ul class="signal-list good">
+            <li>Clear prioritization framework (P0/P1/P2)</li>
+            <li>Specific, justified SLAs with percentiles</li>
+            <li>Distinguished ephemeral state from durable configuration</li>
+            <li>Explicit scoping of what's NOT included</li>
+            <li>Connected NFRs to business impact</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Strong requirements definition. Clear prioritization. Justified the numbers. Knows what's in scope and what isn't. This is what I expect from L6."</p>
+        </div>
+
+        <div class="key-phrases">
+          <span class="key-phrase">"P50 &lt; 5ms, P99 &lt; 20ms"</span>
+          <span class="key-phrase">"99.99% — that's about 52 minutes of downtime per year"</span>
+          <span class="key-phrase">"Rate limit state is ephemeral... but configuration must be durable"</span>
+          <span class="key-phrase">"We're a gate, not a queue"</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strong Hire -->
+    <div class="tier-card" data-tier="strong-hire" id="p2-strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L7 signal — Exceptional</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:4000px">
+        <p><em>Opening framing:</em> "A rate limiter in the critical path of a SaaS API is one of the most sensitive pieces of infrastructure we can build. It touches every single request. If it's slow, every API call is slow. If it's wrong, we either lose revenue or break customer trust."</p>
+
+        <h4>Non-Functional Requirements — with reasoning (table format)</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Requirement</th><th>Target</th><th>Rationale</th></tr></thead>
+            <tbody>
+              <tr><td>Latency P50</td><td>&lt; 2ms</td><td>Must be imperceptible; we're in the hot path</td></tr>
+              <tr><td>Latency P99</td><td>&lt; 10ms</td><td>Tail latency matters at 500K RPS — 1% slow = 5K slow req/sec</td></tr>
+              <tr><td>Latency P99.9</td><td>&lt; 50ms</td><td>Outliers happen; need a bound</td></tr>
+              <tr><td>Availability</td><td>99.99%</td><td>Critical path. Fail-open mitigates blast radius.</td></tr>
+              <tr><td>Throughput</td><td>500K sustained, 1.5M burst</td><td>3x headroom for viral moments</td></tr>
+              <tr><td>Accuracy (normal)</td><td>±5%</td><td>Agreed with product</td></tr>
+              <tr><td>Accuracy (degraded)</td><td>±20%</td><td>Graceful accuracy degradation during failures</td></tr>
+              <tr><td>Regional independence</td><td>Each region autonomous</td><td>No cross-region calls in hot path — latency killer</td></tr>
+              <tr><td>Consistency model</td><td>Eventual, bounded staleness 2s</td><td>Regional accuracy is must-have; global is nice-to-have</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">The standout insight — graceful degradation as a spectrum</div>
+          <p>Most candidates define accuracy as a fixed number. Strong hires define it as a sliding scale that degrades gracefully:</p>
+          <ul>
+            <li><strong style="color:var(--hire)">Normal operation:</strong> ±5% accuracy</li>
+            <li><strong style="color:var(--lean-hire)">One region down:</strong> ±10% accuracy (that region's data is stale)</li>
+            <li><strong style="color:var(--no-hire)">Cross-region sync broken:</strong> ±20% accuracy (regions enforce independently)</li>
+            <li><strong style="color:var(--text-muted)">Rate limiter down:</strong> 0% accuracy, 100% availability (fail open)</li>
+          </ul>
+          <p>This graceful degradation is more valuable than trying to maintain perfect accuracy during failures.</p>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Exceptional. Thinks in systems, not components. Graceful degradation model for accuracy shows deep operational maturity. Table format shows communication skills."</p>
+        </div>
+
+        <div class="callout callout-upgrade">
+          <div class="callout-title">What separates L6 from L7</div>
+          <p>"L6 defines good requirements. L7 defines requirements with an operational mental model — they're already thinking about failure modes, graceful degradation, and how this system behaves under stress."</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="progression-card">
+      <h3>Progression Summary — Phase 2</h3>
+      <div class="table-wrapper" style="margin:16px 0 0">
+        <table>
+          <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+          <tbody>
+            <tr><td class="cell-no-hire">No Hire → Lean Hire</td><td>Be specific. Add numbers. Separate FR from NFR.</td></tr>
+            <tr><td class="cell-lean-hire">Lean Hire → Hire (L6)</td><td>Prioritize (P0/P1/P2). Use percentiles for latency. Explicitly scope what's OUT. Connect to business impact.</td></tr>
+            <tr><td class="cell-hire">Hire → Strong Hire (L7)</td><td>Define graceful degradation. Think about Day 2 operations. Add stakeholder questions. Show the mental model, not just the list.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:16px;font-size:13px;color:var(--text-muted)"><strong style="color:var(--strong-hire)">The one thing to practice:</strong> For every NFR, state the number AND the consequence of missing it. "P99 &lt; 20ms because at 500K RPS, 1% slow means 5K bad experiences per second."</p>
+    </div>
+  </section>
+
+  <!-- PHASE 3 -->
+  <section class="section-wrapper" id="phase3">
+    <div class="section-header">
+      <span class="section-number">03</span>
+      <h2 class="section-title">High-Level Design</h2>
+      <span class="section-subtitle">Phase 3 · 10–25 minutes</span>
+    </div>
+    <div class="section-divider"></div>
+    <div class="phase-prompt">
+      <p>"Good requirements. Now walk me through your high-level architecture. Start with the API, then the main components and how they interact. I want to see the write path and read path clearly."</p>
+    </div>
+
+    <!-- No Hire -->
+    <div class="tier-card" data-tier="no-hire" id="p3-no-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">❌ No Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L4 / Weak L5 response</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">NO HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Describes: API Gateway → Redis → Backend. Uses sliding window log. Says "Redis can sync with each other" for multi-region with no explanation of HOW.</p>
+        <div class="callout callout-why">
+          <div class="callout-title">Why this fails</div>
+          <ul class="signal-list bad">
+            <li>Architecture is a single Redis box — no consideration of Redis failure</li>
+            <li>"Redis can sync with each other" — doesn't explain HOW, ignores consistency</li>
+            <li>No API design presented despite interviewer asking for it</li>
+            <li>Sliding window log is expensive at 500K RPS (stores every timestamp)</li>
+            <li>No configuration management</li>
+            <li>Single point of failure everywhere</li>
+          </ul>
+        </div>
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Superficial architecture. Single Redis instance for 500K RPS? No failure handling. Doesn't understand distributed systems complexity. No Hire for L5+."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lean Hire -->
+    <div class="tier-card" data-tier="lean-hire" id="p3-lean-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">⚠️ Lean Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L5, not L6</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">LEAN HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Designs a proper API endpoint, identifies main components, separates config storage from runtime state, and acknowledges multi-region challenge with "sync counters every second."</p>
+        <div class="callout callout-success">
+          <div class="callout-title">What's good</div>
+          <ul class="signal-list good">
+            <li>Actually designed an API with request/response</li>
+            <li>Identified main components</li>
+            <li>Separated config storage from runtime state</li>
+            <li>Clear request flow</li>
+          </ul>
+        </div>
+        <div class="callout callout-why">
+          <div class="callout-title">What's missing for L6</div>
+          <ul class="signal-list bad">
+            <li>Redis cluster is vague — how is it sharded? What happens when a node fails?</li>
+            <li>"Sync counters periodically" — no consistency model, no conflict resolution</li>
+            <li>No discussion of hot keys</li>
+            <li>No back-of-envelope estimation</li>
+            <li>Doesn't address thundering herd on config cache</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hire L6 -->
+    <div class="tier-card" data-tier="hire" id="p3-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L6 bar</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:6000px">
+        <h4>Runtime API (internal, called by API Gateway)</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">json · Runtime API</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>POST /v1/ratelimit/check
+Request:
+{
+  "api_key": "sk_live_abc123",
+  "resource": "/v1/charges",
+  "tokens": 1,
+  "timestamp": 1699574400123
+}
+
+Response (200 OK):
+{
+  "decision": "ALLOW",
+  "rate_limits": [
+    { "name": "burst",  "limit": 50,    "remaining": 42, "reset_at": 1699574401 },
+    { "name": "daily",  "limit": 100000,"remaining": 84521,"reset_at": 1699660800 }
+  ],
+  "retry_after": null
+}</pre>
+        </div>
+
+        <h4>Per-Region Architecture Diagram</h4>
+        <div class="diagram-wrapper">
+          <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-muted)">Per-Region Architecture</span></div>
+          <pre>                    [Per Region Architecture]
+                    
+    ┌─────────────────────────────────────────────────────────────┐
+    │                                                             │
+    │   Client                                                    │
+    │      │                                                      │
+    │      ▼                                                      │
+    │   API Gateway (with embedded rate limit client)             │
+    │      │                                                      │
+    │      │ (1) Check rate limit                                 │
+    │      ▼                                                      │
+    │   Rate Limit Service (stateless, N instances)               │
+    │      │                          │                           │
+    │      │ (2) Get config           │ (3) Check/update counter  │
+    │      ▼                          ▼                           │
+    │   Local Config Cache         Redis Cluster                  │
+    │   (in-memory, TTL 30s)       (3 nodes, sharded by api_key)  │
+    │      │                                                      │
+    │      │ (cache miss)                                         │
+    │      ▼                                                      │
+    │   Config Service ──────► PostgreSQL (configs)               │
+    │                                                             │
+    └─────────────────────────────────────────────────────────────┘</pre>
+        </div>
+
+        <h4>Component Responsibilities</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Component</th><th>Responsibility</th><th>Stateless?</th><th>Failure mode</th></tr></thead>
+            <tbody>
+              <tr><td>API Gateway</td><td>Route requests, call rate limiter</td><td>Yes</td><td>Route to another gateway</td></tr>
+              <tr><td>Rate Limit Service</td><td>Execute rate limit algorithm</td><td>Yes</td><td>Horizontal scale, any instance works</td></tr>
+              <tr><td>Local Config Cache</td><td>Cache rate limit configs</td><td>Yes (ephemeral)</td><td>Cache miss → call Config Service</td></tr>
+              <tr><td>Redis Cluster</td><td>Store counters, execute Lua scripts</td><td>No (stateful)</td><td>Fail open if unreachable</td></tr>
+              <tr><td>Config Service</td><td>CRUD for rate limit configs</td><td>Yes</td><td>Retry with backoff</td></tr>
+              <tr><td>PostgreSQL</td><td>Durable config storage</td><td>No</td><td>Read replica fallback</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Multi-Region Strategy</h4>
+        <p>Three options considered:</p>
+        <ol>
+          <li><strong>Fully independent</strong> — each region tracks its own limits. Customer gets 5x their limit globally. Simple but inaccurate.</li>
+          <li><strong>Async sync</strong> — regions share counts periodically. Accurate over time, but can overshoot during sync gaps.</li>
+          <li><strong>Global coordination</strong> — single source of truth. Accurate but adds cross-region latency.</li>
+        </ol>
+        <p><mark>Recommendation: Async sync with local enforcement.</mark> Each region enforces locally. Every 1-2 seconds, regions publish deltas to a global aggregator. If a region gets 30% of traffic, it gets ~30% of the quota budget.</p>
+
+        <h4>Back-of-Envelope Estimation</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Metric</th><th>Calculation</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td>Global QPS</td><td>Given</td><td>500K</td></tr>
+              <tr><td>Per-region QPS</td><td>500K / 5 regions</td><td>100K</td></tr>
+              <tr><td>Per Redis node</td><td>100K / 6 nodes</td><td>~17K QPS ✓</td></tr>
+              <tr><td>Config cache size</td><td>10M keys × 200 bytes</td><td>~2GB ✓</td></tr>
+              <tr><td>Redis memory/region</td><td>10M keys × 3 limits × 50 bytes</td><td>~1.5GB ✓</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">Where are the hard problems</div>
+          <ul><li><strong>Hot keys</strong> — If one API key gets 50K RPS, that's a hot shard in Redis.</li><li><strong>Redis failure</strong> — If Redis is down, fail open with metrics.</li><li><strong>Thundering herd on config cache</strong> — Cache stampede protection needed.</li><li><strong>Clock skew</strong> — If regions have different clocks, time windows could be inconsistent.</li></ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Solid architecture. Good API design. Thought through failure modes. Made a decision on multi-region with clear reasoning. Identified hard problems without prompting. Meets L6 bar."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strong Hire -->
+    <div class="tier-card" data-tier="strong-hire" id="p3-strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L7 signal — Exceptional</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:8000px">
+        <h4>Design Decision: Library vs Service</h4>
+        <p><mark>Recommendation: Hybrid.</mark> Thin client library in the gateway for hot path (direct Redis), separate service for configuration and async aggregation. An extra service hop adds 1-2ms latency and a failure point.</p>
+
+        <h4>Global + Regional Architecture</h4>
+        <div class="diagram-wrapper">
+          <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-muted)">Multi-Region Architecture</span></div>
+          <pre>┌─────────────────────────────────────────────────────────────────┐
+│                      GLOBAL LAYER                              │
+│                                                                 │
+│    Global Config Store (DynamoDB Global Tables)                │
+│           │                                                    │
+│           │ Replicated to all regions                          │
+│           ▼                                                    │
+│    Global Aggregator Service                                   │
+│    (Consumes regional usage, computes budgets)                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                             │
+          ┌──────────────────┼──────────────────┐
+          │                  │                  │
+          ▼                  ▼                  ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│   US-EAST-1     │ │   EU-WEST-1     │ │   AP-SOUTH-1    │
+│                 │ │                 │ │                 │
+│ ┌─────────────┐ │ │ ┌─────────────┐ │ │ ┌─────────────┐ │
+│ │ API Gateway │ │ │ │ API Gateway │ │ │ │ API Gateway │ │
+│ │ + RL Client │ │ │ │ + RL Client │ │ │ │ + RL Client │ │
+│ └──────┬──────┘ │ │ └──────┬──────┘ │ │ └──────┬──────┘ │
+│        │        │ │        │        │ │        │        │
+│        ▼        │ │        ▼        │ │        ▼        │
+│ ┌─────────────┐ │ │ ┌─────────────┐ │ │ ┌─────────────┐ │
+│ │ Redis Cluster│ │ │ │ Redis Cluster│ │ │ │ Redis Cluster│ │
+│ │ (6 nodes)   │ │ │ │ (6 nodes)   │ │ │ │ (6 nodes)   │ │
+│ └─────────────┘ │ │ └─────────────┘ │ │ └─────────────┘ │
+│        │        │ │        │        │ │        │        │
+│        ▼        │ │        ▼        │ │        ▼        │
+│ Regional Kafka │ │ │ Regional Kafka │ │ │ Regional Kafka │ │
+│ (usage events) │ │ │ (usage events) │ │ │ (usage events) │ │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             │
+                             ▼
+                   Cross-Region Kafka
+                   (or direct aggregator pull)</pre>
+        </div>
+
+        <h4>Rate Limit Client (in Gateway)</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class RateLimitClient:
+    def __init__(self, redis_cluster, config_cache):
+        self.redis = redis_cluster
+        self.config = config_cache  # TTL 30s, background refresh
+        
+    def check(self, api_key, resource, tokens):
+        # Step 1: Get config (local cache, &lt;1ms)
+        config = self.config.get(api_key)
+        if not config:
+            config = self.config.get_default_tier()
+            
+        # Step 2: Execute rate limit check (Redis, ~2ms)
+        try:
+            result = self.redis.execute_lua(
+                RATE_LIMIT_SCRIPT,
+                keys=[f"rl:{api_key}:burst", f"rl:{api_key}:daily"],
+                args=[config.burst_limit, config.daily_limit, tokens, now()]
+            )
+        except RedisError:
+            # Fail open — log and allow
+            metrics.incr("ratelimit.failopen")
+            return RateLimitResult(allowed=True, degraded=True)
+            
+        # Step 3: Emit async event for aggregation (non-blocking)
+        self.emit_usage_event(api_key, tokens, result)
+        
+        return result</pre>
+        </div>
+
+        <h4>Multi-Region Consistency Model</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Scenario</th><th>Behavior</th></tr></thead>
+            <tbody>
+              <tr><td>Normal operation</td><td>Each region enforces locally, aggregator distributes budget. ±5% accuracy.</td></tr>
+              <tr><td>Aggregator slow (2-5s delay)</td><td>Regions use stale budgets. May overshoot by 10-20%.</td></tr>
+              <tr><td>Aggregator down</td><td>Regions fall back to even split (each gets 20% of limit). May overshoot globally.</td></tr>
+              <tr><td>Regional Redis down</td><td>That region fails open. Other regions unaffected.</td></tr>
+              <tr><td>Cross-region network partition</td><td>Regions operate independently. Global accuracy degrades.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">The "wow" moments</div>
+          <ul class="signal-list wow">
+            <li>"We can have at most two of: low latency, high availability, global accuracy. I'm choosing..."</li>
+            <li>Budget-based regional allocation: "if US-East has 40% of traffic, give it 40% of remaining quota"</li>
+            <li>The fail-open code with <code>degraded=True</code> flag</li>
+            <li>Bypass endpoint for incidents</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Outstanding. Production-ready thinking. Library vs service decision shows senior judgment. Consistency model is explicitly reasoned. Code snippets show they could actually build this. Strong hire."</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="progression-card">
+      <h3>Progression Summary — Phase 3</h3>
+      <div class="table-wrapper" style="margin:16px 0 0">
+        <table>
+          <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+          <tbody>
+            <tr><td class="cell-no-hire">No Hire → Lean Hire</td><td>Design an actual API. Address multi-region more than "sync counters."</td></tr>
+            <tr><td class="cell-lean-hire">Lean Hire → Hire (L6)</td><td>Make decisions with reasoning. Identify failure modes. Do back-of-envelope. Budget allocation model.</td></tr>
+            <tr><td class="cell-hire">Hire → Strong Hire (L7)</td><td>Library vs. service decision upfront. Budget allocation. Code snippets. "Where are the dragons."</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Algorithm Deep Dive -->
+    <div class="section-wrapper" id="algorithms" style="margin-top:48px">
+      <div class="deep-dive-header">
+        <span class="deep-dive-icon">🔬</span>
+        <div>
+          <div class="deep-dive-label">Decision Deep Dive</div>
+          <div class="deep-dive-title">Rate Limiting Algorithms</div>
+        </div>
+      </div>
+
+      <div class="approach-grid">
+        <div class="approach-card">
+          <div class="approach-name">Fixed Window Counter</div>
+          <p style="font-size:13px;color:var(--text-muted)">Divide time into fixed windows. Maintain a counter per window.</p>
+          <p style="font-size:12px;color:var(--hire)">✓ O(1) memory, extremely simple</p>
+          <p style="font-size:12px;color:var(--no-hire)">✗ Boundary problem: 2x throughput at window edges</p>
+          <p style="font-size:12px;color:var(--accent-blue)">Best for: daily quotas, coarse-grained limits</p>
+        </div>
+        <div class="approach-card">
+          <div class="approach-name">Sliding Window Log</div>
+          <p style="font-size:13px;color:var(--text-muted)">Store timestamp of every request in a sorted set. Count entries in last N seconds.</p>
+          <p style="font-size:12px;color:var(--hire)">✓ Perfect accuracy, no boundary problem</p>
+          <p style="font-size:12px;color:var(--no-hire)">✗ O(n) memory — at 500K RPS, 30M entries/key possible</p>
+          <p style="font-size:12px;color:var(--accent-blue)">Best for: low-volume, compliance/audit</p>
+        </div>
+        <div class="approach-card">
+          <div class="approach-name">Sliding Window Counter</div>
+          <p style="font-size:13px;color:var(--text-muted)">Combine fixed window counters with weighted average: <code>prev × overlap% + curr</code></p>
+          <p style="font-size:12px;color:var(--hire)">✓ O(1) memory, ~95-99% accuracy, smooths boundary</p>
+          <p style="font-size:12px;color:var(--no-hire)">✗ Slightly approximate (assumes even distribution)</p>
+          <p style="font-size:12px;color:var(--accent-blue)">Best for: most production rate limiters</p>
+        </div>
+        <div class="approach-card">
+          <div class="approach-name">Token Bucket</div>
+          <p style="font-size:13px;color:var(--text-muted)">Bucket fills at refill_rate tokens/sec. Each request consumes tokens. Reject if empty.</p>
+          <p style="font-size:12px;color:var(--hire)">✓ Natural burst handling, intuitive for customers</p>
+          <p style="font-size:12px;color:var(--no-hire)">✗ Two parameters to tune (bucket_size + refill_rate)</p>
+          <p style="font-size:12px;color:var(--accent-blue)">Best for: APIs with burst tolerance</p>
+        </div>
+        <div class="approach-card">
+          <div class="approach-name">Leaky Bucket</div>
+          <p style="font-size:13px;color:var(--text-muted)">Requests queue and are processed at fixed rate. If queue full, reject.</p>
+          <p style="font-size:12px;color:var(--hire)">✓ Smoothest output rate, protects fragile services</p>
+          <p style="font-size:12px;color:var(--no-hire)">✗ Introduces latency — we're a gate, not a queue</p>
+          <p style="font-size:12px;color:var(--accent-blue)">Best for: traffic shaping, not rate limiting</p>
+        </div>
+      </div>
+
+      <h3>Algorithm Comparison</h3>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Approach</th><th>Memory</th><th>Accuracy</th><th>Burst Handling</th><th>Complexity</th><th>Best For</th></tr></thead>
+          <tbody>
+            <tr><td>Fixed Window</td><td>O(1)</td><td>Low (boundary issue)</td><td>Poor</td><td>Very Low</td><td>Daily quotas</td></tr>
+            <tr><td>Sliding Window Log</td><td>O(n)</td><td>Perfect</td><td>Smooth</td><td>Medium</td><td>Low-volume audit</td></tr>
+            <tr><td>Sliding Window Counter</td><td>O(1)</td><td>High (~95-99%)</td><td>Smooth</td><td>Medium</td><td>Most production</td></tr>
+            <tr><td>Token Bucket</td><td>O(1)</td><td>High</td><td>Explicit burst param</td><td>Medium</td><td>APIs with burst</td></tr>
+            <tr><td>Leaky Bucket</td><td>O(n)</td><td>High</td><td>None (smooths all)</td><td>High</td><td>Traffic shaping</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-wow">
+        <div class="callout-title">Strong hire decision framework</div>
+        <p><strong>Step 1 — State requirements.</strong> "For this system, I need O(1) memory and explicit burst capacity."</p>
+        <p><strong>Step 2 — Eliminate.</strong> "I can rule out Sliding Window Log (memory) and Leaky Bucket (introduces queuing)."</p>
+        <p><strong>Step 3 — Compare finalists.</strong> Token Bucket vs Sliding Window Counter.</p>
+        <p><strong>Step 4 — Decide.</strong> <mark>"Token Bucket for burst (per-second), Fixed Window for daily quotas."</mark></p>
+        <p><strong>Step 5 — Acknowledge tradeoff.</strong> "Token bucket requires tuning two parameters. I'd default to bucket_size = 2× per-second limit."</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 4 -->
+  <section class="section-wrapper" id="phase4">
+    <div class="section-header">
+      <span class="section-number">04</span>
+      <h2 class="section-title">Deep Dive: Hot Keys</h2>
+      <span class="section-subtitle">Phase 4 · 25–45 minutes</span>
+    </div>
+    <div class="section-divider"></div>
+    <div class="phase-prompt">
+      <p>"Good architecture. Now let's go deep. You mentioned hot keys as a dragon — one API key getting 50K RPS hitting a single Redis shard. Walk me through exactly how you'd handle that. I want implementation details."</p>
+    </div>
+
+    <!-- No Hire -->
+    <div class="tier-card" data-tier="no-hire" id="p4-no-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">❌ No Hire</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">NO HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Suggests adding more Redis nodes or using Redis Cluster. Proposes caching rate limit results for 100ms without explaining consistency implications. Mentions sub-key splitting with no implementation details.</p>
+        <div class="callout callout-why">
+          <div class="callout-title">Fatal Mistakes</div>
+          <ul class="signal-list bad">
+            <li>Thinks more shards fixes hot keys — sharding is by key, hot key still goes to same shard</li>
+            <li>No quantitative analysis</li>
+            <li>Handwaves implementation ("cache locally for a bit")</li>
+          </ul>
+        </div>
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Doesn't understand sharding fundamentals — adding nodes doesn't fix hot key problem. Ideas are superficial without implementation depth. Not L5 ready."</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lean Hire -->
+    <div class="tier-card" data-tier="lean-hire" id="p4-lean-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">⚠️ Lean Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L5, not L6</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">LEAN HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Correctly identifies local counting with periodic sync as the solution. Acknowledges worst-case overshoot: 20 gateways × 50 pending = 1000 requests = 10% of 10K limit. Suggests reducing sync batch to hit 5% target.</p>
+        <div class="callout callout-why">
+          <div class="callout-title">What's missing for L6</div>
+          <ul class="signal-list bad">
+            <li>No implementation details — how does the local counter work exactly?</li>
+            <li>Doesn't address: how do we detect which keys are hot?</li>
+            <li>Doesn't address: what happens during gateway restart? (lose local counts)</li>
+            <li>Missing read path problem — how does a gateway know the global count?</li>
+            <li>No code or pseudocode</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hire L6 -->
+    <div class="tier-card" data-tier="hire" id="p4-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L6 bar</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:6000px">
+        <h4>Detection</h4>
+        <p>Two approaches: <strong>Static</strong> (enterprise customers pre-marked as hot keys) + <strong>Dynamic</strong> (small in-memory LRU cache of ~10K keys with request counts; if key exceeds threshold — say 1000 RPS at this gateway — promote to hot key handling).</p>
+
+        <h4>Mitigation: Local Aggregation with Bounded Sync</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class HotKeyHandler:
+    def __init__(self, sync_interval_ms=50, sync_batch_size=50):
+        self.local_counts = {}
+        self.sync_interval = sync_interval_ms
+        self.sync_batch = sync_batch_size
+        
+    def check_and_increment(self, api_key, limit) -> bool:
+        if api_key not in self.local_counts:
+            global_count = self.redis.get(f"rl:{api_key}") or 0
+            self.local_counts[api_key] = {
+                "global_count": global_count,
+                "pending": 0,
+                "last_sync": now()
+            }
+        
+        state = self.local_counts[api_key]
+        estimated_total = state["global_count"] + state["pending"]
+        
+        if estimated_total >= limit:
+            return False  # Reject
+            
+        state["pending"] += 1
+        
+        if (state["pending"] >= self.sync_batch or 
+            now() - state["last_sync"] > self.sync_interval):
+            self._sync_to_redis(api_key)
+            
+        return True
+        
+    def _sync_to_redis(self, api_key):
+        state = self.local_counts[api_key]
+        pending = state["pending"]
+        new_global = self.redis.incrby(f"rl:{api_key}", pending)
+        state["global_count"] = new_global
+        state["pending"] = 0
+        state["last_sync"] = now()</pre>
+        </div>
+
+        <h4>Accuracy Math</h4>
+        <p>20 gateways, sync every 50 requests, limit 10,000/min:</p>
+        <ul>
+          <li>Worst case: 20 × 49 = 980 overshoot = ~10% of limit</li>
+          <li>To hit 5% target: reduce sync_batch to 25 → 20 × 24 = 480 = ~5%</li>
+        </ul>
+
+        <h4>Read Path Problem</h4>
+        <p>Each gateway knows its own pending count plus a potentially stale global count. <mark>Accept bounded staleness.</mark> On sync, we get the true global count. Between syncs, we're optimistic. Staleness is bounded to sync_batch × num_gateways. Our ±5% target allows this.</p>
+
+        <h4>Edge Cases</h4>
+        <ul>
+          <li><strong>Gateway restart:</strong> Pending count is lost. Worst case: lose sync_batch from count. Acceptable given accuracy tolerance.</li>
+          <li><strong>Hot key stops being hot:</strong> LRU cache naturally evicts keys, falls back to direct Redis.</li>
+          <li><strong>Clock skew:</strong> Sync interval is relative, not absolute. Clock skew doesn't affect correctness.</li>
+        </ul>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Strong deep dive. Implementation is concrete enough to code. Did the accuracy math. Understands the read path staleness issue. Covered edge cases. This is L6 quality."</p>
+        </div>
+
+        <div class="key-phrases">
+          <span class="key-phrase">"Here's something many people miss: the read path problem"</span>
+          <span class="key-phrase">"Staleness is bounded to sync_batch × num_gateways"</span>
+          <span class="key-phrase">"Given the accuracy tolerance, this is acceptable"</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strong Hire -->
+    <div class="tier-card" data-tier="strong-hire" id="p4-strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L7 signal — Exceptional</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:8000px">
+        <h4>Hierarchical Counting with Probabilistic Admission</h4>
+        <p>Three layers: L1 (probabilistic admission filter, microsecond), L2 (local counters with adaptive sync), L3 (Redis ground truth, periodic sync only).</p>
+
+        <h4>L1: Probabilistic Admission</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class ProbabilisticAdmission:
+    def should_admit(self, api_key, local_state) -> bool:
+        headroom_pct = 1 - (local_state.estimated_count / local_state.limit)
+        
+        if headroom_pct > 0.2:
+            return True  # Plenty of headroom — always admit
+        elif headroom_pct > 0:
+            # Approaching limit — probabilistic admission
+            admit_prob = headroom_pct / 0.2  # Linear decay
+            return random.random() < admit_prob
+        else:
+            return False  # At or over limit</pre>
+        </div>
+        <p>Why probabilistic? With 20 gateways trying to use the last 5% of quota, exact counting creates coordination overhead. Probabilistic admission means each gateway naturally claims its fair share without coordination.</p>
+
+        <h4>L2: Adaptive Sync</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>def _calculate_sync_interval(self, state) -> int:
+    utilization = state.estimated_count / state.limit
+    if utilization &lt; 0.5:
+        return 100
+    elif utilization &lt; 0.8:
+        return 50
+    elif utilization &lt; 0.95:
+        return 20
+    else:
+        return 5  # Very close to limit — frequent sync</pre>
+        </div>
+
+        <h4>Accuracy Under Adaptive Sync</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Phase</th><th>Sync Interval</th><th>Max Pending/Gateway</th><th>Max Global Error</th></tr></thead>
+            <tbody>
+              <tr><td>&lt; 50% utilization</td><td>100</td><td>99</td><td>1,980 (20%)</td></tr>
+              <tr><td>50-80%</td><td>50</td><td>49</td><td>980 (10%)</td></tr>
+              <tr><td>80-95%</td><td>20</td><td>19</td><td>380 (4%)</td></tr>
+              <tr><td>&gt; 95%</td><td>5</td><td>4</td><td>80 (0.8%)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><mark>Accuracy improves precisely when it matters most — near the limit.</mark></p>
+
+        <h4>Hot Key Detection with Count-Min Sketch</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class HotKeyDetector:
+    def __init__(self, threshold_rps=500, window_sec=5):
+        self.sketch = CountMinSketch(width=10000, depth=5)
+        self.threshold = threshold_rps * window_sec
+        
+    def record_and_check(self, api_key) -> bool:
+        self.sketch.add(api_key)
+        estimated_count = self.sketch.estimate(api_key)
+        return estimated_count > self.threshold</pre>
+        </div>
+        <p>Why Count-Min Sketch? With 10M API keys, we can't track all of them. CMS gives O(1) memory with bounded error — perfect for finding keys above a threshold.</p>
+
+        <h4>The Subtle Bug Most Implementations Have</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python · BUGGY — Race Condition</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre># BUGGY: Race condition between check and increment
+if estimated_count &lt; limit:
+    pending += 1  # Multiple threads here simultaneously!
+    if pending >= sync_threshold:
+        sync()    # Only one syncs, others keep incrementing</pre>
+        </div>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python · FIX — Atomic Operations</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class ThreadSafeLocalCounter:
+    def __init__(self):
+        self.pending = AtomicInteger(0)
+        self.sync_lock = Lock()
+        
+    def increment_and_maybe_sync(self):
+        new_pending = self.pending.increment_and_get()
+        
+        if new_pending >= self.sync_threshold:
+            if self.sync_lock.try_acquire():
+                try:
+                    self._do_sync()
+                finally:
+                    self.sync_lock.release()</pre>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">The "wow" moments</div>
+          <ul class="signal-list wow">
+            <li>Probabilistic admission — novel technique most candidates don't know</li>
+            <li>Adaptive sync — reduces Redis load 10x while improving accuracy when it matters</li>
+            <li>Count-Min Sketch for detection — production-grade data structure</li>
+            <li>"Most implementations have this bug" + showing the race condition</li>
+            <li>"Predictably inaccurate is the right tradeoff"</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="interviewer-quote-label">Interviewer's notes</span>
+          <p>"Exceptional depth. Probabilistic admission shows they've thought beyond standard solutions. Thread safety bug shows real implementation experience. Count-Min Sketch is the right data structure. Strong hire, senior level."</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="progression-card">
+      <h3>Progression Summary — Phase 4 (Hot Keys)</h3>
+      <div class="table-wrapper" style="margin:16px 0 0">
+        <table>
+          <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+          <tbody>
+            <tr><td class="cell-no-hire">No Hire → Lean Hire</td><td>Understand that "add more nodes" doesn't fix hot keys. Name the real solutions.</td></tr>
+            <tr><td class="cell-lean-hire">Lean Hire → Hire (L6)</td><td>Provide pseudocode. Do the accuracy math. Cover edge cases (restarts, failures). Address read path.</td></tr>
+            <tr><td class="cell-hire">Hire → Strong Hire (L7)</td><td>Adaptive/probabilistic techniques. Identify subtle bugs in naive implementations. Chaos testing. Count-Min Sketch.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:16px;font-size:13px;color:var(--text-muted)"><strong style="color:var(--strong-hire)">The one thing to practice:</strong> For any distributed counting problem, calculate worst-case error: <code>batch_size × num_writers × (1 / sync_frequency)</code>. Be able to tune these knobs to hit your accuracy target.</p>
+    </div>
+  </section>
+
+  <!-- PHASE 4B: Curveball -->
+  <section class="section-wrapper" id="phase4b">
+    <div class="section-header">
+      <h2 class="section-title">Curveball: Org-Level Rate Limits</h2>
+      <span class="section-subtitle">Phase 4 Continued · 35 min mark</span>
+    </div>
+    <div class="section-divider"></div>
+    <div class="phase-prompt">
+      <p>"Good depth on hot keys. Now here's a change: Product just told us that enterprise customers need org-level rate limits. They have multiple API keys under one organization, and the rate limit should apply across ALL their keys combined. An org might have 500 API keys. How does this change your design?"</p>
+    </div>
+
+    <div class="tier-card" data-tier="no-hire" id="p4b-no-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">❌ No Hire</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">NO HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Changes Redis key from <code>rl:apikey123</code> to <code>rl:org456</code>. Says "the rest of the architecture stays the same." Misses the key insight: org-level limits create MASSIVE hot key problems.</p>
+        <div class="callout callout-why">
+          <div class="callout-title">Fatal Mistakes</div>
+          <ul class="signal-list bad">
+            <li>Didn't recognize org = guaranteed hot key</li>
+            <li>No discussion of per-key vs org-level limit interaction</li>
+            <li>Ignored fairness/noisy neighbor within org</li>
+            <li>"Rest stays the same" — no, this fundamentally changes scaling</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier-card" data-tier="lean-hire" id="p4b-lean-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">⚠️ Lean Hire</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">LEAN HIRE</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:2000px">
+        <p>Recognizes org = guaranteed hot key. Proposes two-tier limits. Gets the accuracy math wrong (estimates 500 keys × 20 gateways but each request goes through ONE gateway). Doesn't address fairness or atomicity.</p>
+        <div class="callout callout-upgrade">
+          <div class="callout-title">Upgrade needed</div>
+          <p>Fix the traffic model. Address multi-limit atomicity. Address fairness. Quantify accuracy correctly.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier-card" data-tier="hire" id="p4b-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Meets L6 bar</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:6000px">
+        <h4>Traffic Model Correction</h4>
+        <p><mark>Each request still goes through ONE gateway and increments ONE counter.</mark> The 500 keys don't multiply the problem. The question is whether org traffic concentrates on certain gateways (geographic affinity) or spreads evenly.</p>
+
+        <h4>Multi-Level Limit Check</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>def check_rate_limit(api_key, config):
+    # Check per-key limits first (smaller, faster to hit)
+    if config.key_level_limits:
+        for limit in config.key_level_limits:
+            result = check_single_limit(f"rl:key:{api_key}:{limit.window}", limit)
+            if not result.allowed:
+                return result  # Fail fast
+    
+    # Check org limits (always use hot key handler)
+    if config.org_level_limits:
+        for limit in config.org_level_limits:
+            result = check_single_limit(
+                f"rl:org:{config.org_id}:{limit.window}",
+                limit,
+                use_hot_key_handler=True
+            )
+            if not result.allowed:
+                return result
+    
+    return RateLimitResult(allowed=True, ...)</pre>
+        </div>
+
+        <h4>Atomicity Consideration</h4>
+        <p>What if per-key limit passes but org limit fails — we've already incremented per-key! Options:</p>
+        <ul>
+          <li>Check-then-increment: requires multi-key transaction (slow)</li>
+          <li>Increment-then-rollback: complex</li>
+          <li><mark>Accept small inaccuracy</mark>: per-key counter off by one is noise. Self-corrects on next window. ← Recommended</li>
+        </ul>
+
+        <h4>Fairness — The Noisy Neighbor Problem</h4>
+        <p>One runaway API key consuming all 1M org daily quota while 499 other keys are blocked for 23 hours.</p>
+        <p><strong>Recommended:</strong> Explicit per-key limits within org (configurable) + alerting when one key dominates.</p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Aspect</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr><td>Hot key handling</td><td>Detect dynamically</td><td>Org = always hot</td></tr>
+              <tr><td>Redis keys</td><td>Per-key only</td><td>Per-key + per-org</td></tr>
+              <tr><td>Limit checks</td><td>Single level</td><td>Multi-level with fail-fast</td></tr>
+              <tr><td>Sync frequency</td><td>Adaptive</td><td>Aggressive for orgs</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier-card" data-tier="strong-hire" id="p4b-strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px;">L7 signal — Exceptional</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:8000px">
+        <h4>Reframing: What Does "Limit" Mean With Hierarchy?</h4>
+        <p><mark>"For org-level quotas, counting with eventual consistency is wrong. Customers pay for quotas — we can't have ±5% error on money."</mark></p>
+
+        <div class="diagram-wrapper">
+          <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+          <pre>    Org Limit: 1,000,000/day
+           │
+    ┌──────┴──────┬──────────────┐
+    │             │              │
+  Key A        Key B          Key C
+  50K/day      50K/day       50K/day
+    │             │              │
+  Burst        Burst          Burst
+  100/sec      100/sec        100/sec</pre>
+        </div>
+
+        <p>Insight: If the org has 500 keys with 50K/day limits each, that's 25M potential usage, but org limit is 1M. Per-key limits aren't about quota — they're about burst protection, fairness, and billing attribution.</p>
+
+        <h4>Reservation-Based Quota (Not Counting)</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class OrgQuotaManager:
+    def check_and_consume(self) -> bool:
+        if self.used &lt; self.my_reservation:
+            self.used += 1
+            self._update_rate_estimate()
+            
+            # If running low, request more reservation
+            if self.used > 0.8 * self.my_reservation:
+                self._async_request_more_reservation()
+            return True
+        else:
+            # Out of reservation — synchronous request for more
+            return self._sync_request_reservation()
+    
+    def _async_request_more_reservation(self):
+        needed = self.request_rate * 60
+        asyncio.create_task(
+            self.coordinator.request_reservation(
+                self.org_id,
+                amount=needed * 1.5,
+                current_rate=self.request_rate
+            )
+        )</pre>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Aspect</th><th>Counting</th><th>Reservation</th></tr></thead>
+            <tbody>
+              <tr><td>Overshoot</td><td>Bounded by sync lag</td><td>Zero — can't exceed reservation</td></tr>
+              <tr><td>Hot key writes</td><td>Every request writes</td><td>Only on reservation refresh</td></tr>
+              <tr><td>Traffic shifts</td><td>Staleness issues</td><td>Work-stealing redistributes</td></tr>
+              <tr><td>Failure mode</td><td>Overshoot or fail-closed</td><td>Graceful — use existing reservation</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Work-Stealing for Dynamic Redistribution</h4>
+        <p>If Gateway A reserved 100K but only needs 20K, while Gateway B exhausted its reservation — the Global Quota Coordinator reclaims unused reservations from idle gateways and grants them to starved ones.</p>
+
+        <h4>Fairness via Gini Coefficient</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">yaml · Observability</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>metrics:
+  - org_quota_usage_ratio          # Current usage / limit
+  - org_quota_exhaustion_eta       # Projected seconds until exhaustion
+  - org_key_usage_gini_coefficient # 0=equal, 1=one key dominates
+
+alerts:
+  - Org at 80% quota with 50% of day remaining → Notify customer
+  - Single key using >30% of org quota → Notify org admin
+  - Reservation requests failing → Ops alert</pre>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">The "wow" moments</div>
+          <ul class="signal-list wow">
+            <li>Reservation system that guarantees zero overshoot</li>
+            <li>Work-stealing for dynamic quota redistribution</li>
+            <li>Gini coefficient for fairness monitoring — sophisticated metric</li>
+            <li>"Org quotas are precious. Customers pay for them."</li>
+          </ul>
+        </div>
+
+        <div class="callout callout-upgrade">
+          <div class="callout-title">What separates L6 from L7</div>
+          <p>"L6 adapts the existing design to handle orgs. L7 recognizes that orgs require a fundamentally different abstraction (reservations vs counting) because the accuracy requirements are higher when money is involved."</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 5 -->
+  <section class="section-wrapper" id="phase5">
+    <div class="section-header">
+      <span class="section-number">05</span>
+      <h2 class="section-title">Bottlenecks &amp; Scale</h2>
+      <span class="section-subtitle">Phase 5 · 45–55 minutes · Three questions</span>
+    </div>
+    <div class="section-divider"></div>
+
+    <!-- 100x -->
+    <h3 id="100x">Q1: What Happens at 100x Traffic — 50M RPS?</h3>
+    <div class="tier-card" data-tier="hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire · L6 Response</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:6000px">
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Metric</th><th>Current (500K)</th><th>At 100x (50M)</th><th>Feasible?</th></tr></thead>
+            <tbody>
+              <tr><td>Per-region QPS</td><td>100K</td><td>10M</td><td>—</td></tr>
+              <tr><td>Redis nodes/region</td><td>6</td><td>600</td><td>❌ Unmanageable</td></tr>
+              <tr><td>Network bandwidth</td><td>250 MB/s</td><td>25 GB/s</td><td>⚠️ Expensive</td></tr>
+              <tr><td>Config cache memory</td><td>2 GB</td><td>2 GB (same keys)</td><td>✓ Fine</td></tr>
+              <tr><td>Redis memory/region</td><td>1.5 GB</td><td>1.5 GB (same keys)</td><td>✓ Fine</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><mark>Key insight: Memory scales fine (same number of keys). Throughput is the problem.</mark></p>
+        <p><strong>New architecture at 50M RPS:</strong> Eliminate Redis from the hot path entirely. Each gateway has full rate limiting logic in-process. No network calls on hot path. Async sync to regional aggregator via Kafka every 100ms.</p>
+        <p><strong>The tradeoff:</strong> Accuracy drops from ±5% to ±15%. I'd renegotiate the SLA with product.</p>
+        <p><strong>Graceful migration path:</strong> Phase 1 → add local counting in front of Redis. Phase 2 → make Redis sync async. Phase 3 → move Redis out of hot path for free tier. Phase 4 → keep Redis hot path only for enterprise.</p>
+      </div>
+    </div>
+
+    <div class="tier-card" data-tier="strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire · L7 Response</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:8000px">
+        <div class="callout callout-wow">
+          <div class="callout-title">The fundamental insight</div>
+          <p><mark>"At 100x, the network is the enemy."</mark> Every network hop adds latency, variance, and failure modes. At 50M RPS, we can't afford any synchronous network calls on the hot path.</p>
+        </div>
+
+        <h4>Hierarchical Rate Limiting Architecture</h4>
+        <div class="diagram-wrapper">
+          <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+          <pre>┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 1: EDGE (CDN - Cloudflare/Fastly)                       │
+│  - Coarse IP-based rate limiting (DDoS protection)             │
+│  - 90% of abusive traffic never reaches origin                 │
+│  - Drops: ~40% of traffic (bots, scrapers, attacks)            │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ (~30M RPS reaches origin)
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 2: GATEWAY (In-Process)                                 │
+│  - Full API-key rate limiting, in-memory                       │
+│  - Token buckets per key, no network calls                     │
+│  - Async sync to regional aggregator every 100ms               │
+│  - LRU cache of active keys (keep 1M hottest, evict cold)     │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ Async batch (Kafka)
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 3: REGIONAL AGGREGATOR                                  │
+│  - Consumes usage batches from all regional gateways           │
+│  - Pushes budget updates back to gateways (pub/sub)            │
+│  - Detects keys approaching limits, increases sync frequency   │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ Every 5 seconds
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 4: GLOBAL COORDINATOR                                   │
+│  - Cross-region sync for global limits                         │
+│  - Budget allocation for org-level limits                      │
+└─────────────────────────────────────────────────────────────────┘</pre>
+        </div>
+
+        <div class="callout callout-wow">
+          <div class="callout-title">"Should we even do this?" — the Staff+ question</div>
+          <p>At 50M RPS, rate limiting costs $3-5M/year. I'd ask:</p>
+          <ul>
+            <li>What's the cost of NOT rate limiting (abuse, downstream overload)?</li>
+            <li>What's the cost of approximate rate limiting (±15% instead of ±5%)?</li>
+            <li>Is there a traffic tier we can simply trust (verified enterprise customers)?</li>
+          </ul>
+          <p><mark>"Often the right answer at 100x isn't 'build a 100x rate limiter' — it's 'change what we rate limit.'"</mark></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3am Debugging -->
+    <h3 id="debug-3am" style="margin-top:48px">Q2: 3am Debugging — Customer Wrongly Rate Limited</h3>
+    <div class="tier-card" data-tier="hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">✅ Hire · L6 Runbook</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">HIRE · L6</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:6000px">
+        <h4>Common Causes (Frequency Table)</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Actual Cause</th><th>Frequency</th><th>How to Identify</th></tr></thead>
+            <tbody>
+              <tr><td>Customer IS over limit, doesn't realize</td><td>40%</td><td>Check actual count vs claimed</td></tr>
+              <tr><td>Org limit hit, not key limit</td><td>20%</td><td>Check org membership</td></tr>
+              <tr><td>Config/cache staleness</td><td>15%</td><td>Compare config sources</td></tr>
+              <tr><td>Our bug (real false positive)</td><td>10%</td><td>Distributed trace shows error</td></tr>
+              <tr><td>Multi-region inconsistency</td><td>10%</td><td>Region-specific checks</td></tr>
+              <tr><td>Client bug (misreading 200 as 429)</td><td>5%</td><td>Request logs show 200s</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Diagnostic Tool Output</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">shell · rate-limiter-cli diagnose</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>$ rate-limiter-cli diagnose sk_live_abc123 --verbose
+
+┌─────────────────────────────────────────────────────────┐
+│ CUSTOMER DIAGNOSIS: sk_live_abc123                     │
+├─────────────────────────────────────────────────────────┤
+│ Config:                                                 │
+│   Key limit: 10,000/day                                │
+│   Org limit: 100,000/day (org_acme_corp)               │
+│   Config cached at: 2024-01-15 03:15:22 UTC (47m ago)  │
+├─────────────────────────────────────────────────────────┤
+│ Current usage:                                         │
+│   Key counter (Redis): 8,234                           │
+│   Key pending (local): 127 across 20 gateways          │
+│   Org counter (Redis): 97,845                          │
+│   Org pending (local): 2,340 across 20 gateways        │
+├─────────────────────────────────────────────────────────┤
+│ Estimated actual:                                      │
+│   Key: ~8,361 / 10,000 (83.6%)                         │
+│   Org: ~100,185 / 100,000 (100.2%) ← OVER             │
+├─────────────────────────────────────────────────────────┤
+│ Last 5 decisions:                                      │
+│   03:42:15 DENY  (reason: org_limit_exceeded)  ← Root! │
+└─────────────────────────────────────────────────────────┘
+
+DIAGNOSIS: Customer is within KEY limit but ORG is exhausted.</pre>
+        </div>
+
+        <h4>Immediate Mitigation</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">shell</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre># Temporary bypass (audit logged)
+$ rate-limiter-cli bypass create \
+    --key=sk_live_abc123 \
+    --reason="Org limit exceeded, pending customer comms" \
+    --expires="+4h" \
+    --incident=INC-12345</pre>
+        </div>
+
+        <h4>Improvement After Incident</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">json · Better 429 Response Body</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>{
+  "error": "rate_limit_exceeded",
+  "limit_type": "organization",   // Not just "rate_limit"!
+  "organization_id": "org_acme_corp",
+  "org_limit": 100000,
+  "org_usage": 100185,
+  "your_key_usage": 8361,
+  "retry_after": 3600,
+  "help_url": "https://docs.example.com/rate-limits/org"
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thundering Herd -->
+    <h3 id="thundering-herd" style="margin-top:48px">Q3: Thundering Herd — What's Yours and How Do You Prevent It?</h3>
+
+    <div class="tier-card" data-tier="strong-hire">
+      <div class="tier-card-header" onclick="toggleCard(this)">
+        <div><div class="tier-title">🏆 Strong Hire Response</div></div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="tier-badge">STRONG HIRE · L7</span><span class="collapse-icon">▼</span></div>
+      </div>
+      <div class="tier-card-body" style="max-height:8000px">
+        <div class="callout callout-wow">
+          <div class="callout-title">The meta-irony</div>
+          <p><mark>"A rate limiter that thundering herds is like a fire extinguisher that catches fire."</mark></p>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Trigger</th><th>What Herds</th><th>Impact</th><th>Probability</th></tr></thead>
+            <tbody>
+              <tr><td>Cache TTL expiry</td><td>Config service</td><td>Service overload</td><td>High if not jittered</td></tr>
+              <tr><td>Window reset</td><td>Redis (counter resets)</td><td>Burst capacity consumed</td><td>Medium</td></tr>
+              <tr><td>Redis recovery</td><td>Redis (reconnects)</td><td>Redis overload</td><td>Medium</td></tr>
+              <tr><td>Gateway deploy</td><td>Config service</td><td>Service overload</td><td>Medium</td></tr>
+              <tr><td>Clock sync (NTP jump)</td><td>Everything</td><td>Chaos</td><td>Rare but catastrophic</td></tr>
+              <tr><td>Cascading timeout</td><td>Backend via retry</td><td>Death spiral</td><td>High during incidents</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>Non-Obvious: Cascading Timeout Herd</h4>
+        <p>Backend slows → customers get errors → retry → rate limiter says "allowed" (they're within limit) → backend gets 10x load → slower → more retries → death spiral. The rate limiter allowed all the retries!</p>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python · Backend Health-Aware Limiting</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>class AdaptiveRateLimiter:
+    def check(self, api_key, limit) -> Decision:
+        if not self._under_limit(api_key, limit):
+            return DENY
+            
+        health = self.backend_health.current_health()
+        
+        if health &lt; 0.5:  # Backend struggling
+            effective_limit = limit * health
+            if not self._under_limit(api_key, effective_limit):
+                return DENY_WITH_BACKPRESSURE
+                
+        return ALLOW</pre>
+        </div>
+
+        <h4>Probabilistic Early Expiration ("Probabilistic Immortality")</h4>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>def should_refresh(cache_entry):
+    age = now() - cache_entry.created_at
+    ttl = cache_entry.ttl
+    
+    # Probability of refresh increases as we approach expiry
+    # At 50% TTL: 0% chance. At 95% TTL: 80% chance.
+    if age &lt; ttl * 0.5:
+        return False
+    
+    remaining_pct = 1 - (age / ttl)
+    refresh_prob = 1 - (remaining_pct / 0.5) ** 2
+    
+    return random.random() &lt; refresh_prob
+    # Entries almost never actually expire — they get refreshed.
+    # "Probabilistic immortality"</pre>
+        </div>
+
+        <h4>Client-Side Retry Herd Prevention</h4>
+        <p>When we return 429 with <code>Retry-After: 60</code>, all rate-limited clients retry at exactly t+60. Solution:</p>
+        <div class="code-wrapper">
+          <div class="code-header"><span class="code-lang">python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <pre>def calculate_retry_after(base_seconds):
+    jitter = random.uniform(0.8, 1.2)
+    return int(base_seconds * jitter)  # Spread retries ±20%</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASE 6: Debrief -->
+  <section class="section-wrapper" id="phase6">
+    <div class="section-header">
+      <span class="section-number">06</span>
+      <h2 class="section-title">Final Debrief</h2>
+      <span class="section-subtitle">Phase 6 · 55–60 minutes</span>
+    </div>
+    <div class="section-divider"></div>
+
+    <!-- Scorecard -->
+    <h3 id="scorecard">Strong Hire Scorecard</h3>
+    <div class="scorecard-grid">
+      <div class="score-cell"><span class="score-dim">Problem Clarification</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Requirements (FR + NFR)</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">API Design &amp; Data Modeling</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Architecture Breadth (HLD)</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Architecture Depth (Deep Dive)</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Storage &amp; Data Strategy</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Scalability &amp; Performance</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Reliability &amp; Fault Tolerance</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Back-of-Envelope Estimation</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Trade-off Articulation</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Communication &amp; Structure</span><span class="score-val">4/4</span></div>
+      <div class="score-cell"><span class="score-dim">Handling Ambiguity</span><span class="score-val">4/4</span></div>
+    </div>
+    <div style="text-align:center;padding:20px 0">
+      <span style="font-family:'Playfair Display',serif;font-size:28px;font-weight:900;color:var(--strong-hire)">48/48 · Strong Hire (L7 signal)</span>
+    </div>
+
+    <!-- Progression Summary -->
+    <h3>What Separates Each Level</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Area</th><th class="cell-no-hire">No Hire</th><th class="cell-lean-hire">Lean Hire</th><th class="cell-hire">Hire (L6)</th><th class="cell-strong-hire">Strong Hire (L7)</th></tr></thead>
+        <tbody>
+          <tr><td>Clarification</td><td>Jumps to Redis</td><td>Asks questions</td><td>Structures into categories, asks WHY</td><td>Names core tensions immediately</td></tr>
+          <tr><td>Requirements</td><td>"High availability"</td><td>Specific numbers</td><td>P0/P1/P2, explicit out-of-scope</td><td>Graceful degradation spectrum</td></tr>
+          <tr><td>Architecture</td><td>Single Redis box</td><td>Components identified</td><td>Decisions with reasoning, failure modes</td><td>Novel techniques, budget allocation</td></tr>
+          <tr><td>Deep dive</td><td>Vague handwaving</td><td>Conceptual approaches</td><td>Implementation code, edge cases, math</td><td>Identifies subtle bugs, chaos testing</td></tr>
+          <tr><td>Scale</td><td>"Add more nodes"</td><td>Identifies bottlenecks</td><td>Proposes new architecture, quantifies</td><td>Questions whether we should build it</td></tr>
+          <tr><td>Debugging</td><td>"Check logs"</td><td>Structured approach</td><td>Runbook with commands, scenario table</td><td>Diagnostic tool output, frequency table</td></tr>
+          <tr><td>Overall</td><td>Jumps to solution</td><td>Knows the checklist</td><td>Solves the problem</td><td>Teaches the interviewer something</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Study Priorities -->
+    <h3 id="study-priorities" style="margin-top:48px">Top 5 Study Priorities</h3>
+    <div class="priority-grid">
+      <div class="priority-card" data-num="1">
+        <div class="priority-title">Rate Limiting Algorithms</div>
+        <div class="priority-desc">Token bucket vs sliding window vs fixed window. When each breaks. Implement token bucket in Redis with Lua.</div>
+      </div>
+      <div class="priority-card" data-num="2">
+        <div class="priority-title">Hot Key Handling</div>
+        <div class="priority-desc">Local counting with sync. Adaptive sync frequency. Probabilistic admission. This is the #1 deep dive topic.</div>
+      </div>
+      <div class="priority-card" data-num="3">
+        <div class="priority-title">Multi-Region Consistency</div>
+        <div class="priority-desc">Budget allocation model. Why "sync counters" is naive. Reservation system for precious quotas.</div>
+      </div>
+      <div class="priority-card" data-num="4">
+        <div class="priority-title">Failure Modes</div>
+        <div class="priority-desc">Fail-open vs fail-closed. Graceful degradation. What happens when Redis is down? When config service is down?</div>
+      </div>
+      <div class="priority-card" data-num="5">
+        <div class="priority-title">3am Debugging</div>
+        <div class="priority-desc">Mental runbook. Common causes (org limits, config staleness, multi-region inconsistency). Know your diagnostic tool.</div>
+      </div>
+    </div>
+
+    <!-- Advanced Topics -->
+    <h3 id="advanced-topics" style="margin-top:48px">Advanced Topics That Should Have Been Mentioned</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>Topic</th><th>What Strong Hire Says</th></tr></thead>
+        <tbody>
+          <tr><td>Lua scripts in Redis</td><td>"Atomic check-and-increment to prevent race conditions"</td></tr>
+          <tr><td>Count-Min Sketch</td><td>"Memory-efficient hot key detection with bounded error"</td></tr>
+          <tr><td>Circuit breakers</td><td>"On repeated Redis failure, fail open and stop trying"</td></tr>
+          <tr><td>Observability</td><td>"Emit metrics on every decision: allowed/denied, which limit, headroom"</td></tr>
+          <tr><td>Customer experience</td><td>"429 response should say WHICH limit and WHY"</td></tr>
+          <tr><td>Token bucket parameters</td><td>"Bucket size = burst capacity, refill rate = sustained rate"</td></tr>
+          <tr><td>Sliding window counter math</td><td>"prev × overlap% + current"</td></tr>
+          <tr><td>Redis cluster sizing</td><td>"Single node handles 100K+ QPS, 6 nodes gives us headroom"</td></tr>
+          <tr><td>Config cache TTL</td><td>"30s with jitter to prevent stampede"</td></tr>
+          <tr><td>Backpressure</td><td>"Backend health-aware limiting to prevent cascading failure"</td></tr>
+          <tr><td>Probabilistic early expiration</td><td>"Entries almost never expire — they get refreshed. Probabilistic immortality."</td></tr>
+          <tr><td>Gini coefficient</td><td>"Fairness metric for detecting noisy neighbors in org quotas"</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-wow" style="margin-top:40px">
+      <div class="callout-title">Final Advice — For L6 Bar</div>
+      <p>"The difference between L5 and L6 is structure and ownership. L5 answers questions. L6 structures the problem, makes decisions, and owns the tradeoffs. Every answer should have: here's my approach, here's what I considered, here's why I chose this, here's what I'm giving up."</p>
+    </div>
+
+    <div class="callout callout-success" style="margin-top:16px">
+      <div class="callout-title">Final Advice — For Strong Hire</div>
+      <p>"Strong Hire candidates teach the interviewer something. They have an insight — probabilistic admission, budget-based allocation, 'the network is the enemy at scale' — that makes the interviewer think 'I hadn't thought of it that way.' This comes from deep experience and genuine curiosity about how systems work."</p>
+    </div>
+  </section>
+
+</main>
+
+<button id="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = total > 0 ? (window.scrollY / total) * 100 : 0;
+    document.getElementById('progress-bar').style.width = pct + '%';
+
+    // Back to top
+    const btn = document.getElementById('back-to-top');
+    btn.classList.toggle('visible', window.scrollY > 400);
+  });
+
+  // Active nav on scroll
+  const navItems = document.querySelectorAll('.nav-item[class*="nav-item"]');
+  const sections = document.querySelectorAll('[id]');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        navItems.forEach(item => {
+          const link = item.querySelector('a');
+          if (link && link.getAttribute('href') === '#' + id) {
+            navItems.forEach(n => n.classList.remove('active'));
+            item.classList.add('active');
+          }
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(section => observer.observe(section));
+
+  // Collapsible cards
+  function toggleCard(header) {
+    const card = header.closest('.tier-card');
+    const body = card.querySelector('.tier-card-body');
+    const collapsed = card.classList.toggle('collapsed');
+    if (!collapsed) {
+      body.style.maxHeight = body.scrollHeight + 'px';
+    }
+  }
+
+  // Initialize max-height for animation
+  document.querySelectorAll('.tier-card-body').forEach(body => {
+    body.style.maxHeight = body.scrollHeight + 'px';
+  });
+
+  // Copy button
+  function copyCode(btn) {
+    const pre = btn.closest('.code-wrapper').querySelector('pre');
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      btn.textContent = 'Copied ✓';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  // Search
+  const searchBox = document.getElementById('search-box');
+  const allNavItems = document.querySelectorAll('.nav-item');
+
+  searchBox.addEventListener('input', () => {
+    const query = searchBox.value.toLowerCase().trim();
+    allNavItems.forEach(item => {
+      const text = item.textContent.toLowerCase();
+      if (!query || text.includes(query)) {
+        item.classList.remove('hidden');
+      } else {
+        item.classList.add('hidden');
+      }
+    });
+  });
+
+  // Hamburger
+  const hamburger = document.getElementById('hamburger');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+
+  hamburger.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('visible');
+  });
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('visible');
+  });
+</script>
+</body>
+</html>
