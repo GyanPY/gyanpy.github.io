@@ -14,15 +14,35 @@
     ]
   },
   "Interview": {
-    "System Design": [
-      {
-        "title": "Design Twitter",
-        "file": "pages/interview/twitter.html"
-      },
-      {
-        "title": "Design Rate Limiter",
-        "file": "pages/interview/rate-limiter.html"
-      }
-    ]
+    "System Design": {
+      "Twitter": [
+        {
+          "title": "design.html",
+          "file": "pages/interview/system-design/twitter/design.html"
+        },
+        {
+          "title": "core.html",
+          "file": "pages/interview/system-design/twitter/core.html"
+        },
+        {
+          "title": "extra.html",
+          "file": "pages/interview/system-design/twitter/extra.html"
+        }
+      ],
+      "Rate Limiter": [
+        {
+          "title": "design.html",
+          "file": "pages/interview/system-design/rate-limiter/design.html"
+        },
+        {
+          "title": "core.html",
+          "file": "pages/interview/system-design/rate-limiter/core.html"
+        },
+        {
+          "title": "extra.html",
+          "file": "pages/interview/system-design/rate-limiter/extra.html"
+        }
+      ]
+    }
   }
 }
