@@ -1,0 +1,1086 @@
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg: var(--color-background-primary);
+  --bg2: var(--color-background-secondary);
+  --bg3: var(--color-background-tertiary);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-secondary);
+  --hint: var(--color-text-tertiary);
+  --border: var(--color-border-tertiary);
+  --accent: #2D5BE3;
+  --accent2: #E35B2D;
+  --accent3: #2DA65B;
+  --warn: #C17B1A;
+  --mono: 'IBM Plex Mono', monospace;
+  --serif: 'DM Serif Display', serif;
+  --sans: 'Sora', var(--font-sans), sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, .root { font-family: var(--sans); color: var(--text); background: transparent; }
+
+.root { max-width: 860px; margin: 0 auto; padding: 0 0 60px; }
+
+.hero { padding: 36px 0 24px; border-bottom: 0.5px solid var(--border); margin-bottom: 32px; }
+.hero-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
+.hero h1 { font-family: var(--serif); font-size: 42px; font-weight: 400; line-height: 1.1; color: var(--text); }
+.hero h1 em { font-style: italic; color: var(--accent); }
+.hero-sub { font-size: 14px; color: var(--muted); margin-top: 10px; line-height: 1.6; max-width: 600px; }
+
+.nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 40px; }
+.nav-pill { font-size: 12px; font-weight: 500; padding: 5px 12px; border: 0.5px solid var(--border); border-radius: 20px; cursor: pointer; color: var(--muted); background: var(--bg); transition: all 0.15s; white-space: nowrap; }
+.nav-pill:hover, .nav-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.pillar { margin-bottom: 56px; scroll-margin-top: 20px; }
+
+.pillar-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px; padding-bottom: 14px; border-bottom: 0.5px solid var(--border); }
+.pillar-num { font-family: var(--serif); font-size: 48px; font-weight: 400; color: var(--border); line-height: 1; min-width: 48px; }
+.pillar-title-wrap {}
+.pillar-emoji { font-size: 22px; line-height: 1; margin-bottom: 2px; }
+.pillar-title { font-family: var(--serif); font-size: 26px; font-weight: 400; line-height: 1.15; color: var(--text); }
+.pillar-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+h2 { font-family: var(--sans); font-size: 16px; font-weight: 500; color: var(--text); margin: 28px 0 10px; }
+h3 { font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--text); margin: 20px 0 8px; }
+p { font-size: 14px; line-height: 1.75; color: var(--text); margin-bottom: 12px; }
+li { font-size: 14px; line-height: 1.7; color: var(--text); margin-bottom: 4px; }
+ul, ol { padding-left: 20px; margin-bottom: 12px; }
+
+code { font-family: var(--mono); font-size: 12px; background: var(--bg2); padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+
+.pre-block { font-family: var(--mono); font-size: 11px; line-height: 1.6; background: var(--bg2); border: 0.5px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; overflow-x: auto; white-space: pre; color: var(--text); }
+
+.callout { border-left: 3px solid; border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
+.callout-fire { border-color: #E35B2D; background: rgba(227,91,45,0.07); }
+.callout-lightning { border-color: #2D5BE3; background: rgba(45,91,227,0.07); }
+.callout-ruler { border-color: #2DA65B; background: rgba(45,166,91,0.07); }
+.callout-key { border-color: #C17B1A; background: rgba(193,123,26,0.08); }
+.callout-label { font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+.callout-fire .callout-label { color: #E35B2D; }
+.callout-lightning .callout-label { color: #2D5BE3; }
+.callout-ruler .callout-label { color: #2DA65B; }
+.callout-key .callout-label { color: #C17B1A; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 14px 0; }
+th { text-align: left; font-weight: 500; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+td { padding: 8px 10px; border-bottom: 0.5px solid var(--border); line-height: 1.5; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.good { color: #2DA65B; font-weight: 500; }
+.bad { color: #E35B2D; font-weight: 500; }
+.ok { color: #C17B1A; font-weight: 500; }
+
+.badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 4px; margin: 0 2px; }
+.badge-blue { background: rgba(45,91,227,0.1); color: #2D5BE3; }
+.badge-orange { background: rgba(227,91,45,0.1); color: #C14820; }
+.badge-green { background: rgba(45,166,91,0.1); color: #1A7A3F; }
+.badge-gray { background: var(--bg2); color: var(--muted); }
+
+.section-divider { height: 0.5px; background: var(--border); margin: 24px 0; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin: 14px 0; }
+
+.card { background: var(--bg2); border: 0.5px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.card-title { font-weight: 500; font-size: 13px; margin-bottom: 6px; }
+.card-body { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+.scenario { border: 0.5px solid var(--border); border-radius: 10px; margin: 12px 0; overflow: hidden; }
+.scenario-header { background: var(--bg2); padding: 10px 14px; font-weight: 500; font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.scenario-header:hover { background: var(--bg3); }
+.scenario-body { padding: 14px; display: none; }
+.scenario-body.open { display: block; }
+.scenario-body table { font-size: 12px; }
+
+.q-block { border: 0.5px solid var(--border); border-radius: 10px; margin: 14px 0; overflow: hidden; }
+.q-header { padding: 12px 16px; font-weight: 500; font-size: 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: var(--bg); }
+.q-header:hover { background: var(--bg2); }
+.q-body { display: none; padding: 14px 16px; border-top: 0.5px solid var(--border); background: var(--bg2); font-size: 13px; line-height: 1.7; }
+.q-body.open { display: block; }
+
+.interview-sim { background: var(--bg2); border: 0.5px solid var(--border); border-radius: 12px; padding: 20px; margin: 14px 0; }
+.interview-sim h3 { font-size: 15px; margin-bottom: 10px; }
+
+.tag { font-size: 11px; background: var(--bg3); border: 0.5px solid var(--border); border-radius: 4px; padding: 2px 7px; color: var(--muted); margin-right: 4px; }
+
+.highlight-box { border: 0.5px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin: 14px 0; background: rgba(45,91,227,0.04); }
+.highlight-box p { font-size: 13px; margin-bottom: 0; }
+
+.sim-role { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sim-candidate { border-left: 2px solid var(--accent); padding: 8px 12px; margin: 8px 0; font-size: 13px; line-height: 1.6; }
+.sim-interviewer { border-left: 2px solid var(--accent2); padding: 8px 12px; margin: 8px 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+</style>
+
+<div class="root">
+
+<div class="hero">
+  <div class="hero-eyebrow">Staff/Principal Engineering Interview Guide</div>
+  <h1>Apache <em>Cassandra</em><br>Deep Dive</h1>
+  <p class="hero-sub">8 pillars from first principles to L7/L8 level — covering architecture, tradeoffs, failure modes, scaling, and interview simulation. Version coverage through Cassandra 5.x (2024).</p>
+</div>
+
+<nav class="nav" id="nav">
+  <span class="nav-pill active" onclick="scrollTo('p1')">1 · Core Concepts</span>
+  <span class="nav-pill" onclick="scrollTo('p2')">2 · Architecture</span>
+  <span class="nav-pill" onclick="scrollTo('p3')">3 · Tradeoffs</span>
+  <span class="nav-pill" onclick="scrollTo('p4')">4 · Failure Modes</span>
+  <span class="nav-pill" onclick="scrollTo('p5')">5 · Scaling</span>
+  <span class="nav-pill" onclick="scrollTo('p6')">6 · Real-World</span>
+  <span class="nav-pill" onclick="scrollTo('p7')">7 · Google-Scale</span>
+  <span class="nav-pill" onclick="scrollTo('p8')">8 · Interview Sim</span>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 1 -->
+<section class="pillar" id="p1">
+<div class="pillar-header">
+  <div class="pillar-num">01</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🧠</div>
+    <div class="pillar-title">Core Concepts &amp; Mental Models</div>
+    <div class="pillar-subtitle">First principles through fundamental guarantees</div>
+  </div>
+</div>
+
+<h2>The Problem Before Cassandra</h2>
+<p>Pre-2008, the world ran on RDBMS (MySQL, PostgreSQL, Oracle) and early NoSQL attempts. Facebook's inbox storage hit ~25M active users — the MySQL sharding story was brutal: manual resharding required downtime, cross-shard joins were painful, replication topologies created single points of failure, and any master failure required manual failover that took minutes.</p>
+<p>The CAP theorem forced a choice: in a distributed system under partition, you could have Consistency (everyone sees same data) or Availability (system always responds) — not both. Traditional RDBMS chose consistency. The emerging web needed availability.</p>
+
+<div class="callout callout-key">
+  <div class="callout-label">The Core Insight</div>
+  Amazon's Dynamo paper (2007) and Google's Bigtable paper (2006) converged on the same realization: you could build a system that was <em>always writable</em> if you pushed conflict resolution to read time or application layer. Facebook's Cassandra combined both approaches — Dynamo's partitioning/replication + Bigtable's column-family data model.
+</div>
+
+<h2>Core Abstraction</h2>
+<p>Cassandra presents a <strong>wide-column store</strong> where data is organized in <em>keyspaces → tables → rows</em>. The power is in the partition key: all data with the same partition key lives on the same set of nodes (determined by consistent hashing), making reads/writes to a partition extremely efficient. Within a partition, rows are sorted by the clustering key — making range queries within a partition blazing fast.</p>
+
+<h2>Fundamental Guarantees (and Non-Guarantees)</h2>
+<div class="two-col">
+<div>
+<div class="card">
+  <div class="card-title">✅ What Cassandra GUARANTEES</div>
+  <div class="card-body">
+    <ul style="padding-left:16px;margin-top:6px">
+      <li><strong>High Availability:</strong> No single point of failure. Any node can serve any request.</li>
+      <li><strong>Tunable Consistency:</strong> Per-query CL from ONE to ALL or QUORUM.</li>
+      <li><strong>Linear Write Scalability:</strong> Adding nodes linearly increases write throughput.</li>
+      <li><strong>Eventual Consistency:</strong> All replicas converge to same state (eventually).</li>
+      <li><strong>Partition Tolerance:</strong> System continues operating during network splits.</li>
+      <li><strong>Durable Writes:</strong> CommitLog flush before ack (with durable=true).</li>
+    </ul>
+  </div>
+</div>
+</div>
+<div>
+<div class="card">
+  <div class="card-title">❌ What Cassandra does NOT Guarantee</div>
+  <div class="card-body">
+    <ul style="padding-left:16px;margin-top:6px">
+      <li><strong>Strong Consistency by default</strong> (requires QUORUM+QUORUM which has latency cost).</li>
+      <li><strong>Multi-partition transactions</strong> (LWT covers single partition only).</li>
+      <li><strong>Referential integrity</strong> — no foreign keys, no JOINs.</li>
+      <li><strong>Secondary index performance</strong> — global 2i is anti-pattern at scale.</li>
+      <li><strong>Ordered global iteration</strong> — partition order is token-based, not natural.</li>
+      <li><strong>Immediate cross-DC consistency</strong> — async replication means lag.</li>
+    </ul>
+  </div>
+</div>
+</div>
+</div>
+
+<h2>Critical Invariants for Correctness</h2>
+<ol>
+  <li><strong>Partition key must be globally unique per logical entity.</strong> Collisions mean data overwrites silently.</li>
+  <li><strong>Timestamps are last-write-wins (LWW).</strong> Cassandra uses the highest timestamp — clock skew can corrupt data.</li>
+  <li><strong>Tombstones must be GC'd before becoming "ghost" reads.</strong> <code>gc_grace_seconds</code> must be longer than your repair cycle.</li>
+  <li><strong>Compaction must keep up with writes.</strong> Unbounded SSTable growth destroys read latency.</li>
+  <li><strong>Quorum reads + Quorum writes = Linearizability (within partition).</strong> Below quorum breaks this invariant.</li>
+</ol>
+
+<h2>Mental Model — The Ring</h2>
+<div class="pre-block">
+           Token Ring (Virtual Node Distribution)
+    
+         hash(pk) maps to a position on the 0→2^64 ring
+    
+                 ┌─────────────────┐
+            N6   │   Token Range   │   N1
+          ╱      │   0 → 2^64      │      ╲
+        N5        └─────────────────┘        N2
+          ╲                                 ╱
+            N4 ─────────────────────── N3
+
+  Each node owns a slice of the token ring.
+  Replication Factor=3: each write goes to 3 consecutive nodes.
+  VNodes (default 16/node): each node owns 16 non-contiguous slices
+  → better load balance, faster streaming on node join/leave.
+
+  Coordinator (any node):
+    1. Receives client request
+    2. Hashes partition key → finds responsible replica set
+    3. Contacts replicas based on Consistency Level
+    4. Returns result after meeting CL threshold
+</div>
+
+<div class="callout callout-fire">
+  <div class="callout-label">🔥 Common Interview Mistake</div>
+  Candidates say "Cassandra is eventually consistent." The real answer is: <strong>Cassandra offers tunable consistency per operation.</strong> With CL=QUORUM on both reads and writes (with RF=3), you get strong consistency for that partition. The tradeoff is availability — if a node is down, QUORUM reads/writes fail.
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 1</div>
+  Cassandra's power is the combination of peer-to-peer architecture (no master), consistent hashing (predictable data placement), and tunable consistency — giving you the ability to dial the availability/consistency tradeoff per request, not per cluster.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 2 -->
+<section class="pillar" id="p2">
+<div class="pillar-header">
+  <div class="pillar-num">02</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🏗️</div>
+    <div class="pillar-title">Architecture Deep Dive</div>
+    <div class="pillar-subtitle">Internal components, write/read paths, on-disk layout</div>
+  </div>
+</div>
+
+<h2>Component Map</h2>
+<div class="pre-block">
+┌─────────────────────────────────────────────────────────────────┐
+│                        CASSANDRA NODE                           │
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │  GOSSIP      │    │  COMMITLOG   │    │  MEMTABLE        │  │
+│  │  Protocol    │    │  (WAL)       │    │  (In-Memory)     │  │
+│  │  (heartbeat) │    │  Sequential  │    │  Write buffer    │  │
+│  │  fd_thresh=8 │    │  Append-only │    │  Per table       │  │
+│  └──────────────┘    └──────┬───────┘    └────────┬─────────┘  │
+│                             │ sync                │ flush       │
+│  ┌──────────────┐           │              ┌──────▼─────────┐  │
+│  │  PARTITIONER │    ┌──────▼───────┐      │  SSTABLE       │  │
+│  │  Murmur3Hash │    │  COMMITLOG   │      │  (Immutable)   │  │
+│  │  or ByteOrd  │    │  SEGMENT     │      │  Data.db       │  │
+│  └──────────────┘    │  (on disk)   │      │  Index.db      │  │
+│                      └──────────────┘      │  Filter.db     │  │
+│  ┌──────────────┐                          │  Summary.db    │  │
+│  │  SNITCH      │    ┌──────────────┐      │  Stats.db      │  │
+│  │  (topology)  │    │  BLOOM FILTER│      └────────────────┘  │
+│  │  DC/Rack     │    │  per SSTable │                          │  
+│  │  awareness   │    │  false+rate  │    ┌──────────────────┐  │
+│  └──────────────┘    │  ~1%default  │    │  ROW CACHE       │  │
+│                      └──────────────┘    │  KEY CACHE       │  │
+│  ┌──────────────┐                        │  (optional)      │  │
+│  │  COMPACTION  │    ┌──────────────┐    └──────────────────┘  │
+│  │  STCS/LCS/   │    │  COORDINATOR │                          │
+│  │  TWCS/UCS    │    │  ROLE        │                          │
+│  └──────────────┘    └──────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>Write Path — Step by Step</h2>
+<div class="pre-block">
+CLIENT → COORDINATOR (any node)
+  │
+  ├─1. Parse CQL, determine partition key
+  ├─2. Hash(partition_key) → token → replica set
+  ├─3. Check Consistency Level (ONE/QUORUM/ALL)
+  ├─4. Send mutation to N replicas in parallel
+  │
+  └── ON EACH REPLICA NODE:
+       │
+       ├─5. Write to COMMITLOG (sequential append, fsync per batch)
+       │     → This is the durability guarantee
+       │     → CommitLog segments rotate at 32MB (default)
+       │
+       ├─6. Write to MEMTABLE (in-memory sorted structure)
+       │     → Sorted by clustering key within partition
+       │     → Also updates Bloom filter, partition index
+       │
+       ├─7. ACK back to Coordinator
+       │
+       └─8. [Background] When memtable hits threshold (32MB default):
+             → Flush to SSTable on disk (immutable)
+             → SSTable = Data.db + Index.db + Filter.db + Summary.db
+             → Compaction merges SSTables periodically
+
+COORDINATOR: Wait for CL acks, return to client
+  → If hint needed (node down): write Hinted Handoff entry
+</div>
+
+<h2>Read Path — Step by Step</h2>
+<div class="pre-block">
+CLIENT → COORDINATOR
+  │
+  ├─1. Hash(partition_key) → replica set
+  ├─2. Send read to N replicas based on CL
+  │     (CL=ONE: fastest, 1 node; CL=QUORUM: majority)
+  │
+  └── ON EACH QUERIED REPLICA:
+       │
+       ├─3. Check ROW CACHE (if enabled, usually disabled for write-heavy)
+       │
+       ├─4. Check MEMTABLE (most recent data)
+       │
+       ├─5. Check each SSTable (newest to oldest):
+       │     a) Bloom Filter check (probabilistic — skip if definitely absent)
+       │     b) Key Cache lookup (offset in Data.db?)
+       │     c) Partition Summary → Partition Index → Data.db offset
+       │     d) Read row from Data.db
+       │
+       ├─6. MERGE results across SSTables (resolve via timestamp)
+       │     → Most recent timestamp wins (LWW)
+       │     → Tombstones suppress older values
+       │
+       └─7. Return to Coordinator
+
+COORDINATOR:
+  ├─8. Read Repair (if CL>ONE): compare responses, fix stale replicas
+  └─9. Return merged result to client
+</div>
+
+<div class="callout callout-lightning">
+  <div class="callout-label">⚡ L7/L8 Differentiator</div>
+  The read path can hit 5-10 SSTables before Leveled Compaction is fully operational. Each SSTable consult is a potential disk I/O. This is why <strong>partition-level read amplification</strong> is the silent killer. At L8, you'd discuss: how compaction strategy directly affects p99 read latency, why STCS hurts reads under heavy write load, and why LCS's guaranteed ≤10 SSTables per level makes read latency predictable at the cost of 10x write amplification.
+</div>
+
+<h2>SSTable On-Disk Format</h2>
+<div class="pre-block">
+SSTable (per flush, immutable):
+├── Data.db          — Actual row data, sorted by partition token, then clustering key
+├── Index.db         — Map of partition key → byte offset in Data.db  (sampled)
+├── Summary.db       — Sampled index of Index.db (fits in RAM)
+├── Filter.db        — Bloom filter bytes (default 0.75% false positive)
+├── CompressionInfo.db — Compression chunk offsets
+├── Statistics.db    — Min/max timestamps, tombstone count, partition sizes
+├── TOC.txt          — Table of contents, lists all component files
+└── Digest.crc32     — Integrity checksum
+
+Cassandra 4.0+: BigTableFormat → improved with:
+  - Checksum per row (detect partial write corruption)
+  - Improved partition index (btree within SSTable)
+
+Cassandra 5.0 (2024): "Unified Compaction Strategy" (UCS) released
+  - Single strategy that adapts between tiered and leveled behavior
+  - Replaces STCS/LCS/TWCS with one tunable strategy
+  - Based on "sharded compaction" research (reducing write amplification)
+</div>
+
+<h2>Gossip Protocol</h2>
+<p>Every second, each node gossips with 1–3 random peers. State exchanged: node token assignments, schema version, load, DC/rack, status (NORMAL/LEAVING/JOINING). Convergence time for N nodes ≈ O(log N) gossip rounds. With 100 nodes, cluster state converges in ~7 seconds.</p>
+
+<h2>Back-pressure and Flow Control</h2>
+<p>Cassandra has limited native back-pressure. Write pressure manifests as: CommitLog segment exhaustion (writes stall), Memtable full (flush queue grows), native_transport_max_requests_per_second (4.1+ rate limiting). At extreme write load, the JVM heap fills with Memtable data and GC pressure causes the infamous "GC pause of death" — a stop-the-world pause making the node appear dead to gossip, triggering a cascade.</p>
+
+<div class="callout callout-ruler">
+  <div class="callout-label">📐 Back-of-Envelope</div>
+  Single Cassandra node: 50K–100K writes/sec (128-byte rows, SSD, RF=1). With RF=3 and QUORUM, effective write throughput per logical write = 50K/3 * 2 (QUORUM acks) ≈ coordinator sees ~33K writes/sec. At 100-node cluster: ~3.3M writes/sec cluster-wide for logical writes. Read throughput is typically 50–70% of write throughput due to merge overhead.
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 2</div>
+  Every Cassandra operation is a race between write speed (limited by CommitLog fsync) and read merge cost (limited by SSTable count). Understanding this tension — and how compaction strategies mediate it — is the core of Cassandra performance engineering.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 3 -->
+<section class="pillar" id="p3">
+<div class="pillar-header">
+  <div class="pillar-num">03</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">⚖️</div>
+    <div class="pillar-title">Trade-offs &amp; Design Decisions</div>
+    <div class="pillar-subtitle">CAP, PACELC, consistency models, durability knobs</div>
+  </div>
+</div>
+
+<h2>CAP Theorem Position</h2>
+<p>Cassandra is an <strong>AP system by default</strong> — it prioritizes Availability and Partition Tolerance, sacrificing strong Consistency. However, this is tunable: with <code>CL=ALL</code> (every replica must respond), you sacrifice availability and get CP behavior. The real insight is that Cassandra lets you choose per-request which corner of CAP you're in.</p>
+
+<h2>PACELC Analysis</h2>
+<table>
+  <thead><tr><th>Scenario</th><th>Default Behavior</th><th>Tradeoff</th></tr></thead>
+  <tbody>
+    <tr><td>Partition present</td><td>Prefer Availability (AP): continue serving with fewer replicas</td><td>Stale reads possible if quorum not reached</td></tr>
+    <tr><td>No partition (normal)</td><td>Prefer Low Latency (EL): CL=ONE returns after first ack</td><td>Inconsistency window exists until repair</td></tr>
+    <tr><td>Write with CL=QUORUM</td><td>EL→EC: higher consistency, higher latency</td><td>~2x latency vs CL=ONE, but consistent reads with matching CL=QUORUM reads</td></tr>
+  </tbody>
+</table>
+
+<h2>Consistency Models</h2>
+<table>
+  <thead><tr><th>Model</th><th>CL Setting</th><th>When to Use</th><th>Risk</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-green">Strong</span></td><td>QUORUM R + QUORUM W (RF=3)</td><td>Financial data, inventory counts</td><td>25–50% latency increase, unavailable if &lt;quorum nodes reachable</td></tr>
+    <tr><td><span class="badge badge-blue">Causal</span></td><td>LOCAL_QUORUM + LWT for CAS</td><td>Leader election, unique usernames</td><td>LWT is Paxos-based: 4x latency vs normal writes</td></tr>
+    <tr><td><span class="badge badge-gray">Eventual</span></td><td>CL=ONE or ANY</td><td>Metrics, time-series, activity logs</td><td>Stale reads, phantom tombstones on partition recovery</td></tr>
+    <tr><td><span class="badge badge-orange">Read-Your-Writes</span></td><td>LOCAL_QUORUM read immediately after write</td><td>User profile updates</td><td>Still not linearizable across clients</td></tr>
+  </tbody>
+</table>
+
+<h2>Compaction Strategy Tradeoffs</h2>
+<table>
+  <thead><tr><th>Strategy</th><th>Write Amp</th><th>Read Amp</th><th>Space Amp</th><th>Best For</th></tr></thead>
+  <tbody>
+    <tr><td><strong>STCS</strong></td><td class="good">Low (1x)</td><td class="bad">High (unbounded)</td><td class="bad">High (50% overhead)</td><td>Write-heavy, time-series, data rarely re-read</td></tr>
+    <tr><td><strong>LCS</strong></td><td class="bad">High (10x)</td><td class="good">Low (≤10 per level)</td><td class="good">Low (~10%)</td><td>Read-heavy, random access, low space budget</td></tr>
+    <tr><td><strong>TWCS</strong></td><td class="good">Very Low</td><td class="ok">Medium</td><td class="good">Low (TTL data expires in windows)</td><td>Time-series with TTL, IoT data, logs</td></tr>
+    <tr><td><strong>UCS</strong> (5.0+)</td><td class="ok">Adaptive</td><td class="ok">Adaptive</td><td class="ok">Adaptive</td><td>Mixed workloads, replaces all above</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-fire">
+  <div class="callout-label">🔥 Common Interview Mistake</div>
+  Candidates choose STCS for "everything write-heavy." The trap: STCS + heavy deletes = tombstone accumulation + unbounded SSTable growth + GC pressure. The correct answer at L7 is: <em>"for time-series with deletes/TTL, use TWCS; for time-series without deletes, STCS is fine; if unsure and workload is mixed, LCS gives predictable reads."</em> In Cassandra 5.0, UCS is the right answer for most new deployments.
+</div>
+
+<h2>Durability vs Performance Knobs</h2>
+<div class="three-col">
+  <div class="card">
+    <div class="card-title">Maximum Durability</div>
+    <div class="card-body">commitlog_sync=batch, fsync on every write. ~30% write throughput hit. Default in DataStax Astra (cloud-native).</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Balanced (Default)</div>
+    <div class="card-body">commitlog_sync=periodic (every 10s). Risk: up to 10s of writes lost on hard crash. 99% of production deployments use this.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Maximum Speed</div>
+    <div class="card-body">nodesync=false, replication=1, commitlog on RAM disk. For caches/ephemeral data. Any crash = data loss.</div>
+  </div>
+</div>
+
+<div class="callout callout-lightning">
+  <div class="callout-label">⚡ L7/L8 Differentiator</div>
+  At L8, the discussion moves to <strong>Lightweight Transactions (LWT)</strong> and their cost. LWT uses Paxos internally — a 4-round-trip protocol (prepare, promise, accept, commit). This makes LWT 4–8x slower than normal writes. The L8 insight: <em>"use LWT only for operations where idempotency isn't enough — like unique username registration or leader election. For everything else, design your data model to avoid LWT."</em>
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 3</div>
+  Cassandra's defaults (CL=ONE, STCS compaction, periodic CommitLog sync) are optimized for maximum write throughput. Every step toward stronger consistency or durability has a proportional cost — the key is knowing exactly what you're trading and why.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 4 -->
+<section class="pillar" id="p4">
+<div class="pillar-header">
+  <div class="pillar-num">04</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🛡️</div>
+    <div class="pillar-title">Failure Modes &amp; Resilience</div>
+    <div class="pillar-subtitle">Detection, recovery, data risk, engineer action required</div>
+  </div>
+</div>
+
+<p>Click each scenario to expand the full failure analysis:</p>
+
+<div class="scenario" id="sc1">
+  <div class="scenario-header" onclick="toggleScenario('sc1')">
+    💀 Single Node Crash (e.g., Node B in a 5-node cluster) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Gossip: node stops heartbeating. Other nodes mark it <code>DOWN</code> after phi_convict_threshold (default=8). Takes ~30-60s. Cassandra 4.0+: improved failure detector with shorter convergence.</td></tr>
+      <tr><th>Auto Recovery</th><td>Coordinator routes writes to remaining replicas. Hinted Handoff: writes meant for down node are stored on the coordinator as hints (default hint_window_persistent_enabled for 3h). When node recovers, hints are replayed.</td></tr>
+      <tr><th>Data Risk</th><td>Writes during outage stored as hints. If node is down &gt;3h (default), hints are dropped → requires manual repair. With CL=ALL: writes fail during outage. With CL=ONE: reads may return stale data.</td></tr>
+      <tr><th>Engineer Action</th><td>Run <code>nodetool repair</code> after node recovers. If down &gt;3h, run full repair. Check <code>nodetool tpstats</code> for hint replay backlog. If node was replaced: <code>nodetool removenode</code> + bootstrap new node.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc2">
+  <div class="scenario-header" onclick="toggleScenario('sc2')">
+    ⚡ Minority Node Failures (RF=3, 1 node down) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Same as single node. Gossip marks nodes DOWN individually.</td></tr>
+      <tr><th>Auto Recovery</th><td>QUORUM writes/reads still succeed. The system remains fully operational. Hinted handoff accumulates for all down nodes.</td></tr>
+      <tr><th>Data Risk</th><td>With RF=3 and 1 node down: QUORUM=(3/2+1)=2 nodes still available. Zero data loss risk for QUORUM operations. CL=ONE reads may hit stale data on remaining 2 nodes.</td></tr>
+      <tr><th>Engineer Action</th><td>Monitor hint queue depth. Run repair when nodes recover. Set alerts on <code>StorageProxy.HintsInProgress</code> metric.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc3">
+  <div class="scenario-header" onclick="toggleScenario('sc3')">
+    🌐 Network Partition (One side has quorum) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Gossip fails to propagate across partition boundary. Nodes on minority side see majority side as DOWN.</td></tr>
+      <tr><th>Auto Recovery</th><td>Majority side: continues serving QUORUM reads/writes normally. Minority side: QUORUM requests fail; CL=ONE requests succeed but may diverge. When partition heals: anti-entropy repair reconciles diverged data via read repair and explicit repair.</td></tr>
+      <tr><th>Data Risk</th><td>Minority side writes (if CL=ONE was used) create divergent versions. LWW resolution on heal may silently discard minority-side updates. This is the "conflict" Cassandra handles via timestamp.</td></tr>
+      <tr><th>Engineer Action</th><td>After partition heals: run <code>nodetool repair --full</code> on ALL nodes in affected DC. Check <code>nodetool describering</code> to verify topology. Monitor <code>ReadRepairAttempted</code> metric spike post-heal.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc4">
+  <div class="scenario-header" onclick="toggleScenario('sc4')">
+    ✂️ Even Split (No quorum possible — RF=4, 2-2 split) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Both partitions see each other as down. QUORUM=(4/2+1)=3 — neither side has 3 nodes.</td></tr>
+      <tr><th>Auto Recovery</th><td>With CL=QUORUM: all reads/writes fail on BOTH sides. System is effectively unavailable. With CL=ONE: both sides continue serving local data, diverging silently.</td></tr>
+      <tr><th>Data Risk</th><td>CL=ONE operation on split = dual writes. After heal, LWW picks winner by timestamp. Clock skew could make the "wrong" side win. This is a true data loss scenario if not designed for.</td></tr>
+      <tr><th>Engineer Action</th><td>Design with RF=3 in production (odd numbers avoid even splits). Use NetworkTopologyStrategy with majority DC holding odd number of replicas. Add a tie-breaker DC. After heal: full repair + validate critical data integrity via application-level checksums.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc5">
+  <div class="scenario-header" onclick="toggleScenario('sc5')">
+    🧠 Split-Brain (Cassandra doesn't have traditional leader, but...) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Cassandra is leaderless — no classic split-brain. However: LWT (Paxos) can have split-brain within a single partition if QUORUM is unavailable mid-Paxos round.</td></tr>
+      <tr><th>Auto Recovery</th><td>Paxos protocol self-heals: any node can run "prepare" to reclaim an in-flight proposal. Cassandra guarantees Paxos correctness even if the coordinator crashes mid-round.</td></tr>
+      <tr><th>Data Risk</th><td>LWT retries can cause duplicate proposals. If application logic isn't idempotent around LWT, double-execution is possible. Classic split-brain is prevented by the leaderless design.</td></tr>
+      <tr><th>Engineer Action</th><td>Use conditional writes (LWT) with idempotent operations where possible. Monitor <code>CASUnfinishedCommit</code> metric — high values indicate Paxos repair storms. Run <code>nodetool repair</code> to resolve in-flight Paxos state.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc6">
+  <div class="scenario-header" onclick="toggleScenario('sc6')">
+    🐢 Slow/Degraded Node (GC pause, disk I/O saturation) <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Gossip still passes (node is alive) but requests time out. Coordinator sees timeout on reads/writes to that node. <code>nodetool tpstats</code> shows dropped messages accumulating.</td></tr>
+      <tr><th>Auto Recovery</th><td>Coordinator has speculative execution (enabled via speculative_retry in table options). After a timeout threshold, coordinator sends read to another replica in parallel. First response wins.</td></tr>
+      <tr><th>Data Risk</th><td>Slow node accumulates a repair debt. Reads hitting it get old data. If speculative retry isn't configured, p99 latency spikes to the full timeout value (10s default).</td></tr>
+      <tr><th>Engineer Action</th><td>Enable speculative_retry='99percentile'. Tune JVM GC (G1GC with 4GB heap typical). Check compaction backlog with <code>nodetool compactionstats</code>. Consider running <code>nodetool drain</code> + restart if GC is chronic. Upgrade to Cassandra 4.0+ for improved GC handling with ZGC support.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc7">
+  <div class="scenario-header" onclick="toggleScenario('sc7')">
+    💾 Disk Corruption / Partial Write <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Cassandra 4.0+: per-chunk checksums in SSTables detect corruption on read. Logs <code>CorruptSSTableException</code>. Older versions: corruption often surfaces as data read errors or garbled results.</td></tr>
+      <tr><th>Auto Recovery</th><td>On detection: quarantine corrupted SSTable. Read repair fetches data from healthy replicas. If corruption is in CommitLog, that segment is skipped on recovery (potential data loss for that segment).</td></tr>
+      <tr><th>Data Risk</th><td>If RF=1: data is permanently lost. If RF=3: healthy replicas provide data, then streaming repairs the node. CommitLog corruption can cause bounded data loss (last N seconds before crash).</td></tr>
+      <tr><th>Engineer Action</th><td>Run <code>nodetool scrub</code> to detect and skip corrupt SSTables. Delete corrupted SSTables. Run full repair to restore from replicas. For CommitLog corruption: delete log, restart node, run repair immediately. Enable RAID or cloud-managed storage for disk redundancy.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc8">
+  <div class="scenario-header" onclick="toggleScenario('sc8')">
+    ⏰ Clock Skew Between Nodes <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Cassandra itself does NOT detect clock skew. You need external monitoring (NTP monitoring, Prometheus node_exporter timesync metrics). Symptoms: "older" data silently overwrites "newer" data because the "newer" node has a slow clock.</td></tr>
+      <tr><th>Auto Recovery</th><td>None. Cassandra's LWW is entirely timestamp-based. A node with a clock 1 second ahead will always "win" writes even if those writes are logically older.</td></tr>
+      <tr><th>Data Risk</th><td>Severe. If a node's clock is ahead by T seconds, any write to that node within T seconds of a concurrent write on another node may silently discard the other write. This is a silent data corruption mode.</td></tr>
+      <tr><th>Engineer Action</th><td>Mandate NTP/chrony with &lt;1ms drift tolerance. Alert on clock skew &gt;500μs. In Cassandra 4.0+: RAFT-based schema management removes schema versioning clock dependency. For critical data: use client-side timestamps (USING TIMESTAMP clause) derived from a synchronized source rather than node wall clock.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc9">
+  <div class="scenario-header" onclick="toggleScenario('sc9')">
+    ⚡ Thundering Herd After Recovery <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>Node rejoins cluster. Immediately receives streaming (replication of missed data) AND hint replay AND normal client traffic AND read repair traffic simultaneously.</td></tr>
+      <tr><th>Auto Recovery</th><td>Cassandra rate-limits streaming via <code>stream_throughput_outbound_megabits_per_sec</code> (200 Mbps default). But hint replay is not rate-limited by default.</td></tr>
+      <tr><th>Data Risk</th><td>Recovered node can be immediately overwhelmed, triggering GC pauses, appearing dead again → oscillating failure (node bounces). This is one of the most dangerous production scenarios.</td></tr>
+      <tr><th>Engineer Action</th><td>Set <code>batchlog_replay_throttle_in_kb</code> and hint replay limits. Rejoin nodes with <code>nodetool assassinate</code> then bootstrap fresh if hint backlog is large. Use incremental repair to pre-warm before rejoining ring. Monitor <code>HintedHandoff</code> queue depth metric carefully during recovery window.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="scenario" id="sc10">
+  <div class="scenario-header" onclick="toggleScenario('sc10')">
+    🌊 Cascading Failures (The "GC Death Spiral") <span>▼</span>
+  </div>
+  <div class="scenario-body">
+    <table>
+      <tr><th>Detection</th><td>One node has long GC pause → coordinator marks it slow → retries route to other nodes → other nodes see increased load → their GC pauses grow → cascade triggers. <code>nodetool tpstats</code> shows exponentially growing dropped message counts across nodes.</td></tr>
+      <tr><th>Auto Recovery</th><td>Cassandra has no automatic circuit breaker in vanilla form. DataStax DSE adds circuit breaking. Open-source: none. The spiral continues until nodes crash or GC resolves.</td></tr>
+      <tr><th>Data Risk</th><td>Cluster-wide unavailability. If QUORUM is unavailable: writes pile up at clients, potentially causing client-side OOMs if not circuit-broken.</td></tr>
+      <tr><th>Engineer Action</th><td>(1) Immediately: shed load — deploy client-side circuit breakers (Hystrix/Resilience4j). (2) Kill compaction on overloaded nodes: <code>nodetool stop compaction</code>. (3) Add nodes if capacity is the cause. (4) Prevention: use ZGC (Java 15+) with Cassandra 4.0+, tune heap to never exceed 70% before GC triggers, enable adaptive read repair instead of always-on. Set table-level <code>read_repair='NONE'</code> for high-volume tables.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 4</div>
+  Cassandra's biggest operational risk isn't single-node failure (it handles that well) — it's the GC death spiral and clock skew data corruption, both of which are silent and emergent. Design defenses in at every layer: client circuit breakers, NTP monitoring, ZGC, and speculative retry.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 5 -->
+<section class="pillar" id="p5">
+<div class="pillar-header">
+  <div class="pillar-num">05</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">📈</div>
+    <div class="pillar-title">Scaling Strategies</div>
+    <div class="pillar-subtitle">Vertical limits, horizontal expansion, partitioning, cross-region</div>
+  </div>
+</div>
+
+<h2>Vertical Scaling</h2>
+<p>A single Cassandra node scales well to ~32 cores and 128GB RAM. The JVM heap should never exceed 8–16GB (GC pressure). Beyond 16GB heap: use off-heap storage (table option <code>memtable_allocation_type: offheap_buffers</code>) for Memtables. Beyond 32 cores: diminishing returns due to contention on the CommitLog writer and compaction thread pool.</p>
+
+<div class="callout callout-ruler">
+  <div class="callout-label">📐 Back-of-Envelope — Vertical Limits</div>
+  Ideal single node: 16-core, 64GB RAM, 2TB NVMe SSD. Theoretical peak: 100K writes/sec, 50K reads/sec. JVM heap 12GB (leaving 52GB for OS page cache — crucial for SSTable caching). Beyond this config, horizontal scaling gives better ROI.
+</div>
+
+<h2>Horizontal Scaling</h2>
+<p>Adding nodes: new node picks a random token range (or specific range with vnodes). Other nodes stream a subset of their data to the new node. With vnodes (16 per node default): data is streamed from 16 × (RF) source nodes in parallel, giving excellent parallelism. With Cassandra 4.0+ zero-copy streaming, data moves without deserialization — 2–3x faster node bootstrapping.</p>
+
+<h2>Partitioning Strategy</h2>
+<table>
+  <thead><tr><th>Strategy</th><th>How</th><th>Pros</th><th>Cons</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Murmur3 Hash</strong> (default)</td><td>Hash of partition key → uniform token ring distribution</td><td>Even distribution, no hotspots</td><td>No range scans across partitions</td><td>99% of use cases</td></tr>
+    <tr><td><strong>ByteOrdered</strong></td><td>Partition key preserved in sort order</td><td>Range scans work across partitions</td><td>Severe hotspots on sequential writes (e.g., time prefix)</td><td>Avoid in production</td></tr>
+    <tr><td><strong>Composite Partition Key</strong></td><td><code>PRIMARY KEY ((user_id, bucket), ts)</code></td><td>Control partition size, avoid wide partitions</td><td>Query must know bucket value</td><td>Time-series bucketing, large datasets per entity</td></tr>
+  </tbody>
+</table>
+
+<h2>Hotspot Prevention</h2>
+<p>The classic hotspot: <code>PRIMARY KEY (date, event_id)</code> — all events for a given date go to the same 3 nodes. Under high write load, those 3 nodes become bottlenecks. Fix: add a bucket component: <code>PRIMARY KEY ((date, bucket), event_id)</code> where <code>bucket = event_id % 100</code>. Now data spreads across 100 × 3 = 300 token positions, distributing load across the cluster.</p>
+
+<div class="callout callout-fire">
+  <div class="callout-label">🔥 Common Interview Mistake</div>
+  Designing a time-series schema as <code>PRIMARY KEY (sensor_id, timestamp)</code> without considering partition size. A sensor writing every second for 1 year = 31M rows in ONE partition. Cassandra partitions have a soft limit of ~100K rows and a hard limit of 2GB. The fix: bucket by time period, e.g., <code>PRIMARY KEY ((sensor_id, year_month), timestamp)</code>.
+</div>
+
+<h2>Replication Strategies</h2>
+<div class="two-col">
+<div class="card">
+  <div class="card-title">SimpleStrategy (single DC)</div>
+  <div class="card-body">Places replicas on the next N nodes clockwise on the ring. Ignores rack/DC topology. Use only for dev/test or single-DC deployments.</div>
+</div>
+<div class="card">
+  <div class="card-title">NetworkTopologyStrategy (production)</div>
+  <div class="card-body">Specifies RF per datacenter. Tries to place replicas on different racks within DC. Example: {'DC1': 3, 'DC2': 3} gives 6 total replicas, 3 per DC. Critical for multi-DC deployments.</div>
+</div>
+</div>
+
+<h2>Cross-Region Replication</h2>
+<table>
+  <thead><tr><th>Mode</th><th>How</th><th>Latency</th><th>Conflict Resolution</th><th>Best For</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Active-Active (multi-DC)</strong></td><td>NTS with RF per DC, async replication between DCs via replication pipeline</td><td>Local writes fast; inter-DC async (50–200ms lag)</td><td>LWW — last write by timestamp wins. Concurrent cross-DC writes may lose data.</td><td>Low-write-conflict workloads: user profiles, catalog data, session state</td></tr>
+    <tr><td><strong>Active-Passive</strong></td><td>NTS with RF=3 primary DC, RF=1 or 0 secondary. Reads/writes go to primary only.</td><td>Primary: normal. Secondary: replication lag only.</td><td>No conflict — secondary is read-only replica</td><td>Disaster recovery, analytics offloading, regulatory data copies</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-lightning">
+  <div class="callout-label">⚡ L7/L8 Differentiator</div>
+  At scale, the real cross-DC problem isn't latency — it's <strong>conflict resolution semantics</strong>. LWW means any two simultaneous cross-DC writes will silently discard one. For money or inventory, this is unacceptable. The L8 answer: <em>"For conflict-sensitive data, use a single-DC write path (route all writes to one DC) with cross-DC replication as eventual backup. Or use a CRDTs-based design (Cassandra counters are CRDTs) where concurrent updates can be merged without conflict."</em>
+</div>
+
+<h2>Read vs Write Scaling Independence</h2>
+<p>Writes scale almost perfectly linearly with nodes — no coordination overhead per write (just replicate to RF nodes). Reads have non-linear characteristics: adding nodes reduces the chance any one node serves a hot partition, but if a partition key is a hotspot, you need application-level read caching (e.g., Redis in front of Cassandra) rather than more Cassandra nodes.</p>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 5</div>
+  Cassandra's horizontal write scaling is near-perfect to thousands of nodes. Read scaling is excellent for uniform access patterns but breaks down for hot partitions — which require application-layer caching as the escape hatch, not more Cassandra nodes.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 6 -->
+<section class="pillar" id="p6">
+<div class="pillar-header">
+  <div class="pillar-num">06</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🏭</div>
+    <div class="pillar-title">Real-World Engineering Decisions</div>
+    <div class="pillar-subtitle">Where Cassandra shines, when to avoid it, decision matrix</div>
+  </div>
+</div>
+
+<h2>Where Cassandra Shines</h2>
+<ol>
+  <li><strong>Time-series / IoT data</strong> — Write-heavy, time-ordered, rarely updated, natural partition by device/sensor+time-bucket</li>
+  <li><strong>User activity/event logging</strong> — Append-only writes, high volume, reads by user (partition key)</li>
+  <li><strong>Messaging inbox storage</strong> — Messages per user, sorted by time (clustering key), efficient range reads within a conversation</li>
+  <li><strong>Session/state storage</strong> — High write volume, TTL expiry via TWCS compaction, reads by session ID</li>
+  <li><strong>Recommendation/personalization data</strong> — Per-user feature vectors, write-heavy from ML pipelines, read by user ID</li>
+</ol>
+
+<h2>Real-World Production Examples</h2>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="card-title">Discord — Messages Storage (350B messages, 177M users)</div>
+  <div class="card-body">
+    <p style="font-size:13px;margin-top:6px">Discord stored all messages in Cassandra with schema: <code>PRIMARY KEY ((channel_id, bucket), message_id)</code>. The bucket groups messages by ~2 weeks. This allows efficient reads of recent messages in a channel (range scan within partition) while preventing unlimited partition growth. In 2023, Discord migrated hot-path reads to ScyllaDB (Cassandra-compatible, C++ engine, lower latency variance), keeping Cassandra for warm/cold storage. The key lesson: Cassandra's JVM GC was causing p99 latency spikes that were unacceptable for real-time chat — ScyllaDB's no-GC C++ engine solved the tail latency problem without changing data model.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="card-title">Netflix — Personalization &amp; Viewing History</div>
+  <div class="card-body">
+    <p style="font-size:13px;margin-top:6px">Netflix uses Cassandra for user viewing history, A/B test assignment, and recommendations cache. RF=3 per DC, 2 DCs in active-active. Writes happen locally (low latency), cross-DC replication is async. The key insight: for viewing history, losing 50ms of history data due to cross-DC race condition is acceptable — eventual consistency matches the business requirement. They write ~1M rows/sec during peak. Key schema pattern: partition by (member_id, content_type), cluster by viewed_at DESC — allows efficient "last N watched" queries.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="card-title">Apple — iCloud (Trillions of rows, 75K+ nodes)</div>
+  <div class="card-body">
+    <p style="font-size:13px;margin-top:6px">Apple runs one of the largest Cassandra deployments, with 75K+ nodes serving iCloud storage metadata. The key challenge at this scale: gossip convergence with thousands of nodes (gossip latency grows logarithmically but absolute time increases). Apple contributed improvements to Cassandra's failure detector and virtual node efficiency specifically for this scale. Lesson for L8: at 1000+ nodes, traditional Cassandra gossip starts showing convergence delays; this drove the Cassandra 4.0 RAFT-based schema management which removes gossip from schema change critical path.</p>
+  </div>
+</div>
+
+<h2>When NOT to Use Cassandra</h2>
+<div class="three-col">
+  <div class="card">
+    <div class="card-title" style="color:#E35B2D">Ad-hoc Analytics</div>
+    <div class="card-body">Need flexible queries, aggregations, JOINs. Use: BigQuery, Snowflake, ClickHouse. Cassandra requires pre-defined access patterns.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#E35B2D">ACID Transactions</div>
+    <div class="card-body">Bank transfers, inventory deductions, order placement. Use: CockroachDB, Spanner, PostgreSQL. Cassandra's LWT is too slow and limited for true ACID.</div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:#E35B2D">Small Datasets</div>
+    <div class="card-body">&lt;100GB? Operational overhead not worth it. Use: PostgreSQL + read replicas. Cassandra's sweet spot is &gt;500GB and/or &gt;10K writes/sec.</div>
+  </div>
+</div>
+
+<h2>Decision Matrix vs Alternatives</h2>
+<table>
+  <thead><tr><th>Dimension</th><th>Cassandra</th><th>DynamoDB</th><th>MongoDB</th><th>ScyllaDB</th></tr></thead>
+  <tbody>
+    <tr><td>Write Throughput</td><td class="good">Excellent</td><td class="good">Excellent</td><td class="ok">Good</td><td class="good">Excellent+</td></tr>
+    <tr><td>Read p99 Latency</td><td class="ok">Good (GC spikes)</td><td class="good">Good (managed)</td><td class="ok">Good</td><td class="good">Excellent (no GC)</td></tr>
+    <tr><td>Consistency Tuning</td><td class="good">Excellent</td><td class="ok">Limited (2 levels)</td><td class="ok">Good</td><td class="good">Excellent</td></tr>
+    <tr><td>Operational Overhead</td><td class="bad">High (repair, compaction)</td><td class="good">Low (fully managed)</td><td class="ok">Medium</td><td class="ok">Medium</td></tr>
+    <tr><td>Cost at Scale</td><td class="good">Low (commodity hardware)</td><td class="bad">High (per-request pricing)</td><td class="ok">Medium</td><td class="good">Low</td></tr>
+    <tr><td>Data Model Flexibility</td><td class="ok">Medium (CQL)</td><td class="ok">Medium</td><td class="good">High (document)</td><td class="ok">Medium</td></tr>
+    <tr><td>Multi-DC Active-Active</td><td class="good">Native</td><td class="ok">Global Tables (limited)</td><td class="bad">Complex</td><td class="good">Native</td></tr>
+    <tr><td>Ecosystem / Tooling</td><td class="good">Mature (10+ years)</td><td class="good">AWS-native rich</td><td class="good">Rich</td><td class="ok">Growing</td></tr>
+  </tbody>
+</table>
+
+<h2>Common Production Mistakes</h2>
+<ol>
+  <li><strong>Using ALLOW FILTERING in production queries</strong> — causes full-cluster scans. Always design access patterns before schema.</li>
+  <li><strong>Unbounded partition growth</strong> — not bucketing time-series data. Partitions &gt;100MB cause compaction failures and read amplification.</li>
+  <li><strong>Running without repairs</strong> — Cassandra requires regular repair runs (weekly at minimum) or data divergence grows silently. Incremental repair (3.0+) reduces cost.</li>
+  <li><strong>Over-indexing with secondary indexes</strong> — global secondary indexes scatter reads across all nodes. Use materialized views or denormalize data instead.</li>
+  <li><strong>Single-threaded repair</strong> — repair by default runs slowly. Use <code>nodetool repair -j 4</code> (parallel) and incremental repair. At Apple scale, they run continuous automated repair.</li>
+</ol>
+
+<h2>Day 1 Monitoring Setup</h2>
+<div class="pre-block">
+Metrics to alert on immediately:
+  • p99 read/write latency (alert: >10ms read, >5ms write for SSD-backed)
+  • DroppedMessages (any non-zero = serious)
+  • PendingTasks.CompactionExecutor (alert: >10 = compaction falling behind)
+  • StorageProxy.HintsInProgress (alert: >1000 = node-down hint storm)
+  • NodeStatus per gossip (any DOWN state)
+  • JVM GC pause time (alert: >200ms stop-the-world)
+  • Heap usage (alert: >75%)
+  • CommitLog pending tasks (alert: >1000)
+  • SSTable count per table (alert: >20 = compaction not keeping up)
+  • Clock skew vs NTP (alert: >500μs)
+
+Tools: Prometheus + Cassandra exporter, Grafana dashboards,
+       DataStax OpsCenter (commercial), or nodetool metrics piped to Graphite.
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 6</div>
+  Cassandra is the right choice when your access patterns are known upfront, your writes vastly outnumber reads, you need multi-DC active-active, and you can afford the operational complexity of running repair and compaction management. When any of these conditions doesn't hold, evaluate alternatives.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 7 -->
+<section class="pillar" id="p7">
+<div class="pillar-header">
+  <div class="pillar-num">07</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🌐</div>
+    <div class="pillar-title">Google-Scale &amp; Beyond</div>
+    <div class="pillar-subtitle">What breaks at each scale tier, hyperscaler innovations</div>
+  </div>
+</div>
+
+<h2>What Breaks at Each Scale Tier</h2>
+<table>
+  <thead><tr><th>Scale</th><th>Users / RPS</th><th>Bottleneck</th><th>Architectural Response</th></tr></thead>
+  <tbody>
+    <tr><td>Startup</td><td>1M users, 10K wps</td><td>Nothing — single 6-node cluster works</td><td>SimpleStrategy, STCS, basic monitoring</td></tr>
+    <tr><td>Growth</td><td>10M users, 100K wps</td><td>JVM GC pauses hit p99 latency SLO</td><td>Tune ZGC, add nodes, introduce LCS for read-heavy tables</td></tr>
+    <tr><td>Scale</td><td>100M users, 1M wps</td><td>Gossip convergence delays at 500+ nodes; repair takes days</td><td>Split into multiple clusters by domain; automate incremental repair; separate DCs for different regions</td></tr>
+    <tr><td>Hyperscale</td><td>1B users, 10M wps</td><td>Schema changes via gossip too slow; cross-DC replication lag unacceptable for some use cases; operational complexity astronomical</td><td>Multi-cluster topology; RAFT-based metadata (C* 4.0+); dedicated replication monitoring; custom tooling for repair orchestration</td></tr>
+  </tbody>
+</table>
+
+<h2>How Hyperscalers Solve Cassandra Limitations</h2>
+
+<h3>Apple's Approach (75K+ nodes)</h3>
+<ul>
+  <li>Automated repair orchestration — never manually run nodetool repair; custom scheduler distributes repair load continuously.</li>
+  <li>Custom gossip improvements contributed back to Apache Cassandra for large cluster convergence.</li>
+  <li>Hardware homogeneity — uniform node specs eliminate "slow node" class issues.</li>
+  <li>Dedicated replication traffic bandwidth — isolate cross-DC replication to dedicated network paths.</li>
+</ul>
+
+<h3>Netflix's Approach</h3>
+<ul>
+  <li>Cluster per service domain — orders of magnitude less cross-service coupling risk.</li>
+  <li>Priam (open-sourced) — automated backup, restore, token management for AWS-hosted Cassandra.</li>
+  <li>Chaos engineering — Cassandra is explicitly part of Chaos Monkey targets; failure handling is tested continuously.</li>
+  <li>Eureka integration — service discovery awareness of Cassandra node health, circuit break before cascade.</li>
+</ul>
+
+<h2>Multi-Tenancy: Noisy Neighbor Isolation</h2>
+<p>Vanilla Cassandra has no multi-tenant resource isolation. At Google-scale you'd need:</p>
+<ol>
+  <li><strong>Keyspace-level quotas</strong> — Rate limit writes per keyspace via proxy layer (Stargate, custom C* coordinator).</li>
+  <li><strong>Per-table compaction priority</strong> — Dedicate compaction threads to high-SLA tables. Not native in Cassandra; requires custom compaction scheduler.</li>
+  <li><strong>Separate clusters per tenant tier</strong> — Platinum customers on dedicated clusters, standard customers on shared clusters.</li>
+  <li><strong>Admission control at coordinator</strong> — Cassandra 4.1+ has per-table rate limiting. Cassandra 5.0 extends this with more granular resource tracking.</li>
+</ol>
+
+<h2>Data Residency &amp; Regulatory Requirements</h2>
+<p>GDPR/CCPA require that EU user data stays in EU. Cassandra solves this via NetworkTopologyStrategy: store EU data in EU DC only (RF=3 in eu-west-1), store US data in US DC only (RF=3 in us-east-1). Cross-DC replication is disabled for regulated data. The challenge: application layer must know which DC to route to based on user residency. Solution: a routing proxy that inspects the request, determines user region, and forces LOCAL_QUORUM against the correct DC.</p>
+
+<div class="callout callout-lightning">
+  <div class="callout-label">⚡ L7/L8 Differentiator</div>
+  The real GDPR challenge with Cassandra is <strong>right-to-erasure (GDPR Article 17)</strong>. Deleting a user's data in Cassandra generates tombstones which persist for <code>gc_grace_seconds</code> (10 days default). A deleted user's data is actually "visible as deleted" for 10 days. For true erasure compliance, you need either: (a) encryption at rest with per-user keys (delete the key = data unreadable) or (b) a compaction trigger that forces immediate tombstone GC. Encryption-key approach is the industry standard solution.
+</div>
+
+<h2>The "Google Spanner Equivalent" for Cassandra</h2>
+<p>If you were to build a Cassandra-like system with Google's infrastructure, what would change?</p>
+<div class="pre-block">
+Vanilla Cassandra:
+  ├── Timestamps: wall clock on each node (NTP, ±milliseconds)
+  ├── Consistency: tunable but not linearizable by default
+  ├── Schema: gossip-propagated (slow at scale)
+  └── Replication: application-level async
+
+Google-scale "Cassandra Prime" would add:
+  ├── TrueTime API: bounded uncertainty timestamps (±7ms guaranteed)
+  │   → Enables external consistency without quorum reads
+  │   → Cassandra's LWW becomes reliable even without NTP
+  ├── Paxos-based replication (like Spanner):
+  │   → Replace gossip with Raft/Paxos per shard
+  │   → Enables linearizable reads without read-repair overhead
+  ├── RAFT-based metadata (Cassandra 4.0 partially does this):
+  │   → Schema changes are instantaneous and consistent
+  └── Columnar storage tiering:
+      → Hot: in-memory (like Memtable, but managed)
+      → Warm: NVMe SSTable
+      → Cold: Colossus/GCS with same CQL interface
+</div>
+
+<h2>Cost Efficiency at Scale</h2>
+<div class="three-col">
+  <div class="card">
+    <div class="card-title">Threshold: &gt;10TB data</div>
+    <div class="card-body">Enable compression (LZ4 default, Zstd for 40% better ratio at 15% CPU cost). Tiered storage (hot data on NVMe, cold on SATA). Typical: 60% storage cost reduction.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Threshold: &gt;100TB data</div>
+    <div class="card-body">Separate storage from compute (S3-backed SSTables). DataStax Astra does this; allows compute scale-down during low traffic while keeping data accessible.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Threshold: &gt;1PB data</div>
+    <div class="card-body">Hierarchical storage: most recent 30 days on Cassandra, 30-365 days on compressed object storage, older on cold tier — all with same CQL interface via federation layer.</div>
+  </div>
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 7</div>
+  At Google-scale, the fundamental bottlenecks shift from data serving (Cassandra handles this well) to operational concerns: schema management, repair orchestration, multi-tenancy isolation, and regulatory compliance. The innovations needed are mostly in the control plane and operational tooling, not the data plane.
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ PILLAR 8 -->
+<section class="pillar" id="p8">
+<div class="pillar-header">
+  <div class="pillar-num">08</div>
+  <div class="pillar-title-wrap">
+    <div class="pillar-emoji">🎯</div>
+    <div class="pillar-title">Interview Simulation</div>
+    <div class="pillar-subtitle">Staff-level problem, strong answer, critique, rapid-fire questions</div>
+  </div>
+</div>
+
+<div class="interview-sim">
+  <h3>Step 1 — The Problem Statement</h3>
+  <p style="font-size:14px;margin-top:8px">You're joining a team that runs a global social platform with 500M daily active users. The team currently stores user activity events (likes, shares, views, comments) in a PostgreSQL cluster that's showing signs of severe strain: 2M events/sec at peak, p99 write latency has degraded to 800ms, and the on-call rotation is brutal due to nightly vacuum/index rebuilds.</p>
+  <p style="font-size:14px">The core product requirement: users should be able to see their own activity feed (last 90 days), publishers should see per-post engagement metrics in near real-time, and the data science team needs batch exports for ML training. Design a storage system to replace PostgreSQL for this use case. You have 6 months and a team of 8 engineers.</p>
+  <p style="font-size:14px;color:var(--muted)"><em>The problem is intentionally open-ended. There are multiple valid architectures. The interview tests your ability to explore the problem space, make explicit tradeoffs, and show depth where it matters.</em></p>
+</div>
+
+<div class="interview-sim" style="margin-top:14px">
+  <h3>Step 2 — Strong Candidate Answer (L7 Level)</h3>
+  
+  <div class="sim-role">Candidate — Clarifying Questions</div>
+  <div class="sim-candidate">
+    "Before jumping to design: a few questions. (1) What's the read:write ratio on the activity feed? Is the main concern write throughput or read latency? (2) What consistency guarantees are required — can a user miss their own like for 100ms? (3) For the publisher metrics, is near-real-time defined as seconds or minutes? (4) What's the retention policy — you said 90 days for user feed, but does the DS team need longer? (5) Multi-region — where are users geographically? Do we need local-region writes for latency?"
+  </div>
+  
+  <div class="sim-role">Candidate — Assumptions (after discussion)</div>
+  <div class="sim-candidate">
+    "I'll assume: write-heavy (20:1 write:read), eventual consistency acceptable (can miss own like for &lt;1s), publisher metrics can be up to 5 minutes stale, full history for DS (1 year), users are global (US/EU/APAC), &lt;1s p99 write latency required."
+  </div>
+  
+  <div class="sim-role">Candidate — High-Level Design</div>
+  <div class="sim-candidate">
+    <p style="font-size:13px;margin-bottom:8px"><strong>Three storage layers:</strong></p>
+    <p style="font-size:13px"><strong>1. Cassandra for hot activity storage</strong> (0–90 days): Schema: <code>PRIMARY KEY ((user_id, year_month), event_ts DESC, event_id)</code>. The composite partition key buckets by month to prevent unbounded partition growth (~2.6M events/month/user at current scale, well under 100MB limit). Clustering by event_ts DESC gives efficient "latest N events" queries. RF=3 per DC, NetworkTopologyStrategy across US/EU/APAC DCs. TWCS compaction with window = 30 days — each SSTable covers 1 month, TTL expiry is clean with no tombstone explosion.</p>
+    <p style="font-size:13px"><strong>2. Kafka for stream processing</strong>: Events flow Cassandra → Kafka (via CDC with Cassandra 3.0+ change data capture) → Flink for publisher aggregations. Publisher metrics stored in separate Cassandra keyspace with denormalized schema per access pattern. This decouples the DS export concern from the user-facing storage concern.</p>
+    <p style="font-size:13px"><strong>3. Data lake (S3 + Parquet) for DS exports</strong>: Daily Spark jobs read from Cassandra via token range scanning, output to partitioned Parquet on S3. Cassandra is NOT the query engine — never run analytics directly against it.</p>
+  </div>
+  
+  <div class="sim-role">Candidate — Deep Dive with Numbers</div>
+  <div class="sim-candidate">
+    <p style="font-size:13px"><strong>Cluster sizing:</strong> 2M events/sec × RF=3 = 6M physical writes/sec. Each Cassandra node handles ~50K writes/sec (NVMe-backed). Need: 6M / 50K = 120 nodes per DC. 3 DCs = 360 nodes total. At $0.50/node-hour (m5.2xlarge equivalent), that's $180/hr = ~$1.6M/year in compute alone. This is acceptable for a 500M DAU platform.</p>
+    <p style="font-size:13px"><strong>Data volume:</strong> 2M events/sec × 200 bytes/event × 86400s/day × RF=3 = ~100TB/day raw. With LZ4 compression (~40% reduction): ~60TB/day. 90-day retention = 5.4PB stored across 360 nodes ≈ 15TB/node. On 2TB NVMe per node: need 8 disks per node, or use 16TB instances.</p>
+    <p style="font-size:13px"><strong>Read path for user feed:</strong> GET /user/{id}/feed?since=last_seen → query <code>SELECT * FROM activity WHERE user_id=? AND year_month IN (?, ?) AND event_ts > ? LIMIT 50</code>. This hits at most 2 partition keys (crossing month boundary), both served from 3 nodes. With CL=LOCAL_ONE (eventual is OK for feeds), p99 &lt; 2ms on SSD-backed nodes.</p>
+    <p style="font-size:13px"><strong>Migration plan:</strong> Dual-write to both PostgreSQL and Cassandra for 4 weeks. Validate consistency via shadow reads. Cut over reads to Cassandra once p99 ≤ old baseline. Drain PostgreSQL writes after 1 week of clean operation. PostgreSQL retired at week 10.</p>
+  </div>
+</div>
+
+<div class="interview-sim" style="margin-top:14px">
+  <h3>Step 3 — Interviewer Critique</h3>
+  
+  <div class="sim-role">What was done well</div>
+  <div class="sim-interviewer">
+    Strong clarifying questions upfront — identified write:read ratio and consistency requirements immediately. The composite partition key design is correct and shows real-world knowledge of partition size limits. Correctly used TWCS for time-windowed data. The back-of-envelope cluster sizing is well-structured and shows quantitative reasoning. The three-tier architecture (Cassandra + Kafka + S3) correctly avoids using Cassandra as an analytics engine.
+  </div>
+  
+  <div class="sim-role">What was missed or glossed over</div>
+  <div class="sim-interviewer">
+    (1) No discussion of tombstone accumulation risk — with 90-day TTL and deletes (users can delete posts), there will be a tombstone storm without careful TWCS window tuning. (2) Repair strategy not mentioned — 360 nodes, how do you keep them in sync? At this scale, incremental repair with distributed repair orchestration is critical; never mentioned. (3) Cross-DC conflict resolution — with active-active writes, what happens if the same event is written concurrently in US and EU due to client retry? LWW resolution not discussed. (4) Schema migration strategy — the chosen schema is good for "latest N events per user," but what about "all events for a specific post" (publisher view)? This requires a second table with different partition key — the need for denormalization wasn't addressed. (5) The migration plan doesn't address what happens if dual-write diverges — how do you reconcile?
+  </div>
+  
+  <div class="sim-role">What an L8 answer would add</div>
+  <div class="sim-interviewer">
+    An L8 candidate would explicitly design two tables (one for user feed, one for publisher metrics) and discuss the synchronization tradeoff — you're now doing dual writes to both tables for every event, increasing write amplification by 2x. They'd discuss idempotency keys to make writes safe to retry. They'd address tombstone management with TWCS window alignment: window_size must be larger than query range to avoid cross-window reads. They'd discuss the failure scenario where CDC from Cassandra to Kafka falls behind — what's the delivery guarantee, and how does the publisher metrics view degrade gracefully? They'd also discuss whether the 5-min publisher metric SLA can be met with eventual replication lag to APAC, or whether a separate APAC write path for publisher events is needed.
+  </div>
+</div>
+
+<h2 style="margin-top:28px">Step 4 — Rapid-Fire Interview Questions</h2>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q1: Why can't you just use a secondary index in Cassandra to support multiple query patterns? <span>▼</span></div>
+  <div class="q-body">Cassandra secondary indexes are globally distributed — a query against a secondary index is fanned out to every node in the cluster, making it an O(N) cluster-wide scatter-gather. This eliminates Cassandra's primary advantage (direct routing to N replica nodes). For production use cases, you denormalize: maintain multiple tables with different partition keys, writing to all tables on each write. The cost is write amplification and consistency management, but the benefit is each read hits exactly the right 3 nodes. Cassandra 5.0 introduced Storage Attached Indexes (SAI) which are more efficient, but still not a replacement for proper data modeling.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q2: What is a tombstone and why can it cause severe performance issues? <span>▼</span></div>
+  <div class="q-body">A tombstone is a marker that a row/column has been deleted. Because SSTables are immutable, deletes are written as new tombstone records. During reads, Cassandra must scan all SSTables for a partition and merge — including tombstones — to determine the final state. If a partition has millions of tombstones (from heavy delete or TTL patterns), each read must process all of them before returning results. The default tombstone_warn_threshold=1000 and tombstone_failure_threshold=100000. TWCS compaction prevents this for time-series by keeping tombstones within their time window and expiring whole SSTables at once. LCS contains tombstones within individual levels. STCS is the worst for tombstone accumulation.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q3: Explain Hinted Handoff and its limitations. <span>▼</span></div>
+  <div class="q-body">Hinted Handoff is Cassandra's mechanism for handling temporary node failures during writes. When a replica node is DOWN, the coordinator stores the write as a hint locally. When the node recovers, hints are replayed to bring it up-to-date. Limitations: (1) Hints only stored for hint_window_persistent_enabled duration (default 3 hours) — after that, hints are dropped and repair is required. (2) Hint storage on coordinator consumes disk space — during extended outages, hints can fill the coordinator disk. (3) With CL=ANY (most permissive), a write succeeds even if all replicas are down — coordinator stores the hint, and the data is effectively invisible until the node recovers and hints are replayed. This creates a "read-your-writes" violation where you write CL=ANY but read CL=ONE and get nothing.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q4: What is read repair and when does it happen? <span>▼</span></div>
+  <div class="q-body">Read repair is Cassandra's mechanism for fixing stale replicas during reads. With CL=QUORUM, the coordinator queries all replicas for a partition (not just the quorum minimum). If responses differ (one has a newer timestamp), the coordinator sends a repair write to the stale replica in the background. Foreground read repair (blocking) was removed in Cassandra 4.0 as it caused latency spikes. Modern Cassandra only does background/async read repair. Limitation: read repair only triggers on rows that are read — if data is written and never read, it can diverge indefinitely until explicit repair. This is why scheduled nodetool repair is mandatory. Read repair rate is controlled per-table via read_repair table option (BLOCKING/NONE).</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q5: How does Cassandra handle a write when the receiving node's heap is nearly full? <span>▼</span></div>
+  <div class="q-body">Cassandra's back-pressure handling is not graceful. When heap approaches capacity: (1) Memtable flushing accelerates to move data to disk. (2) If flushing can't keep up, commitlog segment pressure builds. (3) New writes stall while waiting for a commitlog segment to become available. (4) If stall exceeds the client timeout, writes are dropped. (5) JVM GC eventually triggers (stop-the-world with CMS/G1GC), during which the node is unresponsive — gossip marks it as DOWN, and coordinator reroutes. The node then faces a thundering herd on recovery. Mitigation: ZGC (Java 15+) for near-zero pause GC, off-heap memtables (reduces heap pressure), and proper capacity planning to keep heap at 60–70% max utilization.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q6: When would you choose Leveled Compaction over Size-Tiered Compaction? <span>▼</span></div>
+  <div class="q-body">LCS guarantees at most 10 SSTables are checked per read (due to level structure) versus STCS which can accumulate hundreds of SSTables. Choose LCS when: (1) Read-heavy workload where p99 read latency consistency matters more than write throughput. (2) Space-efficient storage is needed — LCS keeps only ~10% overhead versus STCS 50%. (3) Mixed read/write with random access patterns. Avoid LCS when: (1) Write-heavy workloads — LCS creates 10x write amplification. (2) Time-series data with TTL — TWCS is far better. The practical answer: in Cassandra 5.0+, use Unified Compaction Strategy (UCS) which dynamically adapts between tiered and leveled behavior based on actual workload, replacing the need for explicit strategy selection.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q7: How would you model a "friend timeline" in Cassandra — showing posts from all friends, sorted by time? <span>▼</span></div>
+  <div class="q-body">The classic "fan-out on write" pattern. Schema: <code>CREATE TABLE timeline (user_id UUID, post_ts TIMESTAMP, author_id UUID, post_id UUID, content TEXT, PRIMARY KEY (user_id, post_ts, post_id)) WITH CLUSTERING ORDER BY (post_ts DESC)</code>. On write: when Alice posts, write to Alice's timeline AND every one of Alice's followers' timelines. For a user with 1M followers, one post creates 1M writes — acceptable for "write behind" async fan-out via a message queue. Read: trivially efficient — SELECT * FROM timeline WHERE user_id=? LIMIT 50. Trade-off: users with millions of followers (celebrities) cause write storms. Mitigation: hybrid approach — fan-out for users with &lt;10K followers, pull-on-read for celebrities (merge celebrity feed at read time). Twitter documented this exact approach.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q8: What changed in Cassandra 4.0 and 5.0 that matters most for production deployments? <span>▼</span></div>
+  <div class="q-body">Cassandra 4.0 (2021): (1) Incremental repair by default — makes repair cheap enough to run continuously rather than weekly. (2) Zero-copy streaming — node bootstrap 2–3x faster. (3) JDK 11 support with ZGC — eliminates multi-second GC pauses. (4) Audit logging — compliance-friendly operation logging. (5) RAFT-based schema management (preview) — removes gossip bottleneck from schema changes. Cassandra 5.0 (2024): (1) Unified Compaction Strategy (UCS) — replaces STCS/LCS/TWCS with a single adaptive strategy. (2) Storage-Attached Indexing (SAI) GA — more efficient secondary indexes, viable for low-cardinality queries. (3) Vector search support — enables similarity search for ML use cases directly in Cassandra. (4) Trie-based memtable — significant write performance improvement. (5) RAFT topology changes GA — cluster membership changes via Raft instead of gossip.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q9: How do you safely delete 1 billion rows from a Cassandra table without causing an incident? <span>▼</span></div>
+  <div class="q-body">Never use DELETE ... WHERE range_col > X directly — this generates billions of tombstones instantly, crushing read performance. Correct approaches by priority: (1) If data has TTL already set: do nothing — TWCS compaction will expire whole SSTables cleanly. (2) For non-TTL data: backfill TTL on existing rows via a background job: UPDATE ... SET ttl = 86400 WHERE pk = ? — this rewrites rows with TTL set, which expire naturally without tombstone explosion. (3) If immediate deletion required: drop-and-recreate the table (if you can tolerate brief unavailability and have data you don't want to delete in a separate table). (4) Last resort: use a migration table with a new schema, dual-write for 2 weeks, cutover, drop old table. Never just issue bulk DELETEs in production Cassandra — tombstone accumulation will cause read timeouts within hours.</div>
+</div>
+
+<div class="q-block">
+  <div class="q-header" onclick="toggleQ(this)">Q10: A Cassandra cluster has 1 DC with RF=3. Your SLA requires 99.99% availability. A vendor proposes adding a second DC with RF=1 (total RF=4). Good idea or bad? <span>▼</span></div>
+  <div class="q-body">Bad idea, and it reveals a data modeling trap. With NetworkTopologyStrategy {'DC1': 3, 'DC2': 1}, any QUORUM operation requires responses from CEIL(4/2)+1=3 nodes globally. If you use LOCAL_QUORUM, DC1 requires 2/3 nodes (still fine) and DC2 requires 1/1 node (becomes a SPOF!). The second DC with RF=1 adds zero availability improvement — if that single DC2 node fails, LOCAL_QUORUM for DC2 fails entirely. Better approach: RF=3 per DC for true multi-DC HA. With {'DC1': 3, 'DC2': 3} and LOCAL_QUORUM, each DC independently satisfies quorum — a complete DC outage doesn't affect the other DC. The 99.99% SLA requires that quorum is achievable within a single DC without needing cross-DC coordination. RF=1 in any DC guarantees SPOF in that DC.</div>
+</div>
+
+<div class="callout callout-key">
+  <div class="callout-label">Key Takeaway — Pillar 8</div>
+  The strongest interview signals at L7/L8 come from knowing what you DON'T know and asking the right clarifying questions, from quantitative reasoning under uncertainty (back-of-envelope sizing), and from discussing failure modes and edge cases that the "happy path" design ignores entirely.
+</div>
+
+</section>
+
+</div>
+
+<script>
+function scrollTo(id) {
+  document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+  const pillMap = {'p1':0,'p2':1,'p3':2,'p4':3,'p5':4,'p6':5,'p7':6,'p8':7};
+  document.querySelectorAll('.nav-pill')[pillMap[id]].classList.add('active');
+}
+
+function toggleScenario(id) {
+  const body = document.querySelector('#'+id+' .scenario-body');
+  const arrow = document.querySelector('#'+id+' .scenario-header span');
+  if (body.classList.contains('open')) {
+    body.classList.remove('open');
+    arrow.textContent = '▼';
+  } else {
+    body.classList.add('open');
+    arrow.textContent = '▲';
+  }
+}
+
+function toggleQ(header) {
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('span');
+  if (body.classList.contains('open')) {
+    body.classList.remove('open');
+    arrow.textContent = '▼';
+  } else {
+    body.classList.add('open');
+    arrow.textContent = '▲';
+  }
+}
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting && e.intersectionRatio > 0.3) {
+      const id = e.target.id;
+      const pillMap = {'p1':0,'p2':1,'p3':2,'p4':3,'p5':4,'p6':5,'p7':6,'p8':7};
+      if (pillMap[id] !== undefined) {
+        document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav-pill')[pillMap[id]].classList.add('active');
+      }
+    }
+  });
+}, { threshold: 0.3 });
+
+['p1','p2','p3','p4','p5','p6','p7','p8'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) observer.observe(el);
+});
+</script>
