@@ -17,6 +17,10 @@
     {
       "title": "Design Uber",
       "file": "interview/design-uber.html"
+    },
+     {
+      "title": "Design Rate Limiter",
+      "file": "interview/rate-limiter.html"
     }
   ]
 }
