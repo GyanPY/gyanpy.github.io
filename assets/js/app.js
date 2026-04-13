@@ -7,59 +7,100 @@ async function loadNav() {
     const viewer = document.getElementById("viewer");
 
     nav.innerHTML = "";
-
     let activeItem = null;
 
-    Object.keys(data).forEach(section => {
-      // SECTION HEADER (Concepts / Interview)
-      const sectionHeader = document.createElement("li");
-      sectionHeader.textContent = "📂 " + section;
-      sectionHeader.classList.add("section-header");
+    function createNode(name, value, level = 0) {
+      const li = document.createElement("li");
 
-      nav.appendChild(sectionHeader);
+      if (Array.isArray(value)) {
+        const filesUl = document.createElement("ul");
+        filesUl.classList.add("submenu");
+        filesUl.style.display = "none";
 
-      const categories = data[section];
+        const folderHeader = document.createElement("div");
+        folderHeader.textContent = "📁 " + name;
+        folderHeader.classList.add("folder-header");
+        folderHeader.style.paddingLeft = `${level * 16}px`;
 
-      Object.keys(categories).forEach(category => {
-        // CATEGORY (Kafka, Cassandra)
-        const categoryLi = document.createElement("li");
-        categoryLi.textContent = "📁 " + category;
-        categoryLi.classList.add("category");
+        folderHeader.addEventListener("click", () => {
+          filesUl.style.display =
+            filesUl.style.display === "none" ? "block" : "none";
+        });
 
-        const subUl = document.createElement("ul");
-        subUl.classList.add("submenu");
+        value.forEach(item => {
+          const fileLi = document.createElement("li");
+          fileLi.textContent = "📄 " + item.title;
+          fileLi.classList.add("nav-item");
+          fileLi.style.paddingLeft = `${(level + 1) * 16}px`;
 
-        categories[category].forEach(item => {
-          const subLi = document.createElement("li");
-          subLi.textContent = item.title;
-          subLi.classList.add("nav-item");
+          fileLi.addEventListener("click", (event) => {
+            event.stopPropagation();
 
-          subLi.onclick = () => {
-            // active highlight
             if (activeItem) activeItem.classList.remove("active");
-            subLi.classList.add("active");
-            activeItem = subLi;
+            fileLi.classList.add("active");
+            activeItem = fileLi;
 
-            // load page
             const path = "./" + item.file;
             console.log("Loading:", path);
             viewer.src = path;
-          };
+          });
 
-          subUl.appendChild(subLi);
+          filesUl.appendChild(fileLi);
         });
 
-        categoryLi.appendChild(subUl);
-        nav.appendChild(categoryLi);
+        li.appendChild(folderHeader);
+        li.appendChild(filesUl);
+      } else if (typeof value === "object" && value !== null) {
+        const folderHeader = document.createElement("div");
+        folderHeader.textContent = "📁 " + name;
+        folderHeader.classList.add("folder-header");
+        folderHeader.style.paddingLeft = `${level * 16}px`;
+
+        const subUl = document.createElement("ul");
+        subUl.classList.add("submenu");
+        subUl.style.display = "none";
+
+        folderHeader.addEventListener("click", () => {
+          subUl.style.display =
+            subUl.style.display === "none" ? "block" : "none";
+        });
+
+        Object.keys(value).forEach(childKey => {
+          subUl.appendChild(createNode(childKey, value[childKey], level + 1));
+        });
+
+        li.appendChild(folderHeader);
+        li.appendChild(subUl);
+      }
+
+      return li;
+    }
+
+    Object.keys(data).forEach(section => {
+      const sectionHeader = document.createElement("li");
+      sectionHeader.textContent = "📂 " + section;
+      sectionHeader.classList.add("section-header");
+      nav.appendChild(sectionHeader);
+
+      const sectionData = data[section];
+      Object.keys(sectionData).forEach(key => {
+        nav.appendChild(createNode(key, sectionData[key], 1));
       });
     });
 
-    // DEFAULT LOAD
+    // default load first file
     const firstSection = Object.keys(data)[0];
-    const firstCategory = Object.keys(data[firstSection])[0];
-    const firstItem = data[firstSection][firstCategory][0];
+    const firstSectionData = data[firstSection];
+    const firstKey = Object.keys(firstSectionData)[0];
+    const firstValue = firstSectionData[firstKey];
 
-    viewer.src = "./" + firstItem.file;
+    if (Array.isArray(firstValue)) {
+      viewer.src = "./" + firstValue[0].file;
+    } else {
+      const firstNestedKey = Object.keys(firstValue)[0];
+      const firstFile = firstValue[firstNestedKey][0];
+      viewer.src = "./" + firstFile.file;
+    }
 
   } catch (err) {
     console.error("Error loading nav:", err);
