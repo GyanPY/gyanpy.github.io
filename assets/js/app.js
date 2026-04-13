@@ -1,36 +1,68 @@
 async function loadNav() {
-  const res = await fetch('data/nav.json');
-  const data = await res.json();
+  try {
+    const res = await fetch('data/nav.json');
+    const data = await res.json();
 
-  const nav = document.getElementById("nav");
-  const viewer = document.getElementById("viewer");
+    const nav = document.getElementById("nav");
+    const viewer = document.getElementById("viewer");
 
-  Object.keys(data).forEach(section => {
-    const li = document.createElement("li");
-    li.innerText = "📁 " + section;
+    nav.innerHTML = "";
 
-    const subUl = document.createElement("ul");
-    subUl.classList.add("submenu");
+    let activeItem = null;
 
-    data[section].forEach(item => {
-      const subLi = document.createElement("li");
-      subLi.innerText = item.title;
+    Object.keys(data).forEach(section => {
+      // SECTION HEADER (Concepts / Interview)
+      const sectionHeader = document.createElement("li");
+      sectionHeader.textContent = "📂 " + section;
+      sectionHeader.classList.add("section-header");
 
-      subLi.onclick = () => {
-        viewer.src = item.file;
-      };
+      nav.appendChild(sectionHeader);
 
-      subUl.appendChild(subLi);
+      const categories = data[section];
+
+      Object.keys(categories).forEach(category => {
+        // CATEGORY (Kafka, Cassandra)
+        const categoryLi = document.createElement("li");
+        categoryLi.textContent = "📁 " + category;
+        categoryLi.classList.add("category");
+
+        const subUl = document.createElement("ul");
+        subUl.classList.add("submenu");
+
+        categories[category].forEach(item => {
+          const subLi = document.createElement("li");
+          subLi.textContent = item.title;
+          subLi.classList.add("nav-item");
+
+          subLi.onclick = () => {
+            // active highlight
+            if (activeItem) activeItem.classList.remove("active");
+            subLi.classList.add("active");
+            activeItem = subLi;
+
+            // load page
+            const path = "./" + item.file;
+            console.log("Loading:", path);
+            viewer.src = path;
+          };
+
+          subUl.appendChild(subLi);
+        });
+
+        categoryLi.appendChild(subUl);
+        nav.appendChild(categoryLi);
+      });
     });
 
-    li.appendChild(subUl);
-    nav.appendChild(li);
-  });
+    // DEFAULT LOAD
+    const firstSection = Object.keys(data)[0];
+    const firstCategory = Object.keys(data[firstSection])[0];
+    const firstItem = data[firstSection][firstCategory][0];
 
-  // default load
-  const firstSection = Object.keys(data)[0];
-  if (firstSection) {
-    viewer.src = data[firstSection][0].file;
+    viewer.src = "./" + firstItem.file;
+
+  } catch (err) {
+    console.error("Error loading nav:", err);
   }
 }
 
