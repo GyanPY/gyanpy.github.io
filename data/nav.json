@@ -18,6 +18,10 @@
       {
         "title": "Design Twitter",
         "file": "pages/interview/twitter.html"
+      },
+      {
+        "title": "Design Rate Limiter",
+        "file": "pages/interview/rate-limiter.html"
       }
     ]
   }
