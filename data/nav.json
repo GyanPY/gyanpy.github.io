@@ -4,5 +4,11 @@
       "title": "Internals",
       "file": "pages/kafka/kafka.html"
     }
+  ],
+  "Cassandra" : [
+    {
+      "title": "Internals",
+      "file": "pages/cassandra/cassandra.html"
+    }
   ]
 }
