@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 4 (Part 2/3): Strong Hire — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--strong),var(--hire),var(--accent));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--strong);background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(245,166,35,.05)}
+.ni.active a{color:var(--strong);border-left-color:var(--strong);background:rgba(245,166,35,.06)}
+.ni.sub a{padding-left:32px;font-size:.74rem}
+.ni.hidden,.ng.hidden{display:none}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:900px;padding:50px 52px 100px;min-width:0}
+
+/* BACK TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--strong);border-color:var(--strong);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--strong);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--strong) 50%,var(--hire));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;text-decoration:none;border:1px solid var(--border);color:var(--muted);transition:all .2s}
+.part-pill:hover{border-color:var(--strong);color:var(--strong)}
+.part-pill.active-part{background:rgba(245,166,35,.1);border-color:var(--strong);color:var(--strong)}
+
+/* TIER CARD (Strong Hire) */
+.tier-sh{border-radius:10px;border:1px solid var(--border);border-left:4px solid var(--strong);background:var(--surface);margin-bottom:24px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.tier-sh:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.tier-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none;background:rgba(245,166,35,.05)}
+.tier-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tier-emoji{font-size:1.3rem}
+.tier-name{font-family:var(--fh);font-size:1.1rem;font-weight:700;color:var(--text)}
+.tier-badge{font-family:var(--fc);font-size:.64rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;background:rgba(245,166,35,.11);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.tier-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.tier-sh.collapsed .tier-toggle{transform:rotate(-90deg)}
+.tier-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.tier-sh.collapsed .tier-body{max-height:0;opacity:0;padding-bottom:0}
+.tier-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px}
+.tier-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.tier-body ul,.tier-body ol{padding-left:18px;margin:8px 0 13px}
+.tier-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.tier-body strong{color:var(--text);font-weight:600}
+
+/* REQ TABLE */
+.req-table{width:100%;border-collapse:collapse;font-size:.84rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.req-table thead tr{background:linear-gradient(90deg,rgba(245,166,35,.14),rgba(0,191,165,.08))}
+.req-table th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--strong);border-bottom:1px solid rgba(245,166,35,.2)}
+.req-table td{padding:9px 14px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.5}
+.req-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.req-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.req-table td:first-child{font-family:var(--fc);font-size:.8rem;color:var(--hire);font-weight:600}
+
+/* DIAGRAM BLOCK */
+.diag{background:#010409;border:1px solid rgba(245,166,35,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(245,166,35,.06);border-bottom:1px solid rgba(245,166,35,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.75rem;line-height:1.7;color:#e6c27a;white-space:pre}
+
+/* STEP DIAGRAM (blue tint for redirect path) */
+.diag.step-diag{border:1px solid rgba(88,166,255,.2)}
+.diag.step-diag .diag-hdr{background:rgba(88,166,255,.06);border-bottom:1px solid rgba(88,166,255,.2)}
+.diag.step-diag .diag-lbl{color:var(--accent)}
+.diag.step-diag pre{color:#79c0ff}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.extra .callout-title{color:var(--strong)}
+.callout.info  .callout-title{color:var(--accent)}
+.callout.good  .callout-title{color:var(--hire)}
+.callout.warn  .callout-title{color:var(--lean)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INT QUOTE */
+.iq{background:var(--surface2);border-radius:8px;padding:16px 18px 14px 48px;margin:13px 0;position:relative;font-style:italic;font-size:.89rem;color:var(--muted);line-height:1.65}
+.iq::before{content:'❝';position:absolute;left:14px;top:12px;font-size:1.4rem;color:var(--dim)}
+.iq-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);font-style:normal;font-weight:600;display:block;margin-bottom:7px}
+
+/* AOMB */
+.aomb{background:rgba(0,191,165,.05);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.aomb-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.aomb ul{list-style:none;padding:0}
+.aomb li{display:flex;align-items:flex-start;gap:7px;padding:3px 0;font-size:.84rem;color:var(--muted);line-height:1.5}
+.aomb li::before{content:'☑';color:var(--hire);flex-shrink:0;margin-top:1px}
+
+/* SIGNALS */
+.signals{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--hire);border-radius:0 8px 8px 0;padding:14px 16px;margin:13px 0}
+.signals-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.signals ul{list-style:none;padding:0}
+.signals li{font-family:var(--fc);font-size:.8rem;color:var(--muted);padding:4px 0;border-bottom:1px solid rgba(48,54,61,.4);line-height:1.5}
+.signals li:last-child{border-bottom:none}
+.signals li::before{content:'→ ';color:var(--hire)}
+
+/* WOW */
+.wow{background:rgba(245,166,35,.05);border:1px solid rgba(245,166,35,.15);border-radius:6px;padding:9px 13px;margin-bottom:8px;font-family:var(--fc);font-size:.84rem;color:var(--strong);line-height:1.5}
+.wow::before{content:'✦ ';opacity:.7}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* LATENCY TABLE */
+.lat-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:7px;overflow:hidden}
+.lat-table th{padding:9px 12px;text-align:left;background:var(--surface2);font-family:var(--fc);font-size:.61rem;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);border-bottom:1px solid var(--border)}
+.lat-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.lat-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.lat-table td:first-child{font-weight:600;color:var(--text)}
+.lat-table td.lat{font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.lat-table td.prob{font-family:var(--fc);font-size:.78rem;color:var(--strong)}
+
+/* STEP BOXES */
+.step-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:16px 18px;margin:12px 0}
+.step-box.write-step{border-left-color:var(--strong)}
+.step-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin-bottom:5px}
+.step-box.write-step .step-num{color:var(--strong)}
+.step-title{font-family:var(--fh);font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:8px}
+.step-box p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:6px}
+.step-box ul{padding-left:16px;margin:6px 0}
+.step-box li{font-size:.86rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.step-box strong{color:var(--text)}
+.lat-badge{font-family:var(--fc);font-size:.78rem;color:var(--hire);background:rgba(0,191,165,.08);border:1px solid rgba(0,191,165,.15);padding:4px 10px;border-radius:4px;display:inline-block;margin-top:6px}
+
+/* SECTION HEADER */
+.sec-hdr{margin:44px 0 20px}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+.sec-hdr.accent h3{color:var(--strong)}
+
+/* PROGRESSION TABLE */
+.prog{width:100%;border-collapse:collapse;font-size:.84rem;margin:16px 0;border-radius:8px;overflow:hidden}
+.prog thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.prog th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.prog td{padding:10px 14px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--muted);line-height:1.55;vertical-align:top}
+.prog tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.prog tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.prog td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🏆';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--strong);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* NAV CARDS */
+.nav-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:32px 0}
+.nav-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 18px;text-decoration:none;transition:all .2s;display:block}
+.nav-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.nav-card.next{border-top:3px solid var(--strong)}
+.nav-card.next:hover{border-color:var(--strong)}
+.nav-card-label{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:5px}
+.nav-card-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:4px}
+.nav-card-desc{font-size:.82rem;color:var(--muted);line-height:1.4}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .nav-cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<!-- SIDEBAR -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Phase 4: High-Level Architecture</div>
+    <div class="sb-part">Part 2 of 3 — Strong Hire (L7)</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng">
+      <div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">🏆 Strong Hire (L7)</div>
+      <li class="ni"><a href="#sh-opening">Opening Frame</a></li>
+      <li class="ni"><a href="#sh-drivers">Architecture Drivers</a></li>
+      <li class="ni"><a href="#sh-arch">Global Architecture</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Redirect Path — Obsessive</div>
+      <li class="ni sub"><a href="#redirect-overview">Overview</a></li>
+      <li class="ni sub"><a href="#redirect-step1">Step 1: CDN Edge</a></li>
+      <li class="ni sub"><a href="#redirect-step2">Step 2: Redirect Service</a></li>
+      <li class="ni sub"><a href="#redirect-latency">Latency Distribution</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Write Path — Correctness First</div>
+      <li class="ni sub"><a href="#write-overview">Overview</a></li>
+      <li class="ni sub"><a href="#write-step1">Step 1: Rate Limiting</a></li>
+      <li class="ni sub"><a href="#write-step2">Step 2: Idempotency</a></li>
+      <li class="ni sub"><a href="#write-step3">Step 3: Validation</a></li>
+      <li class="ni sub"><a href="#write-step4">Step 4: Duplicate Check</a></li>
+      <li class="ni sub"><a href="#write-step5">Step 5: Code Generation</a></li>
+      <li class="ni sub"><a href="#write-step6">Step 6: DB Write</a></li>
+      <li class="ni sub"><a href="#write-step7">Step 7: Cache Population</a></li>
+      <li class="ni sub"><a href="#write-step8">Step 8: Idempotency Record</a></li>
+      <li class="ni sub"><a href="#write-step9">Step 9: Return Response</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Synthesis</div>
+      <li class="ni"><a href="#aomb">AOMB Checklist</a></li>
+      <li class="ni"><a href="#wow">Wow Moments</a></li>
+      <li class="ni"><a href="#signals">Key Phrases</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Series Navigation</div>
+      <li class="ni"><a href="#nav">← Part 1 | Part 3 →</a></li>
+    </li>
+  </ul>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">System Design Interview · Study Guide · Phase 4 · Part 2 of 3</div>
+  <h1>Strong Hire<br>L7 Signal</h1>
+  <div class="hero-meta">
+    <span>🏆 Exceptional tier</span>
+    <span>⚡ Redirect path obsession</span>
+    <span>✏️ Write path step-by-step</span>
+    <span>💻 Go code sample</span>
+    <span>📊 Latency budgets</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Tiers No Hire → Hire</span>
+    <span class="part-pill active-part">Part 2: Strong Hire (L7)</span>
+    <span class="part-pill">Part 3: Deep Dive — DB Selection</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The full L7 answer. This part covers everything that separates an exceptional candidate from a good one: service separation by latency SLA, edge compute with bot filtering, actual Go code for the redirect handler, 9-step write path with latency at every step, and the architectural principle that the redirect path is sacred.</p>
+</section>
+
+<!-- STRONG HIRE TIER CARD -->
+<div class="tier-sh" id="sh-opening">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row">
+      <span class="tier-emoji">🏆</span>
+      <span class="tier-name">Strong Hire</span>
+      <span class="tier-badge">L7 Signal · Exceptional</span>
+    </div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+
+    <div class="callout extra" style="margin-top:0">
+      <div class="callout-title">L7 Opening Frame — Layers, Not Just Boxes</div>
+      <p>"Let me build this architecture in layers, starting from requirements, then I'll walk through both paths with <mark class="g">latency budgets</mark>, and finally analyze failure modes and operational concerns."</p>
+    </div>
+
+    <!-- ARCHITECTURE DRIVERS -->
+    <h4 id="sh-drivers">Requirement Recap and Architecture Drivers</h4>
+    <table class="req-table">
+      <thead><tr><th>Requirement</th><th>Architecture Implication</th></tr></thead>
+      <tbody>
+        <tr><td>100K read QPS, p99 &lt; 50ms</td><td>CDN + aggressive caching, minimal origin processing</td></tr>
+        <tr><td>2K write QPS, p99 &lt; 200ms</td><td>Can tolerate more complexity on write path</td></tr>
+        <tr><td>99.99% availability (redirects)</td><td>No SPOF on read path, graceful degradation</td></tr>
+        <tr><td>Global users</td><td>Multi-region read, single-region write (initially)</td></tr>
+        <tr><td>Zero data loss</td><td>Synchronous replication before acknowledging writes</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout extra">
+      <div class="callout-title">The Key Insight (L7 Differentiator)</div>
+      <p><mark class="g">The redirect path must be as close to a static file serving as possible.</mark> Every millisecond of processing is a millisecond of latency. The create path can be more complex because it's 50x less frequent and has 4x more latency budget.</p>
+    </div>
+
+    <!-- GLOBAL ARCHITECTURE -->
+    <h4 id="sh-arch">Global Architecture Overview</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · L7 Full Global Architecture</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>┌──────────────────────────────────────────────────────────────────────────────┐
+│                              USERS WORLDWIDE                                  │
+│                                                                               │
+│    US Users            EU Users             APAC Users                       │
+│       │                   │                    │                             │
+│       ▼                   ▼                    ▼                             │
+│    ┌─────┐             ┌─────┐              ┌─────┐                          │
+│    │ PoP │             │ PoP │              │ PoP │                          │
+│    │ NYC │             │ FRA │              │ SIN │                          │
+│    └──┬──┘             └──┬──┘              └──┬──┘                          │
+└───────┼───────────────────┼────────────────────┼─────────────────────────────┘
+        └───────────────────┼────────────────────┘
+                            ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         CLOUDFLARE / FASTLY CDN                              │
+│                                                                               │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                     EDGE COMPUTE LAYER                               │   │
+│   │                                                                      │   │
+│   │   • 90% of redirects served from edge cache                         │   │
+│   │   • Edge Workers validate short code format before origin           │   │
+│   │   • Bot detection and abuse filtering at edge                       │   │
+│   │   • Geographic routing for origin selection                         │   │
+│   │                                                                      │   │
+│   │   Cache Policy:                                                      │   │
+│   │   • 301 redirects: Cache 24 hours, stale-while-revalidate 1 hour   │   │
+│   │   • 404 responses: Cache 5 minutes (prevent hammering)              │   │
+│   │   • 410 Gone: Cache 1 hour                                          │   │
+│   │   • API endpoints: No cache (POST /api/v1/urls)                     │   │
+│   │                                                                      │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                               │
+│   Expected hit rate: 90% overall, 99% for popular URLs                       │
+│   Origin traffic: 10% of 100K = 10K QPS to origin                           │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                    │ Cache miss (10K QPS)
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     PRIMARY REGION (US-EAST-1)                               │
+│                                                                               │
+│   INGRESS LAYER:                                                             │
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                  │
+│   │     NLB     │────▶│     WAF     │────▶│ API Gateway │                  │
+│   │  (Layer 4)  │     │ OWASP rules │     │ Rate limit  │                  │
+│   │ TLS passthru│     │ Geo-block   │     │ Auth/Routing│                  │
+│   └─────────────┘     └─────────────┘     └─────────────┘                  │
+│                                     │                                        │
+│               ┌─────────────────────┴─────────────────────┐                 │
+│               ▼                                           ▼                 │
+│   ┌─────────────────────────┐             ┌─────────────────────────┐       │
+│   │   REDIRECT SERVICE      │             │   URL SERVICE           │       │
+│   │   (Hot Path)            │             │   (Create/Manage)       │       │
+│   │   Language: Go          │             │   Language: Go          │       │
+│   │   Instances: 10         │             │   Instances: 5          │       │
+│   │   Max latency: 20ms     │             │   Max latency: 150ms    │       │
+│   │                         │             │                         │       │
+│   │   ONLY does:            │             │   Handles:              │       │
+│   │   • Cache lookup        │             │   • URL creation        │       │
+│   │   • DB lookup           │             │   • Validation          │       │
+│   │   • Return redirect     │             │   • Idempotency         │       │
+│   │                         │             │   • Rate limit checks   │       │
+│   │   NO: Auth, rate limit, │             │   • Custom alias logic  │       │
+│   │   validation, logging   │             │                         │       │
+│   │   Optimized for:        │             │   Optimized for:        │       │
+│   │   MINIMAL PROCESSING    │             │   CORRECTNESS           │       │
+│   └───────────┬─────────────┘             └───────────┬─────────────┘       │
+│               └─────────────────┬─────────────────────┘                     │
+│                                 ▼                                            │
+│   DATA LAYER:                                                                │
+│   ┌─────────────────┐  ┌─────────────────────┐  ┌─────────────────┐        │
+│   │  Redis Cluster  │  │     PostgreSQL      │  │ Range Allocator │        │
+│   │  3 primaries    │  │  1 Primary          │  │ Backed by PG    │        │
+│   │  3 replicas     │  │  2 Sync Replicas    │  │ Range size: 10K │        │
+│   │  32GB per node  │  │  2 Async Replicas   │  │ Pre-fetch: 80%  │        │
+│   │  URL cache +    │  │  Source of truth    │  │                 │        │
+│   │  Rate limits +  │  │  Sync = durability  │  │                 │        │
+│   │  Idempotency    │  │  Async = reads      │  │                 │        │
+│   └─────────────────┘  └─────────────────────┘  └─────────────────┘        │
+└───────────────────────────────────────────────────────────────────────────────┘
+                                    │ Async events
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        ANALYTICS PIPELINE                                    │
+│   Kafka (3b, RF=3, 12p) ──▶ Click Processor (Flink, 5s windows)            │
+│                        ──▶ Redis (real-time counts)                         │
+│                        ──▶ Postgres (persist aggregates)                   │
+│                        ──▶ ClickHouse (OLAP: geo, device, referrer)        │
+│   Latency: seconds for counts, minutes for detailed analytics               │
+│   Durability: Kafka provides replay if processor fails                      │
+└───────────────────────────────────────────────────────────────────────────────┘</pre>
+    </div>
+
+    <div class="callout extra">
+      <div class="callout-title">The Key L7 Differentiation: Service Split by Latency SLA</div>
+      <p>Most candidates create one monolithic "API service" handling everything. <mark class="g">By splitting Redirect Service from URL Service</mark>, you can optimize each hot path independently, scale independently, and reason about failure modes independently. <strong>What you DON'T do is as important as what you do</strong> — the Redirect Service's "NO:" list is as significant as its "ONLY does:" list.</p>
+    </div>
+
+  </div><!-- end tier-body intro -->
+</div><!-- end tier-sh intro -->
+
+<!-- ═══════════════════════════════════════ -->
+<!-- REDIRECT PATH -->
+<!-- ═══════════════════════════════════════ -->
+
+<div class="sec-hdr accent" id="redirect-overview">
+  <h3>⚡ Redirect Path — Obsessive Optimization</h3>
+</div>
+
+<div class="callout extra">
+  <div class="callout-title">Latency Budget: 50ms p99 · Target: 20ms p50</div>
+  <p>This is 99% of our traffic. Every microsecond matters. Each step below has a strict budget. <mark class="g">We treat this like a static file server.</mark></p>
+</div>
+
+<!-- STEP 1: CDN EDGE -->
+<div class="step-box" id="redirect-step1">
+  <div class="step-num">Redirect · Step 1</div>
+  <div class="step-title">CDN Edge (Cloudflare Workers / Fastly Compute)</div>
+
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · CDN Edge Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 1: CDN Edge                                                            │
+│                                                                              │
+│   Input: GET /Xk9Lm2n                                                       │
+│                                                                              │
+│   Edge Worker (Cloudflare Workers / Fastly Compute):                        │
+│   • Validate short code format: /^[a-zA-Z0-9]{7}$/                          │
+│   • If invalid format: return 404 immediately (don't hit origin)            │
+│   • Check edge cache                                                        │
+│   • If HIT: return cached 301 (done in ~5ms)                                │
+│   • If MISS: forward to origin                                              │
+│                                                                              │
+│   Why validate at edge? 30% of 404s are bots trying random codes.           │
+│   Rejecting at edge saves origin resources.                                 │
+│                                                                              │
+│   Latency: 5-15ms (geo-dependent)                                           │
+│   Cache hit rate: 90% overall                                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+
+  <p><strong>Why validate at edge?</strong> <mark>30% of 404s are bots trying random codes.</mark> Rejecting invalid formats at the CDN edge saves origin CPU, reduces DB load, and improves p99 for legitimate traffic. This is a non-obvious production insight most candidates miss.</p>
+  <span class="lat-badge">Latency: 5-15ms (geo-dependent) · Cache hit: 90% of all traffic</span>
+</div>
+
+<!-- STEP 2: REDIRECT SERVICE -->
+<div class="step-box" id="redirect-step2">
+  <div class="step-num">Redirect · Step 2</div>
+  <div class="step-title">Origin — Redirect Service (One Responsibility, Maximum Speed)</div>
+
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Redirect Service Contract</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 2: Origin - Redirect Service                                           │
+│                                                                              │
+│   DESIGN PRINCIPLE: This service does ONE thing and does it FAST.           │
+│                                                                              │
+│   What it DOES:                                                             │
+│   • Accept request                                                          │
+│   • Look up short_code in Redis                                             │
+│   • On cache miss: look up in PostgreSQL                                    │
+│   • Return 301/302/404/410                                                  │
+│                                                                              │
+│   What it DOES NOT DO:                                                      │
+│   • Authentication (none required)                                          │
+│   • Rate limiting (handled at CDN/API Gateway)                              │
+│   • Request logging (async, fire-and-forget to Kafka)                       │
+│   • Analytics processing (async)                                            │
+│   • Any business logic                                                       │
+│                                                                              │
+│   Connection pooling:                                                       │
+│   • Redis: 100 connections per instance (connection pool)                   │
+│   • PostgreSQL: 20 connections via PgBouncer                                │
+│                                                                              │
+│   Latency breakdown:                                                        │
+│   • Request parsing: 0.1ms                                                  │
+│   • Redis GET: 0.5ms (local DC)                                             │
+│   • PostgreSQL (if cache miss): 5-10ms                                      │
+│   • Response write: 0.1ms                                                   │
+│   Total: 1ms (cache hit), 10ms (cache miss)                                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+
+  <h4 style="margin-top:14px">Go Implementation</h4>
+  <div class="code">
+    <div class="code-hdr"><span class="code-lang">Go · Redirect Handler (Production)</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>func Redirect(w http.ResponseWriter, r *http.Request) {
+    code := chi.URLParam(r, "code")
+
+    // Redis lookup — 99% of requests end here
+    url, err := redis.Get(ctx, "url:"+code).Result()
+    if err == redis.Nil {
+        // Cache miss — hit database (covering index, no heap access)
+        url, expiresAt, err = db.GetURL(ctx, code)
+        if err == sql.ErrNoRows {
+            w.WriteHeader(404)
+            return
+        }
+        if expiresAt.Before(time.Now()) {
+            w.WriteHeader(410)
+            return
+        }
+        // Populate cache for next request
+        redis.SetEX(ctx, "url:"+code, url, 24*time.Hour)
+    }
+
+    // Fire-and-forget — NEVER block the redirect
+    go emitClickEvent(code, r)
+
+    w.Header().Set("Location", url)
+    w.Header().Set("Cache-Control", "public, max-age=86400")
+    w.WriteHeader(301)
+}</pre>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">Why This Code Matters in an Interview</div>
+    <p>Showing actual code (even pseudocode) signals you've built this before — not just designed it. Key highlights: <strong>goroutine for async click events</strong> (never blocks redirect), <strong>cache population on miss</strong> (so the next request is fast), and explicit <strong>410 vs 404</strong> handling (expired vs never existed).</p>
+  </div>
+  <span class="lat-badge">Redis HIT: 1ms total · DB miss path: 10ms total</span>
+</div>
+
+<!-- LATENCY DISTRIBUTION -->
+<div id="redirect-latency">
+  <h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px">End-to-End Latency Distribution</h4>
+  <table class="lat-table">
+    <thead><tr><th>Scenario</th><th>Probability</th><th>Latency</th></tr></thead>
+    <tbody>
+      <tr><td>CDN hit</td><td class="prob">90%</td><td class="lat">5-15ms</td></tr>
+      <tr><td>CDN miss, Redis hit</td><td class="prob">9%</td><td class="lat">15-25ms</td></tr>
+      <tr><td>CDN miss, Redis miss, DB hit</td><td class="prob">1%</td><td class="lat">25-40ms</td></tr>
+      <tr><td>CDN miss, Redis miss, DB miss (404)</td><td class="prob">&lt;0.1%</td><td class="lat">20-30ms</td></tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <div class="callout-title">Weighted p50 Calculation</div>
+    <p>0.9 × 10ms + 0.09 × 20ms + 0.01 × 35ms = <strong>~11ms ✓</strong> — Well within the 50ms p99 SLO. This kind of math is what separates L6 from L7.</p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════ -->
+<!-- WRITE PATH -->
+<!-- ═══════════════════════════════════════ -->
+
+<div class="sec-hdr accent" id="write-overview" style="margin-top:52px">
+  <h3>✏️ Write Path — Correctness First</h3>
+</div>
+
+<div class="callout extra">
+  <div class="callout-title">Latency Budget: 200ms p99 · Target: 50ms p50</div>
+  <p>Write path has 4× more budget than redirect. We invest that budget in <mark class="g">correctness guarantees</mark>: idempotency, durability, deduplication, and validation. Complexity here is acceptable because creates are 50× less frequent than redirects.</p>
+</div>
+
+<!-- STEP 1: RATE LIMITING -->
+<div class="step-box write-step" id="write-step1">
+  <div class="step-num">Write Path · Step 1</div>
+  <div class="step-title">Rate Limiting</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Rate Limiting Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 1: Rate Limiting                                                       │
+│                                                                              │
+│   Implementation: Token bucket in Redis                                     │
+│                                                                              │
+│   Key: rate_limit:{user_id} or rate_limit:ip:{ip}                          │
+│   Algorithm: MULTI/EXEC with Lua script for atomicity                      │
+│                                                                              │
+│   Limits:                                                                   │
+│   • Anonymous (by IP): 10/minute, 100/hour                                  │
+│   • Authenticated Free: 100/hour                                            │
+│   • Authenticated Pro: 1000/hour                                            │
+│   • Enterprise: Custom limits                                               │
+│                                                                              │
+│   Response on limit: 429 with Retry-After header                            │
+│                                                                              │
+│   Latency: 1ms                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p><strong>Why Lua script?</strong> The check-and-decrement operation must be atomic to prevent race conditions under high concurrency. A Lua script in Redis runs atomically without needing a WATCH/MULTI/EXEC transaction.</p>
+  <span class="lat-badge">Latency: 1ms</span>
+</div>
+
+<!-- STEP 2: IDEMPOTENCY CHECK -->
+<div class="step-box write-step" id="write-step2">
+  <div class="step-num">Write Path · Step 2</div>
+  <div class="step-title">Idempotency Check</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Idempotency Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 2: Idempotency Check                                                   │
+│                                                                              │
+│   Redis GET idempotency:{user_id}:{idempotency_key}                        │
+│                                                                              │
+│   If exists: return cached response (200 OK, not 201)                       │
+│   If not: continue with creation                                            │
+│                                                                              │
+│   Why user_id in key? Different users can use same idempotency key.        │
+│   Why 24h TTL? Balance between replay window and storage cost.              │
+│                                                                              │
+│   Latency: 1ms                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p>Returns <strong>200 OK</strong> (not 201) on replay to signal to clients that this is a cached response, not a new resource. The full response body is replayed — not just the short code — so the client receives identical payloads on retry.</p>
+  <span class="lat-badge">Latency: 1ms</span>
+</div>
+
+<!-- STEP 3: VALIDATION -->
+<div class="step-box write-step" id="write-step3">
+  <div class="step-num">Write Path · Step 3</div>
+  <div class="step-title">Validation + Blocklist Check</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Validation Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Validation                                                          │
+│                                                                              │
+│   • URL format validation (regex + URL parsing)                             │
+│   • URL length check (≤ 2048 chars)                                         │
+│   • URL reachability check (optional, async)                                │
+│   • Blocklist check (known phishing/malware domains)                        │
+│   • Custom alias format validation if provided                              │
+│                                                                              │
+│   Blocklist: Bloom filter in memory (fast) + Redis set (complete)           │
+│   If suspicious: async check against Google Safe Browsing API               │
+│                                                                              │
+│   Latency: 1-5ms                                                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p><strong>Bloom filter for blocklist:</strong> Keeps known-bad domains in memory for O(1) lookup with no false negatives on the hot path. If the Bloom filter says "maybe blocked," we check the full Redis set. This two-tier approach minimizes latency for the 99.9% of legitimate URLs.</p>
+  <span class="lat-badge">Latency: 1-5ms</span>
+</div>
+
+<!-- STEP 4: DUPLICATE CHECK -->
+<div class="step-box write-step" id="write-step4">
+  <div class="step-num">Write Path · Step 4</div>
+  <div class="step-title">Duplicate Check (Optional)</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Duplicate Check Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Duplicate Check (Optional)                                          │
+│                                                                              │
+│   If allow_duplicate=false (default):                                       │
+│   • Hash the long_url: SHA256(long_url)                                     │
+│   • Query: SELECT short_code FROM urls                                      │
+│            WHERE user_id = ? AND url_hash = ?                               │
+│   • If exists: return existing short code (200, not 201)                    │
+│                                                                              │
+│   Index: idx_urls_user_url_hash (user_id, url_hash)                         │
+│                                                                              │
+│   Latency: 5ms                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p><strong>Why SHA256 the URL?</strong> Can't index <code>VARCHAR(2048)</code> efficiently. Hashing normalizes URL length to 64 chars, which indexes beautifully. The <code>(user_id, url_hash)</code> composite index makes this lookup O(1).</p>
+  <span class="lat-badge">Latency: 5ms</span>
+</div>
+
+<!-- STEP 5: CODE GENERATION -->
+<div class="step-box write-step" id="write-step5">
+  <div class="step-num">Write Path · Step 5</div>
+  <div class="step-title">Code Generation</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Code Generation Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 5: Code Generation                                                     │
+│                                                                              │
+│   Each API server has a pre-allocated range from Range Allocator.           │
+│                                                                              │
+│   Local operation:                                                          │
+│   • counter := atomic.AddInt64(&localCounter, 1)                            │
+│   • plainCode := base62Encode(counter)                                      │
+│   • shortCode := fpeEncrypt(plainCode)                                      │
+│                                                                              │
+│   Range pre-fetching:                                                       │
+│   • When localCounter > 80% of range, async fetch next range                │
+│   • This ensures zero blocking on hot path                                  │
+│                                                                              │
+│   Custom alias handling:                                                    │
+│   • If custom alias requested, skip code generation                         │
+│   • Check alias availability in DB (unique constraint)                      │
+│   • If taken: return 409 Conflict                                           │
+│                                                                              │
+│   Latency: 0.1ms (local), 50ms (range fetch, rare)                          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p><strong>Why FPE (Format-Preserving Encryption)?</strong> We want unpredictable codes (security) but zero collisions (correctness). FPE applies a secret permutation to sequential counter values, giving us shuffled output with the same cardinality. Result: no collisions possible, no coordination needed, unpredictable codes.</p>
+  <span class="lat-badge">Latency: 0.1ms (local) · 50ms on rare range fetch</span>
+</div>
+
+<!-- STEP 6: DB WRITE -->
+<div class="step-box write-step" id="write-step6">
+  <div class="step-num">Write Path · Step 6</div>
+  <div class="step-title">Database Write (Synchronous Replication)</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Database Write Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 6: Database Write                                                      │
+│                                                                              │
+│   INSERT INTO urls (id, short_code, long_url, url_hash, user_id, ...)      │
+│   VALUES (...)                                                              │
+│                                                                              │
+│   Synchronous replication:                                                  │
+│   • PostgreSQL configured with synchronous_commit = on                      │
+│   • At least 1 synchronous replica must acknowledge                         │
+│   • This guarantees durability before we return success                     │
+│                                                                              │
+│   Why synchronous? "RPO = 0" requirement. If we acknowledge a URL           │
+│   and then lose the primary, we must not lose that URL.                     │
+│                                                                              │
+│   Trade-off: ~5-10ms additional latency vs async replication                │
+│   Acceptable: We have 200ms budget, this fits easily                        │
+│                                                                              │
+│   Latency: 15-25ms (network + disk fsync + replication ack)                 │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <div class="callout extra">
+    <div class="callout-title">Why Synchronous Replication is Worth the Latency Cost</div>
+    <p>RPO = 0 is a hard requirement. If we acknowledge a URL creation and then the primary crashes before async replication completes, we've told the user their short URL works — but it doesn't. That's a trust violation. The 5-10ms latency cost of synchronous replication is completely acceptable against our 200ms budget.</p>
+  </div>
+  <span class="lat-badge">Latency: 15-25ms (network + disk fsync + replication ack)</span>
+</div>
+
+<!-- STEP 7: CACHE POPULATION -->
+<div class="step-box write-step" id="write-step7">
+  <div class="step-num">Write Path · Step 7</div>
+  <div class="step-title">Cache Population (Write-Through Strategy)</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Cache Population Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 7: Cache Population (Write-Through)                                    │
+│                                                                              │
+│   redis.SetEX("url:"+shortCode, longURL, 24*time.Hour)                      │
+│                                                                              │
+│   Why write-through?                                                        │
+│   • Guarantees read-your-writes consistency                                 │
+│   • User shares URL immediately after creation — it must work              │
+│   • CDN will populate on first access anyway                                │
+│                                                                              │
+│   Why not write-behind?                                                     │
+│   • If cache write fails, we have a window where redirects fail             │
+│   • Our durability contract is "it works immediately"                       │
+│                                                                              │
+│   Failure handling:                                                         │
+│   • If Redis write fails: log error, continue (DB is source of truth)       │
+│   • Next redirect will miss cache, hit DB, and populate cache               │
+│                                                                              │
+│   Latency: 1ms                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <div class="callout info">
+    <div class="callout-title">Write-Through vs Write-Behind — The Decision Matrix</div>
+    <ul>
+      <li><strong>Write-through (our choice):</strong> DB write first → cache write second. User gets URL that works immediately. Cache failure is non-fatal (DB is source of truth). Slightly slower writes.</li>
+      <li><strong>Write-behind:</strong> Cache write first → async DB write. Lower write latency. But: if the API server crashes before the async DB write, we've told the user their URL works — and it doesn't. Violates our durability contract.</li>
+    </ul>
+  </div>
+  <span class="lat-badge">Latency: 1ms</span>
+</div>
+
+<!-- STEP 8: IDEMPOTENCY RECORD -->
+<div class="step-box write-step" id="write-step8">
+  <div class="step-num">Write Path · Step 8</div>
+  <div class="step-title">Idempotency Record Storage</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Idempotency Record Step</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 8: Idempotency Record                                                  │
+│                                                                              │
+│   redis.SetEX("idempotency:"+userId+":"+key, responseJSON, 24*time.Hour)   │
+│                                                                              │
+│   Stores the complete response so replay returns identical payload.         │
+│                                                                              │
+│   Latency: 1ms                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <p>We store the <em>complete serialized response JSON</em>, not just the short code. This ensures retries receive byte-identical responses — important for clients that validate response checksums or rely on specific field values.</p>
+  <span class="lat-badge">Latency: 1ms</span>
+</div>
+
+<!-- STEP 9: RETURN RESPONSE -->
+<div class="step-box write-step" id="write-step9">
+  <div class="step-num">Write Path · Step 9</div>
+  <div class="step-title">Return Response + Total Latency Summary</div>
+  <div class="diag step-diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Return Response + Full Breakdown</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 9: Return Response                                                     │
+│                                                                              │
+│   HTTP 201 Created                                                          │
+│   Body: { "data": { "short_url": "...", ... } }                            │
+│                                                                              │
+│   Total latency breakdown:                                                  │
+│   • Rate limit:          1ms                                                │
+│   • Idempotency check:   1ms                                                │
+│   • Validation:          3ms                                                │
+│   • Duplicate check:     5ms                                                │
+│   • Code generation:     0.1ms                                              │
+│   • DB write:            20ms                                               │
+│   • Cache write:         1ms                                                │
+│   • Idempotency write:   1ms                                                │
+│   ──────────────────────────                                                │
+│   Total:                 ~32ms p50, <100ms p99                              │
+│                                                                              │
+│   Well within 200ms budget. ✓                                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘</pre>
+  </div>
+  <div class="callout extra">
+    <div class="callout-title">Budget Math (L7 Signal)</div>
+    <p>32ms p50 against a 200ms p99 budget means we have <mark class="g">168ms of headroom</mark> for p99 tail events — database slowdowns, GC pauses, network retries. Showing this math signals you think in distributions, not just averages.</p>
+  </div>
+  <span class="lat-badge">Total: ~32ms p50 · &lt;100ms p99 · 200ms budget ✓</span>
+</div>
+
+<!-- AOMB -->
+<div class="aomb" id="aomb" style="margin-top:36px">
+  <div class="aomb-title">AOMB Completeness Checklist — L7 (All Verified)</div>
+  <ul>
+    <li>Structured opening with architecture drivers table (requirements → implications)</li>
+    <li>CDN edge compute with validation logic — not just caching</li>
+    <li>Separate Redirect Service and URL Service split by latency SLA</li>
+    <li>Go code sample for redirect handler</li>
+    <li>Explicit "what it does NOT do" list for Redirect Service</li>
+    <li>Latency budget per path (50ms redirect, 200ms write)</li>
+    <li>9-step write path with latency at every step</li>
+    <li>FPE explained (not just "counter + base62")</li>
+    <li>Synchronous replication justified via RPO requirement</li>
+    <li>Write-through vs write-behind decision with explicit reasoning</li>
+    <li>Bloom filter for blocklist (two-tier approach)</li>
+    <li>Weighted p50 calculation for redirect (0.9×10 + 0.09×20 + 0.01×35 = 11ms)</li>
+    <li>Total write latency math showing headroom against budget</li>
+  </ul>
+</div>
+
+<!-- WOW MOMENTS -->
+<div class="sec-hdr" id="wow"><h3>The "Wow" Moments</h3></div>
+<div class="wow">"30% of 404s are bots trying random codes" — validating at edge saves origin resources. Real-world production insight.</div>
+<div class="wow">Separate Redirect Service with explicit "NO: Auth, rate limit, validation, logging" — defining what you DON'T do is as important as what you do</div>
+<div class="wow">FPE (Format-Preserving Encryption) — gives unpredictable codes without collision risk. Most candidates say "random + collision check"</div>
+<div class="wow">Synchronous replication justified via RPO = 0 — tied back to the business requirement, not just a tech choice</div>
+<div class="wow">Write-through vs write-behind decision matrix — understood it's not a default, it's a deliberate trade-off</div>
+<div class="wow">Weighted p50 calculation — showed they think in probability distributions, not just best-case latencies</div>
+
+<div class="iq">
+  <span class="iq-lbl">Interviewer's Notes</span>
+  "Exceptional architecture. Separated services by latency requirement — that's senior thinking. Edge validation for bot traffic shows production experience. Write-through vs write-behind reasoning, FPE for code generation, synchronous replication tied to RPO — this candidate has designed AND operated systems at scale. Strong hire."
+</div>
+
+<!-- SIGNAL PHRASES -->
+<div class="signals" id="signals">
+  <div class="signals-title">Key Phrases That Signal L7 — Memorize These</div>
+  <ul>
+    <li>"The redirect path must be as close to static file serving as possible"</li>
+    <li>"This service does ONE thing — look at what it does NOT do"</li>
+    <li>"30% of 404s are bots — we validate at the edge, not the origin"</li>
+    <li>"FPE gives us unpredictable codes with zero collision risk"</li>
+    <li>"Synchronous replication because RPO = 0 — we can't acknowledge a URL we might lose"</li>
+    <li>"Write-through, not write-behind — our contract is 'it works immediately'"</li>
+    <li>"Weighted p50: 0.9 × 10ms + 0.09 × 20ms + 0.01 × 35ms ≈ 11ms"</li>
+    <li>"32ms p50 against 200ms budget gives us 168ms of headroom for tail events"</li>
+  </ul>
+</div>
+
+<div class="callout extra">
+  <div class="callout-title">What Separates This From L6</div>
+  <p>L6 designs a working system with proper failure handling. L7 designs with <strong>operational reality</strong> in mind — they talk about bot traffic at the edge, write headroom against latency budgets, two-tier blocklist lookups, and the exact reason synchronous replication costs 5-10ms but is worth it. <mark class="g">They've been burned by these decisions before.</mark></p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🏆 Key Lesson — Phase 4 (Part 2)</div>
+  <p><strong>L5 engineers</strong> draw architectures that work. <strong>L6 engineers</strong> draw architectures with numbers — latency per step, sizing per component. <strong>L7 engineers</strong> design the redirect path as if it's sacred — they articulate what it does NOT do, validate at the edge, fire events asynchronously, and treat every added millisecond as a cost that must be justified.</p>
+</div>
+
+<!-- NAV CARDS -->
+<div class="nav-cards" id="nav">
+  <a href="#" class="nav-card">
+    <div class="nav-card-label">← Part 1</div>
+    <div class="nav-card-title">No Hire → Hire (L6)</div>
+    <div class="nav-card-desc">Architecture diagrams, write/read paths, component sizing, failure mode table</div>
+  </a>
+  <a href="#" class="nav-card next">
+    <div class="nav-card-label">Part 3 →</div>
+    <div class="nav-card-title">🔬 Deep Dive: Database Selection</div>
+    <div class="nav-card-desc">PostgreSQL vs MySQL vs DynamoDB vs Cassandra vs CockroachDB — decision framework script</div>
+  </a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+
+function toggleTier(h) { h.parentElement.classList.toggle('collapsed'); }
+
+function copyCode(btn) {
+  const pre = btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+function copyDiag(btn) {
+  const pre = btn.closest('.diag').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
