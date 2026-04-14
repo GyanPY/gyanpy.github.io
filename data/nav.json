@@ -17,6 +17,12 @@
         "title": "Internals",
         "file": "pages/redis/redis.html"
       }
+    ],
+    "Flink": [
+      {
+        "title": "Internals",
+        "file": "pages/flink/flink.html"
+      }
     ]
   },
   "Interview": {
