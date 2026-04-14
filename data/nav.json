@@ -11,6 +11,12 @@
         "title": "Internals",
         "file": "pages/cassandra/cassandra.html"
       }
+    ],
+    "Redis": [
+      {
+        "title": "Internals",
+        "file": "pages/cassandra/redis.html"
+      }
     ]
   },
   "Interview": {
