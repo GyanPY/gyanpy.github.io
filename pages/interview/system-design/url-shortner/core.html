@@ -1,0 +1,2041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Short Code Generation Algorithms — Deep Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2128;
+  --body: #e6edf3;
+  --muted: #8b949e;
+  --amber: #F5A623;
+  --teal: #00BFA5;
+  --gold: #FFD700;
+  --coral: #FF6B6B;
+  --blue: #58a6ff;
+  --border: #30363d;
+  --diagram-bg: #010409;
+  --heading-font: 'Playfair Display', Georgia, serif;
+  --body-font: 'Source Serif 4', Georgia, serif;
+  --mono: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; font-size: 16px; }
+
+body {
+  background: var(--bg);
+  color: var(--body);
+  font-family: var(--body-font);
+  line-height: 1.75;
+  display: flex;
+  min-height: 100vh;
+  opacity: 0;
+  animation: fadeIn 0.6s ease forwards;
+}
+
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* PROGRESS BAR */
+#progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--amber), var(--teal), var(--blue));
+  width: 0%;
+  z-index: 9999;
+  transition: width 0.1s linear;
+}
+
+/* SIDEBAR */
+#sidebar {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+}
+
+#sidebar::-webkit-scrollbar { width: 4px; }
+#sidebar::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  font-family: var(--heading-font);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+
+.sidebar-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+#search-box {
+  margin: 12px 16px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--body);
+  font-family: var(--body-font);
+  font-size: 13px;
+  width: calc(100% - 32px);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#search-box:focus { border-color: var(--blue); }
+#search-box::placeholder { color: var(--muted); }
+
+#nav-list {
+  padding: 8px 0 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.nav-group { margin-bottom: 4px; }
+
+.nav-item {
+  display: block;
+  padding: 6px 20px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: all 0.15s;
+  border-left: 2px solid transparent;
+  line-height: 1.4;
+}
+
+.nav-item:hover {
+  color: var(--body);
+  background: rgba(88,166,255,0.06);
+  border-left-color: var(--blue);
+}
+
+.nav-item.active {
+  color: var(--blue);
+  border-left-color: var(--blue);
+  background: rgba(88,166,255,0.08);
+}
+
+.nav-item.sub {
+  padding-left: 32px;
+  font-size: 11.5px;
+}
+
+.nav-section-label {
+  padding: 12px 20px 4px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+
+/* HAMBURGER */
+#hamburger {
+  display: none;
+  position: fixed;
+  top: 14px; left: 14px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--body);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* MAIN */
+#main {
+  margin-left: 280px;
+  flex: 1;
+  max-width: 900px;
+  padding: 60px 56px 120px;
+}
+
+/* BACK TO TOP */
+#back-top {
+  position: fixed;
+  bottom: 32px; right: 32px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--blue);
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  opacity: 0;
+  transition: all 0.25s;
+  z-index: 50;
+  text-decoration: none;
+}
+
+#back-top.visible { opacity: 1; }
+#back-top:hover { background: var(--blue); color: var(--bg); transform: translateY(-2px); }
+
+/* PAGE HERO */
+.hero {
+  margin-bottom: 64px;
+  padding-bottom: 48px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-label::before {
+  content: '';
+  display: inline-block;
+  width: 24px; height: 1px;
+  background: var(--amber);
+}
+
+.hero h1 {
+  font-family: var(--heading-font);
+  font-size: 48px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: var(--body);
+  margin-bottom: 20px;
+}
+
+.hero h1 span { color: var(--amber); }
+
+.hero-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.hero-badge {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.badge-amber { background: rgba(245,166,35,0.15); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+.badge-teal { background: rgba(0,191,165,0.15); color: var(--teal); border: 1px solid rgba(0,191,165,0.3); }
+.badge-blue { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
+
+/* SECTION HEADERS */
+.section-header {
+  margin: 72px 0 32px;
+}
+
+.section-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.section-header h2 {
+  font-family: var(--heading-font);
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--body);
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+.section-header h3 {
+  font-family: var(--heading-font);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--body);
+  margin-bottom: 12px;
+  margin-top: 48px;
+}
+
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--amber) 0%, transparent 60%);
+  margin-top: 20px;
+  opacity: 0.4;
+}
+
+/* BODY TEXT */
+p {
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: #cdd5e0;
+}
+
+ul, ol {
+  margin: 12px 0 20px 24px;
+  color: #cdd5e0;
+}
+
+li { margin-bottom: 6px; }
+
+strong { color: var(--body); font-weight: 600; }
+em { color: var(--muted); }
+
+/* CODE BLOCKS */
+.code-block {
+  margin: 24px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0d1117;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: #161b22;
+  border-bottom: 1px solid var(--border);
+}
+
+.code-lang {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--blue);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.copy-btn {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover { border-color: var(--blue); color: var(--blue); }
+.copy-btn.copied { border-color: var(--teal); color: var(--teal); }
+
+.code-block pre {
+  overflow-x: auto;
+  padding: 20px;
+  margin: 0;
+}
+
+.code-block code {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e6edf3;
+  white-space: pre;
+}
+
+/* DIAGRAM BLOCKS */
+.diagram-wrap {
+  margin: 24px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #2d3e50;
+}
+
+.diagram-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #0d1117;
+  border-bottom: 1px solid #1a2332;
+}
+
+.diagram-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--teal);
+  background: rgba(0,191,165,0.1);
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,191,165,0.2);
+}
+
+.diagram-wrap pre {
+  background: var(--diagram-bg);
+  overflow-x: auto;
+  padding: 20px 24px;
+  margin: 0;
+}
+
+.diagram-wrap code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #7ec8e3;
+  white-space: pre;
+}
+
+/* APPROACH CARDS */
+.approach-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  margin: 40px 0;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.approach-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.approach-card-header {
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.approach-num {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.approach-title {
+  font-family: var(--heading-font);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--body);
+}
+
+.approach-card-body { padding: 24px 28px 28px; }
+
+/* VERDICT CARDS */
+.verdict-card {
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin: 24px 0;
+  background: rgba(88,166,255,0.05);
+  border-left: 3px solid var(--blue);
+}
+
+.verdict-title {
+  font-family: var(--heading-font);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 8px;
+}
+
+/* INTERVIEW SIGNAL CARDS */
+.signal-group { margin: 24px 0; }
+
+.signal-card {
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin: 10px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14.5px;
+  border: 1px solid transparent;
+}
+
+.signal-card.weak {
+  background: rgba(255,107,107,0.08);
+  border-color: rgba(255,107,107,0.2);
+}
+
+.signal-card.ok {
+  background: rgba(255,215,0,0.08);
+  border-color: rgba(255,215,0,0.2);
+}
+
+.signal-card.strong {
+  background: rgba(0,191,165,0.08);
+  border-color: rgba(0,191,165,0.2);
+}
+
+.signal-card.winner {
+  background: rgba(245,166,35,0.08);
+  border-color: rgba(245,166,35,0.25);
+}
+
+.signal-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.signal-text { color: var(--body); line-height: 1.5; }
+
+/* TABLES */
+.table-wrap {
+  margin: 24px 0;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+thead tr {
+  background: linear-gradient(90deg, #1a2535, #1c2940);
+}
+
+thead th {
+  padding: 12px 16px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blue);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr { transition: background 0.15s; }
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+tbody tr:hover { background: rgba(88,166,255,0.05); }
+
+td {
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  color: #cdd5e0;
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+.rating-cell { letter-spacing: 0.1em; }
+
+/* MATH BOX */
+.math-box {
+  background: var(--diagram-bg);
+  border: 1px solid #1e3040;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin: 20px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #a0c8e0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* CALLOUT BOXES */
+.callout {
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  border-left: 3px solid;
+  font-size: 15px;
+}
+
+.callout-warn {
+  background: rgba(255,107,107,0.08);
+  border-color: var(--coral);
+}
+
+.callout-warn strong { color: var(--coral); }
+
+.callout-info {
+  background: rgba(88,166,255,0.07);
+  border-color: var(--blue);
+}
+
+.callout-info strong { color: var(--blue); }
+
+.callout-success {
+  background: rgba(0,191,165,0.07);
+  border-color: var(--teal);
+}
+
+.callout-success strong { color: var(--teal); }
+
+/* PROBLEM HEADERS */
+h4 {
+  font-family: var(--heading-font);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--body);
+  margin: 28px 0 12px;
+}
+
+h4.problem {
+  color: var(--coral);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+h4.problem::before {
+  content: '⚠';
+  font-size: 15px;
+}
+
+h5 {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 24px 0 10px;
+}
+
+/* WINNER SECTION */
+.winner-section {
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 14px;
+  background: rgba(245,166,35,0.04);
+  padding: 36px 40px;
+  margin: 48px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.winner-section::before {
+  content: '🏆';
+  position: absolute;
+  top: -10px; right: 24px;
+  font-size: 80px;
+  opacity: 0.08;
+}
+
+.winner-section h2 {
+  font-family: var(--heading-font);
+  font-size: 28px;
+  color: var(--amber);
+  margin-bottom: 20px;
+}
+
+.winner-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 0;
+  font-size: 15px;
+  color: #cdd5e0;
+}
+
+.winner-reason-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--amber);
+  background: rgba(245,166,35,0.15);
+  border-radius: 50%;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* INLINE MARK */
+mark {
+  background: rgba(245,166,35,0.18);
+  color: var(--amber);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* FINAL ANSWER */
+.final-answer {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--amber);
+  border-radius: 10px;
+  padding: 28px 32px;
+  margin: 32px 0;
+  font-size: 15px;
+  color: #cdd5e0;
+  line-height: 1.8;
+}
+
+.final-answer-title {
+  font-family: var(--heading-font);
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--amber);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* COMPARISON TABLE special */
+.comparison-table thead tr {
+  background: linear-gradient(90deg, #1a2a1a, #1a2535);
+}
+
+td.winner-col { color: var(--amber); font-weight: 600; }
+
+/* FAILURE TABLE */
+.failure-table thead tr {
+  background: linear-gradient(90deg, #2a1a1a, #1a2535);
+}
+
+/* COLLAPSIBLE */
+.collapse-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.collapse-btn:hover { color: var(--blue); }
+
+.collapsible-content {
+  overflow: hidden;
+  transition: max-height 0.4s ease, opacity 0.3s ease;
+  max-height: 10000px;
+  opacity: 1;
+}
+
+.collapsible-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* OVERLAY */
+#sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 99;
+}
+
+/* MOBILE */
+@media (max-width: 900px) {
+  #hamburger { display: flex; align-items: center; justify-content: center; }
+  #sidebar { transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar-overlay.open { display: block; }
+  #main { margin-left: 0; padding: 60px 24px 100px; }
+  .hero h1 { font-size: 32px; }
+  .winner-section { padding: 24px; }
+}
+
+/* SYNTAX COLORS */
+.kw { color: #ff7b72; }
+.fn { color: #d2a8ff; }
+.str { color: #a5d6ff; }
+.cm { color: #8b949e; font-style: italic; }
+.num { color: #79c0ff; }
+.cls { color: #ffa657; }
+
+/* SECTION IDs */
+.section-block { scroll-margin-top: 24px; }
+
+/* APPROACH RATING PILL */
+.when-use {
+  background: rgba(0,191,165,0.1);
+  border: 1px solid rgba(0,191,165,0.2);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.when-use-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 6px;
+}
+
+.never-use {
+  background: rgba(255,107,107,0.08);
+  border: 1px solid rgba(255,107,107,0.2);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.never-use-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--coral);
+  margin-bottom: 6px;
+}
+
+/* Monitoring section */
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.monitor-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.monitor-card-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--blue);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.monitor-card-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+
+.monitor-card p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .monitoring-grid { grid-template-columns: 1fr; }
+}
+
+/* Section icon */
+.section-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+  display: block;
+}
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<button id="hamburger" aria-label="Open menu">☰</button>
+<div id="sidebar-overlay"></div>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-title">Deep Dive</div>
+    <div class="sidebar-subtitle">URL Shortener · Code Gen</div>
+  </div>
+  <input id="search-box" type="text" placeholder="Search sections…" aria-label="Search sections">
+  <div id="nav-list">
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-item" href="#core-problem">Core Problem</a>
+    <a class="nav-item" href="#math-constraints">Math Constraints</a>
+
+    <div class="nav-section-label">Approaches</div>
+    <a class="nav-item" href="#approach-1">1 · Pure Random</a>
+    <a class="nav-item sub" href="#approach-1-problems">Problems</a>
+    <a class="nav-item sub" href="#approach-1-verdict">Verdict</a>
+    <a class="nav-item" href="#approach-2">2 · Sequential Counter</a>
+    <a class="nav-item sub" href="#approach-2-problems">Problems</a>
+    <a class="nav-item sub" href="#approach-2-mitigations">Mitigations</a>
+    <a class="nav-item sub" href="#approach-2-verdict">Verdict</a>
+    <a class="nav-item" href="#approach-3">3 · Hash-Based</a>
+    <a class="nav-item sub" href="#approach-3-problems">Problems</a>
+    <a class="nav-item sub" href="#approach-3-verdict">Verdict</a>
+    <a class="nav-item" href="#approach-4">4 · Snowflake IDs</a>
+    <a class="nav-item sub" href="#approach-4-problems">Problems</a>
+    <a class="nav-item sub" href="#approach-4-verdict">Verdict</a>
+    <a class="nav-item" href="#approach-5">5 · Pre-Gen Pool</a>
+    <a class="nav-item sub" href="#approach-5-arch">Architecture</a>
+    <a class="nav-item sub" href="#approach-5-fpe">Why FPE?</a>
+    <a class="nav-item sub" href="#approach-5-multiregion">Multi-Region</a>
+    <a class="nav-item sub" href="#approach-5-failure">Failure Analysis</a>
+    <a class="nav-item sub" href="#approach-5-verdict">Verdict</a>
+    <a class="nav-item" href="#approach-6">6 · Range Allocation</a>
+    <a class="nav-item sub" href="#approach-6-vs-pool">vs Pool</a>
+    <a class="nav-item sub" href="#approach-6-verdict">Verdict</a>
+
+    <div class="nav-section-label">Conclusion</div>
+    <a class="nav-item" href="#comparison-matrix">Final Matrix</a>
+    <a class="nav-item" href="#winner">The Winner</a>
+    <a class="nav-item" href="#strong-hire">Strong Hire Answer</a>
+  </div>
+</nav>
+
+<main id="main">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-label">System Design · URL Shortener</div>
+    <h1>Short Code Generation<br><span>Algorithms</span></h1>
+    <p style="font-size:17px;color:#8b949e;max-width:560px;">An exhaustive analysis of every approach to generating unique, compact, unpredictable identifiers across distributed servers — with full math, trade-offs, and interview signals.</p>
+    <div class="hero-meta">
+      <span class="hero-badge badge-amber">🔬 Deep Dive</span>
+      <span class="hero-badge badge-teal">6 Approaches</span>
+      <span class="hero-badge badge-blue">Production Scale</span>
+    </div>
+  </div>
+
+  <!-- CORE PROBLEM -->
+  <div id="core-problem" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Overview · 01</div>
+      <h2>The Core Problem Statement</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <p>This is one of the most critical design decisions in a URL shortener. Generate billions of unique, compact identifiers across distributed servers with:</p>
+
+    <ul>
+      <li><strong>Zero collisions</strong> — a collision means two URLs map to the same code → data loss</li>
+      <li><strong>Low latency</strong> — &lt;10ms on the hot path</li>
+      <li><strong>No single point of failure</strong></li>
+      <li><strong>Unpredictable codes</strong> — security: can't enumerate URLs</li>
+      <li><strong>Compact representation</strong> — 7 characters ideal</li>
+    </ul>
+  </div>
+
+  <!-- MATH -->
+  <div id="math-constraints" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Overview · 02</div>
+      <h2>The Math That Constrains Us</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <div class="math-box">Base62 alphabet: a-z, A-Z, 0-9 = 62 characters
+
+Keyspace by length:
+  6 chars: 62^6 = 56.8 billion
+  7 chars: 62^7 = 3.52 trillion
+  8 chars: 62^8 = 218 trillion
+
+Our scale:
+  500M URLs/year × 10 years = 5 billion URLs
+  With 7 chars (3.52T keyspace): 0.14% utilization
+  With 6 chars (56.8B keyspace): 8.8% utilization → collision risk grows
+
+Decision: 7 characters gives us ~700x headroom. Safe choice.</div>
+  </div>
+
+  <!-- APPROACH 1 -->
+  <div id="approach-1" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 01</div>
+      <h2>Pure Random Generation</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Python</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><code><span class="kw">def</span> <span class="fn">generate_short_code</span>():
+    alphabet = <span class="str">"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"</span>
+    <span class="kw">return</span> <span class="str">''</span>.join(random.choice(alphabet) <span class="kw">for</span> _ <span class="kw">in</span> range(<span class="num">7</span>))</code></pre>
+    </div>
+
+    <h5>The Collision Mathematics (Birthday Problem)</h5>
+    <div class="math-box">Probability of at least one collision after n codes:
+P(collision) ≈ 1 - e^(-n² / 2k)
+
+Where:
+  n = number of codes generated
+  k = keyspace size (62^7 = 3.52 trillion)
+
+At various scales:
+  n = 1 million:    P ≈ 0.00000014 (negligible)
+  n = 100 million:  P ≈ 0.0014 (1 in 714)
+  n = 1 billion:    P ≈ 0.13 (13% - concerning)
+  n = 10 billion:   P ≈ 1.0 (virtually certain collision)</div>
+
+    <h5>Random + Collision Check</h5>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Python</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><code><span class="kw">def</span> <span class="fn">generate_with_retry</span>(db, max_retries=<span class="num">5</span>):
+    <span class="kw">for</span> attempt <span class="kw">in</span> range(max_retries):
+        code = generate_random_code()
+        <span class="kw">if not</span> db.exists(code):
+            <span class="kw">if</span> db.insert_if_not_exists(code, url):  <span class="cm"># Atomic!</span>
+                <span class="kw">return</span> code
+    <span class="kw">raise</span> <span class="cls">ExhaustedRetriesError</span>()</code></pre>
+    </div>
+
+    <div class="math-box">Expected retries at various scales:
+
+With n existing codes in keyspace k:
+  Collision probability per attempt = n / k
+  Expected attempts = 1 / (1 - n/k)
+
+At 500M URLs:  500M / 3.52T = 0.014% collision rate
+               Expected attempts = 1.00014 (essentially 1)
+
+At 10B URLs:   10B / 3.52T = 0.28% collision rate
+               Expected attempts = 1.0028 (still fine)
+
+At 100B URLs:  100B / 3.52T = 2.8% collision rate
+               Expected attempts = 1.029 (3% overhead)</div>
+
+    <div id="approach-1-problems" class="section-block">
+      <h3>The REAL Problems with Random + Check</h3>
+
+      <h4 class="problem">Problem 1: Race Condition</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Race Condition Timeline</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code>Time    Server A                    Server B
+────────────────────────────────────────────────
+T1      Generate code "Xk9Lm2n"     Generate code "Xk9Lm2n" (same!)
+T2      Check exists? → NO          Check exists? → NO
+T3      Insert → SUCCESS            Insert → FAILS (duplicate key)
+T4      Return to user              Retry...</code></pre>
+      </div>
+      <p><strong>Solution:</strong> Use atomic <code>INSERT ... ON CONFLICT</code> or distributed lock. But this adds latency.</p>
+
+      <h4 class="problem">Problem 2: Database Round-Trip on Every Write</h4>
+      <p>Even with 0.014% collision rate, you <strong>always</strong> need to check. That's a DB query on the hot path.</p>
+      <div class="math-box">Latency breakdown:
+  Generate random: 0.01ms
+  DB existence check: 5-20ms (network + query)
+  DB insert: 5-20ms
+
+Total: 10-40ms just for collision handling</div>
+
+      <h4 class="problem">Problem 3: Thundering Herd on Popular Codes</h4>
+      <p>If multiple servers generate the same code simultaneously (rare but possible), you get multiple retries, increased DB load, and latency spikes.</p>
+
+      <h4 class="problem">Problem 4: Cryptographic Randomness Cost</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Python</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code><span class="cm"># WRONG - predictable if seed is known</span>
+<span class="kw">import</span> random
+random.choice(alphabet)
+
+<span class="cm"># RIGHT - cryptographically secure</span>
+<span class="kw">import</span> secrets
+secrets.choice(alphabet)</code></pre>
+      </div>
+      <p>Crypto-random is ~10x slower than pseudo-random. At 2K QPS, this matters.</p>
+    </div>
+
+    <div id="approach-1-verdict" class="section-block">
+      <h3>Verdict on Pure Random</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Dead simple</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐⭐⭐</td><td>Requires retry logic</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐</td><td>DB check on every write</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐⭐</td><td>Fine to 10B, degrades after</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Cryptographically random</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        Prototypes, low-scale systems (&lt;100M URLs), when simplicity &gt; performance.
+      </div>
+
+      <div class="signal-group">
+        <div class="signal-card weak"><span class="signal-icon">❌</span><span class="signal-text"><strong>Weak:</strong> "I'll generate random codes"</span></div>
+        <div class="signal-card ok"><span class="signal-icon">⚠️</span><span class="signal-text"><strong>OK:</strong> "Random with collision check and atomic insert"</span></div>
+        <div class="signal-card strong"><span class="signal-icon">✅</span><span class="signal-text"><strong>Strong:</strong> "Random works at our scale but requires DB round-trip on every write. I'd use it for a prototype, then migrate to pre-generated pool for production."</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROACH 2 -->
+  <div id="approach-2" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 02</div>
+      <h2>Sequential Counter (Auto-Increment)</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang">Python</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre><code><span class="kw">def</span> <span class="fn">generate_short_code</span>(db):
+    next_id = db.get_next_sequence_value()  <span class="cm"># Atomic increment</span>
+    <span class="kw">return</span> base62_encode(next_id)
+
+<span class="kw">def</span> <span class="fn">base62_encode</span>(num):
+    alphabet = <span class="str">"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"</span>
+    <span class="kw">if</span> num == <span class="num">0</span>:
+        <span class="kw">return</span> alphabet[<span class="num">0</span>]
+    result = []
+    <span class="kw">while</span> num:
+        result.append(alphabet[num % <span class="num">62</span>])
+        num //= <span class="num">62</span>
+    <span class="kw">return</span> <span class="str">''</span>.join(reversed(result)).zfill(<span class="num">7</span>)</code></pre>
+    </div>
+
+    <div class="math-box">ID 1          → "0000001"
+ID 62         → "0000010"
+ID 1000000    → "00004c92"
+ID 3521614606208 → "ZZZZZZZ" (max 7-char base62)</div>
+
+    <div id="approach-2-problems" class="section-block">
+      <h3>The Problems</h3>
+
+      <h4 class="problem">Problem 1: Predictability (CRITICAL SECURITY ISSUE)</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Attack Scenario</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code>Attacker observes:
+  Created URL: short.url/0004c92
+  That's ID 1,000,000
+
+Attacker can now:
+  - Enumerate ALL existing URLs: /0000001, /0000002, ...
+  - Estimate your total URL count (business intelligence leak)
+  - Predict future URLs before they're created
+  - Scrape your entire database systematically</code></pre>
+      </div>
+      <div class="callout callout-warn">
+        <strong>Real-world impact:</strong> In 2018, a URL shortener was scraped completely because of sequential IDs. Millions of private documents exposed.
+      </div>
+
+      <h4 class="problem">Problem 2: Single Point of Coordination</h4>
+      <div class="diagram-wrap">
+        <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+        <pre><code>Server A ──┐
+Server B ──┼──→ [Postgres Sequence] ──→ Next ID
+Server C ──┘
+
+At 2000 QPS writes:
+  - Single sequence becomes bottleneck
+  - Cross-region writes need round-trip to sequence owner
+  - Sequence owner failure = write outage</code></pre>
+      </div>
+
+      <h4 class="problem">Problem 3: ID Leakage Reveals Scale</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Business Intelligence Leak</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code>Competitor creates URL on Monday: short.url/0005000
+Competitor creates URL on Friday: short.url/0008500
+
+"They created 3,500 URLs this week"
+"At that rate, ~700/day, ~250K/year"
+"Small player, not a threat"</code></pre>
+      </div>
+    </div>
+
+    <div id="approach-2-mitigations" class="section-block">
+      <h3>Mitigations (That Don't Fully Work)</h3>
+
+      <h4>Mitigation 1: Random Offset</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">def</span> <span class="fn">generate</span>():
+    id = get_next_sequence() + RANDOM_OFFSET
+    <span class="kw">return</span> base62_encode(id)</code></pre>
+      </div>
+      <p><em>Problem: Still sequential, just shifted. Enumeration still works.</em></p>
+
+      <h4>Mitigation 2: Multiply by Prime</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">def</span> <span class="fn">generate</span>():
+    id = get_next_sequence()
+    scrambled = (id * LARGE_PRIME) % MAX_ID
+    <span class="kw">return</span> base62_encode(scrambled)</code></pre>
+      </div>
+      <p><em>Better, but reversible. Attacker can figure out the prime.</em></p>
+
+      <h4>Mitigation 3: Format-Preserving Encryption (FPE)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">from</span> ff3 <span class="kw">import</span> FF3Cipher
+
+cipher = <span class="cls">FF3Cipher</span>(secret_key, tweak, radix=<span class="num">62</span>)
+
+<span class="kw">def</span> <span class="fn">generate</span>():
+    id = get_next_sequence()
+    plaintext = base62_encode(id).zfill(<span class="num">7</span>)
+    encrypted = cipher.encrypt(plaintext)  <span class="cm"># Still 7 chars, looks random</span>
+    <span class="kw">return</span> encrypted</code></pre>
+      </div>
+      <div class="callout callout-info"><strong>This WORKS!</strong> But now we've added complexity. At that point, why not use a better approach?</div>
+    </div>
+
+    <div id="approach-2-verdict" class="section-block">
+      <h3>Verdict on Sequential Counter</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Trivial to implement</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Mathematically impossible</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐⭐</td><td>Sequence fetch is fast</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐</td><td>Single coordination point</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐</td><td>Completely predictable</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        Internal tools, admin systems, anywhere enumeration is acceptable.
+      </div>
+      <div class="never-use">
+        <div class="never-use-label">NEVER Use For</div>
+        Public-facing URL shorteners, anything with private/sensitive URLs.
+      </div>
+      <div class="signal-group">
+        <div class="signal-card weak"><span class="signal-icon">❌</span><span class="signal-text"><strong>Weak:</strong> "Auto-increment is simple and guaranteed unique"</span></div>
+        <div class="signal-card strong"><span class="signal-icon">✅</span><span class="signal-text"><strong>Strong:</strong> "Auto-increment has zero collisions but exposes us to enumeration attacks and leaks business metrics. I'd only use it for internal tools. For public-facing, I need unpredictability."</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROACH 3 -->
+  <div id="approach-3" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 03</div>
+      <h2>Hash-Based (MD5/SHA256 + Truncate)</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="kw">import</span> hashlib
+
+<span class="kw">def</span> <span class="fn">generate_short_code</span>(long_url):
+    hash_bytes = hashlib.md5(long_url.encode()).digest()
+    <span class="cm"># Take first 42 bits (enough for 7 base62 chars)</span>
+    num = int.from_bytes(hash_bytes[:<span class="num">6</span>], <span class="str">'big'</span>) % (<span class="num">62</span> ** <span class="num">7</span>)
+    <span class="kw">return</span> base62_encode(num)</code></pre>
+    </div>
+
+    <h4>The Appeal</h4>
+    <ul>
+      <li><strong>Deterministic:</strong> Same URL → same short code (deduplication!)</li>
+      <li><strong>No coordination:</strong> Any server can compute independently</li>
+      <li><strong>No storage for generation:</strong> Hash is computed, not looked up</li>
+    </ul>
+
+    <div id="approach-3-problems" class="section-block">
+      <h3>The Problems</h3>
+
+      <h4 class="problem">Problem 1: Collisions Are Inevitable (Pigeonhole Principle)</h4>
+      <div class="math-box">MD5 output: 128 bits = 3.4 × 10^38 possibilities
+We truncate to: 42 bits = 4.4 × 10^12 possibilities (62^7)
+
+We're mapping 3.4 × 10^38 → 4.4 × 10^12
+Every short code maps to ~10^26 possible long URLs
+
+Birthday problem strikes again:
+  At 1 billion URLs: ~11% chance of collision
+  At 2 billion URLs: ~37% chance of collision
+
+This is WORSE than random! Because you can't retry — the hash is deterministic.</div>
+
+      <h4 class="problem">Problem 2: No Collision Resolution</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Collision Example</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>url1 = <span class="str">"https://example.com/page-that-hashes-to-abc1234"</span>
+url2 = <span class="str">"https://evil.com/carefully-crafted-to-collide"</span>
+
+hash(url1)[:<span class="num">7</span>] == hash(url2)[:<span class="num">7</span>]  <span class="cm"># Both produce "abc1234"</span>
+
+<span class="cm"># Now what? You CANNOT store both with the same short code.</span></code></pre>
+      </div>
+      <p>Options: reject the second URL (bad UX), append a disambiguator (codes aren't just hashes), use longer codes (defeats the purpose).</p>
+
+      <h4 class="problem">Problem 3: MD5 is Cryptographically Broken</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Attack Scenario</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>Attacker creates legitimate URL first
+Later, replaces with phishing URL that has same hash
+Or finds existing legitimate short URL and creates colliding phishing URL</code></pre>
+      </div>
+      <div class="callout callout-warn"><strong>Note:</strong> Even SHA256 truncated has this problem — truncation reintroduces collision risk.</div>
+
+      <h4 class="problem">Problem 4: Same URL = Same Code (Sometimes Unwanted)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Privacy Issue</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>User A shortens: example.com/secret-doc
+  Gets: short.url/Xk9Lm2n
+
+User B shortens: example.com/secret-doc  
+  Gets: short.url/Xk9Lm2n (SAME!)
+
+Now User B knows User A's short code.
+Click analytics are merged.
+No user isolation.</code></pre>
+      </div>
+    </div>
+
+    <div id="approach-3-verdict" class="section-block">
+      <h3>Verdict on Hash-Based</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐⭐</td><td>Easy to implement</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐</td><td>Collisions inevitable</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>No external calls</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>No coordination</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐⭐⭐</td><td>Looks random, but deterministic</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        Content-addressable storage (like Git), deduplication systems where collision = same content anyway.
+      </div>
+      <div class="never-use">
+        <div class="never-use-label">NEVER Use For</div>
+        URL shorteners where different users can submit same URL, or where collisions cause data loss.
+      </div>
+      <div class="signal-group">
+        <div class="signal-card weak"><span class="signal-icon">❌</span><span class="signal-text"><strong>Weak:</strong> "I'll hash the URL and take the first 7 characters"</span></div>
+        <div class="signal-card strong"><span class="signal-icon">✅</span><span class="signal-text"><strong>Strong:</strong> "Hashing seems appealing for deduplication, but truncating to 7 chars reintroduces collision risk — worse than random because we can't retry. Also, MD5 is cryptographically broken. I'd use a different approach for the short code and hash only for dedup checks."</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROACH 4 -->
+  <div id="approach-4" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 04</div>
+      <h2>Snowflake-Style Distributed IDs</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works (Twitter's Snowflake)</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+      <pre><code>64-bit ID structure:
+┌─────────────────┬───────────┬──────────────┐
+│ Timestamp (41b) │ Machine(10b)│ Sequence(12b)│
+└─────────────────┴───────────┴──────────────┘
+
+- Timestamp: Milliseconds since custom epoch (41 bits = 69 years)
+- Machine ID: Unique per server (10 bits = 1024 machines)
+- Sequence: Counter within millisecond (12 bits = 4096/ms)</code></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="kw">class</span> <span class="cls">SnowflakeGenerator</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, machine_id):
+        self.machine_id = machine_id
+        self.sequence = <span class="num">0</span>
+        self.last_timestamp = <span class="num">0</span>
+        self.epoch = <span class="num">1609459200000</span>  <span class="cm"># 2021-01-01</span>
+    
+    <span class="kw">def</span> <span class="fn">generate</span>(self):
+        timestamp = current_time_ms() - self.epoch
+        
+        <span class="kw">if</span> timestamp == self.last_timestamp:
+            self.sequence = (self.sequence + <span class="num">1</span>) & <span class="num">0xFFF</span>  <span class="cm"># 12 bits</span>
+            <span class="kw">if</span> self.sequence == <span class="num">0</span>:
+                <span class="cm"># Wait for next millisecond</span>
+                timestamp = wait_next_millis(self.last_timestamp)
+        <span class="kw">else</span>:
+            self.sequence = <span class="num">0</span>
+        
+        self.last_timestamp = timestamp
+        
+        id = (timestamp << <span class="num">22</span>) | (self.machine_id << <span class="num">12</span>) | self.sequence
+        <span class="kw">return</span> id</code></pre>
+    </div>
+
+    <h4>Strengths</h4>
+    <ul>
+      <li><strong>Globally Unique Without Coordination</strong> — each machine generates IDs independently</li>
+      <li><strong>Time-Sortable</strong> — great for DB indexing, debugging, range queries</li>
+      <li><strong>Extremely High Throughput</strong> — 4096 IDs/ms per machine = 4M IDs/second; 1024 machines = 4 billion/second</li>
+    </ul>
+
+    <div id="approach-4-problems" class="section-block">
+      <h3>The Problems for URL Shortening</h3>
+
+      <h4 class="problem">Problem 1: 64 Bits → 7 Characters</h4>
+      <div class="math-box">Snowflake ID: 64 bits
+7 char base62: log2(62^7) = 41.7 bits
+
+We need to truncate or transform 64 bits → 42 bits
+This reintroduces collision risk!
+
+Option A: Take lower 42 bits
+  short_code = base62_encode(snowflake_id & ((1 << 42) - 1))
+  Problem: Different snowflake IDs can have same lower 42 bits.
+
+Option B: Hash the snowflake ID
+  short_code = base62_encode(hash(snowflake_id) % (62**7))
+  Problem: We're back to hash truncation collisions.
+
+Option C: Use full ID, accept longer codes
+  short_code = base62_encode(snowflake_id)  # 11 characters
+  11 characters is too long for a "short" URL.</div>
+
+      <h4 class="problem">Problem 2: Machine ID Coordination</h4>
+      <p>In Kubernetes with auto-scaling pods, assigning stable machine IDs is genuinely hard. Options include manual configuration (error-prone), ZooKeeper/etcd (new dependency), DB assignment (overhead), or MAC address hash (collision risk in cloud).</p>
+
+      <h4 class="problem">Problem 3: Clock Skew</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Clock Skew Issue</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>Server A's clock: 10:00:00.000
+Server B's clock: 10:00:00.050 (50ms ahead)
+
+Server B generates IDs that look "from the future"
+If clocks adjust backward, IDs can collide</code></pre>
+      </div>
+      <p>Snowflake handles this by refusing to generate IDs if clock moves backward — but that means outage during NTP corrections.</p>
+    </div>
+
+    <div id="approach-4-verdict" class="section-block">
+      <h3>Verdict on Snowflake</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐</td><td>Needs machine ID coordination</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Perfect for 64-bit IDs</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Pure computation</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Billions per second</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐⭐</td><td>Time component is predictable</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        Internal primary keys, distributed databases, anywhere you need 64-bit unique IDs.
+      </div>
+      <div class="never-use">
+        <div class="never-use-label">Not Ideal For</div>
+        7-character short codes (truncation reintroduces collisions).
+      </div>
+      <div class="signal-group">
+        <div class="signal-card weak"><span class="signal-icon">❌</span><span class="signal-text"><strong>Weak:</strong> "Use Snowflake IDs and convert to base62"</span></div>
+        <div class="signal-card strong"><span class="signal-icon">✅</span><span class="signal-text"><strong>Strong:</strong> "Snowflake is perfect for our internal <code>id</code> column — 64-bit, time-sortable, globally unique. But for the 7-character <code>short_code</code>, truncating 64 bits to 42 bits reintroduces collisions. I'd use Snowflake for <code>id</code> and a separate mechanism (pre-generated pool) for <code>short_code</code>."</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROACH 5 -->
+  <div id="approach-5" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 05</div>
+      <h2>Pre-Generated Code Pool (Key Generation Service)</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+      <pre><code>┌──────────────────────────────────────────────────────────────┐
+│                    KEY GENERATION SERVICE                      │
+├──────────────────────────────────────────────────────────────┤
+│                                                                │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     │
+│  │  Generator  │────▶│  Code Pool  │◀────│   Claimer   │     │
+│  │  (Background)│    │   (Redis)   │     │  (API Path) │     │
+│  └─────────────┘     └─────────────┘     └─────────────┘     │
+│        │                   │                    │             │
+│        ▼                   ▼                    ▼             │
+│   Persistent          10M codes             SPOP is          │
+│   counter +           ready to              O(1), ~1ms       │
+│   FPE shuffle         claim                                   │
+│                                                                │
+└──────────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <div id="approach-5-arch" class="section-block">
+      <h3>Detailed Architecture</h3>
+
+      <h4>Component 1: Generator Service</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">class</span> <span class="cls">CodeGenerator</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, redis, counter_db):
+        self.redis = redis
+        self.counter = counter_db  <span class="cm"># Postgres sequence</span>
+        self.cipher = <span class="cls">FF3Cipher</span>(SECRET_KEY, TWEAK, radix=<span class="num">62</span>)
+    
+    <span class="kw">def</span> <span class="fn">generate_batch</span>(self, batch_size=<span class="num">10000</span>):
+        codes = []
+        <span class="kw">for</span> _ <span class="kw">in</span> range(batch_size):
+            counter_value = self.counter.next()
+            plain_code = base62_encode(counter_value).zfill(<span class="num">7</span>)
+            encrypted_code = self.cipher.encrypt(plain_code)
+            codes.append(encrypted_code)
+        
+        self.redis.sadd(<span class="str">"code_pool:available"</span>, *codes)
+        <span class="kw">return</span> len(codes)
+    
+    <span class="kw">def</span> <span class="fn">run_forever</span>(self):
+        <span class="kw">while</span> <span class="kw">True</span>:
+            pool_size = self.redis.scard(<span class="str">"code_pool:available"</span>)
+            <span class="kw">if</span> pool_size &lt; MIN_POOL_SIZE:  <span class="cm"># e.g., 5 million</span>
+                self.generate_batch(BATCH_SIZE)  <span class="cm"># e.g., 100,000</span>
+            sleep(POLL_INTERVAL)  <span class="cm"># e.g., 1 second</span></code></pre>
+      </div>
+
+      <h4>Component 2: Claimer (API Hot Path)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">def</span> <span class="fn">create_short_url</span>(long_url):
+    <span class="cm"># Claim a code - O(1) operation</span>
+    code = redis.spop(<span class="str">"code_pool:available"</span>)
+    
+    <span class="kw">if</span> code <span class="kw">is None</span>:
+        <span class="cm"># Pool exhausted - fallback to synchronous generation</span>
+        code = generate_code_synchronously()
+        metrics.increment(<span class="str">"code_pool.fallback"</span>)
+    
+    <span class="cm"># Mark as claimed (for reclaim if we crash before DB write)</span>
+    redis.setex(<span class="str">f"code_pool:claimed:{code}"</span>, <span class="num">300</span>, <span class="str">"pending"</span>)  <span class="cm"># 5 min TTL</span>
+    
+    <span class="kw">try</span>:
+        db.insert_url(code, long_url)
+        redis.delete(<span class="str">f"code_pool:claimed:{code}"</span>)
+        <span class="kw">return</span> code
+    <span class="kw">except</span> <span class="cls">Exception</span>:
+        <span class="cm"># Failed to persist - code will be reclaimed after TTL</span>
+        <span class="kw">raise</span></code></pre>
+      </div>
+
+      <h4>Component 3: Reclaimer (Background)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="kw">def</span> <span class="fn">reclaim_abandoned_codes</span>():
+    <span class="str">"""
+    Find codes that were claimed but never persisted.
+    This handles worker crashes between claim and DB write.
+    """</span>
+    <span class="kw">for</span> key <span class="kw">in</span> redis.scan_iter(<span class="str">"code_pool:claimed:*"</span>):
+        code = key.split(<span class="str">":"</span>)[-<span class="num">1</span>]
+        
+        <span class="kw">if not</span> db.code_exists(code):
+            <span class="cm"># Code was claimed but never persisted</span>
+            redis.sadd(<span class="str">"code_pool:available"</span>, code)
+            redis.delete(key)
+            metrics.increment(<span class="str">"code_pool.reclaimed"</span>)</code></pre>
+      </div>
+    </div>
+
+    <div id="approach-5-fpe" class="section-block">
+      <h3>Why Format-Preserving Encryption (FPE)?</h3>
+      <p>The counter gives us uniqueness. FPE gives us unpredictability.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">FPE Demo</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="cm"># Without FPE:</span>
+counter <span class="num">1</span>       → <span class="str">"0000001"</span>
+counter <span class="num">2</span>       → <span class="str">"0000002"</span>
+counter <span class="num">1000000</span> → <span class="str">"004c92"</span>  <span class="cm"># Sequential, predictable</span>
+
+<span class="cm"># With FPE:</span>
+counter <span class="num">1</span>       → <span class="str">"Kx9mL2p"</span>
+counter <span class="num">2</span>       → <span class="str">"Qw3nR7s"</span>  <span class="cm"># Looks completely random</span>
+counter <span class="num">1000000</span> → <span class="str">"Ht8vB4n"</span>
+
+<span class="cm"># But it's reversible with the key!</span>
+decrypt(<span class="str">"Kx9mL2p"</span>) → <span class="str">"0000001"</span> → counter <span class="num">1</span></code></pre>
+      </div>
+
+      <div class="callout callout-success">
+        <strong>FF3-1</strong> is the NIST-approved FPE algorithm. It preserves format (7-char base62 in → 7-char base62 out), is cryptographically secure, and is reversible (useful for debugging).
+      </div>
+    </div>
+
+    <div id="approach-5-multiregion" class="section-block">
+      <h3>Multi-Region Architecture</h3>
+      <div class="diagram-wrap">
+        <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+        <pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                     GLOBAL ARCHITECTURE                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐       ┌──────────────┐       ┌──────────────┐ │
+│  │   US-EAST    │       │   EU-WEST    │       │   AP-SOUTH   │ │
+│  ├──────────────┤       ├──────────────┤       ├──────────────┤ │
+│  │Generator     │       │Generator     │       │Generator     │ │
+│  │Range: 0-999M │       │Range: 1B-2B  │       │Range: 2B-3B  │ │
+│  │              │       │              │       │              │ │
+│  │Redis Pool    │       │Redis Pool    │       │Redis Pool    │ │
+│  │(10M codes)   │       │(10M codes)   │       │(10M codes)   │ │
+│  └──────────────┘       └──────────────┘       └──────────────┘ │
+│                                                                  │
+│  Global uniqueness: Each region has non-overlapping counter range│
+│  No cross-region coordination needed!                            │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+      </div>
+    </div>
+
+    <div id="approach-5-failure" class="section-block">
+      <h3>Complete Failure Analysis</h3>
+      <div class="table-wrap">
+        <table class="failure-table">
+          <thead><tr><th>Failure</th><th>Impact</th><th>Mitigation</th></tr></thead>
+          <tbody>
+            <tr><td>Generator dies</td><td>Pool drains, eventually fallback</td><td>Run multiple generators, alert on pool &lt;10%</td></tr>
+            <tr><td>Redis dies</td><td>API uses fallback path</td><td>Redis Cluster for HA, fallback to sync generation</td></tr>
+            <tr><td>Worker crashes after claim</td><td>Code stuck in claimed state</td><td>TTL auto-expires, reclaimer returns to pool</td></tr>
+            <tr><td>Counter DB dies</td><td>Generator can't make new codes</td><td>Replicated Postgres, pre-generated buffer</td></tr>
+            <tr><td>Pool exhausted</td><td>All requests use slow fallback</td><td>Alert well before exhaustion (&lt;1M codes)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>Operational Monitoring</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">YAML Config</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>code_pool_available:
+  threshold_warn: <span class="num">5_000_000</span>   <span class="cm"># Yellow alert</span>
+  threshold_critical: <span class="num">1_000_000</span>  <span class="cm"># Red alert</span>
+  
+code_pool_generation_rate:
+  expected: <span class="num">10_000_per_minute</span>
+  
+code_pool_claim_rate:
+  expected: matches_write_qps
+  
+code_pool_fallback_rate:
+  expected: <span class="num">0</span>
+  threshold: <span class="num">1_per_minute</span>  <span class="cm"># Any fallback is concerning</span>
+  
+code_pool_reclaim_rate:
+  expected: low  <span class="cm"># High reclaim = workers crashing</span></code></pre>
+      </div>
+    </div>
+
+    <div id="approach-5-verdict" class="section-block">
+      <h3>Verdict on Pre-Generated Pool</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐</td><td>More components, but each is simple</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Counter-based = mathematically impossible</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>SPOP is O(1), ~1ms</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>No coordination on hot path</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>FPE makes codes look random</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        High-scale production systems where latency consistency and collision guarantees matter.
+      </div>
+      <div class="callout callout-info">
+        <strong>Trade-off:</strong> Operational complexity. You now have a generator service, Redis pool, and reclaimer to monitor.
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROACH 6 -->
+  <div id="approach-6" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Approach · 06</div>
+      <h2>Range Allocation (Distributed Counter Segments)</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header"><span class="diagram-badge">DIAGRAM</span></div>
+      <pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    RANGE ALLOCATION                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│     ┌─────────────────────┐                                     │
+│     │  Range Allocator    │                                     │
+│     │  (Central Service)  │                                     │
+│     │                     │                                     │
+│     │  Next Range: 50,000 │                                     │
+│     └─────────┬───────────┘                                     │
+│               │                                                  │
+│    ┌──────────┼──────────┐                                      │
+│    ▼          ▼          ▼                                      │
+│ ┌──────┐  ┌──────┐  ┌──────┐                                   │
+│ │ API 1│  │ API 2│  │ API 3│                                   │
+│ │      │  │      │  │      │                                   │
+│ │Range:│  │Range:│  │Range:│                                   │
+│ │0-10K │  │10K-20K│ │20K-30K│                                  │
+│ │Cur:  │  │Cur:   │  │Cur:  │                                  │
+│ │7,542 │  │15,231 │  │28,999│                                  │
+│ └──────┘  └──────┘  └──────┘                                   │
+│                                                                  │
+│ When API 3 exhausts range, it requests new range (50K-60K)      │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h5>Implementation</h5>
+    <h4>Central Allocator</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="kw">class</span> <span class="cls">RangeAllocator</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, db, range_size=<span class="num">10000</span>):
+        self.db = db
+        self.range_size = range_size
+    
+    <span class="kw">def</span> <span class="fn">allocate_range</span>(self, worker_id):
+        <span class="cm"># Atomic increment and return</span>
+        <span class="cm"># Uses Postgres: UPDATE counters SET value = value + 10000 RETURNING value</span>
+        new_end = self.db.atomic_increment(<span class="str">"code_counter"</span>, self.range_size)
+        new_start = new_end - self.range_size
+        
+        self.db.log_allocation(worker_id, new_start, new_end)
+        
+        <span class="kw">return</span> (new_start, new_end)</code></pre>
+    </div>
+
+    <h4>Worker (API Server)</h4>
+    <div class="code-block">
+      <div class="code-header"><span class="code-lang">Python</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code><span class="kw">class</span> <span class="cls">WorkerCodeGenerator</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, allocator, worker_id):
+        self.allocator = allocator
+        self.worker_id = worker_id
+        self.current_range = <span class="kw">None</span>
+        self.current_position = <span class="kw">None</span>
+        self.cipher = <span class="cls">FF3Cipher</span>(SECRET_KEY, TWEAK, radix=<span class="num">62</span>)
+    
+    <span class="kw">def</span> <span class="fn">get_next_code</span>(self):
+        <span class="kw">if</span> self.current_range <span class="kw">is None or</span> self.current_position >= self.current_range[<span class="num">1</span>]:
+            self._allocate_new_range()
+        
+        counter = self.current_position
+        self.current_position += <span class="num">1</span>
+        
+        plain_code = base62_encode(counter).zfill(<span class="num">7</span>)
+        <span class="kw">return</span> self.cipher.encrypt(plain_code)
+    
+    <span class="kw">def</span> <span class="fn">_allocate_new_range</span>(self):
+        self.current_range = self.allocator.allocate_range(self.worker_id)
+        self.current_position = self.current_range[<span class="num">0</span>]
+        <span class="cm"># Proactive: request next range when 80% through current</span></code></pre>
+    </div>
+
+    <div id="approach-6-vs-pool" class="section-block">
+      <h3>Comparison with Pre-Generated Pool</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Pre-Generated Pool</th><th>Range Allocation</th></tr></thead>
+          <tbody>
+            <tr><td>Coordination frequency</td><td>Never (SPOP is local)</td><td>Per range (every 10K codes)</td></tr>
+            <tr><td>Memory usage</td><td>Pool in Redis (~300MB for 10M codes)</td><td>Just current range in memory</td></tr>
+            <tr><td>Crash recovery</td><td>Reclaimer job</td><td>Wasted partial range</td></tr>
+            <tr><td>Operational complexity</td><td>Generator + Redis + Reclaimer</td><td>Just allocator service</td></tr>
+            <tr><td>Hot path latency</td><td>SPOP ~1ms</td><td>Local increment ~0.01ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="approach-6-verdict" class="section-block">
+      <h3>Verdict on Range Allocation</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Aspect</th><th>Rating</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Simplicity</td><td class="rating-cell">⭐⭐⭐⭐</td><td>Simpler than pool</td></tr>
+            <tr><td>Collision Safety</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Counter-based = impossible</td></tr>
+            <tr><td>Latency</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>Local operation</td></tr>
+            <tr><td>Scalability</td><td class="rating-cell">⭐⭐⭐⭐</td><td>Range allocation is infrequent</td></tr>
+            <tr><td>Unpredictability</td><td class="rating-cell">⭐⭐⭐⭐⭐</td><td>With FPE layer</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="when-use">
+        <div class="when-use-label">When to Use</div>
+        When you want uniqueness guarantees without the operational overhead of a code pool.
+      </div>
+      <div class="callout callout-info">
+        <strong>Trade-off:</strong> Wasted keyspace if workers crash mid-range. At 10K range size and occasional crashes, this is negligible.
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARISON MATRIX -->
+  <div id="comparison-matrix" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Conclusion · 01</div>
+      <h2>Final Comparison Matrix</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>Collision Risk</th>
+            <th>Coordination</th>
+            <th>Predictable?</th>
+            <th>Complexity</th>
+            <th>Latency</th>
+            <th>Best For</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Random + Check</td>
+            <td>Low (retries)</td>
+            <td>Per-write DB</td>
+            <td>No</td>
+            <td>Low</td>
+            <td>Medium</td>
+            <td>Small scale</td>
+          </tr>
+          <tr>
+            <td>Auto-Increment</td>
+            <td>Zero</td>
+            <td>DB bottleneck</td>
+            <td><span style="color:var(--coral)">Yes ❌</span></td>
+            <td>Low</td>
+            <td>Low</td>
+            <td>Internal only</td>
+          </tr>
+          <tr>
+            <td>Hash Truncate</td>
+            <td><span style="color:var(--coral)">Medium-High</span></td>
+            <td>None</td>
+            <td>Deterministic</td>
+            <td>Low</td>
+            <td>None</td>
+            <td>Never for URLs</td>
+          </tr>
+          <tr>
+            <td>Snowflake</td>
+            <td>Zero (but 64-bit)</td>
+            <td>Machine ID</td>
+            <td>Partial</td>
+            <td>Medium</td>
+            <td>None</td>
+            <td>Internal IDs</td>
+          </tr>
+          <tr>
+            <td>Pre-Gen Pool</td>
+            <td>Zero</td>
+            <td>None (hot path)</td>
+            <td>No</td>
+            <td>Medium-High</td>
+            <td>~1ms</td>
+            <td>High scale</td>
+          </tr>
+          <tr>
+            <td class="winner-col">Range Allocation</td>
+            <td class="winner-col">Zero</td>
+            <td class="winner-col">Infrequent</td>
+            <td class="winner-col">No (with FPE)</td>
+            <td class="winner-col">Medium</td>
+            <td class="winner-col">~0.01ms</td>
+            <td class="winner-col">Most production</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- WINNER -->
+  <div id="winner" class="winner-section section-block">
+    <h2>🏆 The Winner: Range Allocation + FPE</h2>
+    <p style="color:#cdd5e0;margin-bottom:24px;">Why this is recommended for the URL Shortener:</p>
+
+    <div class="winner-reason"><span class="winner-reason-num">1</span><span><strong>Zero collisions</strong> — Counter-based, mathematically impossible</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">2</span><span><strong>Minimal coordination</strong> — Range allocation happens every 10,000 codes (every 5 seconds at 2K QPS)</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">3</span><span><strong>Unpredictable codes</strong> — FPE transforms sequential counters into random-looking codes</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">4</span><span><strong>Lowest hot-path latency</strong> — Just a local increment, no Redis/DB call</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">5</span><span><strong>Simple to operate</strong> — No pool to monitor, no reclaimer job</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">6</span><span><strong>Graceful degradation</strong> — If allocator is down, workers continue until range exhausted</span></div>
+    <div class="winner-reason"><span class="winner-reason-num">7</span><span><strong>Multi-region ready</strong> — Each region gets non-overlapping ranges</span></div>
+  </div>
+
+  <!-- STRONG HIRE ANSWER -->
+  <div id="strong-hire" class="section-block">
+    <div class="section-header">
+      <div class="section-num">Conclusion · 02</div>
+      <h2>Complete Strong Hire Answer</h2>
+      <div class="section-divider"></div>
+    </div>
+
+    <div class="final-answer">
+      <div class="final-answer-title">🏆 Strong Hire Response</div>
+
+      <p><em>"For short code generation, I'll use <mark>range allocation with format-preserving encryption</mark>."</em></p>
+
+      <p><strong>Why not simpler approaches?</strong></p>
+      <ul>
+        <li>Random + collision check: Requires DB round-trip on every write</li>
+        <li>Auto-increment: Predictable codes enable enumeration attacks</li>
+        <li>Hash truncation: Collisions are mathematically inevitable</li>
+      </ul>
+
+      <p><strong>The architecture:</strong></p>
+      <p>A central allocator service (backed by Postgres sequence) assigns counter ranges to workers. Each API server gets a range like 0–10,000, uses it locally (no coordination), then requests a new range when 80% exhausted.</p>
+      <p>For unpredictability, I apply <mark>FF3-1 format-preserving encryption</mark> before returning the code. Counter 1 becomes "Kx9mL2p", counter 2 becomes "Qw3nR7s" — looks random, but is deterministically derived from the counter with our secret key.</p>
+
+      <p><strong>Failure modes:</strong></p>
+      <ul>
+        <li><strong>Allocator down:</strong> Workers continue with current range, alert if &lt;20% remaining</li>
+        <li><strong>Worker crash:</strong> Lose unused portion of range (&lt;10K codes, negligible)</li>
+        <li><strong>Clock issues:</strong> None — we don't depend on time</li>
+        <li><strong>Multi-region:</strong> Each region's allocator manages a separate counter range (US: 0–1B, EU: 1B–2B, APAC: 2B–3B). No cross-region coordination.</li>
+      </ul>
+
+      <p><strong>Monitoring:</strong></p>
+      <ul>
+        <li>Range allocation latency (should be &lt;50ms)</li>
+        <li>Range exhaustion events (should be smooth, not bursty)</li>
+        <li>Total codes allocated per region (capacity planning)</li>
+      </ul>
+
+      <p><strong>Trade-off acknowledged:</strong> Slightly more complex than random-with-check. But at our scale, the latency consistency (no collision retries) and operational simplicity (no pool to monitor) are worth it.</p>
+
+      <p><em><strong>Alternative if we valued simplicity over performance:</strong> Start with random + collision check + bloom filter for fast negative lookups. Migrate to range allocation when we hit latency issues.</em></p>
+    </div>
+
+    <div class="signal-card winner" style="margin-top:24px;">
+      <span class="signal-icon">🏆</span>
+      <span class="signal-text" style="font-size:15px;">This answer demonstrates: understanding of trade-offs, awareness of security implications (enumeration), production-level thinking (multi-region, failure modes, monitoring), and the ability to both pick a winner and articulate a pragmatic fallback.</span>
+    </div>
+  </div>
+
+</main>
+
+<a id="back-top" href="#" aria-label="Back to top">↑</a>
+
+<script>
+// Progress bar
+const progressBar = document.getElementById('progress-bar');
+window.addEventListener('scroll', () => {
+  const scrolled = window.scrollY;
+  const total = document.documentElement.scrollHeight - window.innerHeight;
+  progressBar.style.width = (scrolled / total * 100) + '%';
+
+  // Back to top
+  document.getElementById('back-top').classList.toggle('visible', scrolled > 400);
+
+  // Active nav
+  updateActiveNav();
+});
+
+function updateActiveNav() {
+  const sections = document.querySelectorAll('.section-block[id]');
+  const navItems = document.querySelectorAll('.nav-item');
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 80) current = s.id;
+  });
+  navItems.forEach(n => {
+    n.classList.toggle('active', n.getAttribute('href') === '#' + current);
+  });
+}
+
+// Sidebar
+const hamburger = document.getElementById('hamburger');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+
+hamburger.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('open');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('open');
+});
+
+// Copy buttons
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code');
+  navigator.clipboard.writeText(code.innerText).then(() => {
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Search
+const searchBox = document.getElementById('search-box');
+const navItems = document.querySelectorAll('#nav-list .nav-item');
+searchBox.addEventListener('input', () => {
+  const q = searchBox.value.toLowerCase().trim();
+  navItems.forEach(item => {
+    item.style.display = !q || item.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+});
+
+// Back to top smooth
+document.getElementById('back-top').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+</script>
+</body>
+</html>
