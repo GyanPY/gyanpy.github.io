@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 3: API Design & Data Modeling — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2129;
+  --surface3: #21262d;
+  --border: #30363d;
+  --border-subtle: #21262d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --accent: #58a6ff;
+  --strong-hire: #F5A623;
+  --hire: #00BFA5;
+  --lean-hire: #FFD700;
+  --no-hire: #FF6B6B;
+  --deep-dive: #a78bfa;
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body: 'Source Serif 4', Georgia, serif;
+  --font-code: 'JetBrains Mono', 'Fira Code', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; font-size: 16px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.75;
+  display: flex;
+  min-height: 100vh;
+  opacity: 0;
+  animation: fadeIn 0.5s ease forwards;
+}
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* PROGRESS BAR */
+#progress-bar {
+  position: fixed; top: 0; left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--hire), var(--strong-hire));
+  width: 0%; z-index: 1000;
+  transition: width 0.1s linear;
+}
+
+/* SIDEBAR */
+#sidebar {
+  width: 272px; min-width: 272px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  position: fixed; top: 0; left: 0; bottom: 0;
+  overflow-y: auto; z-index: 100;
+  display: flex; flex-direction: column;
+  transition: transform 0.3s ease;
+}
+#sidebar::-webkit-scrollbar { width: 3px; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-header {
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  background: var(--surface); z-index: 1;
+}
+.sidebar-brand {
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.sidebar-title {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  margin-bottom: 12px;
+}
+#sidebar-search {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#sidebar-search:focus { border-color: var(--accent); }
+#sidebar-search::placeholder { color: var(--text-dim); }
+
+#nav-list { padding: 8px 0 24px; list-style: none; }
+.nav-group { margin-bottom: 2px; }
+.nav-section-label {
+  padding: 8px 16px 4px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+.nav-item a {
+  display: block;
+  padding: 4px 16px 4px 24px;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.14s;
+  line-height: 1.4;
+}
+.nav-item a:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+.nav-item.active a { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,0.07); }
+.tier-nav a { padding-left: 34px; font-size: 0.73rem; }
+.nav-item.hidden { display: none; }
+.nav-group.hidden { display: none; }
+.tier-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.dot-no-hire { background: var(--no-hire); }
+.dot-lean { background: var(--lean-hire); }
+.dot-hire { background: var(--hire); }
+.dot-strong { background: var(--strong-hire); }
+.dot-dive { background: var(--deep-dive); }
+
+/* HAMBURGER */
+#hamburger {
+  display: none;
+  position: fixed; top: 10px; left: 10px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.78rem;
+  align-items: center; gap: 5px;
+}
+
+/* MAIN */
+#main {
+  margin-left: 272px;
+  flex: 1;
+  max-width: 880px;
+  padding: 50px 50px 100px;
+  min-width: 0;
+}
+
+/* BACK TO TOP */
+#back-to-top {
+  position: fixed; bottom: 26px; right: 26px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 9px 13px;
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 99;
+  opacity: 0; pointer-events: none;
+}
+#back-to-top.visible { opacity: 1; pointer-events: all; }
+#back-to-top:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent); transform: translateY(-2px); }
+
+/* HERO */
+.hero { margin-bottom: 52px; padding-bottom: 36px; border-bottom: 1px solid var(--border); }
+.hero-eyebrow {
+  font-family: var(--font-code);
+  font-size: 0.68rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 12px;
+}
+.hero h1 {
+  font-family: var(--font-heading);
+  font-size: 2.6rem; font-weight: 900; line-height: 1.12; margin-bottom: 14px;
+  background: linear-gradient(130deg, #e6edf3 20%, #58a6ff 70%, #00BFA5);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.hero-meta {
+  font-size: 0.85rem; color: var(--text-muted);
+  display: flex; flex-wrap: wrap; gap: 18px; margin-top: 16px;
+}
+.hero-meta span { display: flex; align-items: center; gap: 5px; }
+
+/* PHASE HEADER */
+.phase-header { margin: 0 0 36px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
+.phase-number {
+  font-family: var(--font-code); font-size: 0.68rem;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px;
+}
+.phase-header h2 {
+  font-family: var(--font-heading); font-size: 1.9rem; font-weight: 700; line-height: 1.2;
+  color: var(--text); margin-bottom: 8px;
+}
+.phase-time {
+  font-family: var(--font-code); font-size: 0.76rem; color: var(--text-dim);
+  background: var(--surface2); padding: 3px 10px; border-radius: 20px; display: inline-block;
+}
+.phase-prompt {
+  margin-top: 18px; background: var(--surface); border: 1px solid var(--border);
+  border-left: 3px solid var(--text-dim); border-radius: 0 8px 8px 0; padding: 14px 18px;
+}
+.prompt-label {
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 7px;
+}
+.phase-prompt blockquote { font-style: italic; color: var(--text-muted); font-size: 0.92rem; line-height: 1.65; }
+
+/* TIER CARDS */
+.tier-card {
+  border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); margin-bottom: 22px; overflow: hidden;
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+.tier-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,0.38); }
+.tier-card.no-hire  { border-left: 4px solid var(--no-hire); }
+.tier-card.lean     { border-left: 4px solid var(--lean-hire); }
+.tier-card.hire     { border-left: 4px solid var(--hire); }
+.tier-card.strong   { border-left: 4px solid var(--strong-hire); }
+.tier-card.dive     { border-left: 4px solid var(--deep-dive); }
+
+.tier-card-header {
+  padding: 16px 20px; cursor: pointer;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  user-select: none;
+}
+.tier-card.no-hire .tier-card-header  { background: rgba(255,107,107,0.05); }
+.tier-card.lean .tier-card-header     { background: rgba(255,215,0,0.04); }
+.tier-card.hire .tier-card-header     { background: rgba(0,191,165,0.05); }
+.tier-card.strong .tier-card-header   { background: rgba(245,166,35,0.05); }
+.tier-card.dive .tier-card-header     { background: rgba(167,139,250,0.06); }
+
+.tier-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tier-emoji { font-size: 1.3rem; }
+.tier-card-title { font-family: var(--font-heading); font-size: 1.1rem; font-weight: 700; color: var(--text); }
+.tier-badge {
+  font-family: var(--font-code); font-size: 0.65rem; font-weight: 600;
+  padding: 3px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap;
+}
+.tier-card.no-hire .tier-badge { background: rgba(255,107,107,0.14); color: var(--no-hire); border: 1px solid rgba(255,107,107,0.28); }
+.tier-card.lean    .tier-badge { background: rgba(255,215,0,0.11);   color: var(--lean-hire); border: 1px solid rgba(255,215,0,0.28); }
+.tier-card.hire    .tier-badge { background: rgba(0,191,165,0.11);   color: var(--hire); border: 1px solid rgba(0,191,165,0.28); }
+.tier-card.strong  .tier-badge { background: rgba(245,166,35,0.11);  color: var(--strong-hire); border: 1px solid rgba(245,166,35,0.28); }
+.tier-card.dive    .tier-badge { background: rgba(167,139,250,0.12); color: var(--deep-dive); border: 1px solid rgba(167,139,250,0.3); }
+
+.tier-toggle { font-size: 0.78rem; color: var(--text-dim); transition: transform 0.3s; flex-shrink: 0; margin-top: 3px; }
+.tier-card.collapsed .tier-toggle { transform: rotate(-90deg); }
+.tier-card-body { padding: 0 20px 20px; overflow: hidden; transition: max-height 0.4s ease, opacity 0.3s; max-height: 9999px; opacity: 1; }
+.tier-card.collapsed .tier-card-body { max-height: 0; opacity: 0; padding-bottom: 0; }
+
+/* SCRIPT / QUOTE BLOCK */
+.script-block {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 18px 14px 48px;
+  margin: 14px 0; font-style: italic; font-size: 0.9rem;
+  line-height: 1.7; color: var(--text-muted); position: relative;
+}
+.script-block::before {
+  content: '"'; font-family: var(--font-heading); font-size: 3.5rem;
+  color: var(--border); position: absolute; top: -6px; left: 10px; line-height: 1;
+}
+.script-block p { margin-top: 9px; }
+.script-block p:first-child { margin-top: 0; }
+.script-block strong { color: var(--text); font-style: normal; }
+
+/* CODE BLOCK */
+.code-block { background: #010409; border: 1px solid var(--border); border-radius: 8px; margin: 14px 0; overflow: hidden; }
+.code-header {
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  padding: 7px 14px; display: flex; align-items: center; justify-content: space-between;
+}
+.code-lang { font-family: var(--font-code); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
+.code-copy {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+  font-family: var(--font-code); font-size: 0.64rem; padding: 3px 9px; border-radius: 4px;
+  cursor: pointer; transition: all 0.18s;
+}
+.code-copy:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent); }
+.code-block pre {
+  padding: 14px 16px; overflow-x: auto;
+  font-family: var(--font-code); font-size: 0.79rem; line-height: 1.65;
+  color: #c9d1d9; white-space: pre;
+}
+/* syntax colors */
+.code-block pre .kw  { color: #ff7b72; }
+.code-block pre .str { color: #a5d6ff; }
+.code-block pre .cm  { color: #6e7681; font-style: italic; }
+.code-block pre .num { color: #79c0ff; }
+.code-block pre .fn  { color: #d2a8ff; }
+
+/* DIAGRAM BLOCK */
+.diagram-block { background: #010409; border: 1px solid var(--border); border-radius: 8px; margin: 14px 0; overflow: hidden; }
+.diagram-header {
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  padding: 7px 14px; display: flex; align-items: center; justify-content: space-between;
+}
+.diagram-label {
+  font-family: var(--font-code); font-size: 0.62rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--accent); font-weight: 600;
+}
+.diagram-block pre {
+  padding: 16px 18px; overflow-x: auto;
+  font-family: var(--font-code); font-size: 0.8rem; line-height: 1.7;
+  color: #79c0ff; white-space: pre;
+}
+
+/* CALLOUTS */
+.callout { border-radius: 8px; padding: 14px 16px; margin: 13px 0; font-size: 0.87rem; }
+.callout.fail  { background: rgba(255,107,107,0.07); border: 1px solid rgba(255,107,107,0.2); }
+.callout.good  { background: rgba(0,191,165,0.07); border: 1px solid rgba(0,191,165,0.2); }
+.callout.info  { background: rgba(88,166,255,0.07); border: 1px solid rgba(88,166,255,0.2); }
+.callout.warn  { background: rgba(255,215,0,0.06); border: 1px solid rgba(255,215,0,0.18); }
+.callout.extra { background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.2); }
+.callout.deep  { background: rgba(167,139,250,0.07); border: 1px solid rgba(167,139,250,0.2); }
+.callout-title {
+  font-family: var(--font-code); font-size: 0.64rem; text-transform: uppercase;
+  letter-spacing: 0.12em; font-weight: 600; margin-bottom: 9px;
+}
+.callout.fail  .callout-title { color: var(--no-hire); }
+.callout.good  .callout-title { color: var(--hire); }
+.callout.info  .callout-title { color: var(--accent); }
+.callout.warn  .callout-title { color: var(--lean-hire); }
+.callout.extra .callout-title { color: var(--strong-hire); }
+.callout.deep  .callout-title { color: var(--deep-dive); }
+.callout ul { padding-left: 16px; }
+.callout li { margin-bottom: 4px; line-height: 1.55; color: var(--text-muted); }
+.callout p  { line-height: 1.65; color: var(--text-muted); }
+
+/* INTERVIEWER QUOTE */
+.int-quote {
+  background: var(--surface2); border-radius: 8px;
+  padding: 16px 18px 14px 48px; margin: 13px 0; position: relative;
+  font-style: italic; font-size: 0.89rem; color: var(--text-muted); line-height: 1.65;
+}
+.int-quote::before { content: '❝'; position: absolute; left: 14px; top: 12px; font-size: 1.4rem; color: var(--text-dim); }
+.int-quote-label {
+  font-family: var(--font-code); font-size: 0.62rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-dim); font-style: normal; font-weight: 600;
+  display: block; margin-bottom: 7px;
+}
+
+/* SIGNAL PHRASES */
+.signal-phrases {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-left: 3px solid var(--hire); border-radius: 0 8px 8px 0; padding: 14px 16px; margin: 13px 0;
+}
+.signal-title {
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--hire); margin-bottom: 9px; font-weight: 600;
+}
+.signal-phrases ul { list-style: none; padding: 0; }
+.signal-phrases li {
+  font-family: var(--font-code); font-size: 0.8rem; color: var(--text-muted);
+  padding: 4px 0; border-bottom: 1px solid rgba(48,54,61,0.4); line-height: 1.5;
+}
+.signal-phrases li:last-child { border-bottom: none; }
+.signal-phrases li::before { content: '→ '; color: var(--hire); }
+
+/* AOMB CHECKLIST */
+.aomb {
+  background: rgba(0,191,165,0.05); border: 1px solid rgba(0,191,165,0.18);
+  border-radius: 8px; padding: 14px 16px; margin: 13px 0;
+}
+.aomb-title {
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--hire); margin-bottom: 9px; font-weight: 600;
+}
+.aomb ul { list-style: none; padding: 0; }
+.aomb li {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 3px 0; font-size: 0.84rem; color: var(--text-muted); line-height: 1.5;
+}
+.aomb li::before { content: '☑'; color: var(--hire); flex-shrink: 0; margin-top: 1px; }
+
+/* FATAL MISTAKES */
+.fatal {
+  background: rgba(255,107,107,0.05); border: 1px solid rgba(255,107,107,0.14);
+  border-radius: 8px; padding: 12px 16px; margin: 11px 0;
+}
+.fatal-title {
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--no-hire); margin-bottom: 7px;
+}
+.fatal ul { list-style: none; padding: 0; }
+.fatal li {
+  display: flex; gap: 7px; font-size: 0.86rem; color: var(--text-muted);
+  padding: 3px 0; line-height: 1.5;
+}
+.fatal li::before { content: '✕'; color: var(--no-hire); flex-shrink: 0; }
+
+/* UPGRADE */
+.upgrade {
+  background: rgba(255,215,0,0.05); border: 1px solid rgba(255,215,0,0.18);
+  border-radius: 8px; padding: 12px 16px; margin: 11px 0;
+}
+.upgrade-title {
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--lean-hire); margin-bottom: 7px;
+}
+.upgrade p { font-size: 0.87rem; color: var(--text-muted); line-height: 1.65; }
+
+/* WOW MOMENTS */
+.wow {
+  background: rgba(245,166,35,0.05); border: 1px solid rgba(245,166,35,0.15);
+  border-radius: 6px; padding: 9px 13px; margin-bottom: 8px;
+  font-family: var(--font-code); font-size: 0.84rem; color: var(--strong-hire); line-height: 1.5;
+}
+.wow::before { content: '✦ '; opacity: 0.7; }
+
+/* SECTION H4 */
+.tier-card-body h4 {
+  font-family: var(--font-heading); font-size: 1rem; font-weight: 600;
+  color: var(--text); margin: 18px 0 9px;
+}
+.tier-card-body p { font-size: 0.9rem; line-height: 1.7; color: var(--text-muted); margin-bottom: 10px; }
+.tier-card-body ul, .tier-card-body ol { padding-left: 18px; margin: 8px 0 13px; }
+.tier-card-body li { font-size: 0.88rem; line-height: 1.6; color: var(--text-muted); margin-bottom: 5px; }
+.tier-card-body strong { color: var(--text); font-weight: 600; }
+
+/* INLINE MARK */
+mark { background: rgba(88,166,255,0.16); color: var(--accent); border-radius: 3px; padding: 1px 4px; font-style: normal; }
+mark.gold { background: rgba(245,166,35,0.14); color: var(--strong-hire); }
+mark.green { background: rgba(0,191,165,0.12); color: var(--hire); }
+
+/* TABLES */
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin: 13px 0; border-radius: 8px; overflow: hidden; }
+.data-table thead tr { background: linear-gradient(90deg, #1f2937, #161b22); }
+.data-table th {
+  padding: 10px 14px; text-align: left;
+  font-family: var(--font-code); font-size: 0.64rem; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.data-table td { padding: 9px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top; line-height: 1.5; }
+.data-table tbody tr:nth-child(odd)  { background: rgba(22,27,34,0.5); }
+.data-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+.data-table tbody tr:hover { background: rgba(88,166,255,0.04); }
+.data-table td:first-child { font-weight: 600; color: var(--text); }
+.data-table td { color: var(--text-muted); }
+.data-table td.mono { font-family: var(--font-code); font-size: 0.78rem; color: var(--hire); }
+.data-table td.red-cell { color: var(--no-hire); font-weight: 600; }
+.data-table td.grn-cell { color: var(--hire); font-weight: 600; }
+.data-table td.amb-cell { color: var(--lean-hire); }
+
+/* GRADIENT HEADER TABLE (access patterns) */
+.ap-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 14px 0; border-radius: 8px; overflow: hidden; }
+.ap-table thead tr { background: linear-gradient(90deg, rgba(88,166,255,0.14), rgba(0,191,165,0.1)); }
+.ap-table th {
+  padding: 10px 13px; text-align: left;
+  font-family: var(--font-code); font-size: 0.62rem; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--accent); border-bottom: 1px solid rgba(88,166,255,0.2);
+}
+.ap-table td { padding: 9px 13px; border-bottom: 1px solid rgba(48,54,61,0.4); color: var(--text-muted); vertical-align: middle; line-height: 1.45; }
+.ap-table tbody tr:nth-child(odd)  { background: rgba(22,27,34,0.6); }
+.ap-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+.ap-table td:first-child { font-weight: 600; color: var(--text); }
+.ap-table td.mono { font-family: var(--font-code); font-size: 0.76rem; color: var(--hire); }
+.ap-table td.amber { font-family: var(--font-code); font-size: 0.76rem; color: var(--strong-hire); }
+
+/* PROGRESSION TABLE */
+.prog-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; margin: 16px 0; border-radius: 8px; overflow: hidden; }
+.prog-table thead tr { background: linear-gradient(90deg, #1f2937, #161b22); }
+.prog-table th {
+  padding: 10px 14px; text-align: left;
+  font-family: var(--font-code); font-size: 0.63rem; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--text-muted); border-bottom: 1px solid var(--border);
+}
+.prog-table td { padding: 10px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); color: var(--text-muted); line-height: 1.55; vertical-align: top; }
+.prog-table tbody tr:nth-child(odd)  { background: rgba(22,27,34,0.5); }
+.prog-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+.prog-table td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+
+/* COMPARISON TABLE (approaches) */
+.comp-table { width: 100%; border-collapse: collapse; font-size: 0.81rem; margin: 14px 0; border-radius: 8px; overflow: hidden; }
+.comp-table thead tr { background: linear-gradient(90deg, rgba(167,139,250,0.14), rgba(88,166,255,0.08)); }
+.comp-table th {
+  padding: 9px 12px; text-align: left;
+  font-family: var(--font-code); font-size: 0.61rem; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--deep-dive); border-bottom: 1px solid rgba(167,139,250,0.2);
+}
+.comp-table td { padding: 9px 12px; border-bottom: 1px solid rgba(48,54,61,0.4); color: var(--text-muted); vertical-align: middle; line-height: 1.45; }
+.comp-table tbody tr:nth-child(odd)  { background: rgba(22,27,34,0.5); }
+.comp-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+.comp-table td:first-child { font-weight: 600; color: var(--text); }
+.comp-table td.low  { color: var(--hire); font-family: var(--font-code); font-size: 0.77rem; }
+.comp-table td.mid  { color: var(--lean-hire); font-family: var(--font-code); font-size: 0.77rem; }
+.comp-table td.bad  { color: var(--no-hire); font-family: var(--font-code); font-size: 0.77rem; }
+.comp-table td.good { color: var(--hire); font-family: var(--font-code); font-size: 0.77rem; }
+
+/* SECTION HEADER */
+.section-header { margin: 44px 0 22px; }
+.section-header h3 {
+  font-family: var(--font-heading); font-size: 1.35rem; font-weight: 600; color: var(--text);
+}
+
+/* KEY LESSON */
+.key-lesson {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 22px 26px; margin: 28px 0; position: relative; overflow: hidden;
+}
+.key-lesson::after {
+  content: '🎯'; position: absolute; right: 18px; top: 16px;
+  font-size: 1.8rem; opacity: 0.12;
+}
+.key-lesson-label {
+  font-family: var(--font-code); font-size: 0.67rem; text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--accent); margin-bottom: 10px;
+}
+.key-lesson p { font-size: 0.93rem; line-height: 1.7; color: var(--text-muted); }
+.key-lesson strong { color: var(--text); }
+
+/* DEEP DIVE SECTION */
+.deep-dive-header {
+  margin: 56px 0 28px; padding-bottom: 18px; border-bottom: 1px solid rgba(167,139,250,0.2);
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.deep-dive-icon { font-size: 1.5rem; flex-shrink: 0; margin-top: 2px; }
+.deep-dive-header h2 {
+  font-family: var(--font-heading); font-size: 1.7rem; font-weight: 700;
+  color: var(--deep-dive); margin-bottom: 6px;
+}
+.deep-dive-header p { font-size: 0.88rem; color: var(--text-muted); line-height: 1.6; }
+
+/* APPROACH CARD */
+.approach-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 9px; margin-bottom: 20px; overflow: hidden;
+}
+.approach-header {
+  padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; cursor: pointer; user-select: none;
+  background: rgba(167,139,250,0.04);
+  border-bottom: 1px solid var(--border);
+}
+.approach-num {
+  font-family: var(--font-code); font-size: 0.64rem; text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--deep-dive); margin-bottom: 2px;
+}
+.approach-title { font-family: var(--font-heading); font-size: 1rem; font-weight: 600; color: var(--text); }
+.approach-toggle { font-size: 0.76rem; color: var(--text-dim); transition: transform 0.3s; }
+.approach-card.collapsed .approach-toggle { transform: rotate(-90deg); }
+.approach-body { padding: 16px 18px 18px; overflow: hidden; transition: max-height 0.4s, opacity 0.3s; max-height: 9999px; opacity: 1; }
+.approach-card.collapsed .approach-body { max-height: 0; opacity: 0; padding: 0 18px; }
+
+.approach-body h5 {
+  font-family: var(--font-code); font-size: 0.65rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-dim); margin: 14px 0 6px;
+}
+.approach-body h5:first-child { margin-top: 0; }
+.approach-body ul { padding-left: 16px; margin: 4px 0 10px; }
+.approach-body li { font-size: 0.87rem; color: var(--text-muted); line-height: 1.58; margin-bottom: 4px; }
+.approach-body p  { font-size: 0.87rem; color: var(--text-muted); line-height: 1.65; margin-bottom: 8px; }
+.approach-body strong { color: var(--text); }
+
+.signal-pair { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.sig-bad, .sig-good {
+  border-radius: 6px; padding: 9px 13px;
+  font-size: 0.83rem; font-family: var(--font-code); line-height: 1.5;
+}
+.sig-bad  { background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.18); color: var(--no-hire); }
+.sig-good { background: rgba(0,191,165,0.08);   border: 1px solid rgba(0,191,165,0.18); color: var(--hire); }
+.sig-bad::before  { content: '❌ Weak: '; font-weight: 600; }
+.sig-good::before { content: '✅ Strong: '; font-weight: 600; }
+
+/* 301/302 TABLE */
+.redirect-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 12px 0; border-radius: 7px; overflow: hidden; }
+.redirect-table th {
+  padding: 9px 12px; text-align: left; background: var(--surface2);
+  font-family: var(--font-code); font-size: 0.62rem; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-dim); border-bottom: 1px solid var(--border);
+}
+.redirect-table td { padding: 9px 12px; border-bottom: 1px solid rgba(48,54,61,0.4); color: var(--text-muted); vertical-align: top; line-height: 1.45; }
+.redirect-table tbody tr:nth-child(odd)  { background: rgba(22,27,34,0.5); }
+.redirect-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+.redirect-table td:first-child { color: var(--text); font-weight: 500; }
+.redirect-table td.choice { font-family: var(--font-code); font-size: 0.77rem; color: var(--accent); font-weight: 600; }
+
+/* FRAMEWORK BOX */
+.framework-box {
+  background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.2);
+  border-radius: 10px; padding: 20px 22px; margin: 18px 0;
+}
+.framework-title {
+  font-family: var(--font-heading); font-size: 1rem; font-weight: 700;
+  color: var(--deep-dive); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+}
+.framework-box p { font-size: 0.88rem; color: var(--text-muted); line-height: 1.65; margin-bottom: 8px; }
+.framework-box p:last-child { margin-bottom: 0; }
+.framework-box strong { color: var(--text); }
+
+/* MOBILE */
+@media (max-width: 768px) {
+  #sidebar { transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); }
+  #hamburger { display: flex; }
+  #main { margin-left: 0; padding: 52px 18px 80px; }
+  .hero h1 { font-size: 1.9rem; }
+  #back-to-top { bottom: 14px; right: 14px; }
+}
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button id="hamburger" aria-label="Toggle navigation">☰ Menu</button>
+
+<!-- SIDEBAR -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-brand">URL Shortener · L6/L7</div>
+    <div class="sidebar-title">Phase 3: API Design &amp; Data Modeling</div>
+    <input type="text" id="sidebar-search" placeholder="Search sections…" aria-label="Search sections">
+  </div>
+  <ul id="nav-list">
+    <li class="nav-group">
+      <div class="nav-section-label">Overview</div>
+      <li class="nav-item"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="nav-group">
+      <div class="nav-section-label">4-Tier Breakdown</div>
+      <li class="nav-item tier-nav"><a href="#no-hire"><span class="tier-dot dot-no-hire"></span>No Hire (L4)</a></li>
+      <li class="nav-item tier-nav"><a href="#lean-hire"><span class="tier-dot dot-lean"></span>Lean Hire (L5)</a></li>
+      <li class="nav-item tier-nav"><a href="#hire"><span class="tier-dot dot-hire"></span>Hire (L6)</a></li>
+      <li class="nav-item tier-nav"><a href="#strong-hire"><span class="tier-dot dot-strong"></span>Strong Hire (L7)</a></li>
+    </li>
+    <li class="nav-group">
+      <div class="nav-section-label">Synthesis</div>
+      <li class="nav-item"><a href="#progression">Progression Summary</a></li>
+      <li class="nav-item"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+    <li class="nav-group">
+      <div class="nav-section-label">🔬 Decision Deep Dive</div>
+      <li class="nav-item"><a href="#deep-dive">Short Code Generation</a></li>
+      <li class="nav-item tier-nav"><a href="#approach1"><span class="tier-dot dot-dive"></span>Random + Collision Check</a></li>
+      <li class="nav-item tier-nav"><a href="#approach2"><span class="tier-dot dot-dive"></span>Auto-Increment + Base62</a></li>
+      <li class="nav-item tier-nav"><a href="#approach3"><span class="tier-dot dot-dive"></span>Pre-Generated Pool</a></li>
+      <li class="nav-item tier-nav"><a href="#approach4"><span class="tier-dot dot-dive"></span>Range Allocation</a></li>
+      <li class="nav-item tier-nav"><a href="#approach5"><span class="tier-dot dot-dive"></span>Snowflake + Truncate</a></li>
+      <li class="nav-item"><a href="#comparison">Comparison Table</a></li>
+      <li class="nav-item"><a href="#decision-script">Decision Framework</a></li>
+    </li>
+  </ul>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <!-- HERO -->
+  <section id="hero" class="hero">
+    <div class="hero-eyebrow">System Design Interview · Study Guide · Phase 3</div>
+    <h1>API Design &amp;<br>Data Modeling</h1>
+    <div class="hero-meta">
+      <span>⏱ 10–15 minutes</span>
+      <span>📐 4-Tier Framework</span>
+      <span>🔬 Decision Deep Dive included</span>
+      <span>💾 Short Code Generation</span>
+    </div>
+    <p style="margin-top:16px;font-size:0.86rem;color:var(--text-dim);">This phase tests whether you design APIs as production contracts and data models aligned to access patterns — not just CRUD tables. The gap between L5 and L6 is idempotency + cursor pagination + write amplification awareness.</p>
+  </section>
+
+  <!-- PHASE HEADER -->
+  <div id="phase3-header">
+    <div class="phase-header">
+      <div class="phase-number">Phase 3 · 10–15 min</div>
+      <h2>API Design &amp; Data Modeling</h2>
+      <span class="phase-time">10 – 15 minutes</span>
+      <div class="phase-prompt">
+        <div class="prompt-label">Interviewer Prompt</div>
+        <blockquote>"Good requirements. Now show me your API design — endpoints, request/response payloads, and key design decisions. Then walk me through your data model — entities, relationships, and indexes. I want to understand how your data model supports your access patterns."</blockquote>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ NO HIRE ══════════════ -->
+  <div class="tier-card no-hire" id="no-hire">
+    <div class="tier-card-header" onclick="toggleCard(this)">
+      <div class="tier-title-row">
+        <span class="tier-emoji">❌</span>
+        <span class="tier-card-title">No Hire</span>
+        <span class="tier-badge">L4 / Weak L5</span>
+      </div>
+      <span class="tier-toggle">▾</span>
+    </div>
+    <div class="tier-card-body">
+      <div class="script-block">
+        <p>"Okay, so for the API, I'll have REST endpoints:</p>
+        <p><strong>POST /shorten</strong> — Body: { url: "https://example.com/long-url" } — Response: { shortUrl: "https://short.url/abc123" }</p>
+        <p><strong>GET /{shortCode}</strong> — Response: 301 Redirect to original URL</p>
+        <p><strong>GET /stats/{shortCode}</strong> — Response: { clicks: 12345 }</p>
+        <p>For the database, I'll have a URLs table: id (primary key), short_code, long_url, created_at, click_count. I'll use MySQL since it's reliable and I'm familiar with it. We can add an index on short_code for fast lookups. That should be everything we need. Should I move to the architecture?"</p>
+      </div>
+
+      <div class="callout fail">
+        <div class="callout-title">Why This Fails</div>
+        <ul>
+          <li>No error handling contract — what does the API return on failure?</li>
+          <li>No pagination — what if a user has 10,000 URLs?</li>
+          <li>No idempotency — what happens if the create request is retried?</li>
+          <li>No rate limiting headers — how does the client know their quota?</li>
+          <li>No API versioning — how do we evolve without breaking clients?</li>
+          <li>No authentication discussion — is this endpoint open to the world?</li>
+          <li>Data model is trivial — no thought about custom aliases, expiration, user ownership</li>
+          <li>No index justification — why this index? What queries does it support?</li>
+          <li>"I'm familiar with it" is not a justification — technology choices need reasoning</li>
+        </ul>
+      </div>
+
+      <div class="int-quote">
+        <span class="int-quote-label">Interviewer's Notes</span>
+        "API design is superficial — no error contracts, no idempotency, no pagination. Data model is a single table with no access pattern reasoning. Candidate seems to be reciting a tutorial, not designing a production system."
+      </div>
+
+      <div class="fatal">
+        <div class="fatal-title">Fatal Mistakes</div>
+        <ul>
+          <li>No HTTP status codes defined</li>
+          <li>No idempotency key on write endpoint</li>
+          <li>No thought about API evolution/versioning</li>
+          <li>Data model doesn't support stated requirements (custom aliases, expiration)</li>
+          <li>Technology choice justified by familiarity, not requirements</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ LEAN HIRE ══════════════ -->
+  <div class="tier-card lean" id="lean-hire">
+    <div class="tier-card-header" onclick="toggleCard(this)">
+      <div class="tier-title-row">
+        <span class="tier-emoji">⚠️</span>
+        <span class="tier-card-title">Lean Hire</span>
+        <span class="tier-badge">Meets L5, Not L6</span>
+      </div>
+      <span class="tier-toggle">▾</span>
+    </div>
+    <div class="tier-card-body">
+      <div class="script-block">
+        <p>"Let me define the core APIs with REST conventions.</p>
+        <p><strong>POST /api/v1/urls</strong> — Request: { "long_url": "...", "custom_alias": "mypromo", "expires_at": "2024-12-31" } — Response (201 Created): { "short_code": "abc1234", "short_url": "...", "long_url": "...", "created_at": "...", "expires_at": "..." }</p>
+        <p>Errors: 400 Invalid URL format, 409 Custom alias already taken, 429 Rate limit exceeded.</p>
+        <p><strong>GET /{shortCode}</strong> — 301 Redirect — Errors: 404 not found, 410 expired.</p>
+        <p><strong>GET /api/v1/urls/{shortCode}/stats</strong> — { "short_code": "abc1234", "click_count": 12345, "created_at": "..." }</p>
+        <p>Data Model: Table urls — id BIGINT PK, short_code VARCHAR(10) unique, long_url TEXT, custom_alias VARCHAR(50) unique nullable, user_id BIGINT, created_at TIMESTAMP, expires_at TIMESTAMP nullable, click_count BIGINT default 0. Indexes: PK, UNIQUE(short_code), UNIQUE(custom_alias) WHERE NOT NULL, INDEX(user_id, created_at). I'm thinking PostgreSQL for ACID compliance and good indexing."</p>
+      </div>
+
+      <div class="callout good">
+        <div class="callout-title">What's Good</div>
+        <ul>
+          <li>API versioning included (/api/v1/)</li>
+          <li>Error codes defined with meanings</li>
+          <li>Custom alias and expiration supported</li>
+          <li>Data model includes reasonable indexes</li>
+          <li>Composite index for user queries</li>
+        </ul>
+      </div>
+
+      <div class="callout fail">
+        <div class="callout-title">What's Missing for L6</div>
+        <ul>
+          <li>No idempotency mechanism — what prevents duplicate URLs on retry?</li>
+          <li>No pagination — what if GET /users/{id}/urls returns 100K URLs?</li>
+          <li>No rate limiting headers in response — X-RateLimit-Remaining etc.</li>
+          <li>No discussion of 301 vs 302 — caching implications are huge</li>
+          <li>No API authentication model — API keys? JWT? Anonymous?</li>
+          <li>No bulk operations — enterprise users might create 1000 URLs at once</li>
+          <li>No soft delete consideration — how do we handle GDPR deletion?</li>
+          <li><mark>click_count in same row as URL</mark> — write amplification on hot URLs</li>
+          <li>No sharding consideration in data model — how does this scale?</li>
+        </ul>
+      </div>
+
+      <div class="int-quote">
+        <span class="int-quote-label">Interviewer's Notes</span>
+        "Decent API structure with versioning and error codes. Missing idempotency, pagination, and rate limit headers. Data model is functional but doesn't show deep thinking about access patterns or scaling concerns."
+      </div>
+
+      <div class="upgrade">
+        <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+        <p>Add: <strong>Idempotency-Key header</strong> for creation, <strong>cursor-based pagination</strong>, <strong>rate limit headers</strong>, explicit <strong>301 vs 302 reasoning</strong>, and <strong>separate the click_count</strong> to avoid write amplification on hot URLs.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ HIRE (L6) ══════════════ -->
+  <div class="tier-card hire" id="hire">
+    <div class="tier-card-header" onclick="toggleCard(this)">
+      <div class="tier-title-row">
+        <span class="tier-emoji">✅</span>
+        <span class="tier-card-title">Hire</span>
+        <span class="tier-badge">Meets L6 Bar</span>
+      </div>
+      <span class="tier-toggle">▾</span>
+    </div>
+    <div class="tier-card-body">
+      <h4>API Design Principles Stated Upfront</h4>
+      <div class="callout info" style="margin-top:0;">
+        <div class="callout-title">L6 Opening Frame</div>
+        <p>"Let me design the API contract first, then the data model to support it. I'll think about this from the perspective of: <mark>what does a client need to successfully integrate?</mark>"</p>
+        <ul>
+          <li>RESTful with consistent resource naming</li>
+          <li>Idempotent operations where possible</li>
+          <li>Explicit error contracts with actionable messages</li>
+          <li>Pagination for all list endpoints</li>
+          <li>Rate limiting transparency via headers</li>
+          <li>Versioning in URL path for simplicity</li>
+        </ul>
+      </div>
+
+      <h4>API 1: Create Short URL</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · POST /api/v1/urls</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Headers:
+  Content-Type: application/json
+  Authorization: Bearer &lt;token&gt;      // optional for anonymous
+  Idempotency-Key: &lt;client-uuid&gt;    // REQUIRED for safe retries
+
+Request Body:
+{
+  "long_url": "https://example.com/path?query=value",
+  "custom_alias": "promo2024",           // optional, premium only
+  "expires_in_days": 30,                 // optional
+  "metadata": {                          // optional, for client use
+    "campaign": "winter-sale"
+  }
+}
+
+Success Response (201 Created):
+{
+  "data": {
+    "short_code": "Xk9Lm2n",
+    "short_url": "https://short.url/Xk9Lm2n",
+    "long_url": "https://example.com/path?query=value",
+    "created_at": "2024-01-15T10:30:00Z",
+    "expires_at": "2024-02-14T10:30:00Z",
+    "is_custom": false
+  },
+  "meta": {
+    "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
+    "request_id": "req_abc123"
+  }
+}
+
+Rate Limit Headers (all responses):
+  X-RateLimit-Limit: 100
+  X-RateLimit-Remaining: 95
+  X-RateLimit-Reset: 1705312800
+
+Error Responses:
+  400 Bad Request:   { "error": { "code": "INVALID_URL",   "message": "The provided URL is not valid", "field": "long_url" } }
+  409 Conflict:      { "error": { "code": "ALIAS_TAKEN",   "message": "Custom alias 'promo2024' is already in use" } }
+  429 Too Many:      { "error": { "code": "RATE_LIMITED",  "message": "Rate limit exceeded", "retry_after_seconds": 60 } }</pre>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-title">Idempotency Contract</div>
+        <p>If the same <strong>Idempotency-Key</strong> is sent within 24 hours, return the same response. This is critical for client retries — prevents duplicate URLs when network fails after our DB write but before client receives response.</p>
+      </div>
+
+      <h4>API 2: Redirect (The Hot Path)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · GET /{shortCode}</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Success Response (301 Moved Permanently):
+  Status: 301
+  Location: https://example.com/path?query=value
+  Cache-Control: public, max-age=86400
+
+Error Responses:
+  404 Not Found: Short code doesn't exist
+  410 Gone: URL expired (semantically correct - it existed but is gone)</pre>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-title">301 vs 302 Decision</div>
+        <ul>
+          <li><strong>301</strong> = cacheable by browsers and CDNs, reduces our load — BUT once cached, we can't change the target URL</li>
+          <li><strong>For permanent URLs:</strong> use 301 with long cache</li>
+          <li><strong>For editable/expirable URLs:</strong> use 302 with short/no cache</li>
+          <li>Default to <strong>301 with 1-day cache</strong> for most URLs</li>
+        </ul>
+        <p style="margin-top:8px;font-size:0.86rem;">Performance: This endpoint must be FAST. <mark>No auth check, no rate limiting, minimal processing.</mark> Auth and rate limiting happen on the creation endpoint, not redirect.</p>
+      </div>
+
+      <h4>API 3: Get URL Info</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · GET /api/v1/urls/{shortCode}</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Response (200 OK):
+{
+  "data": {
+    "short_code": "Xk9Lm2n",
+    "short_url": "https://short.url/Xk9Lm2n",
+    "long_url": "https://example.com/path",
+    "created_at": "2024-01-15T10:30:00Z",
+    "expires_at": "2024-02-14T10:30:00Z",
+    "click_count": 15234,
+    "is_custom": false,
+    "is_active": true
+  }
+}</pre>
+      </div>
+
+      <h4>API 4: List User's URLs (Cursor Pagination)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · GET /api/v1/urls?limit=20&amp;cursor=…</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Response (200 OK):
+{
+  "data": [
+    { "short_code": "abc123", ... },
+    { "short_code": "def456", ... }
+  ],
+  "pagination": {
+    "cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNC0wMS0xMCJ9",
+    "has_more": true,
+    "total_count": 1523      // optional, can be expensive
+  }
+}</pre>
+      </div>
+      <div class="callout info">
+        <div class="callout-title">Why Cursor-Based, Not Offset?</div>
+        <p>At 500M URLs, <code>OFFSET 1000000</code> is a table scan. <mark>Cursor-based pagination is O(1)</mark> because it uses indexed <code>WHERE created_at &lt; cursor_value</code>.</p>
+      </div>
+
+      <h4>API 5: Delete URL (Soft Delete)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · DELETE /api/v1/urls/{shortCode}</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Response: 204 No Content
+
+This is a SOFT delete - we keep the record but mark it inactive.
+- Prevents reuse of short codes (avoids hijacking)
+- Maintains audit trail
+- Allows GDPR "right to be forgotten" by scrubbing PII while keeping the code reserved</pre>
+      </div>
+
+      <h4>Data Model: Access Patterns First</h4>
+      <div class="callout info">
+        <div class="callout-title">Access Patterns (Derived from APIs)</div>
+        <ul>
+          <li>Lookup URL by short_code — P0, highest frequency, must be O(1)</li>
+          <li>Check if custom_alias exists — during creation, must be O(1)</li>
+          <li>List URLs by user, sorted by created_at — paginated</li>
+          <li>Idempotency check by key — during creation</li>
+          <li>Increment click count — high frequency, can be async</li>
+          <li>Find expired URLs for cleanup — batch job</li>
+        </ul>
+      </div>
+
+      <h4>Primary Table: urls</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL · PostgreSQL</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>CREATE TABLE urls (
+    -- Primary identifier
+    id              BIGINT PRIMARY KEY,          -- Snowflake ID, sortable
+    
+    -- Core data
+    short_code      CHAR(7) NOT NULL,            -- Fixed length for storage efficiency
+    long_url        VARCHAR(2048) NOT NULL,      -- Max URL length
+    
+    -- Ownership & metadata
+    user_id         BIGINT,                      -- NULL for anonymous
+    is_custom       BOOLEAN DEFAULT FALSE,
+    
+    -- Lifecycle
+    created_at      TIMESTAMP NOT NULL,
+    expires_at      TIMESTAMP,                   -- NULL = never expires
+    deleted_at      TIMESTAMP,                   -- Soft delete
+    
+    -- Status
+    is_active       BOOLEAN DEFAULT TRUE
+    
+    -- We do NOT store click_count here - see separate table
+);
+
+-- Index for the hot path: redirect lookup
+CREATE UNIQUE INDEX idx_urls_short_code ON urls(short_code) 
+    WHERE deleted_at IS NULL;
+
+-- Index for user's URL listing (cursor pagination)  
+CREATE INDEX idx_urls_user_created ON urls(user_id, created_at DESC)
+    WHERE deleted_at IS NULL;
+
+-- Index for expiration cleanup job
+CREATE INDEX idx_urls_expires ON urls(expires_at)
+    WHERE expires_at IS NOT NULL AND is_active = TRUE;</pre>
+      </div>
+
+      <h4>Click Counts: Separate Table (Avoiding Write Amplification)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>CREATE TABLE url_clicks (
+    short_code      CHAR(7) PRIMARY KEY,
+    click_count     BIGINT DEFAULT 0,
+    last_clicked_at TIMESTAMP
+);</pre>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-title">Why Separate?</div>
+        <ul>
+          <li>A viral URL might get 100K clicks/second</li>
+          <li>If click_count is in the urls table, every click updates the same row</li>
+          <li>This causes <strong>lock contention</strong> and <strong>invalidates caches</strong></li>
+          <li>Separate table = clicks don't touch the URL mapping data</li>
+          <li>Can even use Redis for real-time counts, async persist to DB</li>
+        </ul>
+      </div>
+
+      <h4>Idempotency Keys Table</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>CREATE TABLE idempotency_keys (
+    idempotency_key UUID PRIMARY KEY,
+    response_body   JSONB,
+    created_at      TIMESTAMP NOT NULL,
+    expires_at      TIMESTAMP NOT NULL  -- Auto-cleanup after 24h
+);
+
+CREATE INDEX idx_idempotency_expires ON idempotency_keys(expires_at);</pre>
+      </div>
+
+      <h4>Database Choice: PostgreSQL</h4>
+      <div class="callout good">
+        <div class="callout-title">Why PostgreSQL over Alternatives?</div>
+        <ul>
+          <li>ACID compliance for strong consistency on writes</li>
+          <li>Partial indexes (<code>WHERE deleted_at IS NULL</code>) for efficient queries</li>
+          <li>JSONB for flexible metadata storage</li>
+          <li>Excellent index support including covering indexes</li>
+          <li>At 15TB and 2K writes/sec, a single well-tuned Postgres instance with read replicas can handle this</li>
+        </ul>
+        <p style="margin-top:8px;font-size:0.86rem;"><strong>Why not NoSQL?</strong> We need strong consistency for uniqueness guarantees. Our data model is simple and relational. If we outgrow Postgres, migrate to CockroachDB/Spanner for horizontal scaling with SQL semantics.</p>
+      </div>
+
+      <div class="aomb">
+        <div class="aomb-title">AOMB Completeness Checklist — Verified</div>
+        <ul>
+          <li>Structured opening that frames the approach (API design principles)</li>
+          <li>Idempotency key on write endpoints</li>
+          <li>Cursor-based pagination with reasoning</li>
+          <li>Rate limiting headers</li>
+          <li>Explicit error contract with codes</li>
+          <li>301 vs 302 reasoning</li>
+          <li>Access patterns listed before data model</li>
+          <li>Indexes justified by access patterns</li>
+          <li>Click count separation to avoid write amplification</li>
+          <li>Database choice with trade-off reasoning</li>
+          <li>Clear transition to next phase</li>
+        </ul>
+      </div>
+
+      <div class="int-quote">
+        <span class="int-quote-label">Interviewer's Notes</span>
+        "Strong API design showing production awareness — idempotency, pagination, rate limiting headers all present. Click count separation shows understanding of write amplification. Justified technology choices. This person has built APIs that real clients use."
+      </div>
+
+      <div class="signal-phrases">
+        <div class="signal-title">Key Phrases That Signal L6 — Memorize These</div>
+        <ul>
+          <li>"What does a client need to successfully integrate?"</li>
+          <li>"Idempotency-Key is REQUIRED for safe retries"</li>
+          <li>"Why 301 vs 302? Caching implications..."</li>
+          <li>"Cursor-based pagination is O(1) because..."</li>
+          <li>"Separate table to avoid write amplification"</li>
+          <li>"Let me list my access patterns first, then design the schema"</li>
+        </ul>
+      </div>
+
+      <div class="callout good">
+        <div class="callout-title">What Separates This From L5</div>
+        <p>L5 defines endpoints with payloads. L6 defines the <strong>complete contract</strong> — idempotency semantics, error codes, caching headers, pagination mechanics — and explains why each decision was made. L6 also separates click counts without being prompted, showing they've experienced write amplification problems.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ STRONG HIRE (L7) ══════════════ -->
+  <div class="tier-card strong" id="strong-hire">
+    <div class="tier-card-header" onclick="toggleCard(this)">
+      <div class="tier-title-row">
+        <span class="tier-emoji">🏆</span>
+        <span class="tier-card-title">Strong Hire</span>
+        <span class="tier-badge">L7 Signal · Exceptional</span>
+      </div>
+      <span class="tier-toggle">▾</span>
+    </div>
+    <div class="tier-card-body">
+      <div class="callout extra">
+        <div class="callout-title">Opening Frame — L7 Differentiator</div>
+        <p>"Let me approach API and data model design together, because they're deeply coupled. <mark class="gold">I'll start with the access pattern analysis, then derive both the API contract and the storage schema.</mark>"</p>
+      </div>
+
+      <h4>Access Pattern Analysis (The Foundation)</h4>
+      <table class="ap-table">
+        <thead>
+          <tr><th>Operation</th><th>Frequency</th><th>Latency Req</th><th>Consistency</th><th>Growth Pattern</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Redirect lookup</td><td class="mono">100K QPS peak</td><td class="mono">&lt;5ms p50</td><td>Strong</td><td>Stable per URL</td></tr>
+          <tr><td>Create URL</td><td class="mono">2K QPS peak</td><td class="mono">&lt;200ms p99</td><td>Strong</td><td>Bursty (campaigns)</td></tr>
+          <tr><td>Check alias available</td><td class="mono">2K QPS</td><td class="mono">&lt;50ms</td><td>Linearizable</td><td>With creation</td></tr>
+          <tr><td>Record click</td><td class="mono">100K QPS</td><td class="amber">Fire-and-forget</td><td>Eventual</td><td>Per redirect</td></tr>
+          <tr><td>List user URLs</td><td class="mono">100 QPS</td><td class="mono">&lt;100ms</td><td>Eventual OK</td><td>Paginated</td></tr>
+          <tr><td>Lookup for stats</td><td class="mono">10 QPS</td><td class="mono">&lt;200ms</td><td>Eventual OK</td><td>On-demand</td></tr>
+          <tr><td>Expire old URLs</td><td class="amber">Batch daily</td><td class="amber">Minutes OK</td><td>Eventual</td><td>Background</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout extra">
+        <div class="callout-title">What This Analysis Tells Me</div>
+        <ul>
+          <li>Redirect lookup is the critical path — needs caching, maybe CDN</li>
+          <li>Create + alias check need strong consistency — must be transactional</li>
+          <li>Click recording should be completely decoupled from redirect path</li>
+          <li>User listing is low-frequency — can tolerate slower index scans</li>
+        </ul>
+      </div>
+
+      <h4>API Design Principles (L7 Level)</h4>
+      <div class="callout extra">
+        <div class="callout-title">5 Principles Beyond L6</div>
+        <ul>
+          <li><strong>Idempotent everything</strong> — network is unreliable</li>
+          <li><strong>Explicit over implicit</strong> — error contracts that clients can code against</li>
+          <li><strong>Progressive disclosure</strong> — simple default, power user options available</li>
+          <li><strong>Observability built-in</strong> — request IDs, timing headers</li>
+          <li><strong>Graceful degradation signals</strong> — clients know when to back off</li>
+        </ul>
+      </div>
+
+      <h4>API 1: Create Short URL (Full Contract)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · POST /api/v1/urls — Full Contract</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Request Headers:
+  Content-Type: application/json
+  Authorization: Bearer &lt;token&gt;           # Optional for anonymous
+  Idempotency-Key: &lt;uuid&gt;                 # REQUIRED
+  X-Request-ID: &lt;client-trace-id&gt;         # Optional, we'll generate if missing
+
+Request Body:
+{
+  "long_url": "https://example.com/path?q=1",
+  "custom_alias": "winter-sale",          # Optional, premium feature
+  "expires_in_seconds": 2592000,          # 30 days, optional
+  "tags": ["marketing", "q1-2024"],       # Optional, for filtering
+  "allow_duplicate": false                # Default false - same URL returns existing code
+}
+
+Response Headers (ALL responses):
+  X-Request-ID: req_7Hs9kLm2nP3
+  X-Response-Time-Ms: 45
+  X-RateLimit-Limit: 100
+  X-RateLimit-Remaining: 94
+  X-RateLimit-Reset: 1705315200
+  X-RateLimit-Policy: "100;w=3600"        # 100 per hour
+
+Success Response (201 Created / 200 OK if idempotent replay):
+{
+  "data": {
+    "id": "url_7Hs9kLm2nP",
+    "short_code": "Xk9Lm2n",
+    "short_url": "https://short.url/Xk9Lm2n",
+    "long_url": "https://example.com/path?q=1",
+    "created_at": "2024-01-15T10:30:00Z",
+    "expires_at": "2024-02-14T10:30:00Z",
+    "is_custom_alias": false,
+    "qr_code_url": "https://short.url/qr/Xk9Lm2n"   # Progressive disclosure
+  },
+  "meta": {
+    "idempotent_replay": false,
+    "warnings": []
+  }
+}
+
+Error Response Structure (consistent across all endpoints):
+{
+  "error": {
+    "code": "ALIAS_UNAVAILABLE",
+    "message": "The alias 'winter-sale' is already taken",
+    "details": {
+      "field": "custom_alias",
+      "suggestion": "winter-sale-2024"     # Helpful, not just rejection
+    },
+    "retry_eligible": false,
+    "documentation_url": "https://docs.short.url/errors#alias-unavailable"
+  },
+  "meta": { "request_id": "req_7Hs9kLm2nP3" }
+}
+
+Error Codes:
+  400 INVALID_URL         - Malformed or unreachable URL
+  400 URL_BLOCKED         - URL on blocklist (malware, phishing)
+  403 FEATURE_UNAVAILABLE - Custom alias not in plan
+  409 ALIAS_UNAVAILABLE   - Custom alias taken
+  422 URL_TOO_LONG        - Exceeds 2048 char limit
+  429 RATE_LIMITED        - Back off, retry_after provided
+  503 SERVICE_DEGRADED    - Accept request but warn of delays</pre>
+      </div>
+
+      <h4>Idempotency Semantics — Precise Contract</h4>
+      <div class="callout extra">
+        <div class="callout-title">Precisely Defined (L7 Signal)</div>
+        <ul>
+          <li>Same Idempotency-Key within 24h window → return stored response</li>
+          <li>We store the response, not just "we saw this key"</li>
+          <li>If original request is still processing → return 409 with retry_after</li>
+          <li>Idempotency is per-user — different users can use same key</li>
+          <li>Idempotency key format: UUIDv4 recommended, any string up to 64 chars accepted</li>
+        </ul>
+        <p style="margin-top:8px;font-size:0.86rem;"><strong>Duplicate URL Handling (separate from idempotency):</strong> allow_duplicate: false (default) = same long_url for same user returns existing short_code. allow_duplicate: true = always create new short_code. These are different concepts: idempotency is about retries, this is about user intent.</p>
+      </div>
+
+      <h4>API 2: Redirect — 301 vs 302 Configurable</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · GET /{shortCode} — Hot Path</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>No request body. No auth. Maximum simplicity.
+
+Response (301 or 302):
+  Status: 301 Moved Permanently
+  Location: https://example.com/path?q=1
+  Cache-Control: public, max-age=86400, stale-while-revalidate=3600
+  X-Redirect-Latency-Ms: 2
+
+Error Responses:
+  404 Not Found:   - Don't reveal if code existed and was deleted (security)
+                   - Response: static HTML with "URL not found"
+  410 Gone:        - Only if URL existed and explicitly expired (not deleted)
+                   - Tells search engines to remove from index
+  451 Unavailable: - If URL was taken down due to DMCA/legal
+                   - Important for transparency
+
+No processing on this path:
+  No auth check
+  No rate limiting (CDN handles abuse)
+  No request logging (async via CDN logs)
+  Just: cache check → DB lookup → return</pre>
+      </div>
+
+      <h4>301 vs 302: Configurable Per URL</h4>
+      <table class="redirect-table">
+        <thead><tr><th>Scenario</th><th>Choice</th><th>Reasoning</th></tr></thead>
+        <tbody>
+          <tr><td>Permanent URL, no analytics needed</td><td class="choice">301, max-age=1week</td><td>Browser caches, we never see repeat visits</td></tr>
+          <tr><td>Permanent URL, analytics needed</td><td class="choice">302, no-cache</td><td>Every visit hits us, we can count</td></tr>
+          <tr><td>Expirable/editable URL</td><td class="choice">302, max-age=1hour</td><td>Must be able to change target</td></tr>
+          <tr><td>Default recommendation</td><td class="choice">301, max-age=1day</td><td>Balance performance vs analytics</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:0.86rem;color:var(--text-muted);margin-top:6px;">I'll make this <strong>CONFIGURABLE per URL</strong> via a <code>redirect_type</code> field. Premium users who need analytics get 302; everyone else gets cached 301.</p>
+
+      <h4>API 3: Batch Create (Enterprise Feature)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · POST /api/v1/urls/batch</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Request Body:
+{
+  "urls": [
+    { "long_url": "https://example.com/1", "custom_alias": "promo1" },
+    { "long_url": "https://example.com/2", "custom_alias": "promo2" },
+    // ... up to 100
+  ],
+  "default_expires_in_seconds": 2592000
+}
+
+Response (207 Multi-Status):
+{
+  "results": [
+    { "index": 0, "status": 201, "data": { ... } },
+    { "index": 1, "status": 409, "error": { "code": "ALIAS_UNAVAILABLE" } }
+  ],
+  "summary": { "total": 100, "succeeded": 98, "failed": 2 }
+}</pre>
+      </div>
+      <div class="callout extra">
+        <div class="callout-title">Why Batch?</div>
+        <p>Enterprise customers create thousands of URLs for campaigns. Without batch, they'd make 1000 sequential requests. Batch reduces network overhead and lets us optimize DB writes.</p>
+      </div>
+
+      <h4>API 4: List URLs (Full Cursor Implementation)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">HTTP · GET /api/v1/urls?limit=25&amp;cursor=&lt;opaque&gt;</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>Response:
+{
+  "data": [ ... ],
+  "pagination": {
+    "next_cursor": "eyJ0cyI6IjIwMjQtMDEtMTAiLCJpZCI6MTIzNH0=",
+    "prev_cursor": "eyJ0cyI6IjIwMjQtMDEtMjAiLCJpZCI6NTY3OH0=",
+    "has_more": true
+  },
+  "meta": {
+    "total_count": null,               // Explicitly null - we don't compute by default
+    "total_count_available": false,
+    "request_total_count": "/api/v1/urls/count?tag=marketing"
+  }
+}</pre>
+      </div>
+      <div class="callout extra">
+        <div class="callout-title">Cursor Implementation Details (L7 Signal)</div>
+        <ul>
+          <li>Cursor encodes <strong>(created_at, id)</strong> — both needed for deterministic pagination</li>
+          <li>Why both? created_at alone isn't unique; id breaks ties</li>
+          <li>Cursor is base64-encoded JSON, opaque to client</li>
+          <li><mark class="gold">total_count is explicitly null by default</mark> — it requires a full COUNT which is expensive</li>
+          <li>If client needs count, they call separate endpoint (we can cache it)</li>
+        </ul>
+      </div>
+
+      <h4>Data Model: Full Production Schema</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL · Primary Table: urls</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>CREATE TABLE urls (
+    -- Identifiers
+    id              BIGINT PRIMARY KEY,         -- Snowflake/ULID, time-sortable
+    short_code      CHAR(7) NOT NULL,           -- Base62 encoded, fixed length
+    
+    -- Core data  
+    long_url        VARCHAR(2048) NOT NULL,
+    long_url_hash   CHAR(64) NOT NULL,          -- SHA-256 for dedup lookup
+    
+    -- Ownership
+    user_id         BIGINT,                     -- NULL = anonymous
+    workspace_id    BIGINT,                     -- For future B2B multi-tenancy
+    
+    -- Configuration
+    is_custom_alias BOOLEAN DEFAULT FALSE,
+    redirect_type   SMALLINT DEFAULT 301,       -- 301 or 302
+    
+    -- Lifecycle
+    created_at      TIMESTAMPTZ NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL,
+    expires_at      TIMESTAMPTZ,
+    deleted_at      TIMESTAMPTZ,                -- Soft delete
+    
+    -- Metadata
+    tags            TEXT[],                     -- PostgreSQL array
+    metadata        JSONB                       -- Client-defined KV pairs
+);
+
+-- HOT PATH: Redirect lookup with covering index (index-only scan!)
+CREATE UNIQUE INDEX idx_urls_short_code 
+    ON urls(short_code) 
+    INCLUDE (long_url, redirect_type, expires_at)  -- Covering index!
+    WHERE deleted_at IS NULL;
+
+-- Creation: Check if long_url already exists for user
+CREATE INDEX idx_urls_user_url_hash 
+    ON urls(user_id, long_url_hash) 
+    WHERE deleted_at IS NULL;
+
+-- Listing: User's URLs with cursor pagination
+CREATE INDEX idx_urls_user_listing 
+    ON urls(user_id, created_at DESC, id DESC) 
+    WHERE deleted_at IS NULL;
+
+-- Filtering by tag (GIN for array containment)
+CREATE INDEX idx_urls_tags ON urls USING GIN(tags);
+
+-- Background: Expiration cleanup
+CREATE INDEX idx_urls_expiring 
+    ON urls(expires_at) 
+    WHERE expires_at IS NOT NULL 
+    AND deleted_at IS NULL;</pre>
+      </div>
+
+      <h4>Key Design Decisions</h4>
+      <div class="callout extra">
+        <div class="callout-title">Covering Index on short_code (The Wow Moment)</div>
+        <p>The redirect lookup returns the long_url, redirect_type, and expires_at <strong>WITHOUT hitting the main table</strong>. This is pure index access — potentially shaving milliseconds off every request. At 100K QPS, that's significant. <mark class="gold">This is the kind of optimization that separates engineers who have tuned databases from those who've only designed them.</mark></p>
+      </div>
+      <ul style="padding-left:18px;margin:8px 0 14px;">
+        <li style="font-size:0.88rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>long_url_hash for dedup:</strong> Can't index VARCHAR(2048) efficiently. Hash it, index the hash.</li>
+        <li style="font-size:0.88rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>workspace_id for future multi-tenancy:</strong> Adding it later requires migration. Schema evolution wins.</li>
+        <li style="font-size:0.88rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Soft delete (deleted_at):</strong> We never reuse short codes. A deleted URL returns 404, but the code is still reserved.</li>
+      </ul>
+
+      <h4>Click Events: Async Event Flow</h4>
+      <div class="diagram-block">
+        <div class="diagram-header"><span class="diagram-label">Diagram · Click Event Flow</span><button class="code-copy" onclick="copyCode(this)" style="font-size:0.64rem;padding:3px 9px;">Copy</button></div>
+        <pre>Redirect Request
+      ↓
+  Return 301 immediately (don't block on analytics)
+      ↓
+  Async: Emit click event to Kafka/Kinesis
+      ↓
+  Consumer batches and aggregates
+      ↓
+  Write to url_stats every N seconds or N events</pre>
+      </div>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL · url_stats Table</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>-- This is NOT the hot path storage - it's the aggregated view
+CREATE TABLE url_stats (
+    short_code      CHAR(7) PRIMARY KEY,
+    total_clicks    BIGINT DEFAULT 0,
+    unique_visitors BIGINT DEFAULT 0,          -- From HyperLogLog
+    last_clicked_at TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ
+);
+-- For detailed analytics (country, device, referrer):
+-- Use ClickHouse or similar OLAP store, populated from event stream</pre>
+      </div>
+
+      <h4>Idempotency Storage (Production-Grade)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL · idempotency_keys</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>CREATE TABLE idempotency_keys (
+    key_hash        CHAR(64) PRIMARY KEY,       -- SHA-256 of user_id + key
+    response        JSONB NOT NULL,
+    status_code     SMALLINT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL,
+    expires_at      TIMESTAMPTZ NOT NULL        -- Auto-cleanup
+);
+-- Could also use Redis with TTL instead of PostgreSQL
+
+-- Why key_hash?
+-- Client-provided keys could be long or contain weird characters
+-- Hashing normalizes them
+-- Include user_id in hash so different users can use same key</pre>
+      </div>
+
+      <h4>Database Partitioning Strategy (Forward-Looking)</h4>
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">SQL · Partitioning Options</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre>-- Option 1: Time-based partitioning
+CREATE TABLE urls ( ... ) PARTITION BY RANGE (created_at);
+CREATE TABLE urls_2024_q1 PARTITION OF urls 
+    FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+-- Good for: Expiration cleanup, archival
+-- Bad for:  Short code lookup (need to search all partitions)
+
+-- Option 2: Hash-based partitioning by short_code
+-- PARTITION BY HASH (short_code);
+-- Good for: Lookup distribution
+-- Bad for:  User listing (need to fan out)</pre>
+      </div>
+      <div class="callout extra">
+        <div class="callout-title">My Recommendation: Start Unpartitioned</div>
+        <ul>
+          <li>If writes are the bottleneck → migrate to CockroachDB/Spanner</li>
+          <li>If reads are the bottleneck → add more read replicas + cache</li>
+          <li>If storage is the bottleneck → time-based partitioning + cold storage</li>
+        </ul>
+      </div>
+
+      <h4>Schema Evolution Considerations</h4>
+      <div class="callout extra">
+        <div class="callout-title">Future Fields Planned, Not Implemented</div>
+        <ul>
+          <li><code>password_hash</code> for protected URLs</li>
+          <li><code>ab_variants JSONB</code> for A/B testing redirects</li>
+          <li><code>geo_targets JSONB</code> for geo-based redirect logic</li>
+          <li><code>webhook_url</code> for click notifications</li>
+        </ul>
+        <p style="margin-top:8px;font-size:0.86rem;">I've made <code>metadata JSONB</code> extensible so we can prototype these without migrations.</p>
+      </div>
+
+      <h4>Migration Safety</h4>
+      <div class="callout extra">
+        <div class="callout-title">Production Migration Pattern</div>
+        <ul>
+          <li>Add new columns as NULLABLE first</li>
+          <li>Deploy code that writes to both old and new</li>
+          <li>Backfill old data</li>
+          <li>Deploy code that reads from new</li>
+          <li>Remove old column (optional, often leave it)</li>
+        </ul>
+        <p style="margin-top:8px;font-size:0.86rem;"><mark class="gold">Never run ALTER TABLE ... ADD COLUMN NOT NULL on a large table</mark> — it rewrites the whole table and locks.</p>
+      </div>
+
+      <div class="aomb">
+        <div class="aomb-title">AOMB Completeness Checklist — Verified (L6 requirements plus)</div>
+        <ul>
+          <li>Access pattern analysis table BEFORE schema design</li>
+          <li>Batch API for enterprise use case</li>
+          <li>301 vs 302 as configurable per URL</li>
+          <li>Covering index explained for hot path</li>
+          <li>Long URL hash for dedup efficiency</li>
+          <li>Click event flow architecture (async, Kafka, batching)</li>
+          <li>Partitioning strategy with pros/cons</li>
+          <li>Future schema evolution fields planned</li>
+          <li>Migration safety practices mentioned</li>
+          <li>Total count as separate endpoint (expensive query awareness)</li>
+          <li>HTTP 451 for legal takedowns (obscure but correct)</li>
+          <li>Idempotency semantics precisely defined</li>
+        </ul>
+      </div>
+
+      <div class="int-quote">
+        <span class="int-quote-label">Interviewer's Notes</span>
+        "Exceptional API and data model design. Access pattern-first thinking, covering indexes, async click processing, migration safety — this candidate has operated databases at scale. The 451 status code and batch API show attention to real-world edge cases. Strong hire signal."
+      </div>
+
+      <h4>The "Wow" Moments</h4>
+      <div class="wow">Covering index with INCLUDE clause — most candidates don't know this exists</div>
+      <div class="wow">"total_count is explicitly null by default" — understood O(n) cost of COUNT</div>
+      <div class="wow">Click event flow showing Kafka → batch aggregation → write — not just "increment a counter"</div>
+      <div class="wow">Schema evolution pattern with nullable-first and dual-write</div>
+      <div class="wow">Planned for future fields in metadata JSONB without implementing</div>
+
+      <div class="callout extra">
+        <div class="callout-title">What Separates This From L6</div>
+        <p>L6 designs a good schema with indexes. L7 designs for <strong>evolution</strong> — they plan for future fields, discuss migration safety, explain partitioning tradeoffs they'll face later, and show the async event architecture for high-write operations. They think in <mark class="gold">operational reality, not just correctness.</mark></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ PROGRESSION ══════════════ -->
+  <div class="section-header" id="progression">
+    <h3>Progression Summary</h3>
+  </div>
+  <table class="prog-table">
+    <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+    <tbody>
+      <tr><td>No Hire → Lean Hire</td><td>Defines endpoints with error codes, includes basic indexes, separates concerns</td></tr>
+      <tr><td>Lean Hire → Hire (L6)</td><td>Adds idempotency, cursor pagination, 301/302 reasoning, write amplification awareness, access pattern-driven design</td></tr>
+      <tr><td>Hire → Strong Hire (L7)</td><td>Access pattern analysis table first, covering indexes, batch API, async event architecture, partitioning strategy, schema evolution planning, migration safety patterns</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info" style="margin-top:16px;">
+    <div class="callout-title">The One Thing to Practice</div>
+    <p>Before designing any API or schema, write out a table of access patterns with frequency and latency requirements. Then design to optimize the top 2–3 patterns. Say this out loud: <strong>"Let me list my access patterns first, ordered by frequency."</strong></p>
+  </div>
+
+  <!-- KEY LESSON -->
+  <div class="key-lesson" id="key-lesson">
+    <div class="key-lesson-label">🎯 Key Lesson — Phase 3</div>
+    <p><strong>L5 engineers</strong> design schemas that store data correctly. <strong>L6 engineers</strong> design schemas that support access patterns efficiently. <strong>L7 engineers</strong> design schemas that can evolve safely and consider the full lifecycle — creation, operation, migration, and deprecation.</p>
+  </div>
+
+  <!-- ══════════════ DECISION DEEP DIVE ══════════════ -->
+  <div id="deep-dive">
+    <div class="deep-dive-header">
+      <div class="deep-dive-icon">🔬</div>
+      <div>
+        <h2>Decision Deep Dive: Short Code Generation</h2>
+        <p>A critical design decision that will come up in Phase 4. The problem: generate billions of unique 7-character codes across multiple servers simultaneously, with no coordination, no collisions, and no single point of failure.</p>
+      </div>
+    </div>
+
+    <!-- APPROACH 1 -->
+    <div class="approach-card" id="approach1">
+      <div class="approach-header" onclick="toggleApproach(this)">
+        <div>
+          <div class="approach-num">Approach 1</div>
+          <div class="approach-title">Random Generation with Collision Check</div>
+        </div>
+        <span class="approach-toggle">▾</span>
+      </div>
+      <div class="approach-body">
+        <p>Generate a random 7-character base62 string, check if it exists in DB, retry if collision.</p>
+        <h5>Benefits</h5>
+        <ul>
+          <li>Simple to implement</li>
+          <li>Codes are unpredictable (security)</li>
+          <li>No coordination between servers</li>
+        </ul>
+        <h5>Limitations</h5>
+        <ul>
+          <li>At 500M URLs, collision probability = 500M / 62⁷ ≈ <strong>0.014% per attempt</strong></li>
+          <li>At 10B URLs, collision probability ≈ <strong>2.8% per attempt</strong></li>
+          <li>Requires DB query on every creation</li>
+          <li>Under contention, retry storms possible</li>
+        </ul>
+        <h5>When to Use / When it Breaks</h5>
+        <p><strong>Use:</strong> Low-scale systems, when unpredictability is paramount. <strong>Breaks:</strong> At billions of URLs, collision rate becomes problematic. At high write QPS, the check-and-insert race condition causes failures.</p>
+        <h5>Operational Cost</h5>
+        <p>Low initially, but collision monitoring needed. Alert on retry rate.</p>
+        <h5>Interview Signal</h5>
+        <div class="signal-pair">
+          <div class="sig-bad">I'll just generate random codes and check the database</div>
+          <div class="sig-good">Random with collision check works initially, but at our scale of 500M URLs, collision probability is 0.014% per attempt, increasing over time. I'd use a pre-generated pool or counter-based approach instead.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPROACH 2 -->
+    <div class="approach-card" id="approach2">
+      <div class="approach-header" onclick="toggleApproach(this)">
+        <div>
+          <div class="approach-num">Approach 2</div>
+          <div class="approach-title">Auto-Increment Counter + Base62 Encoding</div>
+        </div>
+        <span class="approach-toggle">▾</span>
+      </div>
+      <div class="approach-body">
+        <p>Use DB auto-increment ID, encode to base62. ID 1 → "0000001", ID 1,000,000 → "4c92".</p>
+        <h5>Benefits</h5>
+        <ul>
+          <li>Zero collisions guaranteed</li>
+          <li>Very simple</li>
+          <li>Codes are sequential/sortable</li>
+        </ul>
+        <h5>Limitations</h5>
+        <ul>
+          <li><strong>Predictable</strong> — users can enumerate all URLs</li>
+          <li>DB is single point of coordination</li>
+          <li>Scaling writes requires distributed counter</li>
+          <li>Sequential codes reveal business metrics (competitor can see URL count)</li>
+        </ul>
+        <h5>When to Use / When it Breaks</h5>
+        <p><strong>Use:</strong> Internal tools where predictability doesn't matter. <strong>Breaks:</strong> Security risk in public systems. DB becomes bottleneck at high write QPS.</p>
+        <h5>Operational Cost</h5>
+        <p>Low, but security review needed for public exposure.</p>
+        <h5>Interview Signal</h5>
+        <div class="signal-pair">
+          <div class="sig-bad">Auto-increment is simple and efficient</div>
+          <div class="sig-good">Auto-increment guarantees uniqueness but has two problems: predictability (security) and single coordination point (scale). I'd layer randomization on top or use a distributed ID generator.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPROACH 3 -->
+    <div class="approach-card" id="approach3">
+      <div class="approach-header" onclick="toggleApproach(this)">
+        <div>
+          <div class="approach-num">Approach 3</div>
+          <div class="approach-title">Pre-Generated Pool (Key Service)</div>
+        </div>
+        <span class="approach-toggle">▾</span>
+      </div>
+      <div class="approach-body">
+        <p>Background service pre-generates millions of short codes, stores in a pool. Workers claim codes from pool on-demand.</p>
+        <h5>Benefits</h5>
+        <ul>
+          <li>Zero collision at runtime</li>
+          <li>No coordination on hot path</li>
+          <li>Codes can be randomized</li>
+          <li>Predictable generation capacity</li>
+        </ul>
+        <h5>Limitations</h5>
+        <ul>
+          <li>New service to maintain</li>
+          <li>Pool exhaustion risk if generation fails</li>
+          <li>Must handle reclaiming unused codes (worker crash)</li>
+          <li>More complex operationally</li>
+        </ul>
+        <h5>When to Use / When it Breaks</h5>
+        <p><strong>Use:</strong> High-scale systems where generation throughput is critical. <strong>Breaks:</strong> If pool generation fails, service degrades. Pool must be geo-distributed for multi-region.</p>
+        <h5>Operational Cost</h5>
+        <p>Medium — need to monitor pool depth, generation rate, claim/reclaim logic.</p>
+        <h5>Interview Signal</h5>
+        <div class="signal-pair">
+          <div class="sig-bad">Pre-generate codes and put them in a queue</div>
+          <div class="sig-good">Pre-generated pool with two workers: generator (background) and claimer (API). Monitor pool depth — alert at &lt;10% capacity. Codes claimed but not used within 5 minutes are reclaimed. Pool is sharded by region.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPROACH 4 -->
+    <div class="approach-card" id="approach4">
+      <div class="approach-header" onclick="toggleApproach(this)">
+        <div>
+          <div class="approach-num">Approach 4</div>
+          <div class="approach-title">Distributed Counter with Range Allocation</div>
+        </div>
+        <span class="approach-toggle">▾</span>
+      </div>
+      <div class="approach-body">
+        <p>Central service allocates counter ranges (e.g., 1–10,000) to each worker. Worker uses its range sequentially, requests new range when exhausted.</p>
+        <h5>Benefits</h5>
+        <ul>
+          <li>No coordination on hot path (within range)</li>
+          <li>Mathematically unique</li>
+          <li>Simple within each worker</li>
+          <li>Resilient to central service failure (work through allocated range)</li>
+        </ul>
+        <h5>Limitations</h5>
+        <ul>
+          <li>Range allocation is coordination point (infrequent)</li>
+          <li>Unused ranges waste keyspace (worker crash)</li>
+          <li>Still sequential within range (predictability concern)</li>
+        </ul>
+        <h5>When to Use / When it Breaks</h5>
+        <p><strong>Use:</strong> High-scale systems where a small number of servers need guaranteed uniqueness. <strong>Breaks:</strong> If many workers start simultaneously, range allocation can be bottleneck. Wasted keyspace from crashed workers.</p>
+        <h5>Operational Cost</h5>
+        <p>Low-medium — monitor range allocation latency, wasted range percentage.</p>
+        <h5>Interview Signal</h5>
+        <div class="signal-pair">
+          <div class="sig-bad">Each server gets a range of IDs</div>
+          <div class="sig-good">Range allocation with 10,000-ID chunks. Central service backed by Postgres sequence (or etcd). Workers request new range when 80% exhausted — overlapping to prevent gaps. Apply random shuffle to each range for unpredictability.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPROACH 5 -->
+    <div class="approach-card" id="approach5">
+      <div class="approach-header" onclick="toggleApproach(this)">
+        <div>
+          <div class="approach-num">Approach 5</div>
+          <div class="approach-title">Snowflake-style ID + Truncate</div>
+        </div>
+        <span class="approach-toggle">▾</span>
+      </div>
+      <div class="approach-body">
+        <p>Generate Snowflake ID (timestamp + machine ID + sequence), hash/truncate to 7 characters.</p>
+        <h5>Benefits</h5>
+        <ul>
+          <li>Distributed, no coordination</li>
+          <li>Time-sortable (if preserving timestamp portion)</li>
+          <li>Proven at scale (Twitter)</li>
+        </ul>
+        <h5>Limitations</h5>
+        <ul>
+          <li>Hash/truncation reintroduces collision possibility</li>
+          <li>Requires machine ID coordination</li>
+          <li>7 chars may not have enough entropy</li>
+        </ul>
+        <h5>When to Use / When it Breaks</h5>
+        <p><strong>Use:</strong> When you also need globally unique, time-sortable internal IDs and can tolerate some collision risk on short codes. <strong>Breaks:</strong> Hash collisions at very high scale. Machine ID coordination in ephemeral containers.</p>
+        <h5>Operational Cost</h5>
+        <p>Medium — need machine ID assignment service, clock sync monitoring.</p>
+        <h5>Interview Signal</h5>
+        <div class="signal-pair">
+          <div class="sig-bad">Use Snowflake IDs</div>
+          <div class="sig-good">Snowflake gives us unique internal IDs, but truncating to 7 chars base62 reintroduces collisions. I'd use Snowflake for the id column and a separate mechanism (pre-generated pool) for short codes.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARISON TABLE -->
+    <div class="section-header" id="comparison">
+      <h3>Comparison Table</h3>
+    </div>
+    <table class="comp-table">
+      <thead>
+        <tr><th>Approach</th><th>Collision Risk</th><th>Coordination</th><th>Predictability</th><th>Complexity</th><th>Best For</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Random + Check</td><td class="mid">Low→Medium</td><td class="mid">Per-write DB</td><td class="good">Unpredictable</td><td class="low">Low</td><td>Small scale</td></tr>
+        <tr><td>Auto-Increment</td><td class="low">Zero</td><td class="bad">DB bottleneck</td><td class="bad">Predictable ❌</td><td class="low">Low</td><td>Internal tools</td></tr>
+        <tr><td>Pre-Generated Pool</td><td class="low">Zero</td><td class="low">None (hot path)</td><td class="good">Unpredictable</td><td class="mid">Medium</td><td>High-scale public</td></tr>
+        <tr><td>Range Allocation</td><td class="low">Zero</td><td class="mid">Infrequent</td><td class="mid">Shuffleable</td><td class="mid">Medium</td><td>Moderate scale</td></tr>
+        <tr><td>Snowflake + Truncate</td><td class="mid">Low</td><td class="mid">Machine ID</td><td class="good">Unpredictable</td><td class="mid">Medium</td><td>When internal ID needed too</td></tr>
+      </tbody>
+    </table>
+
+    <!-- DECISION SCRIPT -->
+    <div class="section-header" id="decision-script">
+      <h3>Decision Framework Script (6 Steps)</h3>
+    </div>
+
+    <div class="framework-box">
+      <div class="framework-title">⚙️ The Decision Framework</div>
+      <p>"For short code generation, I need: uniqueness guarantee (zero collisions), low latency (&lt;10ms on hot path), unpredictable codes (security), and horizontal scalability (multi-region).</p>
+      <p>I can rule out auto-increment because predictable codes are a security risk for a public service. I can rule out random with check because at 500M+ URLs, collision checks add latency and complexity.</p>
+      <p>Between pre-generated pool and range allocation, pre-generated pool gives me unpredictability built-in, while range allocation would require an additional shuffle step.</p>
+      <p>For THIS system, I choose pre-generated pool because it decouples generation from the API hot path, gives us unpredictable codes, and lets us horizontally scale writers without coordination.</p>
+      <p>The tradeoff is operational complexity — I need to monitor pool depth and have a reclaim mechanism. I'd mitigate by using Redis sorted sets for the pool (fast SPOP), alerting when pool &lt; 1M codes, and auto-reclaiming unclaimed codes after 5 minutes.</p>
+      <p>If our write volume dropped significantly and we valued simplicity over performance, I'd switch to random-with-check and a bloom filter for fast collision detection."</p>
+    </div>
+
+    <div class="section-header" style="margin-top:32px;">
+      <h3>Complete Strong Hire Script</h3>
+    </div>
+    <div class="script-block">
+      <p>"Short code generation is a critical decision. Let me walk through the options.</p>
+      <p>I need: zero collisions (non-negotiable), sub-10ms claim latency (on the API hot path), unpredictable codes (security — can't enumerate URLs), and multi-region support.</p>
+      <p><strong>Option 1: Random generation with collision check.</strong> Simple, but at 500M URLs in a 62⁷ ≈ 3.5 trillion keyspace, I have 0.014% collision per attempt. As we grow to billions, this becomes worse. Each collision requires retry and extra DB round-trip. At 2K QPS writes, that's meaningful latency variance. I'd only use this for a small-scale internal tool.</p>
+      <p><strong>Option 2: Auto-increment with base62 encoding.</strong> Zero collisions, dead simple. But sequential codes reveal business metrics — a competitor could monitor our URL count. And enumeration attacks become trivial. Not acceptable for a public service.</p>
+      <p><strong>Option 3: Pre-generated code pool.</strong> A background service generates millions of unique codes and puts them in Redis (using SADD). When the API creates a URL, it does SPOP to claim a code — O(1), ~1ms. No collision checking, no coordination. The generation service ensures uniqueness by using a counter internally, then applying a format-preserving shuffle or hashing for unpredictability.</p>
+      <p><strong>Option 4: Range allocation.</strong> Similar to #3, but workers claim ranges from a central counter. More coordination, but simpler reclaim logic.</p>
+      <p><strong>My choice: Pre-generated pool.</strong> Here's the architecture:</p>
+      <p>Generator service (background, singleton or leader-elected): Uses a persistent counter (Postgres sequence), generates codes by encoding counter to base62 and applying a secret permutation (format-preserving encryption). Pushes to Redis set. Target: keep 10M codes available per region.</p>
+      <p>API hot path: SPOP from Redis to claim code. If Redis is unavailable, fallback to synchronous generation (degrade to random-with-check).</p>
+      <p>Reclaim job: If a code is claimed but not persisted to DB within 5 minutes (worker crashed), return it to pool.</p>
+      <p>Multi-region: Each region has its own Redis pool. Generator uses region-specific counter ranges to guarantee global uniqueness.</p>
+      <p>Monitoring: Alert if pool &lt; 1M codes. Dashboard shows generation rate, claim rate, pool depth. Error budget on fallback path.</p>
+      <p>Tradeoff acknowledged: This is more complex than random-with-check. But at our scale, the latency consistency and collision guarantee are worth the operational cost. If we were building a hobby project, I'd start with random-with-check and migrate later."</p>
+    </div>
+
+    <div class="callout deep">
+      <div class="callout-title">Ready for Phase 4</div>
+      <p>The key insight from Phase 3: <strong>the redirect path must be as simple as possible</strong> (cache → index-only lookup → return), while complexity is pushed to async paths (analytics) and less frequent operations (create, list). This directly shapes the high-level architecture coming next.</p>
+    </div>
+  </div>
+
+</main>
+
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+// Progress bar
+const bar = document.getElementById('progress-bar');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+  bar.style.width = pct + '%';
+  document.getElementById('back-to-top').classList.toggle('visible', h.scrollTop > 300);
+  updateNav();
+});
+
+function updateNav() {
+  const sections = document.querySelectorAll('[id]');
+  const navLinks = document.querySelectorAll('.nav-item a');
+  let current = '';
+  sections.forEach(s => { if (s.getBoundingClientRect().top < 130) current = s.id; });
+  navLinks.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + current); });
+}
+
+// Tier card toggle
+function toggleCard(header) { header.parentElement.classList.toggle('collapsed'); }
+
+// Approach toggle
+function toggleApproach(header) { header.parentElement.classList.toggle('collapsed'); }
+
+// Copy code
+function copyCode(btn) {
+  const pre = btn.closest('.code-block, .diagram-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+// Hamburger
+const ham = document.getElementById('hamburger');
+const sidebar = document.getElementById('sidebar');
+ham.addEventListener('click', () => sidebar.classList.toggle('open'));
+document.addEventListener('click', e => {
+  if (!sidebar.contains(e.target) && !ham.contains(e.target)) sidebar.classList.remove('open');
+});
+
+// Search
+document.getElementById('sidebar-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) {
+    document.querySelectorAll('.nav-item, .nav-group').forEach(el => el.classList.remove('hidden'));
+    return;
+  }
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('hidden', !item.textContent.toLowerCase().includes(q));
+  });
+  document.querySelectorAll('.nav-group').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.nav-item')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
