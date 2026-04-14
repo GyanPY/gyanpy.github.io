@@ -42,6 +42,20 @@
           "title": "extra.html",
           "file": "pages/interview/system-design/rate-limiter/extra.html"
         }
+      ],
+        "Url shortner": [
+        {
+          "title": "1",
+          "file": "pages/interview/system-design/url-shortner/1.html"
+        },
+        {
+          "title": "2",
+          "file": "pages/interview/system-design/url-shortner/2.html"
+        },
+        {
+          "title": "3",
+          "file": "pages/interview/system-design/url-shortner/3.html"
+        }
       ]
     }
   }
