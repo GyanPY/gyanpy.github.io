@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis — Staff Engineer Deep Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --red: #E53935;
+    --red-dark: #B71C1C;
+    --red-light: #FFEBEE;
+    --red-mid: #EF9A9A;
+    --orange: #FF6D00;
+    --amber: #FFB300;
+    --amber-light: #FFF8E1;
+    --green: #2E7D32;
+    --green-light: #E8F5E9;
+    --blue: #1565C0;
+    --blue-light: #E3F2FD;
+    --teal: #00695C;
+    --teal-light: #E0F2F1;
+    --purple: #6A1B9A;
+    --purple-light: #F3E5F5;
+    --bg: #0D0D0D;
+    --bg2: #161616;
+    --bg3: #1E1E1E;
+    --bg4: #252525;
+    --surface: #2A2A2A;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #F0F0F0;
+    --text2: #AAAAAA;
+    --text3: #707070;
+    --accent: #E53935;
+    --accent2: #FF6D00;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Outfit', sans-serif;
+    --serif: 'DM Serif Display', serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.75;
+    min-height: 100vh;
+  }
+
+  /* NAV */
+  .sidenav {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 240px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    z-index: 100;
+    padding: 24px 0;
+  }
+  .sidenav-logo {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .sidenav-logo .logo-mark {
+    font-family: var(--serif);
+    font-size: 28px;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .sidenav-logo .logo-sub {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-top: 4px;
+  }
+  .nav-section-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 12px 20px 6px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 20px;
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 400;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover, .nav-item.active {
+    color: var(--text);
+    background: rgba(229,57,53,0.08);
+    border-left-color: var(--accent);
+  }
+  .nav-item .nav-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    min-width: 18px;
+  }
+
+  /* MAIN */
+  .main {
+    margin-left: 240px;
+    min-height: 100vh;
+  }
+
+  /* HERO */
+  .hero {
+    background: linear-gradient(135deg, #1a0000 0%, #0D0D0D 50%, #0a0a1a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 80px 64px 64px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: 'REDIS';
+    position: absolute;
+    right: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--serif);
+    font-size: 220px;
+    color: rgba(229,57,53,0.04);
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+  }
+  .hero-eyebrow {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .hero-title {
+    font-family: var(--serif);
+    font-size: 56px;
+    line-height: 1.1;
+    color: var(--text);
+    margin-bottom: 20px;
+    max-width: 700px;
+  }
+  .hero-title span { color: var(--accent); }
+  .hero-desc {
+    font-size: 16px;
+    color: var(--text2);
+    max-width: 580px;
+    line-height: 1.7;
+    margin-bottom: 32px;
+  }
+  .hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--mono);
+  }
+  .badge-red { background: rgba(229,57,53,0.15); color: #EF9A9A; border: 1px solid rgba(229,57,53,0.3); }
+  .badge-orange { background: rgba(255,109,0,0.12); color: #FFAB76; border: 1px solid rgba(255,109,0,0.3); }
+  .badge-blue { background: rgba(21,101,192,0.15); color: #90CAF9; border: 1px solid rgba(21,101,192,0.3); }
+  .badge-green { background: rgba(46,125,50,0.15); color: #A5D6A7; border: 1px solid rgba(46,125,50,0.3); }
+  .badge-purple { background: rgba(106,27,154,0.15); color: #CE93D8; border: 1px solid rgba(106,27,154,0.3); }
+
+  /* CONTENT */
+  .content { max-width: 1060px; padding: 0 64px 120px; }
+
+  /* PILLARS */
+  .pillar {
+    padding: 72px 0 32px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pillar:last-child { border-bottom: none; }
+
+  .pillar-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 40px;
+  }
+  .pillar-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(229,57,53,0.1);
+    border: 1px solid rgba(229,57,53,0.25);
+    padding: 4px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    margin-top: 8px;
+  }
+  .pillar-title {
+    font-family: var(--serif);
+    font-size: 36px;
+    line-height: 1.2;
+    color: var(--text);
+  }
+  .pillar-title em { color: var(--accent); font-style: italic; }
+
+  /* TYPOGRAPHY */
+  h3 {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 36px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 24px 0 10px;
+  }
+  p { margin-bottom: 14px; color: var(--text2); line-height: 1.8; }
+  p strong { color: var(--text); font-weight: 600; }
+  p em { color: var(--accent2); font-style: italic; }
+
+  /* CALLOUTS */
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-left: 3px solid;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .callout-title {
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .callout.fire {
+    background: rgba(229,57,53,0.08);
+    border-color: var(--accent);
+    color: #FFCDD2;
+  }
+  .callout.fire .callout-title { color: var(--accent); }
+  .callout.lightning {
+    background: rgba(255,180,0,0.07);
+    border-color: var(--amber);
+    color: #FFF9C4;
+  }
+  .callout.lightning .callout-title { color: var(--amber); }
+  .callout.ruler {
+    background: rgba(21,101,192,0.08);
+    border-color: #42A5F5;
+    color: #BBDEFB;
+  }
+  .callout.ruler .callout-title { color: #64B5F6; }
+  .callout.key {
+    background: rgba(46,125,50,0.08);
+    border-color: #66BB6A;
+    color: #C8E6C9;
+  }
+  .callout.key .callout-title { color: #81C784; }
+  .callout.info {
+    background: rgba(106,27,154,0.08);
+    border-color: #AB47BC;
+    color: #E1BEE7;
+  }
+
+  /* ASCII / CODE BLOCKS */
+  .ascii-block {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .ascii-block pre {
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: #B0BEC5;
+    white-space: pre;
+  }
+  .ascii-block pre .red { color: #EF9A9A; }
+  .ascii-block pre .green { color: #A5D6A7; }
+  .ascii-block pre .blue { color: #90CAF9; }
+  .ascii-block pre .amber { color: #FFE082; }
+  .ascii-block pre .purple { color: #CE93D8; }
+  .ascii-block pre .dim { color: #546E7A; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--bg4);
+    color: #EF9A9A;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 20px 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead th {
+    background: var(--bg3);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border: 1px solid var(--border2);
+    text-align: left;
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  .td-good { color: #A5D6A7; }
+  .td-bad { color: #EF9A9A; }
+  .td-warn { color: #FFE082; }
+  .td-bold { color: var(--text); font-weight: 600; }
+
+  /* GRID CARDS */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .card {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .card-icon { font-size: 22px; margin-bottom: 10px; }
+  .card-title { font-weight: 600; font-size: 15px; color: var(--text); margin-bottom: 8px; }
+  .card-body { font-size: 13.5px; color: var(--text2); line-height: 1.65; }
+
+  /* SCENARIO BLOCKS */
+  .scenario {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .scenario-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .scenario-title .stag {
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+  }
+  .stag-red { background: rgba(229,57,53,0.2); color: #EF9A9A; }
+  .stag-amber { background: rgba(255,180,0,0.15); color: #FFE082; }
+  .stag-green { background: rgba(46,125,50,0.2); color: #A5D6A7; }
+  .scenario-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 12px;
+  }
+  @media (max-width: 700px) { .scenario-grid { grid-template-columns: 1fr; } }
+  .scenario-item label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 5px;
+  }
+  .scenario-item p { font-size: 13.5px; color: var(--text2); margin: 0; }
+
+  /* INTERVIEW */
+  .interview-q {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .interview-q .q-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .interview-q .q-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 14px;
+  }
+  .interview-q .a-text {
+    font-size: 13.5px;
+    color: var(--text2);
+    line-height: 1.75;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+
+  /* KEY TAKEAWAY */
+  .takeaway {
+    background: linear-gradient(90deg, rgba(229,57,53,0.12), rgba(229,57,53,0.03));
+    border: 1px solid rgba(229,57,53,0.25);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-top: 32px;
+  }
+  .takeaway-label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .takeaway p {
+    font-size: 14.5px;
+    color: var(--text);
+    font-weight: 500;
+    margin: 0;
+    line-height: 1.7;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .sidenav { display: none; }
+    .main { margin-left: 0; }
+    .hero, .content { padding-left: 24px; padding-right: 24px; }
+    .hero-title { font-size: 38px; }
+  }
+
+  ul { margin: 10px 0 14px 20px; }
+  li { color: var(--text2); margin-bottom: 6px; line-height: 1.7; font-size: 14.5px; }
+  li strong { color: var(--text); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+  .step-list { counter-reset: steps; list-style: none; margin-left: 0; }
+  .step-list li {
+    counter-increment: steps;
+    padding: 12px 16px 12px 52px;
+    position: relative;
+    border-left: 2px solid var(--border2);
+    margin-bottom: 8px;
+  }
+  .step-list li::before {
+    content: counter(steps);
+    position: absolute;
+    left: 16px;
+    top: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .version-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(255,180,0,0.15);
+    color: #FFE082;
+    border: 1px solid rgba(255,180,0,0.3);
+    padding: 1px 7px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDE NAV -->
+<nav class="sidenav">
+  <div class="sidenav-logo">
+    <div class="logo-mark">Redis</div>
+    <div class="logo-sub">Staff Engineer Guide</div>
+  </div>
+  <div class="nav-section-label">Pillars</div>
+  <a href="#p1" class="nav-item"><span class="nav-num">01</span>Core Concepts</a>
+  <a href="#p2" class="nav-item"><span class="nav-num">02</span>Architecture</a>
+  <a href="#p3" class="nav-item"><span class="nav-num">03</span>Trade-offs</a>
+  <a href="#p4" class="nav-item"><span class="nav-num">04</span>Failure Modes</a>
+  <a href="#p5" class="nav-item"><span class="nav-num">05</span>Scaling</a>
+  <a href="#p6" class="nav-item"><span class="nav-num">06</span>Real-World Decisions</a>
+  <a href="#p7" class="nav-item"><span class="nav-num">07</span>Google-Scale</a>
+  <a href="#p8" class="nav-item"><span class="nav-num">08</span>Interview Simulation</a>
+  <div class="nav-section-label" style="margin-top:16px;">Legend</div>
+  <div style="padding: 0 16px; font-size: 12px; color: var(--text3);">
+    <div style="margin-bottom:6px;">🔥 Common mistake</div>
+    <div style="margin-bottom:6px;">⚡ L7/L8 differentiator</div>
+    <div style="margin-bottom:6px;">📐 Back-of-envelope</div>
+    <div>🔑 Key takeaway</div>
+  </div>
+</nav>
+
+<div class="main">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-eyebrow">Senior Staff Engineer · Interview Prep · L7/L8 Signal</div>
+  <h1 class="hero-title">Redis: A Complete<br><span>Deep Dive</span></h1>
+  <p class="hero-desc">From first principles to Google-scale. Eight pillars covering architecture, failure modes, scaling strategies, and interview simulation for the Senior Staff level.</p>
+  <div class="hero-badges">
+    <span class="badge badge-red">Redis 7.4 (2024)</span>
+    <span class="badge badge-orange">In-Memory Data Store</span>
+    <span class="badge badge-blue">CP / AP configurable</span>
+    <span class="badge badge-green">Sub-millisecond latency</span>
+    <span class="badge badge-purple">Multi-model since 7.x</span>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 1 — CORE CONCEPTS
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p1">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 01</span>
+    <h2 class="pillar-title">Core Concepts &amp; <em>Mental Models</em></h2>
+  </div>
+
+  <h3>The World Before Redis</h3>
+  <p>Before Redis (2009), caching was largely done with <strong>Memcached</strong> — a flat key-value store that could only hold strings. Application data structures like leaderboards, session graphs, or rate-limit counters had to be emulated awkwardly in the application layer, requiring multiple round-trips and complex client-side logic. Relational databases handled every read, even for hot data that never changed, causing contention and latency spikes under high concurrency.</p>
+  <p>The fundamental problem: <strong>disk I/O is 1,000–10,000x slower than RAM I/O</strong>. Any database designed primarily around disk storage — even with a warm buffer pool — must pay the latency cost of disk seek + OS page fault on cache misses. For session data, counters, queues, and sorted sets, this cost is unacceptable at scale.</p>
+
+  <h3>The Core Abstraction</h3>
+  <p>Redis's central insight is to treat <strong>data structures as first-class citizens</strong>, not just opaque byte blobs. Rather than storing a counter as a JSON string that must be deserialized → incremented → re-serialized → written back (three round-trips, race-prone), Redis provides an <code>INCR</code> command that performs an atomic increment server-side in a single command. This server-side computation on rich types is what makes Redis more than a cache — it is a <strong>Remote Data Structure Server</strong>.</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">String</div>
+      <div class="card-body">Binary-safe, max 512MB. Implements atomic integers/floats via INCR/INCRBYFLOAT. Foundation for all other types internally. Encoded as int, embstr, or raw depending on value.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Hash</div>
+      <div class="card-body">Field-value map. Stored as listpack (ziplist) up to 128 fields/64 bytes, then converted to hashtable. Perfect for object storage with partial-field access.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">List</div>
+      <div class="card-body">Doubly-linked list (listpack for small sizes). O(1) push/pop from both ends. LMPOP, BLMOVE added in 7.x for atomic multi-list operations.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Set</div>
+      <div class="card-body">Unordered unique collection. Intset encoding for integer-only sets (very space-efficient). SINTERCARD in 7.0 computes intersection count without materializing the set.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Sorted Set (ZSet)</div>
+      <div class="card-body">Set + score, ordered by score. skiplist + hashtable dual encoding. O(log N) add/rank queries. Foundation for leaderboards, priority queues, range queries by score.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Stream <span class="version-tag">5.0+</span></div>
+      <div class="card-body">Append-only log with consumer groups. Kafka-lite for intra-service messaging. Supports XADD, XREAD, XACK with persistent consumer group state.</div>
+    </div>
+  </div>
+
+  <h3>Fundamental Guarantees (and Non-Guarantees)</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Guarantee</th><th>What Redis Provides</th><th>What It Does NOT Provide</th></tr></thead>
+    <tbody>
+      <tr><td class="td-bold">Atomicity (single cmd)</td><td class="td-good">Every single command is atomic — no partial execution</td><td class="td-bad">Multi-key transactions across shards are NOT atomic in Cluster mode</td></tr>
+      <tr><td class="td-bold">Single-threaded cmd execution</td><td class="td-good">Commands are serialized in a single event loop (pre-7.0 I/O model). No data races on a single key.</td><td class="td-bad">Does NOT mean Redis uses one CPU core for everything; I/O threads exist since 6.0</td></tr>
+      <tr><td class="td-bold">Sub-millisecond latency</td><td class="td-good">p99 &lt; 1ms for typical workloads on local network with in-memory data</td><td class="td-bad">Does NOT guarantee latency under GC pressure, fork during RDB, or large key scans</td></tr>
+      <tr><td class="td-bold">Persistence (optional)</td><td class="td-good">RDB snapshots + AOF log provide durability options. Redis 7.4 adds LOGLEVEL per channel for AOF</td><td class="td-bad">fsync=everysec risks losing up to 1 second of writes on crash</td></tr>
+      <tr><td class="td-bold">Replication</td><td class="td-good">Async replication to replicas; partial resync (PSYNC2) on reconnect</td><td class="td-bad">Does NOT guarantee zero data loss; replication lag is real</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Invariants That Must Always Hold</h3>
+  <ul>
+    <li><strong>Single-writer invariant:</strong> Only the master/primary accepts writes in a given slot range. No two nodes can accept writes for the same key simultaneously in a correctly configured cluster (preventing split-brain requires sentinel/cluster mechanisms).</li>
+    <li><strong>Key expiry monotonicity:</strong> Once a key's TTL expires, it must never return a valid value to a client. Redis enforces this lazily (on access) and actively (via a background cycle), but the invariant must be upheld even when replicas serve reads.</li>
+    <li><strong>Type safety:</strong> A key has exactly one type. A LPUSH to a key of type String returns a WRONGTYPE error. Type metadata is stored per-key in the dict entry.</li>
+    <li><strong>Cluster slot ownership:</strong> Each hash slot (0–16383) is owned by exactly one shard at any moment. MOVED/ASK redirections guide clients to the correct node.</li>
+  </ul>
+
+  <h3>Mental Model: Redis Architecture Snapshot</h3>
+  <div class="ascii-block"><pre>
+<span class="dim">┌─────────────────────────────────────────────────────────┐</span>
+<span class="dim">│</span>                   <span class="red">REDIS SERVER PROCESS</span>                   <span class="dim">│</span>
+<span class="dim">│</span>                                                         <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">┌───────────────────────────────────────────────────┐</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  <span class="amber">Event Loop (ae — Async Event Library)</span>            <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  <span class="blue">│ File Events  │</span>  <span class="amber">│ Time Events  │</span>  <span class="green">│  AOF     │</span>  <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  <span class="blue">│ (epoll/kqueue│</span>  <span class="amber">│ (cron jobs   │</span>  <span class="green">│  flush   │</span>  <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  <span class="blue">│ /select)     │</span>  <span class="amber">│  keyexpiry   │</span>  <span class="green">│  thread  │</span>  <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">│</span>  └──────┬──────┘  └─────────────┘  └──────────┘  <span class="blue">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="blue">└─────────┼─────────────────────────────────────────┘</span>  <span class="dim">│</span>
+<span class="dim">│</span>           │                                             <span class="dim">│</span>
+<span class="dim">│</span>     <span class="red">Command Dispatcher</span>                                  <span class="dim">│</span>
+<span class="dim">│</span>           │                                             <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">┌────────▼────────────────────────────────────────┐</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">│</span>         <span class="green">In-Memory Data Store (Keyspace)</span>          <span class="green">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">│</span>  ┌──────────┐  ┌──────────┐  ┌───────────────┐  <span class="green">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">│</span>  <span class="green">│ dict     │</span>  <span class="green">│  expires  │</span>  <span class="green">│ redisObject   │</span>  <span class="green">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">│</span>  <span class="green">│ (main KV)│</span>  <span class="green">│  (TTL map)│</span>  <span class="green">│ type+encoding │</span>  <span class="green">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">│</span>  └──────────┘  └──────────┘  └───────────────┘  <span class="green">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="green">└─────────────────────────────────────────────────┘</span>  <span class="dim">│</span>
+<span class="dim">│</span>                                                         <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">┌─────────────────────────────────────────────────┐</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">│</span>     <span class="amber">Persistence Layer</span>                           <span class="amber">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">│</span>  RDB (point-in-time snapshot via fork)           <span class="amber">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">│</span>  AOF (append-only file, fsync configurable)       <span class="amber">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">│</span>  Hybrid RDB+AOF (Redis 4.0+)                     <span class="amber">│</span>  <span class="dim">│</span>
+<span class="dim">│</span>  <span class="amber">└─────────────────────────────────────────────────┘</span>  <span class="dim">│</span>
+<span class="dim">└─────────────────────────────────────────────────────────┘</span>
+</pre></div>
+
+  <div class="callout fire">
+    <div class="callout-title">🔥 Common Interview Mistake</div>
+    Candidates say "Redis is single-threaded" without qualification. Since Redis 6.0, <strong>I/O threads</strong> handle network reads/writes in parallel, but <strong>command execution</strong> remains single-threaded. Since Redis 7.0, some background tasks also multi-thread. Confusing these layers loses credibility instantly.
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-title">⚡ L7/L8 Differentiator</div>
+    Explain the <strong>redisObject</strong> structure: 4-bit type + 4-bit encoding + 24-bit LRU + refcount + *ptr. The encoding field is how Redis automatically switches from listpack → skiplist or intset → hashtable as data grows. This adaptive encoding is central to Redis's memory efficiency and is rarely discussed at L5/L6 level.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Redis's power comes not from being an in-memory store, but from executing rich data-structure operations server-side atomically — eliminating round-trips and race conditions that plague client-side cache patterns.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 2 — ARCHITECTURE
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p2">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 02</span>
+    <h2 class="pillar-title">Architecture <em>Deep Dive</em></h2>
+  </div>
+
+  <h3>Internal Components</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">ae Event Loop</div>
+      <div class="card-body">The heart of Redis. A single-threaded event multiplexer built on epoll (Linux), kqueue (BSD/macOS), or select (fallback). Processes file events (client I/O) and time events (background tasks). All command execution happens here — no locks needed for data access.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">I/O Threads (6.0+)</div>
+      <div class="card-body">Configurable thread pool that handles network read/write syscalls in parallel. The main thread still dispatches commands serially. Enabled via <code>io-threads N</code>. Provides ~2–3× throughput improvement on multi-core machines with heavy network I/O.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Command Table</div>
+      <div class="card-body">A static hash table mapping command names to handler functions, arity, flags (write/read/admin/pubsub), and first/last/step key arguments. ACL, cluster slot routing, and command statistics all rely on this metadata.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Database (redisDb)</div>
+      <div class="card-body">Redis supports 16 logical databases (db 0–15) by default. Each is a struct containing: dict (main keyspace), dict (expires/TTLs), avg_ttl, and slot-to-keys mapping for cluster mode. SELECT N switches database context.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Replication Subsystem</div>
+      <div class="card-body">Manages replica handshake (PSYNC2 protocol), backlog buffer (for partial resyncs), replication offset tracking, and async propagation of write commands to replicas. Backlog default: 1MB — undersized for high-write workloads.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Persistence Engine</div>
+      <div class="card-body">RDB: fork() + copy-on-write snapshot. AOF: write-ahead log with configurable fsync policy (always/everysec/no). Hybrid mode: AOF file starts with RDB snapshot then appends commands. AOF rewrite compacts the log in background.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Cluster Bus</div>
+      <div class="card-body">A gossip protocol over a separate port (data port + 10000) for node discovery, failure detection, and slot migration announcements. Uses binary protocol for efficiency. Every node knows the full cluster topology.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Lua / Functions Engine</div>
+      <div class="card-body">Embeds Lua 5.1 (via LuaJIT in some builds) for server-side scripting. Redis 7.0 introduced Redis Functions, which are persistent, named Lua (or future engine) scripts stored in the keyspace — replacing ephemeral EVAL scripts.</div>
+    </div>
+  </div>
+
+  <h3>Write Path — Full Data Flow</h3>
+  <div class="ascii-block"><pre>
+<span class="blue">Client</span>                    <span class="red">Redis Primary</span>                  <span class="green">Replica</span>
+  │                            │                              │
+  │──<span class="amber"> TCP: "SET foo bar\r\n"</span>──►│                              │
+  │                            │ 1. epoll/kqueue fires file    │
+  │                            │    event on client fd         │
+  │                            │                              │
+  │                            │ 2. Read into query buffer    │
+  │                            │    (client.querybuf)         │
+  │                            │                              │
+  │                            │ 3. Parse RESP protocol       │
+  │                            │    ["SET","foo","bar"]       │
+  │                            │                              │
+  │                            │ 4. Lookup "SET" in cmd table │
+  │                            │    Verify arity, ACL, etc.   │
+  │                            │                              │
+  │                            │ 5. Execute setCommand()      │
+  │                            │    ├─ dbAdd/dbOverwrite      │
+  │                            │    ├─ update LRU clock       │
+  │                            │    └─ notify keyspace events │
+  │                            │                              │
+  │                            │ 6. Append to AOF buf         │
+  │                            │    (if AOF enabled)          │
+  │                            │                              │
+  │                            │ 7. Propagate to replicas     │
+  │                            │    replicationFeedSlaves()──►│ 8. Replica receives
+  │                            │                              │    applies to local
+  │◄─<span class="green">"+OK\r\n"</span>────────────────│                              │    dict
+  │                            │                              │
+  │                            │ [async] AOF fsync (everysec  │
+  │                            │  = background thread fsync)  │
+</pre></div>
+
+  <h3>Read Path — Full Data Flow</h3>
+  <div class="ascii-block"><pre>
+<span class="blue">Client</span>                    <span class="red">Redis Primary</span>
+  │                            │
+  │──<span class="amber">"GET foo"</span>───────────────►│
+  │                            │ 1. Parse → lookupKeyRead(db, key)
+  │                            │    ├─ Check expires dict:
+  │                            │    │   if expired → expireIfNeeded()
+  │                            │    │   → lazy delete + keyspace notification
+  │                            │    └─ Lookup in main dict
+  │                            │
+  │                            │ 2. redisObject found:
+  │                            │    ├─ type=OBJ_STRING
+  │                            │    ├─ encoding=OBJ_ENCODING_EMBSTR
+  │                            │    └─ Update LRU timestamp (if LRU eviction)
+  │                            │
+  │                            │ 3. Encode response as RESP bulk string
+  │                            │    "$3\r\nbar\r\n"
+  │                            │
+  │◄──<span class="green">"$3\r\nbar\r\n"</span>──────────│
+  │                            │
+  │                            │ [If maxmemory hit] → eviction policy
+  │                            │   LRU/LFU/volatile-ttl/allkeys-random
+</pre></div>
+
+  <h3>On-Disk / In-Memory Data Layout</h3>
+  <p><strong>redisObject:</strong> Every value is a <code>robj</code> struct: 4 bits type (string/list/set/zset/hash/stream) + 4 bits encoding (int/embstr/raw/listpack/skiplist/hashtable/intset/quicklist) + 24-bit LRU clock + 10-bit refcount + pointer. Small strings ≤44 chars use <code>embstr</code> (single allocation for robj + SDS), avoiding fragmentation.</p>
+  <p><strong>SDS (Simple Dynamic String):</strong> Redis's custom string type with header containing len, alloc, flags + the actual bytes. O(1) length, binary-safe, avoids buffer overflows. Multiple header sizes (sdshdr8/16/32/64) to minimize overhead for short strings.</p>
+  <p><strong>Dict (hash table):</strong> Two hash tables (ht[0] and ht[1]) for incremental rehashing. When load factor exceeds 1.0 (or 5.0 under BGSAVE), a new ht[1] is allocated 2× size and keys are progressively migrated. During rehashing, both tables are consulted on lookup.</p>
+  <p><strong>Skiplist (ZSet):</strong> A probabilistic data structure with O(log N) ops. Paired with a hashtable for O(1) score lookups by member. Level distribution: 25% probability per level, max 32 levels. More cache-friendly than balanced BSTs in practice due to simpler traversal.</p>
+
+  <h3>Back-Pressure and Flow Control</h3>
+  <p>Redis applies back-pressure at the client output buffer level. Each client has an output buffer with configurable hard/soft limits (<code>client-output-buffer-limit</code>). If a replica's output buffer exceeds the hard limit (default 256MB for replicas), the connection is dropped and a full resync is required — a major failure mode in high-write environments.</p>
+  <p>For slow clients, the <code>client-query-buffer-limit</code> (default 1GB) caps input. The <code>hz</code> config (default 10) controls how often the background cron runs key expiry and other tasks — too low means TTL-expired keys pile up.</p>
+
+  <div class="callout ruler">
+    <div class="callout-title">📐 Back-of-Envelope</div>
+    Redis can handle ~100K–300K ops/sec on a single core (single-threaded). With I/O threads (6.0+) and pipeline, 1M+ ops/sec is achievable on a 16-core machine. Latency: ~50–200μs for in-datacenter round-trip. Memory: ~70 bytes overhead per key + value size. A 100M key dataset with 10-byte keys and 50-byte values ≈ ~12GB RAM (with overhead).
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-title">⚡ L7/L8 Differentiator</div>
+    Discuss the <strong>COW (Copy-On-Write) tax during BGSAVE/BGREWRITEAOF</strong>: When Redis forks for RDB, the child gets a read-only copy of memory pages. Every write the parent makes causes the OS to copy the modified page for the child. Under a high-write workload, this can double effective memory usage momentarily. Engineers must size Redis instances to 50–60% max memory utilization to survive fork-induced COW spikes.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Redis's single-threaded command execution is a feature, not a limitation — it eliminates locking overhead and makes all data operations naturally atomic, while I/O threads (6.0+) handle the actual network bottleneck on multi-core hardware.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 3 — TRADE-OFFS
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p3">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 03</span>
+    <h2 class="pillar-title">Trade-offs &amp; <em>Design Decisions</em></h2>
+  </div>
+
+  <h3>CAP Theorem Positioning</h3>
+  <p>Redis is primarily a <strong>CP system</strong> when run in Cluster mode with <code>cluster-require-full-coverage yes</code> (default). If a shard becomes unavailable, the cluster refuses to serve keys in those slots, prioritizing Consistency over Availability. With <code>cluster-require-full-coverage no</code>, it becomes more AP — serving requests even with missing shards, potentially with stale or incomplete data.</p>
+  <p>In Sentinel mode (primary-replica), Redis leans <strong>AP during partition</strong>: replicas can be promoted, but the old primary may still accept writes (split-brain window), sacrificing strict consistency for availability. The <code>min-replicas-to-write</code> config can move it toward CP by refusing writes if fewer than N replicas are reachable.</p>
+
+  <h3>PACELC Analysis</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Condition</th><th>Choice</th><th>Latency Impact</th><th>Consistency Impact</th></tr></thead>
+    <tbody>
+      <tr><td class="td-bold">Partition (P)</td><td>Elects new primary (Sentinel/Cluster)</td><td>Elevated during election (~15–30s default timeout)</td><td>Potential data loss (async replication lag)</td></tr>
+      <tr><td class="td-bold">No Partition — Latency (E→L)</td><td>Async replication default</td><td class="td-good">Sub-ms write (primary only)</td><td class="td-bad">Replica lag (typically &lt;100ms, up to seconds)</td></tr>
+      <tr><td class="td-bold">No Partition — Consistency (E→C)</td><td>WAIT command for sync replication</td><td class="td-bad">Latency = max replica lag</td><td class="td-good">Read-your-writes guaranteed</td></tr>
+      <tr><td class="td-bold">AOF fsync=always</td><td>Synchronous disk write per command</td><td class="td-bad">5–15× slower writes (&lt;20K ops/s)</td><td class="td-good">Zero data loss on crash</td></tr>
+      <tr><td class="td-bold">AOF fsync=everysec</td><td>Background fsync every 1s</td><td class="td-good">Near-baseline performance</td><td class="td-warn">Up to 1s data loss</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Consistency Models</h3>
+  <p><strong>Eventual consistency</strong> is the default in replicated Redis: replicas receive writes asynchronously and may serve stale data. This is acceptable for cache use cases where slight staleness is tolerable.</p>
+  <p><strong>Read-your-writes</strong> can be achieved by always routing reads to the primary, or by using the <code>WAIT numreplicas timeout</code> command after a write to block until at least N replicas have acknowledged the write.</p>
+  <p><strong>Strong consistency</strong> is not natively achievable across nodes — Redis does not implement Raft or Paxos for data replication (only for leader election in Sentinel). Redis Cluster uses an eventual-consistency replication model where a minority-partition primary can accept writes that will later conflict with a newly-elected primary.</p>
+  <p><strong>Causal consistency</strong> within a single client session is achievable if that client only reads from the primary. Across clients or sessions using replicas, it is not guaranteed.</p>
+
+  <h3>Durability vs Performance Trade-offs</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Configuration</th><th>Durability</th><th>Write Throughput</th><th>Recovery Time</th><th>Use Case</th></tr></thead>
+    <tbody>
+      <tr><td><code>no persistence</code></td><td class="td-bad">Zero — all data lost on crash</td><td class="td-good">Max (~300K+/s)</td><td class="td-good">Cold start (empty)</td><td>Pure cache, ephemeral sessions</td></tr>
+      <tr><td><code>RDB only</code></td><td class="td-warn">Minutes of data lost</td><td class="td-good">High (fork is async)</td><td class="td-warn">Snapshot size / disk speed</td><td>Analytics cache, low-write workloads</td></tr>
+      <tr><td><code>AOF everysec</code></td><td class="td-warn">Up to 1s lost</td><td class="td-good">High (&gt;100K/s)</td><td class="td-warn">AOF replay time</td><td>Session store, queues, counters</td></tr>
+      <tr><td><code>AOF always</code></td><td class="td-good">Near zero</td><td class="td-bad">Low (&lt;20K/s)</td><td class="td-warn">AOF replay time</td><td>Financial, critical state</td></tr>
+      <tr><td><code>Hybrid RDB+AOF</code></td><td class="td-good">Up to 1s lost</td><td class="td-good">High</td><td class="td-good">Fast (RDB base + small AOF delta)</td><td>General production (recommended)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Latency vs Throughput Knobs</h3>
+  <ul>
+    <li><strong>Pipelining:</strong> Batch multiple commands in a single TCP write, drastically reducing round-trips. Throughput increases from ~50K to 1M+ ops/s but individual command latency increases slightly (waiting for batch to form client-side).</li>
+    <li><strong>MULTI/EXEC transactions:</strong> Queue commands and execute atomically. Blocks the event loop for the duration — long transactions hurt latency for concurrent clients. Not a distributed transaction.</li>
+    <li><strong>Pub/Sub vs Streams:</strong> Pub/Sub is fire-and-forget (no persistence, no consumer groups). Streams (5.0+) add persistence, consumer groups, and acknowledgement at the cost of slightly higher complexity and memory.</li>
+    <li><strong>maxmemory-policy:</strong> Controls eviction when memory is full. <code>allkeys-lru</code> evicts least-recently-used keys globally. <code>volatile-lru</code> only evicts keys with TTLs. Wrong choice = silent data loss or OOM kills.</li>
+  </ul>
+
+  <div class="callout fire">
+    <div class="callout-title">🔥 Common Interview Mistake</div>
+    Claiming MULTI/EXEC is a "transaction" in the ACID sense. Redis transactions do NOT provide isolation (other clients' reads see in-progress state in some interpretations), do NOT roll back on command errors (partial execution happens), and are NOT distributed. They only provide atomicity in the sense of not interleaving with other commands.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Redis offers a rich dial from pure performance (no persistence, async replication) to near-durability (AOF always + WAIT) — the correct setting is always dictated by your RPO/RTO requirements, and mixing durability settings across a fleet without understanding the implications is a production disaster waiting to happen.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 4 — FAILURE MODES
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p4">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 04</span>
+    <h2 class="pillar-title">Failure Modes &amp; <em>Resilience</em></h2>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Single Node Crash — Primary
+      <span class="stag stag-red">High Severity</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Detection</label><p>Sentinel monitors via periodic PING (default every 1s). After <code>down-after-milliseconds</code> (default 30,000ms) with no response, marks as Subjectively Down (SDOWN). When a quorum of sentinels agree, it becomes ODOWN (objectively down).</p></div>
+      <div class="scenario-item"><label>Automatic Recovery</label><p>Sentinel elects a new primary from replicas using a scoring algorithm: replica with highest replication offset (least lag) wins, tiebroken by run-id. Clients are redirected via Sentinel's SUBSCRIBE channel. Failover typically takes 30–60s with default config.</p></div>
+      <div class="scenario-item"><label>Data Loss Risk</label><p>Any writes on the primary after the last successful replication to the elected replica are lost. With async replication, this window can be seconds. <code>min-replicas-to-write 1 min-replicas-max-lag 10</code> bounds this to 10 seconds.</p></div>
+      <div class="scenario-item"><label>Manual Action Required</label><p>Investigate root cause (OOM, hardware fault, memory corruption). Repair/replace node and re-add as replica. Verify replication offset after re-join. Update monitoring.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Single Node Crash — Replica
+      <span class="stag stag-amber">Medium Severity</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Detection</label><p>Primary detects replica disconnect via TCP close event. Sentinel marks replica as DOWN but takes no failover action (only primaries trigger failover).</p></div>
+      <div class="scenario-item"><label>Automatic Recovery</label><p>Replica restarts and sends PSYNC2 with its replication offset. If the offset is within the primary's repl_backlog (default 1MB), a partial resync occurs — only missing commands are sent. Otherwise, a full SYNC (RDB transfer) is required.</p></div>
+      <div class="scenario-item"><label>Data Loss Risk</label><p>No data loss — replica is a consumer, not a write authority. Availability risk: if this was the only replica and the primary crashes during repair, no failover target exists.</p></div>
+      <div class="scenario-item"><label>Manual Action Required</label><p>Ensure repl_backlog is sized appropriately for expected outage duration × write rate. Consider running ≥2 replicas in production at all times.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Network Partition — One Side Has Quorum
+      <span class="stag stag-red">High Severity</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Detection</label><p>In Redis Cluster, nodes exchange gossip. A node that can't reach peers after <code>cluster-node-timeout</code> (default 15s) marks them PFAIL. Once a majority confirms PFAIL → FAIL. Sentinel quorum works similarly via voting.</p></div>
+      <div class="scenario-item"><label>Automatic Recovery</label><p>The majority partition elects a new primary for affected slots. The minority-side primary, now isolated, should stop accepting writes if it detects it's partitioned (via replica disconnect + <code>min-replicas-to-write</code>). Without that config, it continues accepting writes that will be lost.</p></div>
+      <div class="scenario-item"><label>Data Loss Risk</label><p><strong>Classic split-brain data loss window:</strong> writes to the minority-partition primary between partition start and its demotion are lost when the partition heals and the minority node resyncs to the new primary.</p></div>
+      <div class="scenario-item"><label>Manual Action Required</label><p>After partition heals, verify write counts via <code>INFO replication</code>. Assess extent of divergence. May require application-level reconciliation if write-loss is unacceptable.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Even Split — No Quorum Possible
+      <span class="stag stag-red">Catastrophic</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Behavior</label><p>Redis Cluster and Sentinel both require majority votes to elect a new primary. With an even split (e.g., 3 nodes on each side), neither side can reach quorum. Both partitions either: (a) keep the existing primary if it's on that side, or (b) remain leaderless for affected slots.</p></div>
+      <div class="scenario-item"><label>Result</label><p>Slots without a reachable primary become unavailable if <code>cluster-require-full-coverage yes</code>. With <code>no</code>, partial availability. The system is frozen at split time — no new failovers.</p></div>
+      <div class="scenario-item"><label>Prevention</label><p>Always deploy an odd number of nodes (3, 5, 7). Use a Sentinel setup with odd sentinel count. Consider a tie-breaker node (a small Sentinel-only instance in a third AZ).</p></div>
+      <div class="scenario-item"><label>Recovery</label><p>Manual intervention: restore network connectivity, or manually promote a replica using CLUSTER FAILOVER FORCE (accepting potential data loss). Operators must decide which side's data is authoritative.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Slow / Degraded Node (Not Dead)
+      <span class="stag stag-amber">Subtle &amp; Dangerous</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Detection</label><p>Slow nodes are difficult to detect — they respond to PING (preventing SDOWN), but commands take abnormally long. Redis 7.0+ provides <code>LATENCY HISTORY</code> and <code>LATENCY LATEST</code> commands. Client-side timeout metrics are the primary signal.</p></div>
+      <div class="scenario-item"><label>Causes</label><p>Slow key (huge list/sorted set), fork COW pressure (BGSAVE on high-write workload), swap (Redis touching swap is catastrophic — adds ms to every operation), CPU throttling in containers, or a large KEYS scan blocking the event loop.</p></div>
+      <div class="scenario-item"><label>Risk</label><p>A slow primary can cause replica lag to grow, client-side timeouts to cascade, and eventually trigger a false failover — promoting a replica that may itself be behind.</p></div>
+      <div class="scenario-item"><label>Mitigation</label><p>Never run KEYS in production (use SCAN). Monitor <code>latency_percentiles_usec</code> per command. Use <code>slowlog</code> (commands taking &gt;10ms). Avoid swap via <code>vm.swappiness=0</code>. Ensure maxmemory is &lt;60% physical RAM to avoid COW issues.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Thundering Herd After Recovery
+      <span class="stag stag-amber">Architectural Risk</span>
+    </div>
+    <div class="scenario-grid">
+      <div class="scenario-item"><label>Scenario</label><p>A Redis cluster restarts (planned maintenance or crash recovery). Every downstream service's in-memory cache is cold. All requests simultaneously miss cache and hit the database, causing a database overload that may cascade into further failures.</p></div>
+      <div class="scenario-item"><label>Patterns to Prevent</label><p><strong>Cache warming:</strong> Pre-populate Redis before marking it healthy in the load balancer. <strong>Probabilistic early expiration (PER):</strong> Recompute cache slightly before actual expiry — only one worker does so. <strong>Mutex/lock on cache miss:</strong> Only one request populates the cache for a cold key; others wait.</p></div>
+      <div class="scenario-item"><label>Redis-level Solution</label><p>Use SETNX (or SET NX EX) as a distributed lock on the "populate" operation. The first requester gets the lock, fetches from DB, sets the cache. Others either wait (block on BLPOP on a result list) or serve stale data if available.</p></div>
+      <div class="scenario-item"><label>L8 Insight</label><p>At Google scale, cache warmup is a fully automated pipeline triggered by deployment systems. Traffic is gradually shifted to warmed instances. A cold Redis is never exposed to full production traffic.</p></div>
+    </div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">
+      Cascading Failures
+      <span class="stag stag-red">System-Level Risk</span>
+    </div>
+    <p style="margin:12px 0; font-size:13.5px; color:var(--text2);">A Redis slowdown → client threads pile up waiting → application thread pool exhausted → upstream services time out → retries amplify load → Redis gets more requests, slows further. Prevention: circuit breakers (return stale/fallback if Redis takes &gt;Xms), bulkheads (separate Redis connection pools per service tier), and shed load at the Redis proxy layer (Twemproxy/Envoy → return 503 rather than queuing unbounded).</p>
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-title">⚡ L7/L8 Differentiator</div>
+    Discuss <strong>clock skew implications</strong>: Redis uses <code>gettimeofday()</code> for TTL expiry. If system clock jumps forward (NTP correction), keys may expire prematurely. If it jumps backward, keys may live longer than expected. Redis 7.x uses <code>CLOCK_REALTIME</code> + monotonic clock cross-checks to mitigate. For distributed locks (Redlock), clock skew is a fundamental correctness concern — Redlock requires that clock drift across N nodes is negligible relative to the lock TTL.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Most Redis failures are not from Redis itself crashing, but from operational gaps: insufficient repl_backlog size, missing min-replicas-to-write guards, swap enabled on Redis hosts, or thundering-herd on recovery — all preventable with thoughtful configuration.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 5 — SCALING
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p5">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 05</span>
+    <h2 class="pillar-title">Scaling <em>Strategies</em></h2>
+  </div>
+
+  <h3>Vertical Scaling</h3>
+  <p>Redis can scale vertically to very large instances — 256GB+ RAM is common in production. The bottleneck shifts over time: at moderate sizes, the single-threaded command loop becomes the CPU bottleneck (~300K ops/s on a single core). With I/O threads (6.0+), you can push to 1M+ ops/s on large machines. Beyond ~500GB instances, the fork cost for RDB becomes dangerous: a 500GB fork can cause multi-second latency spikes due to COW pressure and TLB flush costs on large page-table structures.</p>
+  <p>What breaks first: <strong>fork latency</strong> (BGSAVE), then <strong>single-threaded CPU bottleneck</strong>, then <strong>OS memory management overhead</strong> at extreme sizes.</p>
+
+  <h3>Redis Cluster — Horizontal Scaling</h3>
+  <div class="ascii-block"><pre>
+<span class="dim">Hash Slot Space: 0 ─────────────────────── 16383</span>
+                 <span class="red">│←── Shard A ──→│</span><span class="green">│←── Shard B ──→│</span><span class="blue">│←── Shard C ──→│</span>
+                 <span class="red">[0 – 5460]</span>       <span class="green">[5461 – 10922]</span>   <span class="blue">[10923 – 16383]</span>
+
+<span class="dim">Each Shard = 1 Primary + N Replicas</span>
+
+     <span class="red">Primary A</span>          <span class="green">Primary B</span>          <span class="blue">Primary C</span>
+         │                   │                   │
+    ┌────┴────┐         ┌────┴────┐         ┌────┴────┐
+  <span class="red">RepA1   RepA2</span>       <span class="green">RepB1   RepB2</span>       <span class="blue">RepC1   RepC2</span>
+
+<span class="dim">Client sends: SET user:42:name "Alice"</span>
+  → CRC16("user:42:name") % 16384 = slot 6257
+  → MOVED 6257 {Primary-B-IP}:6380
+  → Client reconnects to Primary B
+  → Future requests go directly to Primary B (client caches slot map)
+</pre></div>
+
+  <h3>Hash Slot Key Selection — Avoiding Hotspots</h3>
+  <p>Redis Cluster uses <code>CRC16(key) % 16384</code> to assign keys to slots. Hash tags (<code>{}</code>) force related keys to the same slot, enabling multi-key operations on those keys. For example, <code>user:{42}:profile</code> and <code>user:{42}:sessions</code> both map to slot <code>CRC16("42") % 16384</code>. Without hash tags, multi-key commands (MGET, SUNION, EVAL) fail across slots.</p>
+  <p><strong>Hotspot risk:</strong> If all your keys use the same hash tag (e.g., <code>{tenant1}:*</code>), all keys land on one slot = one shard. Redis 7.x introduced <strong>hash slot sharding hints</strong> but the fundamental solution is to use more granular hash tags or avoid them when cross-key operations aren't needed.</p>
+
+  <h3>Resharding</h3>
+  <p>Redis Cluster supports online resharding via <code>redis-cli --cluster reshard</code>. The process migrates slots from source to target shard by iterating keys in the source slot, sending MIGRATE commands. During migration, keys in the moving slot return <code>ASK</code> redirections (not MOVED) — clients must follow ASK redirections to the target while the slot is in transition. Smart clients (Jedis, StackExchange.Redis, redis-py) handle this transparently.</p>
+  <p>The challenge: large slots (millions of keys) take minutes to hours to migrate. During migration, latency on those keys increases. Use <code>cluster-migration-barrier</code> to control migration pace. Online resharding is safe but slow — plan for a maintenance window for large migrations.</p>
+
+  <h3>Replication Strategies</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Strategy</th><th>Latency Impact</th><th>Data Loss Risk</th><th>Throughput</th><th>Best For</th></tr></thead>
+    <tbody>
+      <tr><td class="td-bold">Async (default)</td><td class="td-good">Zero write latency added</td><td class="td-bad">Up to replica lag</td><td class="td-good">Max</td><td>Cache, sessions, most workloads</td></tr>
+      <tr><td class="td-bold">WAIT N T (semi-sync)</td><td class="td-warn">Adds replica lag to write</td><td class="td-warn">Bounded by T timeout</td><td class="td-warn">Reduced</td><td>Financial records, audit logs</td></tr>
+      <tr><td class="td-bold">Chain Replication</td><td class="td-warn">Head→Mid→Tail latency</td><td class="td-good">Low (tail is durable)</td><td class="td-good">Good read scale</td><td>Read-heavy, strong consistency needs</td></tr>
+      <tr><td class="td-bold">Fan-out (many replicas)</td><td class="td-bad">Primary CPU for replication</td><td class="td-warn">Async lag on all</td><td class="td-warn">Primary write BW limit</td><td>Read scale across regions</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Cross-Region Replication</h3>
+  <p><strong>Active-Passive:</strong> One region is primary; others are read-only replicas. Writes must go to the primary region — adds cross-region latency (~50–150ms). Simple, no conflict resolution needed. Failover to replica region requires promotion (sentinel/manual) and application reconfiguration.</p>
+  <p><strong>Active-Active (Redis Enterprise):</strong> CRDTs (Conflict-free Replicated Data Types) allow writes in multiple regions simultaneously. Conflicts are resolved automatically using last-write-wins (LWW) or type-specific CRDT semantics (e.g., counters use increment merging). This is a Redis Enterprise feature — not available in open-source Redis. Replication lag between regions is expected; eventual consistency is the model.</p>
+
+  <h3>Read Scaling vs Write Scaling</h3>
+  <p><strong>Read scaling:</strong> Add replicas — each replica handles reads, multiplying read throughput. A single primary with 5 replicas can handle 5× read throughput. Route clients to replicas using READONLY command in cluster mode or by configuring client libraries to route reads to replicas.</p>
+  <p><strong>Write scaling:</strong> Requires sharding (Redis Cluster). You cannot scale writes on a single primary. Each shard handles a subset of the keyspace, so write throughput scales linearly with shard count. The practical limit per shard is ~300K simple writes/sec (single-threaded) or 1M+ with I/O threads and pipelining.</p>
+
+  <div class="callout ruler">
+    <div class="callout-title">📐 Back-of-Envelope: Sizing a Redis Cluster</div>
+    Target: 10M active sessions, avg 2KB/session, 500K reads/sec, 50K writes/sec.<br><br>
+    Memory: 10M × 2KB = 20GB + 50% overhead = 30GB → 3 shards × 16GB or 2 shards × 32GB (with buffer).<br>
+    Throughput: 50K writes/sec → 1 shard handles it comfortably (&lt;300K/s limit). 500K reads/sec with 2 replicas per shard = 500K / (3 shards × 2 replicas) = ~83K reads/s per replica — well within range.<br>
+    Recommendation: 3 shards × (1 primary + 2 replicas) = 9 nodes, 32GB RAM each, with AOF everysec + hybrid persistence.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Redis Cluster is the correct answer for write-scale, but introduces slot-affinity constraints that require careful key design from the start — retrofitting hash tags into an existing large application is costly and error-prone.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 6 — REAL-WORLD DECISIONS
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p6">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 06</span>
+    <h2 class="pillar-title">Real-World <em>Engineering Decisions</em></h2>
+  </div>
+
+  <h3>Where Redis Shines Above All Alternatives</h3>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Rate Limiting</div>
+      <div class="card-body">Sliding window rate limiting using ZADD (timestamp-scored sets) + ZREMRANGEBYSCORE. Atomic token bucket via Lua script. Redis's atomic operations prevent race conditions that plague DB-based rate limiters. Cloudflare uses Redis for its global rate limiting at billions of requests/day.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Distributed Locking</div>
+      <div class="card-body">SET key value NX PX ttl as a distributed lock. Redlock algorithm for multi-node safety. Essential for leader election, job deduplication, and preventing double-booking. Must understand Martin Kleppmann's critique of Redlock for safety-critical applications.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Real-Time Leaderboards</div>
+      <div class="card-body">Sorted Sets natively support ZADD (update score), ZRANK (global rank), ZRANGE BYRANK (top-N), and ZRANGEBYSCORE (score range). O(log N) per operation. Impossible to replicate this cleanly with relational DB at high write volume.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Session Store</div>
+      <div class="card-body">Hashes store session fields with optional TTL. Horizontal scaling via cluster. Sub-ms reads enable transparent auth in API gateways. Used by almost every major web company as the stateless-session backbone.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Pub/Sub Messaging</div>
+      <div class="card-body">Low-latency fan-out to subscribers. No persistence (use Streams for that). Ideal for real-time notifications, chat, and cache invalidation signals. Stack Overflow used Redis Pub/Sub for their entire real-time notification system.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Geospatial Indexing</div>
+      <div class="card-body">GEOADD stores coordinates encoded as geohash Sorted Set scores. GEORADIUS/GEOSEARCH finds points within a radius in O(N+log M). Used by Uber, Lyft, and DoorDash for driver/restaurant proximity queries.</div>
+    </div>
+  </div>
+
+  <h3>Production Examples</h3>
+  <div class="scenario">
+    <div class="scenario-title">Twitter / X — Timeline Caching & Social Graph <span class="stag stag-green">Production</span></div>
+    <p style="font-size:13.5px;color:var(--text2);margin-top:10px;">Twitter uses Redis to cache the home timeline (a Sorted Set of tweet IDs scored by tweet timestamp) for each user. On tweet publish, the tweet ID is fan-out inserted into the timelines of all followers. For celebrity accounts with 50M+ followers, fanout is handled via a separate "big account" tier that computes timelines on-the-fly by merging a small cache with a bulk fetch. Redis Sorted Sets enable O(log N) range queries by time, making infinite scroll efficient.</p>
+  </div>
+  <div class="scenario">
+    <div class="scenario-title">GitHub — Distributed Job Queue & Locks <span class="stag stag-green">Production</span></div>
+    <p style="font-size:13.5px;color:var(--text2);margin-top:10px;">GitHub uses Redis as the backend for Resque (and later Sidekiq), their distributed job queue systems. Redis Lists (LPUSH/BRPOP) provide the queue primitive. Job state, retry counts, and failure queues are stored as Redis Hashes. Redis's atomic LIST operations ensure that a job is never processed by two workers simultaneously — a guarantee that's difficult to achieve with traditional message queues without transactions.</p>
+  </div>
+  <div class="scenario">
+    <div class="scenario-title">Uber — Real-Time Geofencing & Driver Location <span class="stag stag-green">Production</span></div>
+    <p style="font-size:13.5px;color:var(--text2);margin-top:10px;">Uber stores driver locations as Redis Sorted Sets (Geo commands). Every few seconds, driver apps push their GPS coordinates. Rider requests query GEOSEARCH to find drivers within N km. Redis's in-memory geospatial index handles ~1M+ location updates/min at peak. The key design challenge: driver location keys rotate (e.g., by city) to avoid hotspots, and TTLs auto-expire offline drivers' locations.</p>
+  </div>
+
+  <h3>When NOT to Use Redis — Anti-Patterns</h3>
+  <ul>
+    <li><strong>Primary database for critical data without application-level redundancy:</strong> If your application cannot tolerate up to 1 second of data loss (AOF everysec) or minutes of data loss (RDB), Redis should not be your primary store for writes. Use PostgreSQL + Redis as a cache layer.</li>
+    <li><strong>Storing very large values (&gt;10MB per key):</strong> Large values cause the event loop to block for milliseconds while serializing/deserializing. Use S3/GCS for large objects; store the reference URL in Redis.</li>
+    <li><strong>Complex relational queries:</strong> Redis is not a query engine. Aggregations, joins, and ad-hoc filtering are not its domain. DuckDB, PostgreSQL, or BigQuery are better choices.</li>
+    <li><strong>As a Kafka replacement for high-durability event streaming:</strong> Redis Streams is excellent for low-latency intra-service queuing, but lacks Kafka's multi-consumer fan-out, durable partition log, and multi-day retention guarantees at petabyte scale.</li>
+    <li><strong>Unbounded key growth without eviction policy:</strong> Redis will fill RAM and either OOM-kill or silently fail without a configured maxmemory + eviction policy. This is a common production incident for teams new to Redis.</li>
+  </ul>
+
+  <h3>Decision Matrix: Redis vs Alternatives</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Dimension</th><th>Redis</th><th>Memcached</th><th>DynamoDB DAX</th><th>Apache Ignite</th><th>Hazelcast</th></tr></thead>
+    <tbody>
+      <tr><td class="td-bold">Data structures</td><td class="td-good">Rich (10+ types)</td><td class="td-bad">String only</td><td class="td-warn">DynamoDB types</td><td class="td-good">Rich + SQL</td><td class="td-good">Rich + JCache</td></tr>
+      <tr><td class="td-bold">Latency (p99)</td><td class="td-good">&lt;1ms</td><td class="td-good">&lt;1ms</td><td class="td-warn">1–10ms (DAX)</td><td class="td-warn">1–5ms</td><td class="td-warn">1–5ms</td></tr>
+      <tr><td class="td-bold">Persistence</td><td class="td-good">RDB+AOF hybrid</td><td class="td-bad">None</td><td class="td-good">DynamoDB</td><td class="td-good">Write-behind</td><td class="td-good">MapStore</td></tr>
+      <tr><td class="td-bold">Cluster/Scale</td><td class="td-good">Native Cluster</td><td class="td-warn">Client-side sharding</td><td class="td-good">Managed</td><td class="td-good">Auto-partition</td><td class="td-good">Auto-partition</td></tr>
+      <tr><td class="td-bold">Operational complexity</td><td class="td-warn">Moderate</td><td class="td-good">Low</td><td class="td-good">Managed</td><td class="td-bad">High (JVM)</td><td class="td-bad">High (JVM)</td></tr>
+      <tr><td class="td-bold">Ecosystem</td><td class="td-good">Massive</td><td class="td-warn">Limited</td><td class="td-warn">AWS-only</td><td class="td-warn">Moderate</td><td class="td-warn">Moderate</td></tr>
+      <tr><td class="td-bold">Active-Active multi-region</td><td class="td-warn">Enterprise only</td><td class="td-bad">No</td><td class="td-warn">DynamoDB Global Tables</td><td class="td-good">Yes</td><td class="td-good">Yes (WAN)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Day 1 Monitoring &amp; Alerting</h3>
+  <ul>
+    <li><strong>Memory:</strong> <code>used_memory_rss / maxmemory</code> &gt;80% → alert. RSS growing faster than <code>used_memory</code> signals fragmentation (mem_fragmentation_ratio &gt;1.5 → active-defrag).</li>
+    <li><strong>Hit rate:</strong> <code>keyspace_hits / (keyspace_hits + keyspace_misses)</code> &lt;90% → investigate eviction, TTL tuning, or cold cache.</li>
+    <li><strong>Connected clients:</strong> Sudden spike → possible connection leak. Default max: 10,000.</li>
+    <li><strong>Replication lag:</strong> <code>master_repl_offset - slave_repl_offset</code> growing → replica falling behind, replication buffer overflow risk.</li>
+    <li><strong>Blocked clients:</strong> Clients blocked on BLPOP/BRPOP → queue depth growing, workers not consuming fast enough.</li>
+    <li><strong>Latency:</strong> <code>LATENCY LATEST</code> + p99 from client libraries. Alert on p99 &gt;5ms for production caches.</li>
+    <li><strong>Evicted keys:</strong> <code>evicted_keys</code> counter &gt;0 → maxmemory is tight, data is being lost silently if this is not a cache.</li>
+    <li><strong>Slowlog:</strong> Commands taking &gt;10ms indicate problematic patterns (KEYS, large LRANGE, massive HGETALL).</li>
+  </ul>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>Redis's richness makes it the right tool for an unusually wide range of problems, but each use case demands different configuration — the Redis that works perfectly as a cache (LRU eviction, no persistence) will silently corrupt your rate limiter or message queue if those settings are inherited without review.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 7 — GOOGLE-SCALE
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p7">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 07</span>
+    <h2 class="pillar-title">Google-Scale &amp; <em>Beyond</em></h2>
+  </div>
+
+  <h3>What Breaks at Each Scale Tier</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scale</th><th>Users</th><th>What Breaks</th><th>Redis Solution</th><th>What Google Does Differently</th></tr></thead>
+    <tbody>
+      <tr><td class="td-bold">Tier 1</td><td>1M</td><td>Single instance memory pressure, no HA</td><td>Sentinel + 1 replica</td><td>Managed Redis with auto-failover (Memorystore)</td></tr>
+      <tr><td class="td-bold">Tier 2</td><td>10M</td><td>Write throughput ceiling on single primary</td><td>Redis Cluster (3–6 shards)</td><td>Cell-based architecture: Redis cluster per cell</td></tr>
+      <tr><td class="td-bold">Tier 3</td><td>100M</td><td>Cross-region latency, data residency, hotspot keys</td><td>Multi-cluster + proxy tier</td><td>Custom proxy layer (like Twemproxy++) with L7 routing</td></tr>
+      <tr><td class="td-bold">Tier 4</td><td>1B</td><td>Single Redis Cluster management plane limits, noisy neighbor, multi-tenancy, compliance</td><td>Federation of clusters</td><td>Custom distributed cache (not Redis) built on Colossus/Spanner</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Multi-Tenancy and Noisy Neighbors</h3>
+  <p>At Google scale, a single Redis cluster is shared by thousands of services. A <strong>noisy neighbor</strong> — a service running <code>KEYS *</code> or a massive SCAN, or publishing to a high-fanout Pub/Sub channel — blocks the single-threaded event loop, spiking latency for all other tenants on the same shard.</p>
+  <p><strong>Isolation strategies:</strong> Dedicated clusters per critical service (Gmail vs YouTube vs Ads should not share Redis). Namespace-level rate limiting via a proxy (Envoy + Redis filter). Key prefix conventions enforced by ACLs (Redis 6.0+ ACL rules can restrict key patterns). Quota enforcement at the proxy layer — limit commands/sec and bytes/sec per tenant.</p>
+  <p><strong>Google's approach:</strong> Google's internal cache systems (similar to what Memorystore is built on) use a hierarchical architecture where each service gets an isolated virtual cluster with hard resource quotas. The underlying physical infrastructure is shared but the isolation is enforced at the routing/quota layer, not at the Redis level.</p>
+
+  <h3>Data Residency and Regulatory Compliance</h3>
+  <p>GDPR, CCPA, and regional data regulations may require that EU user data never leave EU data centers. Redis Cluster, by default, is a single logical entity. For compliance:</p>
+  <ul>
+    <li><strong>Per-region clusters:</strong> Maintain separate Redis clusters per regulatory boundary. Application logic routes writes to the correct regional cluster based on user location/citizenship. No cross-region replication of regulated data.</li>
+    <li><strong>Key-level encryption:</strong> Encrypt PII values client-side before storing in Redis. Redis stores ciphertext; the encryption keys are managed separately (KMS). Even a Redis breach doesn't expose plaintext PII.</li>
+    <li><strong>Audit logging:</strong> Redis 6.0+ ACL logs + AOF provide command-level audit trails. Ship to centralized security logging (Chronicle/Splunk) for compliance reporting.</li>
+  </ul>
+
+  <h3>What a "Google Spanner for Redis" Would Look Like</h3>
+  <p>Vanilla Redis lacks: globally consistent snapshots, multi-region strong consistency, and scale beyond a single cluster's management capacity. A theoretical "Google-grade Redis" would require:</p>
+  <ul>
+    <li><strong>Paxos/Raft-based replication</strong> replacing async replication, providing linearizable writes across nodes (like Spanner's TrueTime + Paxos groups).</li>
+    <li><strong>Globally distributed slot map</strong> managed by a consistent metadata service (like Spanner's directory server), enabling seamless cross-region key routing.</li>
+    <li><strong>MVCC (Multi-Version Concurrency Control)</strong> for snapshot isolation across data types — enabling consistent multi-key reads without locking.</li>
+    <li><strong>Tiered storage</strong>: hot data in DRAM, warm data in NVMe SSD (Optane/PM), cold data in object storage. Transparent access with predictable latency SLOs per tier.</li>
+    <li><strong>CRDT-native data types</strong> across all primitive types, not just counters — enabling true active-active multi-region without Enterprise licensing.</li>
+  </ul>
+
+  <h3>Cost Efficiency at Scale</h3>
+  <p>At Google scale, the cost optimizations that matter for Redis:</p>
+  <ul>
+    <li><strong>Memory tiering (Redis 7.2+ on Redis Enterprise):</strong> Automatically spill cold keys to flash storage. Useful only when working set &lt; total dataset. For pure caches with LRU eviction, tiering adds complexity without benefit.</li>
+    <li><strong>Instance size sweet spot:</strong> Redis performance-per-dollar peaks at 32–64GB instances for typical workloads. Below 8GB, overhead is disproportionate. Above 128GB, COW fork costs require very conservative memory headroom.</li>
+    <li><strong>Read replica right-sizing:</strong> Beyond 3 replicas per shard, each additional replica provides diminishing read throughput gains while adding replication bandwidth cost. Profile actual read QPS before adding replicas.</li>
+    <li><strong>Compression:</strong> Redis doesn't compress values. For large string values, gzip client-side before storing can save 50–80% memory. Only cost-effective for values &gt;1KB that are read infrequently.</li>
+  </ul>
+
+  <div class="callout lightning">
+    <div class="callout-title">⚡ L7/L8 Differentiator</div>
+    Discuss <strong>Redis at the L7 proxy layer</strong>: At Google/Meta scale, Redis is fronted by an L7-aware proxy (Envoy with Redis filter, Twemproxy, or custom). The proxy handles: connection multiplexing (10K upstream connections → 10 proxy connections to Redis), slot map caching (proxy knows the cluster topology, clients don't), read-replica routing, circuit breaking, and quota enforcement. This proxy layer is more complex than Redis itself at hyperscaler deployments and is rarely discussed at L5/L6.
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Key Takeaway</div>
+    <p>At Google scale, Redis stops being a database and becomes an infrastructure primitive — wrapped in layers of proxies, quota systems, and multi-tenancy controls that are more complex than Redis itself; knowing where Redis ends and the surrounding system begins is the L8 differentiator.</p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════
+     PILLAR 8 — INTERVIEW SIMULATION
+══════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p8">
+  <div class="pillar-header">
+    <span class="pillar-num">PILLAR 08</span>
+    <h2 class="pillar-title">Interview <em>Simulation</em></h2>
+  </div>
+
+  <h3>Step 1: The Design Problem</h3>
+  <div class="scenario">
+    <div class="scenario-title">Design a Global Real-Time Leaderboard System <span class="stag stag-amber">L7/L8 Level</span></div>
+    <p style="margin-top:12px; font-size:14px; color:var(--text2); line-height:1.8;">You are the Staff Engineer for a new mobile game launching globally. The game has real-time leaderboards at three levels: <strong>(1)</strong> global all-time top 1,000 players, <strong>(2)</strong> weekly leaderboards per geographic region (e.g., North America, Europe, Asia), and <strong>(3)</strong> a "friends leaderboard" showing a user's rank among their top-500 friends. The game expects 50M DAU at peak, with score update events at 2,000 events/second per shard on average, with spikes to 50,000/sec during tournaments. Scores are integers 0–10,000,000. A player can update their score up to 100 times per minute.</p>
+    <p style="font-size:14px; color:var(--text2); margin-top:8px;">Design this system. What data store(s) would you use? How do you handle the friends leaderboard at scale? What are your consistency guarantees? What happens during a tournament spike?</p>
+  </div>
+
+  <h3>Step 2: Strong Candidate Answer (L7/L8)</h3>
+
+  <h4>Clarifying Questions to Ask First</h4>
+  <ul>
+    <li>What is the acceptable staleness for leaderboards? (1 second? 10 seconds? 1 minute?)</li>
+    <li>Is rank displayed as exact position or approximate (e.g., "top 5%")?</li>
+    <li>Are friend relationships bidirectional? What is the max friend count?</li>
+    <li>Are scores monotonically increasing, or can they decrease (e.g., season resets)?</li>
+    <li>What are the read latency SLOs? (p99 &lt; Xms?)</li>
+    <li>What is the write loss tolerance? (Can we lose a score update?)</li>
+    <li>Do leaderboards need to be exactly consistent or eventually consistent globally?</li>
+  </ul>
+
+  <h4>Assumptions Stated</h4>
+  <ul>
+    <li>Acceptable staleness: 5 seconds for global, 30 seconds for weekly/regional</li>
+    <li>Friends leaderboard: eventual consistency, up to 30s lag acceptable</li>
+    <li>Max friend count: 500 per user</li>
+    <li>Scores are monotonically non-decreasing (only update if new score &gt; current)</li>
+    <li>Read SLO: p99 &lt; 20ms for rank queries</li>
+  </ul>
+
+  <h4>High-Level Architecture</h4>
+  <div class="ascii-block"><pre>
+<span class="dim">Mobile Client</span>
+      │
+      ▼
+<span class="amber">Score Ingest API</span> (horizontally scaled, stateless)
+      │ batching + debounce (max 1 update/sec per user)
+      ▼
+<span class="red">Kafka Topic: score-updates</span> (partitioned by user_id)
+      │
+  ┌───┴───────────────────────────┐
+  ▼                               ▼
+<span class="green">Global Leaderboard Consumer</span>    <span class="blue">Regional Consumer</span>
+      │                               │
+      ▼                               ▼
+<span class="green">Redis Cluster A</span>               <span class="blue">Redis Cluster B</span>
+ ZADD global:all:scores         ZADD regional:{NA}:week:2025W03
+ ZADD global:week:...           (per-region sharded clusters)
+      │
+      ▼
+<span class="amber">Friends Leaderboard Service</span>
+ → On query: ZMSCORE(global, friend_ids[])
+ → Sort client-side or via Lua
+ → Cache result in Redis for 30s (user-specific)
+      │
+      ▼
+<span class="dim">Read API</span> ← serves all leaderboard queries
+  ZRANK, ZRANGE WITHSCORES, ZREVRANK
+</pre></div>
+
+  <h4>Global Leaderboard Design</h4>
+  <p>Use a single Redis Sorted Set per leaderboard type: <code>ZADD global:alltime player_id score</code>. ZADD with the <code>GT</code> flag (Redis 6.2+) atomically updates the score only if the new score is greater — perfect for monotonic scores. <code>ZREVRANK player_id</code> gives O(log N) rank. For top-1000, <code>ZREVRANGE 0 999 WITHSCORES</code>.</p>
+  <p><strong>Scale concern:</strong> 50M players × ~100 bytes/entry in the sorted set = 5GB. Fits in a single Redis instance, but a single Sorted Set is single-shard — all writes go to one node. At 2,000 updates/sec sustained this is fine (well under 300K/s limit). At 50,000/sec during tournaments, we need to rate-limit ingest (debounce: only propagate score updates every 1 second per player) or shard the leaderboard.</p>
+
+  <h4>Friends Leaderboard — The Hard Part</h4>
+  <p>The friends leaderboard is the hardest problem. Naïvely: store each user's friend list, and on query, fetch all 500 friends' scores from the global ZSet via <code>ZMSCORE global:alltime friend_id1 friend_id2 ...</code> (O(N) for 500 friends), sort client-side, and return the user's rank. At 50M DAU, if 10% of users view their friends leaderboard per hour, that's 5M queries/hour = ~1,400 QPS of 500-key batch lookups.</p>
+  <p><strong>Optimization 1:</strong> Cache the computed friends leaderboard per user with a 30s TTL: <code>SET friends_lb:{user_id} {serialized_list} EX 30</code>. Cache hit rate will be high for inactive users.</p>
+  <p><strong>Optimization 2:</strong> Pre-materialize friends' leaderboards on score change using a fan-out write pattern (like Twitter's timeline fan-out). When a player scores, push score updates to a Kafka topic that a friends-leaderboard service consumes, updating cached friend leaderboards. This avoids the N+1 read pattern on query but requires write fan-out infrastructure.</p>
+  <p><strong>Trade-off:</strong> Materialization is a write amplification of up to 500× (a player with 500 friends triggers 500 cache invalidations per score update). Rate-limit fan-out: only propagate score changes to friend caches if the delta exceeds a threshold (e.g., &gt;100 points).</p>
+
+  <h4>Tournament Spike Handling</h4>
+  <p>At 50,000 score updates/sec during a tournament, the global leaderboard ZSet would receive too many writes if all are processed in real-time. Solution: <strong>batch-and-debounce</strong> in the Kafka consumer. Aggregate all score updates for a player within a 1-second window, taking the max. This reduces effective write rate by up to 100× (players can update 100 times/minute → 1–2 effective ZSet writes/player/minute). The consumer lag during a spike is acceptable given the 5-second staleness SLO.</p>
+
+  <h3>Step 3: Tough Interviewer Critique</h3>
+
+  <div class="scenario">
+    <div class="scenario-title">What the Candidate Did Well <span class="stag stag-green">Strengths</span></div>
+    <ul style="margin-top:12px;">
+      <li>Correctly identified ZADD GT flag for monotonic score updates — shows Redis 6.2+ version awareness</li>
+      <li>Recognized the friends leaderboard as the hard problem and offered two distinct solutions with trade-off analysis</li>
+      <li>Quantified the scale: 5GB leaderboard size, 1,400 QPS friends leaderboard reads — shows comfort with back-of-envelope</li>
+      <li>Used Kafka as a durable ingest layer, not Redis directly as the write path — shows understanding of Redis's appropriate role</li>
+      <li>Identified the 300K writes/sec single-shard ceiling and proposed debouncing to stay within it</li>
+    </ul>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">What Was Missed / Glossed Over <span class="stag stag-red">Gaps</span></div>
+    <ul style="margin-top:12px;">
+      <li><strong>Cross-region replication strategy:</strong> How does a player in Asia see the global leaderboard without cross-region Redis reads (which add ~100ms latency)? A read replica in each region with async replication and documented staleness would address this.</li>
+      <li><strong>Leaderboard sharding for extreme scale:</strong> If the game grows to 500M players, a 50GB single Sorted Set is problematic. Need to discuss approximate ranking algorithms (count-min sketch, histogram-based decile) or deterministic range partitioning.</li>
+      <li><strong>Score consistency during failover:</strong> What if Redis primary fails mid-tournament? The replication lag means some scores could be lost. The candidate didn't discuss RPO/RTO for score data or whether AOF + semi-sync replication (WAIT) should be used for the score store.</li>
+      <li><strong>Weekly leaderboard rollover:</strong> How are weekly leaderboards atomically reset at week boundaries? RENAME swap (create new key, RENAME old → archive) would avoid the downtime of deleting a large ZSet.</li>
+      <li><strong>Memory fragmentation under heavy write patterns:</strong> High-frequency ZADD/ZREM causes skiplist fragmentation. Active defragmentation config should be mentioned.</li>
+    </ul>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-title">Follow-Up Questions to Expose Weaknesses <span class="stag stag-amber">Pressure Test</span></div>
+    <ul style="margin-top:12px;">
+      <li>"Your friends leaderboard caches 30s TTLs. But a tournament lasts 2 hours and players check their rank every 10 seconds. What's your cache invalidation strategy to prevent serving stale data to players who are actively competing?"</li>
+      <li>"You're using ZMSCORE for 500 friends in one command. What happens if one of those friends is stored in a different Redis Cluster shard? Walk me through the CROSSSLOT error and how you'd fix the key design."</li>
+      <li>"The global leaderboard ZSet has 50M members. ZREVRANK takes O(log N) — what's the actual wall-clock time for that operation, and at what point does it become a problem?"</li>
+      <li>"Tournament ends. You want to snapshot the final leaderboard for prize distribution. How do you guarantee a consistent point-in-time snapshot without taking Redis offline?"</li>
+    </ul>
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-title">⚡ What an L8 Answer Adds Over L7</div>
+    An L8 answer would: (1) Propose an <strong>approximate rank algorithm</strong> (e.g., count-min sketch over score buckets) for the 500M+ player scale where an exact O(log 500M) skiplist becomes prohibitively large. (2) Discuss <strong>Redis Cluster CROSSSLOT limitations</strong> and design the key schema to use hash tags correctly — e.g., <code>lb:{global}:alltime</code> and <code>scores:{user_id}</code> in separate clusters. (3) Propose a <strong>read-replica architecture per region</strong> with documented staleness SLOs, not just a single global cluster. (4) Mention <strong>OBJECT ENCODING leaderboard_key</strong> to verify the ZSet is using skiplist (not listpack) encoding given 50M members, and understand memory implications.
+  </div>
+
+  <h3>Step 4: Rapid-Fire Staff-Level Q&amp;A</h3>
+
+  <div class="interview-q">
+    <div class="q-num">Q01</div>
+    <div class="q-text">Explain the difference between EXPIRE and PEXPIRE, and why TTL precision matters in distributed systems.</div>
+    <div class="a-text">EXPIRE sets TTL in seconds; PEXPIRE in milliseconds. For distributed locks and rate limiters, second-level precision creates race conditions — a lock meant to hold for 500ms must use PEXPIRE to avoid premature expiry. Redis stores TTLs internally as absolute Unix timestamps in milliseconds (since Redis 2.6), so PTTL can always return sub-second remaining time. The critical edge: if a replica promotes with clock skew, TTLs may differ between old primary and new primary by up to the skew amount — short TTLs (&lt;5s) are most vulnerable to this.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q02</div>
+    <div class="q-text">What is the Redlock algorithm and what are its safety guarantees? When is it unsafe to use?</div>
+    <div class="a-text">Redlock acquires a distributed lock by attempting to SET NX PX on N/2+1 independent Redis instances within a validity window (TTL minus acquisition time). The lock is only held if a majority granted it before the TTL elapsed. It is unsafe when: (1) TTL is short and clock drift between nodes approaches TTL magnitude; (2) a GC pause or OS scheduling delay in the lock holder causes it to act after its TTL has expired while another client has already acquired the lock — Martin Kleppmann's "HLC fence token" critique. For safety-critical use cases, use fencing tokens (monotonically increasing IDs from Zookeeper/etcd) in addition to, or instead of, Redlock.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q03</div>
+    <div class="q-text">How does Redis handle the "large key" problem, and what are the performance implications?</div>
+    <div class="a-text">A "large key" in Redis typically means a key whose value is very large (&gt;1MB string) or a collection with millions of members (list/set/zset/hash with 1M+ elements). Large key operations block the event loop: a DEL on a 10M-member ZSet can take hundreds of milliseconds, halting all other command processing. Redis 4.0+ added UNLINK (async lazy deletion) and FLUSHDB ASYNC / FLUSHALL ASYNC. For large collections, use SCAN-based iteration (HSCAN, SSCAN, ZSCAN) with a COUNT hint to iterate in O(COUNT) batches rather than HGETALL/SMEMBERS. Monitor key sizes with redis-cli --hotkeys and --bigkeys in production.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q04</div>
+    <div class="q-text">Explain PSYNC2 and why it matters for production Redis deployments.</div>
+    <div class="a-text">PSYNC2 (introduced in Redis 4.0) allows replicas to perform partial resynchronization after restart, even if they were previously a primary. Before PSYNC2, a restarted replica that had been a primary required a full RDB resync because its replication ID changed on restart. PSYNC2 maintains two replication IDs: the current one and the previous one (before the last promotion). This means a demoted primary can rejoin as a replica and pick up from where it left off, drastically reducing full-resync frequency in Sentinel failover scenarios. In practice, this prevents the "resync storm" that occurred in pre-4.0 clusters when multiple replicas needed full RDB transfers simultaneously after a failover.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q05</div>
+    <div class="q-text">You're seeing mem_fragmentation_ratio of 3.5 on a Redis instance. What does this mean and what do you do?</div>
+    <div class="a-text">mem_fragmentation_ratio = used_memory_rss (OS-reported physical memory) / used_memory (Redis's allocator-tracked usage). A ratio of 3.5 means Redis is using 3.5× more physical memory than the logical data size — primarily due to allocator fragmentation from many small allocations and deallocations (common in workloads with frequent key deletion/creation). Mitigation: (1) Enable active defragmentation: <code>activedefrag yes</code>, <code>active-defrag-ignore-bytes 100mb</code>, <code>active-defrag-threshold-lower 10</code>. Redis 4.0+ uses jemalloc's background defrag. (2) If using a different allocator, switch to jemalloc. (3) For extreme cases, a full RDB save + restart resets fragmentation. Never ignore fragmentation_ratio &gt;2.0 — it means an OOM kill can happen at 2× less memory pressure than maxmemory suggests.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q06</div>
+    <div class="q-text">How would you implement a sliding window rate limiter in Redis? What are the trade-offs vs. a fixed window approach?</div>
+    <div class="a-text">Sliding window: ZADD rate:{user_id} {timestamp_ms} {request_uuid}, then ZREMRANGEBYSCORE rate:{user_id} 0 {now_ms - window_ms}, then ZCARD rate:{user_id} to get count — all in a Lua script for atomicity. TTL the key to window_size seconds for auto-cleanup. Fixed window: simpler — INCR rate:{user_id}:{window_bucket} with EXPIRE. Trade-offs: sliding window is exact but uses O(requests_per_window) memory per user and is slower (O(log N) per request). Fixed window is O(1) memory and time but has a "boundary burst" vulnerability — a user can send 2× the limit in 2× window_size seconds by timing requests around window boundaries. For most production rate limiters, a hybrid "sliding window counter" (two fixed windows with interpolation) provides 90% of sliding window accuracy at O(1) cost.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q07</div>
+    <div class="q-text">What is the OBJECT FREQ command and when would you use it? How does LFU differ from LRU for cache eviction?</div>
+    <div class="a-text">OBJECT FREQ key returns the logarithmically-scaled access frequency counter for a key under LFU eviction policies. LRU (Least Recently Used) evicts the key that was accessed longest ago — it has no memory of how often a key is accessed, so a popular key accessed yesterday may be evicted over an unpopular key accessed a minute ago. LFU (Least Frequently Used, Redis 4.0+) evicts the key with the lowest access frequency, making it far more accurate for workloads with a power-law access distribution (Zipf). Redis's LFU uses a probabilistic Morris counter (8 bits per key) with configurable decay rate (lfu-decay-time). Use LFU when your access pattern has a clear "hot set" of frequently accessed keys that you want to protect from eviction — typical for content caches and session stores. LRU is simpler and works well for recency-dominant access patterns.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q08</div>
+    <div class="q-text">Explain how Redis Streams differ from Kafka. In what production scenario would you choose Streams over Kafka?</div>
+    <div class="a-text">Redis Streams (5.0+) are append-only logs with consumer groups, message acknowledgement (XACK), and persistent storage. Compared to Kafka: Streams are single-node per shard (no distributed log across brokers), have no built-in retention policy beyond memory-based trimming (MAXLEN), don't support replayed consumption from time T for arbitrary consumers, and lack multi-region replication natively. Choose Streams over Kafka when: (1) latency SLO is &lt;1ms (Kafka adds 5–50ms for replication); (2) message volume is low-to-moderate (&lt;100K/sec per stream); (3) you want to avoid Kafka's operational complexity (ZooKeeper/KRaft, topic partition management); (4) you already have Redis in the stack and need lightweight intra-service queuing. Choose Kafka for: compliance-grade audit logs, multi-consumer replay, &gt;1TB/day message volumes, or when consumer groups span multiple services with independent replay positions.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q09</div>
+    <div class="q-text">How does Redis Cluster handle a MOVED vs an ASK redirection, and why does this distinction matter?</div>
+    <div class="a-text">MOVED indicates a permanent slot reassignment — the key definitively lives on the target node. Smart clients cache the new slot-to-node mapping and route future requests directly. ASK is a transient redirection during slot migration — the key is in the process of being migrated from source to target. The client must send an ASKING command to the target before the actual command (telling the target to serve this one request for a key it doesn't yet officially own). The client must NOT update its slot map for an ASK redirection; only MOVED updates the map. This distinction matters for correctness during resharding: if ASK were treated like MOVED, clients would permanently route to the target before migration completes, causing requests to be rejected by the source for keys not yet migrated.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">Q10</div>
+    <div class="q-text">What are Redis Functions (7.0+) and how do they improve on EVAL scripts?</div>
+    <div class="a-text">Redis Functions (7.0+) are named, persistent server-side scripts loaded into Redis's keyspace as a library. Unlike EVAL, which requires clients to resend the script on every invocation (or cache by SHA via EVALSHA), Functions are loaded once via FUNCTION LOAD and persist across restarts (stored in RDB/AOF). They support multiple engines (Lua by default, future support for others). Key improvements: Functions are versioned and named (e.g., FCALL mylib.rate_limit 1 user:42), enabling library-style code organization. They participate in replication — FUNCTION LOAD is replicated to replicas, so the function is available cluster-wide. They support read-only functions (FCALL_RO) that can run on replicas without routing to primary. The sandboxing model is improved (restricted global variable access), reducing subtle bugs where EVAL scripts accidentally shared state between invocations.</div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">🔑 Final Takeaway</div>
+    <p>An L7/L8 Redis interview is not about knowing every command — it's about demonstrating that you deeply understand the trade-offs between consistency, durability, latency, and scale, and can reason about where Redis fits in a broader system architecture under real production constraints.</p>
+  </div>
+
+</section>
+
+<!-- VERSION NOTE -->
+<div style="padding: 40px 0; border-top: 1px solid var(--border); margin-top: 40px;">
+  <div style="font-size: 12px; color: var(--text3); font-family: var(--mono);">
+    <span style="color: var(--accent);">Redis versions covered:</span> 2.x (persistence) · 4.0 (Modules, PSYNC2, LFU, lazy deletion, active-defrag) · 5.0 (Streams) · 6.0 (ACL, TLS, I/O threads) · 6.2 (ZADD GT/LT, OBJECT HELP, COPY, LMPOP) · 7.0 (Redis Functions, SINTERCARD, ACL v2, sharded pub/sub) · 7.2 (memory tiering in Enterprise) · 7.4 (2024: AOF channel log levels, improved cluster management, performance)
+    <br><br>Document prepared: April 2026 · For use in Google L7/L8 System Design Interviews
+  </div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+  const sections = document.querySelectorAll('.pillar');
+  const navItems = document.querySelectorAll('.nav-item');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        navItems.forEach(item => {
+          item.classList.toggle('active', item.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
