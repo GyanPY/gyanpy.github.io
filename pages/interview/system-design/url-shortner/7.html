@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 6: Operational Readiness — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--obs),var(--deep),var(--hire));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(88,166,255,.05)}
+.ni.active a{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dn{background:var(--no)}.dl{background:var(--lean)}.dh{background:var(--hire)}.ds{background:var(--strong)}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+
+/* BACk TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--obs);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--obs) 45%,var(--deep) 75%,var(--hire));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+
+/* PHASE HEADER */
+.phase-hdr{margin:0 0 36px;padding-bottom:22px;border-bottom:1px solid var(--border)}
+.phase-num{font-family:var(--fc);font-size:.67rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.phase-hdr h2{font-family:var(--fh);font-size:1.85rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.phase-time{font-family:var(--fc);font-size:.75rem;color:var(--dim);background:var(--surface2);padding:3px 10px;border-radius:20px;display:inline-block}
+.phase-prompt{margin-top:18px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--dim);border-radius:0 8px 8px 0;padding:14px 18px}
+.prompt-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:7px}
+.phase-prompt blockquote{font-style:italic;color:var(--muted);font-size:.92rem;line-height:1.65}
+
+/* TIER CARDS */
+.tier{border-radius:10px;border:1px solid var(--border);background:var(--surface);margin-bottom:24px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.tier:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.tier.no{border-left:4px solid var(--no)}.tier.lean{border-left:4px solid var(--lean)}
+.tier.hire{border-left:4px solid var(--hire)}.tier.strong{border-left:4px solid var(--strong)}
+.tier.no   .tier-hdr{background:rgba(255,107,107,.05)}.tier.lean .tier-hdr{background:rgba(255,215,0,.04)}
+.tier.hire .tier-hdr{background:rgba(0,191,165,.05)}.tier.strong .tier-hdr{background:rgba(245,166,35,.05)}
+.tier-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.tier-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tier-emoji{font-size:1.3rem}
+.tier-name{font-family:var(--fh);font-size:1.1rem;font-weight:700;color:var(--text)}
+.tier-badge{font-family:var(--fc);font-size:.64rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.tier.no   .tier-badge{background:rgba(255,107,107,.14);color:var(--no);border:1px solid rgba(255,107,107,.28)}
+.tier.lean .tier-badge{background:rgba(255,215,0,.11);color:var(--lean);border:1px solid rgba(255,215,0,.28)}
+.tier.hire .tier-badge{background:rgba(0,191,165,.11);color:var(--hire);border:1px solid rgba(0,191,165,.28)}
+.tier.strong .tier-badge{background:rgba(245,166,35,.11);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.tier-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.tier.collapsed .tier-toggle{transform:rotate(-90deg)}
+.tier-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.tier.collapsed .tier-body{max-height:0;opacity:0;padding-bottom:0}
+.tier-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px}
+.tier-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.tier-body ul,.tier-body ol{padding-left:18px;margin:8px 0 13px}
+.tier-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.tier-body strong{color:var(--text);font-weight:600}
+
+/* SCRIPT */
+.script{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px 18px 14px 48px;margin:14px 0;font-style:italic;font-size:.9rem;line-height:1.7;color:var(--muted);position:relative}
+.script::before{content:'"';font-family:var(--fh);font-size:3.5rem;color:var(--border);position:absolute;top:-6px;left:10px;line-height:1}
+.script p{margin-top:9px}.script p:first-child{margin-top:0}.script strong{color:var(--text);font-style:normal}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM */
+.diag{background:#010409;border:1px solid rgba(88,166,255,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(88,166,255,.06);border-bottom:1px solid rgba(88,166,255,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.75rem;line-height:1.7;color:#79c0ff;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout.obs{background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.fail .callout-title{color:var(--no)}.callout.good .callout-title{color:var(--hire)}
+.callout.info .callout-title{color:var(--accent)}.callout.warn .callout-title{color:var(--lean)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--deep)}
+.callout.obs .callout-title{color:var(--obs)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INT QUOTE */
+.iq{background:var(--surface2);border-radius:8px;padding:16px 18px 14px 48px;margin:13px 0;position:relative;font-style:italic;font-size:.89rem;color:var(--muted);line-height:1.65}
+.iq::before{content:'❝';position:absolute;left:14px;top:12px;font-size:1.4rem;color:var(--dim)}
+.iq-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);font-style:normal;font-weight:600;display:block;margin-bottom:7px}
+
+/* AOMB */
+.aomb{background:rgba(0,191,165,.05);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.aomb-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.aomb ul{list-style:none;padding:0}
+.aomb li{display:flex;align-items:flex-start;gap:7px;padding:3px 0;font-size:.84rem;color:var(--muted);line-height:1.5}
+.aomb li::before{content:'☑';color:var(--hire);flex-shrink:0;margin-top:1px}
+
+/* SIGNALS */
+.signals{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--hire);border-radius:0 8px 8px 0;padding:14px 16px;margin:13px 0}
+.signals-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.signals ul{list-style:none;padding:0}
+.signals li{font-family:var(--fc);font-size:.8rem;color:var(--muted);padding:4px 0;border-bottom:1px solid rgba(48,54,61,.4);line-height:1.5}
+.signals li:last-child{border-bottom:none}
+.signals li::before{content:'→ ';color:var(--hire)}
+
+/* FATAL */
+.fatal{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:12px 16px;margin:11px 0}
+.fatal-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:7px}
+.fatal ul{list-style:none;padding:0}
+.fatal li{display:flex;gap:7px;font-size:.86rem;color:var(--muted);padding:3px 0;line-height:1.5}
+.fatal li::before{content:'✕';color:var(--no);flex-shrink:0}
+
+/* UPGRADE */
+.upgrade{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:11px 0}
+.upgrade-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.upgrade p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* WOW */
+.wow{background:rgba(245,166,35,.05);border:1px solid rgba(245,166,35,.15);border-radius:6px;padding:9px 13px;margin-bottom:8px;font-family:var(--fc);font-size:.84rem;color:var(--strong);line-height:1.5}
+.wow::before{content:'✦ ';opacity:.7}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* GENERAL TABLES */
+.dt{width:100%;border-collapse:collapse;font-size:.83rem;margin:13px 0;border-radius:8px;overflow:hidden}
+.dt thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.dt th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.dt td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:top;line-height:1.5;color:var(--muted)}
+.dt tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dt tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dt tbody tr:hover{background:rgba(88,166,255,.04)}
+.dt td:first-child{font-weight:600;color:var(--text)}
+.dt td.mono{font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.dt td.p1{color:var(--no);font-weight:700;font-family:var(--fc);font-size:.77rem}
+.dt td.p2{color:var(--lean);font-weight:700;font-family:var(--fc);font-size:.77rem}
+.dt td.p3{color:var(--hire);font-weight:700;font-family:var(--fc);font-size:.77rem}
+
+/* SLO TABLE */
+.slo-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.slo-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(167,139,250,.08))}
+.slo-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.slo-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.slo-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.slo-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.slo-table td:first-child{font-weight:600;color:var(--text)}
+.slo-table td.target{font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.slo-table td.budget{font-family:var(--fc);font-size:.76rem;color:var(--strong)}
+
+/* ALERT TABLE */
+.alert-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.alert-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(245,166,35,.06))}
+.alert-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.alert-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45;font-size:.81rem}
+.alert-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.alert-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.alert-table td:first-child{font-weight:600;color:var(--text)}
+.alert-table td.sev1{color:var(--no);font-weight:700;font-family:var(--fc)}
+.alert-table td.sev2{color:var(--lean);font-weight:700;font-family:var(--fc)}
+.alert-table td.sev3{color:var(--hire);font-weight:700;font-family:var(--fc)}
+.alert-table td.cond{font-family:var(--fc);font-size:.75rem;color:var(--accent)}
+
+/* BURN RATE TABLE */
+.burn-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.burn-table thead tr{background:linear-gradient(90deg,rgba(167,139,250,.14),rgba(88,166,255,.08))}
+.burn-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--deep);border-bottom:1px solid rgba(167,139,250,.2)}
+.burn-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.burn-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.burn-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.burn-table td:first-child{font-weight:700;font-family:var(--fc);color:var(--deep)}
+.burn-table td.time{font-family:var(--fc);font-size:.76rem;color:var(--no)}
+.burn-table td.alert-lvl{font-weight:600}
+.burn-table tr:nth-child(1) td.alert-lvl{color:var(--no)}
+.burn-table tr:nth-child(2) td.alert-lvl{color:var(--lean)}
+.burn-table tr:nth-child(3) td.alert-lvl{color:var(--hire)}
+.burn-table tr:nth-child(4) td.alert-lvl{color:var(--muted)}
+
+/* SEVERITY TABLE */
+.sev-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.sev-table thead tr{background:linear-gradient(90deg,rgba(255,107,107,.12),rgba(249,115,22,.06))}
+.sev-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.2)}
+.sev-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45;font-size:.81rem}
+.sev-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.sev-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.sev-table td:first-child{font-weight:700;font-family:var(--fc)}
+.sev-table tr:nth-child(1) td:first-child{color:var(--no)}
+.sev-table tr:nth-child(2) td:first-child{color:var(--lean)}
+.sev-table tr:nth-child(3) td:first-child{color:var(--hire)}
+.sev-table tr:nth-child(4) td:first-child{color:var(--muted)}
+
+/* STEP BOX (incident playbook) */
+.step-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--obs);border-radius:0 8px 8px 0;margin:12px 0;overflow:hidden}
+.step-hdr{padding:10px 16px;background:rgba(249,115,22,.05);border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none}
+.step-hdr-text{display:flex;align-items:center;gap:10px}
+.step-time{font-family:var(--fc);font-size:.72rem;color:var(--obs);font-weight:600}
+.step-title{font-family:var(--fh);font-size:.92rem;font-weight:600;color:var(--text)}
+.step-toggle{font-size:.76rem;color:var(--dim);transition:transform .3s}
+.step-box.collapsed .step-toggle{transform:rotate(-90deg)}
+.step-body{padding:14px 16px;overflow:hidden;transition:max-height .4s,opacity .3s;max-height:9999px;opacity:1}
+.step-box.collapsed .step-body{max-height:0;opacity:0;padding:0 16px}
+.step-body p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.step-body ul{padding-left:16px;margin:6px 0}
+.step-body li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.step-body strong{color:var(--text)}
+
+/* GAME DAY CARDS */
+.game-card{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--deep);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:10px}
+.game-title{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--deep);margin-bottom:6px}
+.game-card ul{list-style:none;padding:0}
+.game-card li{font-size:.85rem;color:var(--muted);padding:3px 0;line-height:1.5}
+.game-card li::before{content:'▸ ';color:var(--deep)}
+
+/* SECTION HEADER */
+.sec-hdr{margin:44px 0 20px}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* PROGRESSION TABLE */
+.prog{width:100%;border-collapse:collapse;font-size:.84rem;margin:16px 0;border-radius:8px;overflow:hidden}
+.prog thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.prog th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.prog td{padding:10px 14px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--muted);line-height:1.55;vertical-align:top}
+.prog tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.prog tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.prog td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Phase 6: Operational Readiness</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">4-Tier Breakdown</div>
+      <li class="ni sub"><a href="#no-hire"><span class="dot dn"></span>No Hire (L4)</a></li>
+      <li class="ni sub"><a href="#lean-hire"><span class="dot dl"></span>Lean Hire (L5)</a></li>
+      <li class="ni sub"><a href="#hire"><span class="dot dh"></span>Hire (L6)</a></li>
+      <li class="ni sub"><a href="#hire-slo">↳ 1. SLO Framework</a></li>
+      <li class="ni sub"><a href="#hire-obs">↳ 2. Observability Stack</a></li>
+      <li class="ni sub"><a href="#hire-incident">↳ 3. Incident Playbook</a></li>
+      <li class="ni sub"><a href="#hire-deploy">↳ 4. Deployment Strategy</a></li>
+      <li class="ni sub"><a href="#strong-hire"><span class="dot ds"></span>Strong Hire (L7)</a></li>
+      <li class="ni sub"><a href="#sh-burnrate">↳ Burn Rate Alerting</a></li>
+      <li class="ni sub"><a href="#sh-obs4">↳ 4-Pillar Observability</a></li>
+      <li class="ni sub"><a href="#sh-custom-metrics">↳ Custom Metrics</a></li>
+      <li class="ni sub"><a href="#sh-3am">↳ 3 AM Playbook</a></li>
+      <li class="ni sub"><a href="#sh-postmortem">↳ Postmortem Template</a></li>
+      <li class="ni sub"><a href="#sh-gamedays">↳ Game Days</a></li>
+      <li class="ni sub"><a href="#sh-deploy">↳ Progressive Delivery</a></li>
+      <li class="ni sub"><a href="#sh-migrations">↳ Expand-Contract Pattern</a></li>
+    </li>
+    <li class="ng"><div class="nl">Synthesis</div>
+      <li class="ni"><a href="#aomb">AOMB Checklist</a></li>
+      <li class="ni"><a href="#wow">Wow Moments</a></li>
+      <li class="ni"><a href="#progression">Progression Summary</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">System Design Interview · Study Guide · Phase 6</div>
+  <h1>Operational<br>Readiness</h1>
+  <div class="hero-meta">
+    <span>⏱ 45–55 minutes</span>
+    <span>📊 SLO + Error Budgets</span>
+    <span>🌙 3 AM Incident Playbook</span>
+    <span>🚀 Canary Deployment</span>
+    <span>🔥 Burn Rate Alerting</span>
+    <span>🎮 Game Days &amp; Chaos Eng.</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The operations phase. Tests whether you can define SLOs with business context, set up distributed tracing for debugging, run structured incident response at 3 AM, and deploy safely with automatic rollback. The L7 insight: reliability isn't a feature — it's a culture built with burn rate alerting, game days, and alert hygiene.</p>
+</section>
+
+<div class="phase-hdr">
+  <div class="phase-num">Phase 6 · 45–55 min</div>
+  <h2>Bottlenecks, Scale &amp; Operational Readiness</h2>
+  <span class="phase-time">45 – 55 minutes</span>
+  <div class="phase-prompt">
+    <div class="prompt-lbl">Interviewer Prompt</div>
+    <blockquote>"Good deep dive. Now let's talk operations. Show me your back-of-envelope math. What metrics are you monitoring? It's 3 AM and PagerDuty fires — your p99 latency spiked from 50ms to 2 seconds. Walk me through your debugging process. And how do you deploy new versions without downtime?"</blockquote>
+  </div>
+</div>
+
+<!-- ══════ NO HIRE ══════ -->
+<div class="tier no" id="no-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">❌</span><span class="tier-name">No Hire</span><span class="tier-badge">L4 / Weak L5</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"For monitoring, I'd use CloudWatch or Datadog to track metrics like CPU, memory, and request count. We'd set up alerts for when things go wrong.</p>
+      <p>If PagerDuty fires at 3 AM with high latency, I'd first check if the servers are overloaded. I'd look at CPU usage and see if we need to scale up. I'd also check the database to see if queries are slow.</p>
+      <p>For deployments, I'd use a rolling update strategy. We'd deploy to one server at a time, make sure it's healthy, then move to the next. If something goes wrong, we roll back.</p>
+      <p>I think that covers the operational aspects. Should I go into more detail on anything?"</p>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Why This Fails</div>
+      <ul>
+        <li>Generic monitoring — "CPU, memory, request count" with no application-specific metrics</li>
+        <li>No SLOs/SLIs — doesn't mention what "healthy" means numerically</li>
+        <li>Vague debugging — "check if servers are overloaded" isn't a process</li>
+        <li>No distributed tracing — how do you trace a request across 10 services?</li>
+        <li>No mention of golden signals — latency, errors, traffic, saturation</li>
+        <li>Rolling update without details — what about database migrations? Cache invalidation?</li>
+        <li>No runbook thinking — debugging is ad-hoc, not procedural</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Candidate's operational thinking is generic and shallow. No specific metrics for THIS system. Debugging process is 'look at CPU' which doesn't help for latency issues. No understanding of distributed debugging or deployment safety."
+    </div>
+    <div class="fatal">
+      <div class="fatal-title">Fatal Mistakes</div>
+      <ul>
+        <li>No system-specific metrics</li>
+        <li>No structured debugging process</li>
+        <li>No mention of tracing or correlation IDs</li>
+        <li>Deployment strategy ignores the data layer</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ LEAN HIRE ══════ -->
+<div class="tier lean" id="lean-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">⚠️</span><span class="tier-name">Lean Hire</span><span class="tier-badge">Meets L5, Not L6</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"Let me cover monitoring, incident response, and deployment.</p>
+      <p>Monitoring: request latency (p50, p99), error rate (5xx), throughput, database query time, cache hit rate, CPU/memory. Alerts: P99 latency &gt;100ms warning, &gt;500ms critical. Error rate &gt;1% critical. Cache hit rate &lt;80% warning.</p>
+      <p>Debugging the 3 AM incident: Check if it's affecting all endpoints or just redirects. Check database metrics — slow queries? Check Redis — is it responding? Check for traffic spike. Look at recent deployments.</p>
+      <p>Deployment: I'd use blue-green deployment. Deploy new version to 'green', run smoke tests, switch load balancer to green, keep blue running for quick rollback."</p>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">What's Good</div>
+      <ul>
+        <li>Listed specific metrics with percentiles</li>
+        <li>Defined alert thresholds</li>
+        <li>Structured debugging steps</li>
+        <li>Blue-green deployment understanding</li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">What's Missing for L6</div>
+      <ul>
+        <li>No SLO/error budget thinking — what's the business impact of these thresholds?</li>
+        <li>No distributed tracing — how do you find which service is slow?</li>
+        <li>No correlation IDs — how do you trace a user request end-to-end?</li>
+        <li>Debugging is linear — real incidents require <mark>parallel investigation</mark></li>
+        <li>No runbook — steps aren't detailed enough to follow at 3 AM</li>
+        <li>Deployment ignores data layer — what about schema migrations?</li>
+        <li>No canary strategy — blue-green is all-or-nothing risk</li>
+        <li>No rollback triggers — what metrics trigger automatic rollback?</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Candidate understands monitoring basics but lacks depth. Debugging process is a checklist without prioritization or parallel investigation. Deployment strategy doesn't address the hard parts (migrations, cache warming). Missing SLO framework."
+    </div>
+    <div class="upgrade">
+      <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+      <p>Add: SLO-based alerting with error budgets, distributed tracing setup, detailed runbook with decision trees, canary deployment with automatic rollback triggers, and database migration strategy.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ HIRE (L6) ══════ -->
+<div class="tier hire" id="hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">✅</span><span class="tier-name">Hire</span><span class="tier-badge">Meets L6 Bar</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="callout info" style="margin-top:0">
+      <div class="callout-title">L6 Opening Frame</div>
+      <p>"Let me structure this as: SLO framework, observability stack, incident response playbook, and deployment strategy."</p>
+    </div>
+
+    <!-- SLO -->
+    <h4 id="hire-slo">1. SLO Framework</h4>
+    <table class="slo-table">
+      <thead><tr><th>SLO</th><th>Target</th><th>Error Budget (monthly)</th><th>Business Impact if Missed</th></tr></thead>
+      <tbody>
+        <tr><td>Redirect availability</td><td class="target">99.99%</td><td class="budget">4.3 min downtime</td><td>Broken links, user complaints</td></tr>
+        <tr><td>Redirect latency p99</td><td class="target">&lt;50ms</td><td class="budget">0.01% requests</td><td>Poor user experience</td></tr>
+        <tr><td>Create availability</td><td class="target">99.9%</td><td class="budget">43 min downtime</td><td>Users can't shorten URLs</td></tr>
+        <tr><td>Create latency p99</td><td class="target">&lt;200ms</td><td class="budget">0.01% requests</td><td>Frustrated API users</td></tr>
+        <tr><td>Data durability</td><td class="target">99.9999%</td><td class="budget">0 URLs lost</td><td>Catastrophic trust damage</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info">
+      <div class="callout-title">Error Budget Policy</div>
+      <ul>
+        <li><strong>Budget &gt;50% remaining:</strong> Ship features freely</li>
+        <li><strong>Budget 20-50%:</strong> Slow down, review each deployment</li>
+        <li><strong>Budget &lt;20%:</strong> Freeze features, focus on reliability</li>
+        <li><strong>Budget exhausted:</strong> All hands on reliability</li>
+      </ul>
+    </div>
+
+    <!-- OBSERVABILITY -->
+    <h4 id="hire-obs">2. Observability Stack</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Golden Signals Dashboard</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>METRICS (Prometheus + Grafana)
+
+   LATENCY                  TRAFFIC                  ERRORS
+   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+   │ redirect_p50    │    │ redirect_qps    │    │ redirect_5xx    │
+   │ redirect_p99    │    │ create_qps      │    │ create_5xx      │
+   │ redirect_p999   │    │ cdn_hit_rate    │    │ db_errors       │
+   │ create_p50/p99  │    │ cache_hit_rate  │    │ cache_errors    │
+   │ db_query_time   │    │                 │    │                 │
+   └─────────────────┘    └─────────────────┘    └─────────────────┘
+
+   SATURATION:  cpu_utilization, memory_utilization, db_connections,
+                redis_memory_pct, kafka_consumer_lag, disk_io</pre>
+    </div>
+
+    <h4>Distributed Tracing (Jaeger/Zipkin)</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Trace · GET /Xk9Lm2n</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Request: GET /Xk9Lm2n
+Trace ID: abc123def456
+
+├── CDN Edge (Cloudflare) [5ms]  → cache: MISS
+├── API Gateway [1ms]            → rate_limit: PASS
+├── Redirect Service [12ms]
+│   ├── redis.get("url:Xk9Lm2n") [0.5ms]  → MISS
+│   ├── postgres.query("SELECT...") [8ms]  → shard: 3, rows: 1
+│   └── redis.set("url:Xk9Lm2n") [1ms]
+└── Kafka Producer (async) [2ms] → topic: click_events
+
+Total: 18ms</pre></div>
+
+    <h4>Structured Logging (ELK Stack)</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">JSON · Log Line</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>{
+  "trace_id":  "abc123def456",
+  "span_id":   "span789",
+  "service":   "redirect-service",
+  "level":     "INFO",
+  "timestamp": "2024-01-15T03:45:22.123456Z",
+  "method":    "GET",
+  "path":      "/Xk9Lm2n",
+  "status":     301,
+  "latency_ms": 12,
+  "cache_hit":  false,
+  "db_shard":   3,
+  "client_ip":  "1.2.3.4"
+}</pre></div>
+
+    <h4>Alerting Tiers</h4>
+    <table class="alert-table">
+      <thead><tr><th>Severity</th><th>Condition</th><th>Response</th><th>Notification</th></tr></thead>
+      <tbody>
+        <tr><td class="sev1">P1 Critical</td><td class="cond">Redirect availability &lt;99.9% for 2 min</td><td>Immediate wake-up</td><td>PagerDuty + phone</td></tr>
+        <tr><td class="sev1">P1 Critical</td><td class="cond">Error rate &gt;5% for 1 min</td><td>Immediate wake-up</td><td>PagerDuty + phone</td></tr>
+        <tr><td class="sev2">P2 High</td><td class="cond">P99 latency &gt;100ms for 5 min</td><td>Wake-up</td><td>PagerDuty</td></tr>
+        <tr><td class="sev2">P2 High</td><td class="cond">Cache hit rate &lt;80% for 5 min</td><td>Wake-up</td><td>PagerDuty</td></tr>
+        <tr><td class="sev3">P3 Medium</td><td class="cond">Error budget &lt;30%</td><td>Business hours</td><td>Slack</td></tr>
+        <tr><td>P4 Low</td><td class="cond">P99 latency &gt;50ms (SLO breach)</td><td>Next business day</td><td>Email</td></tr>
+      </tbody>
+    </table>
+
+    <!-- INCIDENT PLAYBOOK -->
+    <h4 id="hire-incident">3. Incident Response: The 3 AM Playbook</h4>
+    <div class="callout obs">
+      <div class="callout-title">Scenario: P99 Latency Spiked from 50ms to 2 Seconds</div>
+      <p>Walk through minute by minute. The goal is <strong>mitigation first</strong>, root cause second.</p>
+    </div>
+    <div class="step-box" id="inc-step1">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 0-2</span><span class="step-title">Assess Scope (Immediate Parallel Checks)</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li><strong>Is it us or external?</strong> Check CDN status page + AWS status page. If external: update status page, wait.</li>
+          <li><strong>Which endpoint?</strong> redirect_p99 vs create_p99. Narrows to read or write path.</li>
+          <li><strong>Which region?</strong> Single region = regional issue. All regions = shared dependency.</li>
+          <li><strong>When did it start?</strong> Correlate with deployments, traffic spikes, cron jobs.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step-box" id="inc-step2">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 2-5</span><span class="step-title">Identify Bottleneck via Traces</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <p><strong>Query slow traces:</strong> <code>trace.duration &gt; 2000ms AND service = "redirect-service"</code></p>
+        <ul>
+          <li><strong>If Redis span slow (&gt;500ms instead of &lt;1ms):</strong> Check redis_connections, redis_memory, network latency to Redis</li>
+          <li><strong>If Postgres span slow (&gt;1500ms instead of &lt;10ms):</strong> Check active_connections, slow_query_log, lock_waits, replication lag</li>
+          <li><strong>If no single span slow:</strong> Check GC pauses, CPU throttling, NIC saturation</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step-box" id="inc-step3">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 5-10</span><span class="step-title">Mitigate (Restore Service First)</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li><strong>If recent deployment suspect:</strong> <code>kubectl rollout undo deployment/redirect-service</code></li>
+          <li><strong>If database slow:</strong> Kill long-running queries with pg_terminate_backend, failover to replica, enable circuit breaker</li>
+          <li><strong>If cache unavailable:</strong> Restart Redis nodes (rolling), enable fallback to DB directly</li>
+          <li><strong>If DDoS/traffic spike:</strong> Enable CDN rate limiting, block IPs at edge, scale API servers</li>
+        </ul>
+        <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">SQL · Kill Long Queries</span></div>
+        <pre>SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE state = 'active'
+AND query_start < now() - interval '30 seconds';</pre></div>
+      </div>
+    </div>
+    <div class="step-box" id="inc-step4">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 10-15</span><span class="step-title">Verify Resolution</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li>P99 returning to normal? (&lt;50ms)</li>
+          <li>Error rate declining?</li>
+          <li>Synthetic monitors succeeding?</li>
+          <li>Social media / support complaints stopping?</li>
+          <li>If NOT resolved: escalate, page additional engineers, update status page</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- DEPLOYMENT -->
+    <h4 id="hire-deploy">4. Deployment Strategy: Canary</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Canary Deployment Pipeline</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>Stage 1: Integration Tests (CI)
+  → Unit tests, integration tests, contract tests (API schema)
+
+Stage 2: Staging Deployment
+  → Full E2E test suite, load test, security scan (OWASP)
+
+Stage 3: Canary (1% traffic, 10 minutes)
+  → Auto-rollback triggers:
+    - Error rate > 2x baseline
+    - P99 latency > 1.5x baseline
+    - Memory growth > 20%
+
+Stage 4: Progressive Rollout
+  → 1% → 10% (10 min) → 50% (10 min) → 100%
+  → Same auto-rollback triggers at each stage
+  → Manual approval gate before 50%
+
+Stage 5: Bake (24 hours)
+  → Full production traffic
+  → Keep old version ready for quick rollback</pre>
+    </div>
+
+    <h4>Database Migrations (Zero Downtime)</h4>
+    <div class="callout warn">
+      <div class="callout-title">Rule: Never Make Breaking Schema Changes in One Deployment</div>
+      <p>Example: Renaming column "url" to "long_url"</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">SQL · Zero-Downtime Migration — 5 Steps</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Step 1: Add new column (safe, old code still works)
+ALTER TABLE urls ADD COLUMN long_url VARCHAR(2048);
+
+-- Step 2: Backfill + dual-write
+UPDATE urls SET long_url = url WHERE long_url IS NULL;
+-- Deploy code that WRITES to both columns, READS from "url"
+
+-- Step 3: Switch reads
+-- Deploy code that READS from "long_url", still writes to both
+
+-- Step 4: Stop writing to old column
+-- Deploy code that only uses "long_url"
+
+-- Step 5: Drop old column (weeks later, when safe)
+ALTER TABLE urls DROP COLUMN url;</pre></div>
+
+    <div class="aomb">
+      <div class="aomb-title">AOMB Completeness Checklist — Verified (L6)</div>
+      <ul>
+        <li>SLO framework with error budgets tied to business impact</li>
+        <li>Golden signals metrics (all four: latency, traffic, errors, saturation)</li>
+        <li>Distributed tracing with example trace showing per-span latency</li>
+        <li>Structured logging with trace ID propagation</li>
+        <li>Tiered alerting with severities and channels</li>
+        <li>Detailed incident playbook with minute-by-minute decision tree</li>
+        <li>Canary deployment with auto-rollback triggers</li>
+        <li>Zero-downtime database migration strategy (5-step)</li>
+        <li>Cache invalidation strategy on deploy</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Strong operational maturity. SLO framework with error budgets shows understanding of reliability engineering. Incident playbook is detailed enough to be actionable. Canary with auto-rollback demonstrates production experience. This person has been paged at 3 AM before."
+    </div>
+    <div class="signals">
+      <div class="signals-title">Key Phrases That Signal L6 — Memorize These</div>
+      <ul>
+        <li>"Let me define SLOs tied to business impact"</li>
+        <li>"I'd look at distributed traces to identify the slow span"</li>
+        <li>"Check these in parallel during the first 2 minutes"</li>
+        <li>"Auto-rollback triggers if error rate exceeds 2x baseline"</li>
+        <li>"Never make breaking schema changes in one deployment"</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">What Separates This From L5</div>
+      <p>L5 monitors metrics and has alerts. L6 has an <mark>SLO framework with error budgets</mark>, distributed tracing for debugging, a structured incident playbook with decision trees, and canary deployment with automatic rollback. L6 thinks about the complete operational lifecycle.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ STRONG HIRE (L7) ══════ -->
+<div class="tier strong" id="strong-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">🏆</span><span class="tier-name">Strong Hire</span><span class="tier-badge">L7 Signal · Exceptional</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="callout extra" style="margin-top:0">
+      <div class="callout-title">L7 Opening — Five Dimensions</div>
+      <p>"Let me cover this comprehensively: SLO framework, observability architecture, incident response with game days, deployment strategy, and <mark class="g">chaos engineering.</mark>"</p>
+    </div>
+
+    <!-- BURN RATE -->
+    <h4 id="sh-burnrate">1. SLO Framework with Burn Rate Alerting</h4>
+    <table class="slo-table">
+      <thead><tr><th>SLO</th><th>Target</th><th>Window</th><th>Error Budget</th></tr></thead>
+      <tbody>
+        <tr><td>Redirect Success Rate</td><td class="target">99.99%</td><td>30 days</td><td class="budget">4.32 min outage OR 0.01% errors</td></tr>
+        <tr><td>Redirect Latency p99</td><td class="target">&lt;50ms</td><td>30 days</td><td class="budget">0.01% requests can exceed</td></tr>
+        <tr><td>Create Success Rate</td><td class="target">99.9%</td><td>30 days</td><td class="budget">43.2 min outage</td></tr>
+        <tr><td>Data Durability</td><td class="target">99.9999%</td><td>Infinite</td><td class="budget">Zero tolerance</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout extra">
+      <div class="callout-title">Burn Rate Alerting — Better Than Threshold Alerts</div>
+      <p><strong>Traditional alert:</strong> "P99 &gt; 50ms" → fires on any spike, too noisy</p>
+      <p><strong>Burn rate alert:</strong> "At the current error rate, we'll exhaust our monthly budget in X hours"</p>
+      <p style="margin-top:8px"><code>Burn Rate = (current error rate) / (allowed error rate)</code></p>
+      <p>If SLO = 99.99%, allowed error rate = 0.01%. If current error rate = 0.05%, burn rate = 5x. At 5x, we exhaust monthly budget in 6 days instead of 30.</p>
+    </div>
+
+    <table class="burn-table">
+      <thead><tr><th>Burn Rate</th><th>Time to Budget Exhaustion</th><th>Alert Level</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>14.4x</td><td class="time">2 hours</td><td class="alert-lvl">P1</td><td>Page immediately</td></tr>
+        <tr><td>6x</td><td class="time">5 hours</td><td class="alert-lvl">P2</td><td>Page during work hours</td></tr>
+        <tr><td>3x</td><td class="time">10 hours</td><td class="alert-lvl">P3</td><td>Slack notification</td></tr>
+        <tr><td>1x</td><td class="time">30 days</td><td class="alert-lvl">Normal</td><td>No alert</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout extra">
+      <div class="callout-title">Why Burn Rate Is Better</div>
+      <ul>
+        <li>A 1-minute spike at 10x error rate is ignorable (burns 10 min of budget)</li>
+        <li>A sustained 2x error rate for 2 hours is serious (burns 4 hours of budget)</li>
+        <li>Traditional alerting can't distinguish these — burn rate can</li>
+      </ul>
+    </div>
+
+    <h4>Error Budget Policy</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Error Budget Policy Levels</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>Budget > 50%:  "Innovation Mode"
+──────────────
+• Ship features freely
+• Experiment with new technologies
+• Take calculated risks
+
+Budget 25-50%: "Balanced Mode"
+──────────────
+• Ship features with extra review
+• Prioritize reliability-related features
+• No risky experiments
+
+Budget 10-25%: "Defensive Mode"
+──────────────
+• Feature freeze
+• All hands on reliability improvements
+• Mandatory senior engineer code reviews
+
+Budget < 10%: "Emergency Mode"
+──────────────
+• War room established
+• Leadership notified
+• Consider rollback of recent changes
+• Postmortem required for each incident</pre>
+    </div>
+
+    <!-- 4-PILLAR OBSERVABILITY -->
+    <h4 id="sh-obs4">2. Four-Pillar Observability Architecture</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · 4 Pillars + Correlation Layer</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   METRICS   │  │   TRACING   │  │   LOGGING   │  │  PROFILING  │
+│             │  │             │  │             │  │             │
+│ Prometheus  │  │   Jaeger    │  │  ELK/Loki   │  │  Pyroscope  │
+│  + Grafana  │  │ + Zipkin    │  │             │  │  + Parca    │
+│             │  │             │  │             │  │             │
+│ • SLO track │  │ • Request   │  │ • Debug     │  │ CPU flamegraphs │
+│ • Golden    │  │   flow      │  │   details   │  │ Memory alloc│
+│   signals   │  │ • Latency   │  │ • Errors    │  │ Goroutine   │
+│ • Capacity  │  │   breakdown │  │ • Audit     │  │ analysis    │
+│   planning  │  │ • Service   │  │   trail     │  │             │
+│             │  │   deps      │  │             │  │             │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       └────────────────┴─────────────────┴─────────────────┘
+                                  │
+                         CORRELATION LAYER
+                   trace_id links metrics → traces → logs → profiles</pre>
+    </div>
+
+    <div class="callout extra">
+      <div class="callout-title">Continuous Profiling — The Secret Weapon</div>
+      <p>Most candidates don't mention this. Profiling captures CPU flame graphs, memory allocation, goroutine counts, and lock contention in production continuously.</p>
+      <p style="margin-top:8px"><strong>Use case for latency spike:</strong> Traditional debugging → look at traces, see everything is slow. With profiling → see that 80% of CPU is in JSON marshaling → found the bug: accidentally serializing a 10MB response object.</p>
+    </div>
+
+    <!-- CUSTOM METRICS -->
+    <h4 id="sh-custom-metrics">Custom Metrics for This System</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Python · URL Shortener Custom Metrics</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre># Redirect path
+redirect_latency   = Histogram("redirect_latency_seconds",
+                               buckets=[.005,.01,.025,.05,.1,.25,.5,1,2.5])
+redirect_cache_hit = Counter("redirect_cache_hit_total",
+                             labels=["tier"])  # local, redis, miss
+redirect_result    = Counter("redirect_result_total",
+                             labels=["status"])  # 301, 404, 410
+
+# Create path
+create_latency  = Histogram("create_latency_seconds",
+                            buckets=[.01,.025,.05,.1,.25,.5,1])
+create_result   = Counter("create_result_total",
+                          labels=["status"])  # 201, 400, 409, 429
+idempotency_hit = Counter("idempotency_hit_total")  # Replayed requests
+
+# Code generation health
+range_remaining     = Gauge("code_range_remaining")  # Codes left in range
+range_fetch_latency = Histogram("range_fetch_latency_seconds")
+
+# Business metrics
+urls_created_total = Counter("urls_created_total", labels=["type"])  # random, custom
+active_urls        = Gauge("active_urls_total")  # Non-expired URLs
+
+# Dependency latencies
+redis_latency    = Histogram("redis_latency_seconds", labels=["operation"])
+postgres_latency = Histogram("postgres_latency_seconds", labels=["query_type"])
+kafka_produce    = Histogram("kafka_produce_latency_seconds")</pre></div>
+
+    <!-- 3 AM PLAYBOOK L7 -->
+    <h4 id="sh-3am">3. Incident Response — Minute-by-Minute (L7 Detail)</h4>
+    <table class="sev-table">
+      <thead><tr><th>Severity</th><th>Definition</th><th>Example</th><th>Response Time</th></tr></thead>
+      <tbody>
+        <tr><td>SEV1</td><td>Complete outage</td><td>All redirects failing</td><td>Immediate</td></tr>
+        <tr><td>SEV2</td><td>Partial / degradation</td><td>P99 &gt;500ms, single region down</td><td>15 min</td></tr>
+        <tr><td>SEV3</td><td>Elevated errors</td><td>Error budget burning 3x</td><td>1 hour</td></tr>
+        <tr><td>SEV4</td><td>Anomaly</td><td>Cache hit rate dropped 5%</td><td>Next biz day</td></tr>
+      </tbody>
+    </table>
+
+    <div class="step-box">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 0</span><span class="step-title">Acknowledge &amp; Assess (60 seconds)</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li>Acknowledge page (stops escalation timer)</li>
+          <li>Check status pages: AWS, Cloudflare, PagerDuty (rule out providers)</li>
+          <li>Open primary dashboard</li>
+          <li>Answer: Is it affecting users? Is it still ongoing? Is it getting worse?</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step-box">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 1-3</span><span class="step-title">Initial Triage — Open 4 Browser Tabs Simultaneously</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li><strong>Tab 1 — Metrics Dashboard:</strong> Which endpoint? Which region? Started when?</li>
+          <li><strong>Tab 2 — Traces (filtered: latency &gt;2s, last 5 min):</strong> Sample 5 slow traces. Which span is slow? Is there a pattern (same shard? same pod)?</li>
+          <li><strong>Tab 3 — Recent Changes:</strong> Any deploys in last 2 hours? Config changes? Infrastructure changes (cert rotations, scaling events)?</li>
+          <li><strong>Tab 4 — External Factors:</strong> Traffic spike (DDoS or viral)? Time-based pattern (cron job)? Upstream dependency?</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step-box">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 3-5</span><span class="step-title">Root Cause Hypothesis (Decision Tree)</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <ul>
+          <li><strong>IF Redis span slow (&gt;100ms):</strong> Check redis_cpu, redis_memory, connections, hot key detection</li>
+          <li><strong>IF Postgres span slow (&gt;500ms):</strong> Check active connections, slow query log, lock waits, replication lag, disk I/O throttling</li>
+          <li><strong>IF App slow (no external span slow):</strong> Check CPU (GC?), memory (swapping?), continuous profiler flame graph, goroutine count (deadlock? leak?)</li>
+          <li><strong>IF CDN slow:</strong> Check CDN status page, origin health from CDN perspective, certificate issues</li>
+        </ul>
+      </div>
+    </div>
+    <div class="step-box">
+      <div class="step-hdr" onclick="toggleStep(this)">
+        <div class="step-hdr-text"><span class="step-time">Minute 5-10</span><span class="step-title">Mitigation — Restore Service First, Investigate Later</span></div>
+        <span class="step-toggle">▾</span>
+      </div>
+      <div class="step-body">
+        <div class="code"><div class="code-hdr"><span class="code-lang">bash · Common Mitigation Commands</span></div>
+        <pre># Rollback deployment (if suspect)
+kubectl rollout undo deployment/redirect-service
+
+# Kill long-running DB queries
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE state = 'active' AND query_start < now() - interval '30 sec';
+
+# Enable CDN rate limiting for DDoS
+cf-cli rate-limit --zone=short.url --rate=1000/min --action=block</pre></div>
+        <p>If nothing works and impact is severe: escalate (page additional engineers), update status page, consider "degraded mode" (disable non-critical features like detailed analytics).</p>
+      </div>
+    </div>
+
+    <!-- POSTMORTEM -->
+    <h4 id="sh-postmortem">Post-Incident: Blameless Postmortem Template</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Markdown · Postmortem Template</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre># Incident Report: Redirect Latency Spike
+
+**Date:** 2024-01-15  |  **Duration:** 23 minutes (03:12 - 03:35 UTC)
+**Severity:** SEV2     |  **Error budget consumed:** 12% of monthly budget
+
+## Summary
+Redirect p99 latency increased from 50ms to 2.1 seconds,
+affecting ~15% of redirect requests for 23 minutes.
+
+## Impact
+- 2.3M redirects affected (out of 15M during the window)
+- Error budget consumed: 12% of monthly budget
+- Estimated revenue impact: $X (affiliate link delays)
+
+## Timeline
+- 03:00 - Batch job starts (normal)
+- 03:10 - Batch job enters "full table scan" phase (abnormal)
+- 03:12 - Latency alert fires, on-call paged
+- 03:14 - On-call acknowledges, begins investigation
+- 03:18 - Root cause identified: batch job holding locks
+- 03:22 - Batch job killed
+- 03:35 - Latency fully normalized, incident resolved
+
+## Root Cause
+Batch job (URL expiration cleanup) ran DELETE without batching:
+  DELETE FROM urls WHERE expires_at < now() AND deleted_at IS NULL;
+This locked 100K+ rows while scanning, blocking read queries.
+
+## What Went Well
+- Alert fired within 2 minutes of impact
+- On-call identified root cause within 6 minutes
+
+## What Went Poorly
+- Batch job had no circuit breaker or rate limiting
+- Job scheduled during peak hours (should be off-peak)
+
+## Action Items
+| Action                              | Owner  | Due        | Priority |
+|-------------------------------------|--------|------------|----------|
+| Add batch size limit to cleanup job | @alice | 2024-01-17 | P1       |
+| Reschedule cleanup to 06:00 UTC     | @alice | 2024-01-16 | P0       |
+| Alert on batch job duration > 5 min | @bob   | 2024-01-18 | P2       |</pre></div>
+
+    <!-- GAME DAYS -->
+    <h4 id="sh-gamedays">4. Game Days — Proactive Failure Testing</h4>
+    <div class="callout extra">
+      <div class="callout-title">Philosophy</div>
+      <p>"Don't wait for 3 AM incidents. Practice them in controlled conditions during business hours when you have a full team."</p>
+    </div>
+
+    <div class="game-card">
+      <div class="game-title">Scenario 1: Database Primary Failure</div>
+      <ul>
+        <li>Terminate primary database instance</li>
+        <li>Verify automatic failover to replica</li>
+        <li>Measure: time to detect, time to recover, requests affected</li>
+        <li>Target: &lt;30 seconds failover</li>
+      </ul>
+    </div>
+    <div class="game-card">
+      <div class="game-title">Scenario 2: Redis Cluster Failure</div>
+      <ul>
+        <li>Kill 2 of 3 Redis primary nodes</li>
+        <li>Verify system degrades gracefully (DB fallback)</li>
+        <li>Verify no data loss, no user-facing errors</li>
+      </ul>
+    </div>
+    <div class="game-card">
+      <div class="game-title">Scenario 3: Runaway Traffic (Hot URL)</div>
+      <ul>
+        <li>Simulate 10x traffic spike to a single URL</li>
+        <li>Verify rate limiting engages for other users</li>
+        <li>Verify other URLs unaffected</li>
+      </ul>
+    </div>
+    <div class="game-card">
+      <div class="game-title">Scenario 4: Bad Deploy</div>
+      <ul>
+        <li>Deploy code with intentional memory leak</li>
+        <li>Verify canary catches it before full rollout</li>
+        <li>Verify auto-rollback triggers correctly</li>
+      </ul>
+    </div>
+    <div class="game-card">
+      <div class="game-title">Scenario 5: Dependency Failure</div>
+      <ul>
+        <li>Block network to external safe browsing API</li>
+        <li>Verify URL creation continues (timeout, fallback)</li>
+        <li>Verify no cascading failures downstream</li>
+      </ul>
+    </div>
+
+    <h4>Chaos Engineering Configuration</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">YAML · Chaos Monkey Config</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>chaos_experiments:
+  - name: "random-pod-termination"
+    type: "pod-kill"
+    target:
+      namespace: "production"
+      labels: { app: "redirect-service" }
+    schedule: "daily"
+    blast_radius: 1  # Kill 1 pod at a time
+
+  - name: "network-latency"
+    type: "network-delay"
+    target:
+      namespace: "production"
+      labels: { app: "redirect-service" }
+    parameters:
+      latency: "100ms"
+      jitter: "50ms"
+      target_service: "postgres"
+    schedule: "weekly"
+    duration: "5m"
+
+  - name: "cpu-pressure"
+    type: "cpu-hog"
+    parameters: { cores: 1, percentage: 80 }
+    schedule: "weekly"
+    duration: "10m"</pre></div>
+
+    <!-- DEPLOYMENT L7 -->
+    <h4 id="sh-deploy">5. Progressive Delivery with Feature Flags</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Progressive Deployment Pipeline</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐
+│   CI    │─▶│ Staging │─▶│ Canary  │─▶│  Ramp   │─▶│  Bake   │
+│         │  │         │  │   1%    │  │ 10-50%  │  │  100%   │
+└─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘
+     │            │            │            │            │
+     └────────────┴────────────┴────────────┴────────────┘
+                            AUTOMATED GATES
+     CI: All tests pass
+     Staging: E2E tests pass, no P1 bugs
+     Canary: Error rate < 2x baseline, latency < 1.5x baseline
+     Ramp: Same as canary, sustained for 30 min
+     Bake: 24h with no anomalies
+     ANY gate failure → automatic rollback</pre>
+    </div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">Python · Feature Flag Example</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>def redirect(short_code):
+    if feature_flag.is_enabled("new_redirect_logic", user_id=request.ip):
+        return new_redirect_implementation(short_code)
+    else:
+        return old_redirect_implementation(short_code)
+
+# Flag config (LaunchDarkly, Flipt, etc.)
+{
+    "name": "new_redirect_logic",
+    "rollout_percentage": 5,         # 5% of requests
+    "enabled_users": ["internal"],   # Plus all internal users
+    "kill_switch": true,             # Can be disabled instantly
+    "metrics": ["redirect_latency", "redirect_errors"]
+}
+# Why feature flags: deploy code without activating it,
+# instant kill switch (no rollback needed), A/B testing built-in</pre></div>
+
+    <!-- EXPAND CONTRACT -->
+    <h4 id="sh-migrations">Expand-Contract Migration Pattern</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Expand-Contract: Zero-Downtime Column Rename</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>Goal: Rename column "url" to "long_url" with zero downtime
+
+PHASE 1: EXPAND
+─────────────────
+• ALTER TABLE urls ADD COLUMN long_url VARCHAR(2048)
+• Deploy: writes to BOTH columns
+• Backfill in batches of 10K (avoid locking):
+  UPDATE urls SET long_url = url WHERE long_url IS NULL LIMIT 10000;
+
+PHASE 2: MIGRATE
+─────────────────
+• Deploy: READS from new column, writes to both
+• Verify all reads successful
+
+PHASE 3: CONTRACT
+─────────────────
+• Deploy: only uses new column
+• ALTER TABLE urls DROP COLUMN url
+  (wait 1-2 weeks to ensure no rollback needed)
+
+Total time: 2-4 weeks  |  Downtime: Zero  |  Risk: Low (reversible)</pre>
+    </div>
+
+    <h4>On-Call Best Practices &amp; Alert Hygiene</h4>
+    <div class="callout extra">
+      <div class="callout-title">On-Call Load Targets</div>
+      <ul>
+        <li>&lt;2 pages per week per person</li>
+        <li>&lt;1 page requiring action per week</li>
+        <li>If exceeded → reliability sprint</li>
+        <li>Monthly alert review: count pages per type, check if actionable, automate where possible</li>
+      </ul>
+    </div>
+    <div class="callout warn">
+      <div class="callout-title">Anti-Patterns to Eliminate</div>
+      <ul>
+        <li>"This always fires on Tuesday at 3 AM, we ignore it" — tune or delete it</li>
+        <li>"Page for X, but we never do anything about it" — add runbook or delete</li>
+        <li>"50 alerts fired but they were all the same issue" — aggregate alerts</li>
+      </ul>
+    </div>
+
+    <!-- AOMB L7 -->
+    <div class="aomb" id="aomb">
+      <div class="aomb-title">AOMB Completeness Checklist — L7 (All Verified)</div>
+      <ul>
+        <li>Burn rate alerting (not just threshold) with math explanation</li>
+        <li>Error budget policy with 4 action levels (Innovation → Emergency)</li>
+        <li>Four pillars: metrics, tracing, logs, AND continuous profiling</li>
+        <li>Custom metrics specific to URL Shortener (range_remaining, idempotency_hit)</li>
+        <li>Layered dashboards (executive / on-call / deep-dive / capacity)</li>
+        <li>Severity classification (SEV1-SEV4) with definitions</li>
+        <li>Minute-by-minute incident playbook with 4-tab parallel investigation</li>
+        <li>Root cause decision tree by slow span type</li>
+        <li>Detailed postmortem template with action items</li>
+        <li>Game days with 5 specific failure scenarios</li>
+        <li>Chaos engineering YAML configuration</li>
+        <li>Feature flags for progressive delivery (separate deploy from release)</li>
+        <li>Expand-contract migration pattern (named and diagrammed)</li>
+        <li>Alert hygiene practice with anti-patterns</li>
+        <li>On-call load targets and rotation best practices</li>
+      </ul>
+    </div>
+
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Exceptional operational maturity. Burn rate alerting shows SRE depth. Game days and chaos engineering demonstrate proactive reliability culture. Feature flags show understanding of progressive delivery. Postmortem template and alert hygiene show this person has built and run on-call rotations. Strong hire."
+    </div>
+
+    <div id="wow" style="margin-top:20px">
+      <h4>The "Wow" Moments</h4>
+      <div class="wow">Burn rate alerting with the math explained — shows SRE-level sophistication beyond threshold alerts</div>
+      <div class="wow">Continuous profiling as "the secret weapon" — most candidates have never heard of it</div>
+      <div class="wow">Game day scenarios with specific tests — proactive reliability culture, not reactive firefighting</div>
+      <div class="wow">Feature flags: "separate deployment from release" — deploy code without activating it</div>
+      <div class="wow">"We don't just build systems that work — we build systems we can operate" — articulated a philosophy</div>
+      <div class="wow">Alert hygiene anti-patterns — shows they've suffered from bad alert cultures and fixed them</div>
+    </div>
+
+    <div class="callout extra">
+      <div class="callout-title">What Separates This From L6</div>
+      <p>L6 has good operational practices. L7 has a <strong>reliability culture</strong> — burn rate alerting, error budget policies, game days, chaos engineering, and alert hygiene. <mark class="g">L7 doesn't just react to incidents — they proactively test failure scenarios and continuously improve operational practices.</mark> They treat on-call as a product to be optimized, not a burden to be endured.</p>
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESSION -->
+<div class="sec-hdr" id="progression"><h3>Progression Summary — Phase 6</h3></div>
+<table class="prog">
+  <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+  <tbody>
+    <tr><td>No Hire → Lean Hire</td><td>Specific metrics with thresholds, structured debugging steps, basic deployment strategy</td></tr>
+    <tr><td>Lean Hire → Hire (L6)</td><td>SLO framework, distributed tracing, detailed playbooks, canary with auto-rollback, zero-downtime migrations</td></tr>
+    <tr><td>Hire → Strong Hire (L7)</td><td>Burn rate alerting, continuous profiling, game days, chaos engineering, feature flags, alert hygiene, reliability culture</td></tr>
+  </tbody>
+</table>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="callout-title">The One Thing to Practice</div>
+  <p>When describing incident response, walk through it <strong>minute-by-minute with specific commands and decisions</strong>: "Minute 0-2: acknowledge, check status pages. Minute 2-5: open traces, identify slow span. Minute 5-10: if database, kill queries or failover. Minute 10-15: verify resolution with checklist." This is what actually happens at 3 AM.</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Phase 6</div>
+  <p><strong>L5 engineers</strong> monitor and alert. <strong>L6 engineers</strong> have SLOs, tracing, and runbooks. <strong>L7 engineers</strong> build a reliability culture — they proactively test failures, continuously improve operational practices, and treat on-call as a product to be optimized, not a burden to be endured. The goal: systems you can <em>operate</em> with confidence, not just systems that <em>work</em>.</p>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleTier(h) { h.parentElement.classList.toggle('collapsed'); }
+function toggleStep(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const el = btn.closest('.code');
+  navigator.clipboard.writeText(el.querySelector('pre').innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+function copyDiag(btn) {
+  const el = btn.closest('.diag');
+  navigator.clipboard.writeText(el.querySelector('pre').innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
