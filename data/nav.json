@@ -83,6 +83,10 @@
            {
           "title": "7",
           "file": "pages/interview/system-design/url-shortner/7.html"
+        },
+          {
+          "title": "Core-Part",
+          "file": "pages/interview/system-design/url-shortner/core.html"
         }
       ]
     }
