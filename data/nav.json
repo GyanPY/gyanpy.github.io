@@ -15,7 +15,7 @@
     "Redis": [
       {
         "title": "Internals",
-        "file": "pages/cassandra/redis.html"
+        "file": "pages/redis/redis.html"
       }
     ]
   },
