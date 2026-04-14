@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 4 (Part 3/3): Failure Analysis, Observability & DB Deep Dive — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--surface3:#21262d;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--no),var(--obs),var(--deep));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--deep);background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(167,139,250,.05)}
+.ni.active a{color:var(--deep);border-left-color:var(--deep);background:rgba(167,139,250,.07)}
+.ni.sub a{padding-left:32px;font-size:.74rem}
+.ni.hidden,.ng.hidden{display:none}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dot-deep{background:var(--deep)}.dot-obs{background:var(--obs)}.dot-hire{background:var(--hire)}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:900px;padding:50px 52px 100px;min-width:0}
+
+/* BACk TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--deep);border-color:var(--deep);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--deep);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--deep) 50%,var(--obs));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;text-decoration:none;border:1px solid var(--border);color:var(--muted);transition:all .2s;cursor:default}
+.part-pill.active-part{background:rgba(167,139,250,.1);border-color:var(--deep);color:var(--deep)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:52px 0 22px;padding-bottom:14px}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--text);margin-bottom:6px}
+.sec-hdr.failure h2{color:var(--no)}
+.sec-hdr.obs h2{color:var(--obs)}
+.sec-hdr.cost h2{color:var(--hire)}
+.sec-hdr.multi h2{color:var(--accent)}
+.sec-hdr.dive h2{color:var(--deep)}
+.sec-eyebrow{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:6px}
+.sec-hdr.failure .sec-eyebrow{color:var(--no)}
+.sec-hdr.obs .sec-eyebrow{color:var(--obs)}
+.sec-hdr.cost .sec-eyebrow{color:var(--hire)}
+.sec-hdr.multi .sec-eyebrow{color:var(--accent)}
+.sec-hdr.dive .sec-eyebrow{color:var(--deep)}
+.sec-hdr hr{border:none;height:1px;margin-top:14px}
+.sec-hdr.failure hr{background:linear-gradient(90deg,rgba(255,107,107,.3),transparent)}
+.sec-hdr.obs hr{background:linear-gradient(90deg,rgba(249,115,22,.3),transparent)}
+.sec-hdr.cost hr{background:linear-gradient(90deg,rgba(0,191,165,.3),transparent)}
+.sec-hdr.multi hr{background:linear-gradient(90deg,rgba(88,166,255,.3),transparent)}
+.sec-hdr.dive hr{background:linear-gradient(90deg,rgba(167,139,250,.3),transparent)}
+
+/* FAILURE TABLES */
+.fail-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.fail-table thead tr{background:linear-gradient(90deg,rgba(255,107,107,.12),rgba(255,215,0,.06))}
+.fail-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.2)}
+.fail-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.81rem}
+.fail-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.fail-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.fail-table tbody tr:hover{background:rgba(255,107,107,.03)}
+.fail-table td:first-child{font-weight:600;color:var(--text)}
+.fail-table td.rto{font-family:var(--fc);font-size:.76rem;color:var(--hire);font-weight:600}
+.fail-table td.br-high{color:var(--no);font-weight:600}
+.fail-table td.br-med{color:var(--lean)}
+.fail-table td.br-low{color:var(--hire)}
+
+/* TIER LABEL */
+.tier-label{display:flex;align-items:center;gap:10px;margin:32px 0 14px}
+.tier-label-text{font-family:var(--fh);font-size:1.1rem;font-weight:700;color:var(--text)}
+.tier-label-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em}
+.tier-label.t1 .tier-label-badge{background:rgba(255,107,107,.14);color:var(--no);border:1px solid rgba(255,107,107,.28)}
+.tier-label.t2 .tier-label-badge{background:rgba(255,215,0,.11);color:var(--lean);border:1px solid rgba(255,215,0,.28)}
+.tier-label.t3 .tier-label-badge{background:rgba(249,115,22,.11);color:var(--obs);border:1px solid rgba(249,115,22,.28)}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout.obs{background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--accent)}
+.callout.extra .callout-title{color:var(--strong)}
+.callout.good .callout-title{color:var(--hire)}
+.callout.deep .callout-title{color:var(--deep)}
+.callout.obs .callout-title{color:var(--obs)}
+.callout.warn .callout-title{color:var(--lean)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* DASHBOARD MOCKUP */
+.dash-wrap{background:#010409;border:1px solid rgba(249,115,22,.2);border-radius:10px;overflow:hidden;margin:14px 0}
+.dash-title-bar{background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.2);padding:8px 16px;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.14em;color:var(--obs)}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(48,54,61,.3)}
+.dash-panel{background:var(--surface2);padding:14px 16px}
+.dp-title{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:10px}
+.dp-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px solid rgba(48,54,61,.3)}
+.dp-row:last-child{border-bottom:none}
+.dp-key{font-family:var(--fc);font-size:.78rem;color:var(--muted)}
+.dp-val{font-family:var(--fc);font-size:.82rem;font-weight:600}
+.dp-val.good{color:var(--hire)}.dp-val.warn{color:var(--lean)}.dp-val.bad{color:var(--no)}.dp-val.neutral{color:var(--text)}
+
+/* ALERT TABLE */
+.alert-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.alert-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(245,166,35,.06))}
+.alert-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.alert-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45;font-size:.81rem}
+.alert-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.alert-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.alert-table td:first-child{font-weight:600;color:var(--text)}
+.alert-table td.p1{color:var(--no);font-weight:700;font-family:var(--fc)}
+.alert-table td.p2{color:var(--lean);font-weight:700;font-family:var(--fc)}
+.alert-table td.p3{color:var(--hire);font-weight:700;font-family:var(--fc)}
+.alert-table td.cond{font-family:var(--fc);font-size:.75rem;color:var(--accent)}
+
+/* TRACE DIAGRAM */
+.diag{background:#010409;border:1px solid rgba(167,139,250,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(167,139,250,.06);border-bottom:1px solid rgba(167,139,250,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--deep);font-weight:600}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.7;color:#c9d1d9;white-space:pre}
+
+/* COST TABLE */
+.cost-table{width:100%;border-collapse:collapse;font-size:.83rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.cost-table thead tr{background:linear-gradient(90deg,rgba(0,191,165,.1),rgba(88,166,255,.06))}
+.cost-table th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--hire);border-bottom:1px solid rgba(0,191,165,.2)}
+.cost-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle}
+.cost-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.cost-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.cost-table td:first-child{font-weight:600;color:var(--text)}
+.cost-table td.cost{font-family:var(--fc);font-size:.8rem;color:var(--strong)}
+.cost-total td{border-top:2px solid var(--hire)!important;background:rgba(0,191,165,.06)!important}
+.cost-total td.cost{font-size:.9rem;font-weight:700;color:var(--hire)}
+
+/* MULTI-REGION GRID */
+.mr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.mr-panel{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px 14px}
+.mr-title{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+.mr-panel p{font-size:.82rem;line-height:1.55;margin-bottom:3px}
+.yes{color:var(--hire)}.no2{color:var(--no)}
+.mr-panel .divider{border:none;height:1px;background:var(--border);margin:8px 0}
+.mr-panel .db-line{font-family:var(--fc);font-size:.76rem;color:var(--accent)}
+
+/* MULTI-REGION DIAGRAM */
+.diag.mr-diag{border-color:rgba(88,166,255,.2)}
+.diag.mr-diag .diag-hdr{background:rgba(88,166,255,.06);border-bottom-color:rgba(88,166,255,.2)}
+.diag.mr-diag .diag-lbl{color:var(--accent)}
+.diag.mr-diag pre{color:#79c0ff}
+
+/* DB APPROACH CARDS */
+.ac{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--deep);border-radius:9px;margin-bottom:18px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.ac:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.ac-hdr{padding:14px 18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none;background:rgba(167,139,250,.04);border-bottom:1px solid var(--border)}
+.ac-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--deep);margin-bottom:2px}
+.ac-title{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text)}
+.ac-toggle{font-size:.76rem;color:var(--dim);transition:transform .3s}
+.ac.collapsed .ac-toggle{transform:rotate(-90deg)}
+.ac-body{padding:16px 18px 18px;overflow:hidden;transition:max-height .4s,opacity .3s;max-height:9999px;opacity:1}
+.ac.collapsed .ac-body{max-height:0;opacity:0;padding:0 18px}
+.ac-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.ac-body h5:first-child{margin-top:0}
+.ac-body ul{padding-left:16px;margin:4px 0 10px}
+.ac-body li{font-size:.87rem;color:var(--muted);line-height:1.58;margin-bottom:4px}
+.ac-body p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.ac-body strong{color:var(--text)}
+.sig-pair{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px}
+.sig-b,.sig-g{border-radius:6px;padding:9px 13px;font-size:.82rem;font-family:var(--fc);line-height:1.5}
+.sig-b{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.18);color:var(--no)}
+.sig-g{background:rgba(0,191,165,.08);border:1px solid rgba(0,191,165,.18);color:var(--hire)}
+.sig-b::before{content:'❌ Weak: ';font-weight:600}
+.sig-g::before{content:'✅ Strong: ';font-weight:600}
+
+/* DB COMPARISON TABLE */
+.db-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.db-table thead tr{background:linear-gradient(90deg,rgba(167,139,250,.14),rgba(88,166,255,.08))}
+.db-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--deep);border-bottom:1px solid rgba(167,139,250,.2)}
+.db-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.db-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.db-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.db-table td:first-child{font-weight:600;color:var(--text)}
+.db-table td.lo{color:var(--hire);font-family:var(--fc);font-size:.76rem}
+.db-table td.hi{color:var(--no);font-family:var(--fc);font-size:.76rem}
+.db-table td.md{color:var(--lean);font-family:var(--fc);font-size:.76rem}
+
+/* FRAMEWORK BOX */
+.fb{background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.2);border-radius:10px;padding:20px 22px;margin:18px 0}
+.fb-title{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--deep);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.fb p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.fb p:last-child{margin-bottom:0}
+.fb strong{color:var(--text)}
+
+/* AOMB */
+.aomb{background:rgba(0,191,165,.05);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:20px 0}
+.aomb-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.aomb ul{list-style:none;padding:0}
+.aomb li{display:flex;align-items:flex-start;gap:7px;padding:3px 0;font-size:.84rem;color:var(--muted);line-height:1.5}
+.aomb li::before{content:'☑';color:var(--hire);flex-shrink:0;margin-top:1px}
+
+/* PROGRESSION TABLE */
+.prog{width:100%;border-collapse:collapse;font-size:.84rem;margin:16px 0;border-radius:8px;overflow:hidden}
+.prog thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.prog th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.prog td{padding:10px 14px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--muted);line-height:1.55;vertical-align:top}
+.prog tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.prog tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.prog td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* WOW */
+.wow{background:rgba(245,166,35,.05);border:1px solid rgba(245,166,35,.15);border-radius:6px;padding:9px 13px;margin-bottom:8px;font-family:var(--fc);font-size:.84rem;color:var(--strong);line-height:1.5}
+.wow::before{content:'✦ ';opacity:.7}
+
+/* NAV CARDS */
+.nav-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:32px 0}
+.nav-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 18px;text-decoration:none;transition:all .2s;display:block}
+.nav-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.nav-card-label{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:5px}
+.nav-card-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:4px}
+.nav-card-desc{font-size:.82rem;color:var(--muted);line-height:1.4}
+
+/* INLINE MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .dash-grid,.mr-grid,.nav-cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Phase 4: High-Level Architecture</div>
+    <div class="sb-part">Part 3 of 3 — Ops, Cost & DB Deep Dive</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng">
+      <div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">💥 Failure Analysis</div>
+      <li class="ni sub"><a href="#tier1"><span class="dot dot-obs"></span>Tier 1: Availability</a></li>
+      <li class="ni sub"><a href="#tier2"><span class="dot dot-hire"></span>Tier 2: Correctness</a></li>
+      <li class="ni sub"><a href="#tier3"><span class="dot dot-obs"></span>Tier 3: Operational</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">📊 Observability</div>
+      <li class="ni sub"><a href="#golden-signals">Golden Signals Dashboard</a></li>
+      <li class="ni sub"><a href="#alerts">Alert Table</a></li>
+      <li class="ni sub"><a href="#tracing">Distributed Tracing</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">💰 Cost &amp; Evolution</div>
+      <li class="ni sub"><a href="#cost">Cost Estimation</a></li>
+      <li class="ni sub"><a href="#multi-region">Multi-Region Roadmap</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Synthesis</div>
+      <li class="ni"><a href="#aomb">AOMB Checklist</a></li>
+      <li class="ni"><a href="#wow">Wow Moments</a></li>
+      <li class="ni"><a href="#progression">Progression Summary</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">🔬 DB Deep Dive</div>
+      <li class="ni sub"><a href="#db1"><span class="dot dot-deep"></span>PostgreSQL</a></li>
+      <li class="ni sub"><a href="#db2"><span class="dot dot-deep"></span>MySQL</a></li>
+      <li class="ni sub"><a href="#db3"><span class="dot dot-deep"></span>DynamoDB</a></li>
+      <li class="ni sub"><a href="#db4"><span class="dot dot-deep"></span>Cassandra</a></li>
+      <li class="ni sub"><a href="#db5"><span class="dot dot-deep"></span>CockroachDB / Spanner</a></li>
+      <li class="ni"><a href="#db-comparison">Comparison Table</a></li>
+      <li class="ni"><a href="#db-decision">Decision Script</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">System Design Interview · Study Guide · Phase 4 · Part 3 of 3</div>
+  <h1>Failure Analysis,<br>Observability &amp;<br>DB Deep Dive</h1>
+  <div class="hero-meta">
+    <span>💥 3-Tier Failure Classification</span>
+    <span>📊 Golden Signals Dashboard</span>
+    <span>💰 Cost per Million Requests</span>
+    <span>🌍 Multi-Region Roadmap</span>
+    <span>🔬 5 Database Approaches</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Tiers No Hire → Hire</span>
+    <span class="part-pill">Part 2: Strong Hire (L7)</span>
+    <span class="part-pill active-part">Part 3: Ops, Cost &amp; DB Deep Dive</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The operational excellence section. This part covers everything that proves L7 experience: three-tier failure classification (availability vs correctness vs operational), the full golden signals dashboard with alert table, cost estimation with unit economics, multi-region evolution tradeoffs, and the complete database selection deep dive with decision framework script.</p>
+</section>
+
+<!-- ═══════════════════════════════════ -->
+<!-- FAILURE ANALYSIS -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr failure" id="failure">
+  <div class="sec-eyebrow">Strong Hire Content</div>
+  <h2>💥 Failure Mode Analysis — Three Tiers</h2>
+  <hr>
+</div>
+
+<div class="callout obs">
+  <div class="callout-title">L7 Signal: Three-Tier Classification</div>
+  <p>Most candidates lump all failures together. L7 separates <strong>availability</strong> (service down) from <strong>correctness</strong> (wrong data returned) from <strong>operational</strong> (degrading slowly). Each tier has different detection strategies, response urgency, and customer impact.</p>
+</div>
+
+<!-- TIER 1 -->
+<div class="tier-label t1" id="tier1">
+  <div class="tier-label-text">Tier 1</div>
+  <div class="tier-label-badge">Failures That Affect Availability</div>
+</div>
+<table class="fail-table">
+  <thead><tr><th>Component</th><th>Failure Mode</th><th>Blast Radius</th><th>Detection</th><th>Mitigation</th><th>RTO</th></tr></thead>
+  <tbody>
+    <tr><td>CDN</td><td>Single PoP</td><td class="br-low">Regional slowdown</td><td>CDN monitoring</td><td>Automatic reroute</td><td class="rto">&lt;1s</td></tr>
+    <tr><td>CDN</td><td>Provider outage</td><td class="br-high">Global redirect outage</td><td>External monitoring</td><td>Origin handles 100K QPS (10x overprovisioned)</td><td class="rto">&lt;30s</td></tr>
+    <tr><td>API Server</td><td>Instance crash</td><td class="br-low">None (LB routes around)</td><td>Health checks</td><td>Auto-restart</td><td class="rto">&lt;5s</td></tr>
+    <tr><td>API Server</td><td>All instances</td><td class="br-high">Redirect outage</td><td>LB 5xx spike</td><td>Auto-scale + alert</td><td class="rto">&lt;60s</td></tr>
+    <tr><td>Redis</td><td>Primary failure</td><td class="br-low">Slower redirects (DB hit)</td><td>Sentinel</td><td>Auto-failover to replica</td><td class="rto">&lt;5s</td></tr>
+    <tr><td>Redis</td><td>Cluster failure</td><td class="br-med">All requests hit DB</td><td>Error rate spike</td><td>DB can handle (degraded)</td><td class="rto">&lt;30s</td></tr>
+    <tr><td>PostgreSQL</td><td>Primary failure</td><td class="br-med">Writes fail</td><td>pg_auto_failover</td><td>Promote sync replica</td><td class="rto">&lt;30s</td></tr>
+    <tr><td>PostgreSQL</td><td>All replicas</td><td class="br-low">Reads fall to primary</td><td>Monitoring</td><td>Primary handles reads</td><td class="rto">N/A</td></tr>
+    <tr><td>Kafka</td><td>Broker failure</td><td class="br-low">Analytics delayed</td><td>Broker monitoring</td><td>RF=3, auto-rebalance</td><td class="rto">&lt;30s</td></tr>
+    <tr><td>Kafka</td><td>Cluster failure</td><td class="br-low">Analytics lost only</td><td>Error rate</td><td>Accept loss, replay from logs</td><td class="rto">N/A</td></tr>
+  </tbody>
+</table>
+
+<!-- TIER 2 -->
+<div class="tier-label t2" id="tier2">
+  <div class="tier-label-text">Tier 2</div>
+  <div class="tier-label-badge">Failures That Affect Correctness</div>
+</div>
+<table class="fail-table">
+  <thead><tr><th>Scenario</th><th>Impact</th><th>Detection</th><th>Prevention</th></tr></thead>
+  <tbody>
+    <tr><td>Cache stale (URL updated)</td><td class="br-low">Wrong redirect</td><td>N/A — URLs immutable</td><td>URLs are immutable by design</td></tr>
+    <tr><td>Cache stale (URL deleted)</td><td class="br-med">Redirect to deleted URL</td><td>User complaint</td><td>TTL 24h; deletion invalidates cache</td></tr>
+    <tr><td>DB replication lag</td><td class="br-med">New URL not on replica</td><td>Query primary on miss</td><td>Read from primary for 1 sec after write</td></tr>
+    <tr><td>Idempotency key collision</td><td class="br-med">Wrong response returned</td><td>Extremely rare</td><td>User ID in key prevents cross-user collision</td></tr>
+    <tr><td>Short code collision</td><td class="br-low">Zero risk</td><td>Unique constraint violation</td><td>Counter-based generation = mathematically impossible</td></tr>
+  </tbody>
+</table>
+
+<!-- TIER 3 -->
+<div class="tier-label t3" id="tier3">
+  <div class="tier-label-text">Tier 3</div>
+  <div class="tier-label-badge">Operational Failures (Degrade Over Time)</div>
+</div>
+<table class="fail-table">
+  <thead><tr><th>Scenario</th><th>Impact</th><th>Detection</th><th>Response</th></tr></thead>
+  <tbody>
+    <tr><td>Range allocator slow</td><td>Code generation slows</td><td>Latency p99 spike</td><td>Pre-fetch at 80%; alert on fetch failures</td></tr>
+    <tr><td>Redis memory full</td><td>Cache writes rejected</td><td>Memory alerts</td><td>Eviction policy (allkeys-lru) + scale up</td></tr>
+    <tr><td>PostgreSQL connections exhausted</td><td>Requests fail</td><td>Connection pool metrics</td><td>PgBouncer; increase limits</td></tr>
+    <tr><td>Kafka consumer lag</td><td>Analytics delayed</td><td>Consumer lag metrics</td><td>Scale consumers; alert</td></tr>
+    <tr><td>Certificate expiry</td><td class="br-high">TLS failures</td><td>Cert monitoring</td><td>Auto-renewal (cert-manager)</td></tr>
+  </tbody>
+</table>
+
+<div class="callout obs">
+  <div class="callout-title">Why Three Tiers Matter</div>
+  <p>Tier 1 failures (availability) trigger immediate P1 pages. Tier 2 failures (correctness) may go undetected without explicit monitoring — they're the scariest. Tier 3 failures (operational) accumulate silently until they cause Tier 1 events. <mark>Naming this taxonomy in an interview signals you've operated systems under real production pressure.</mark></p>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- OBSERVABILITY -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr obs" id="observability">
+  <div class="sec-eyebrow">Strong Hire Content</div>
+  <h2>📊 Observability — What I'd Monitor</h2>
+  <hr>
+</div>
+
+<!-- GOLDEN SIGNALS DASHBOARD -->
+<div id="golden-signals">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Golden Signals Dashboard</h3>
+  <div class="dash-wrap">
+    <div class="dash-title-bar">URL Shortener — Main Dashboard (Datadog / Grafana)</div>
+    <div class="dash-grid">
+      <div class="dash-panel">
+        <div class="dp-title">Latency</div>
+        <div class="dp-row"><span class="dp-key">Redirect p50</span><span class="dp-val good">8ms</span></div>
+        <div class="dp-row"><span class="dp-key">Redirect p99</span><span class="dp-val good">42ms</span></div>
+        <div class="dp-row"><span class="dp-key">Create p50</span><span class="dp-val good">35ms</span></div>
+        <div class="dp-row"><span class="dp-key">Create p99</span><span class="dp-val good">120ms</span></div>
+      </div>
+      <div class="dash-panel">
+        <div class="dp-title">Traffic</div>
+        <div class="dp-row"><span class="dp-key">Redirects</span><span class="dp-val neutral">95K QPS</span></div>
+        <div class="dp-row"><span class="dp-key">Creates</span><span class="dp-val neutral">1.8K QPS</span></div>
+        <div class="dp-row"><span class="dp-key">CDN Hit Rate</span><span class="dp-val good">91%</span></div>
+      </div>
+      <div class="dash-panel">
+        <div class="dp-title">Errors</div>
+        <div class="dp-row"><span class="dp-key">5xx Rate</span><span class="dp-val good">0.002%</span></div>
+        <div class="dp-row"><span class="dp-key">4xx Rate</span><span class="dp-val warn">2.1%</span></div>
+        <div class="dp-row"><span class="dp-key">Rate Limited</span><span class="dp-val good">0.5%</span></div>
+      </div>
+      <div class="dash-panel">
+        <div class="dp-title">Saturation</div>
+        <div class="dp-row"><span class="dp-key">CPU</span><span class="dp-val good">45%</span></div>
+        <div class="dp-row"><span class="dp-key">Redis Mem</span><span class="dp-val warn">65%</span></div>
+        <div class="dp-row"><span class="dp-key">PG Connections</span><span class="dp-val good">40%</span></div>
+        <div class="dp-row"><span class="dp-key">Range Pool</span><span class="dp-val warn">85%</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALERTS TABLE -->
+<div id="alerts" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Key Alerts (PagerDuty)</h3>
+  <table class="alert-table">
+    <thead><tr><th>Alert</th><th>Condition</th><th>Severity</th><th>Runbook</th></tr></thead>
+    <tbody>
+      <tr><td>Redirect Latency</td><td class="cond">p99 &gt; 40ms for 2 min</td><td class="p2">P2</td><td>Check cache hit rate, DB load</td></tr>
+      <tr><td>Error Rate</td><td class="cond">5xx &gt; 0.1% for 1 min</td><td class="p1">P1</td><td>Check API server logs, DB connection</td></tr>
+      <tr><td>CDN Hit Rate</td><td class="cond">&lt;85% for 5 min</td><td class="p3">P3</td><td>Check cache headers, new deployment?</td></tr>
+      <tr><td>Redis Memory</td><td class="cond">&gt;85%</td><td class="p3">P3</td><td>Review eviction, scale up</td></tr>
+      <tr><td>DB Replication Lag</td><td class="cond">&gt;1 second</td><td class="p2">P2</td><td>Check replica health, network</td></tr>
+      <tr><td>Range Pool</td><td class="cond">&lt;20% capacity</td><td class="p2">P2</td><td>Check range allocator service</td></tr>
+      <tr><td>Certificate Expiry</td><td class="cond">&lt;7 days</td><td class="p3">P3</td><td>Renew certificate</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout obs">
+    <div class="callout-title">Why Alert Thresholds Are Set Below SLO</div>
+    <p>Notice: the redirect latency alert fires at <strong>p99 &gt; 40ms</strong>, but our SLO is 50ms. This gives us a <mark>10ms warning window</mark> to investigate before we breach the SLO and burn error budget. Setting alerts at the SLO itself is too late — you want to catch the trend, not react to the violation.</p>
+  </div>
+</div>
+
+<!-- DISTRIBUTED TRACING -->
+<div id="tracing" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Distributed Tracing</h3>
+  <div class="diag">
+    <div class="diag-hdr"><span class="diag-lbl">Diagram · Trace Example — Redirect Path</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>Trace: abc123
+├── CDN Edge (5ms) ─────────────── HIT / MISS
+├── API Gateway (1ms)
+├── Redirect Service
+│   ├── Redis GET (0.5ms) ───────── HIT / MISS
+│   ├── PostgreSQL SELECT (8ms) ─── if cache miss (covering index)
+│   └── Kafka PRODUCE (async) ────── fire-and-forget, non-blocking
+└── Total: 14ms</pre>
+  </div>
+  <p style="font-size:.88rem;color:var(--muted);line-height:1.65;margin-top:8px">Every request gets a trace ID propagated through headers. This enables per-request debugging in production — you can find the exact trace for a user-reported slow redirect and see exactly which step was slow.</p>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- COST -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr cost" id="cost">
+  <div class="sec-eyebrow">Strong Hire Content</div>
+  <h2>💰 Cost Estimation</h2>
+  <hr>
+</div>
+
+<table class="cost-table">
+  <thead><tr><th>Component</th><th>Specification</th><th>Monthly Cost</th></tr></thead>
+  <tbody>
+    <tr><td>CDN (CloudFront)</td><td>10TB egress, 100M requests</td><td class="cost">~$1,500</td></tr>
+    <tr><td>API Servers (EC2)</td><td>15 × c6g.large (reserved)</td><td class="cost">~$800</td></tr>
+    <tr><td>Redis (ElastiCache)</td><td>3 × r6g.large cluster</td><td class="cost">~$500</td></tr>
+    <tr><td>PostgreSQL (RDS)</td><td>db.r6g.xlarge + 2 replicas</td><td class="cost">~$1,200</td></tr>
+    <tr><td>Kafka (MSK)</td><td>3 × kafka.m5.large</td><td class="cost">~$600</td></tr>
+    <tr><td>ClickHouse</td><td>Self-hosted 2 × m5.xlarge</td><td class="cost">~$300</td></tr>
+    <tr><td>Monitoring (Datadog)</td><td>APM + Infra</td><td class="cost">~$500</td></tr>
+    <tr class="cost-total"><td><strong>Total</strong></td><td></td><td class="cost">~$5,400/month</td></tr>
+  </tbody>
+</table>
+
+<div class="callout good">
+  <div class="callout-title">Unit Economics — The "Wow" Moment</div>
+  <p><strong>Cost per million redirects:</strong> $5,400 ÷ 10,000M requests = $0.0005 ≈ <mark class="gr">$0.54 per million redirects</mark></p>
+  <p>This kind of unit economics thinking signals you understand the business, not just the tech. At $0.54/million, you could profitably offer a freemium tier and premium analytics without the infrastructure costing more than revenue.</p>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">Optimization Opportunities</div>
+  <ul>
+    <li>Spot instances for analytics workers: <strong>-$200/month</strong></li>
+    <li>Reserved instances (1 year): <strong>-20% on compute</strong></li>
+    <li>S3 Intelligent Tiering for logs: <strong>-30% on storage</strong></li>
+    <li>Total optimized: ~$4,200/month (<strong>$0.42 per million</strong>)</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- MULTI-REGION -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr multi" id="multi-region">
+  <div class="sec-eyebrow">Strong Hire Content</div>
+  <h2>🌍 Future Evolution: Multi-Region</h2>
+  <hr>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">When We Need &lt;20ms Redirects Globally</div>
+  <p>Current: Single region (US-East). This works because the CDN handles 90% of traffic at edge. When we need sub-20ms globally even for cache misses, we evolve to <strong>Active-Passive Multi-Region</strong>.</p>
+</div>
+
+<div class="diag mr-diag">
+  <div class="diag-hdr"><span class="diag-lbl">Diagram · Active-Passive Multi-Region</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐
+│     US-EAST        │     │     EU-WEST        │     │    AP-SOUTHEAST    │
+│     (Primary)      │     │    (Read Replica)  │     │   (Read Replica)   │
+│                    │     │                    │     │                    │
+│  ✅ Reads          │     │  ✅ Reads          │     │  ✅ Reads          │
+│  ✅ Writes         │     │  ❌ Writes (proxy) │     │  ❌ Writes (proxy) │
+│  ✅ Range Alloc    │     │  ❌ Range Alloc    │     │  ❌ Range Alloc    │
+│                    │     │                    │     │                    │
+│  PostgreSQL        │────▶│  PostgreSQL        │────▶│  PostgreSQL        │
+│  Primary           │     │  Async Replica     │     │  Async Replica     │
+│                    │     │                    │     │                    │
+│  Redis Cluster     │     │  Redis Cluster     │     │  Redis Cluster     │
+│  (local)           │     │  (local)           │     │  (local)           │
+└────────────────────┘     └────────────────────┘     └────────────────────┘
+
+Cross-region consistency:
+• Writes always go to US-East (single writer)
+• Replication lag: 100-200ms (acceptable for our use case)
+• User creates URL in EU → request routed to US → 100ms added latency
+• URL readable in EU within 200ms (async replication)</pre>
+</div>
+
+<div class="mr-grid">
+  <div class="mr-panel">
+    <div class="mr-title">US-EAST (Primary)</div>
+    <p class="yes">✅ Reads</p>
+    <p class="yes">✅ Writes</p>
+    <p class="yes">✅ Range Allocator</p>
+    <hr class="divider">
+    <p class="db-line">PostgreSQL Primary</p>
+    <p class="db-line">Redis Cluster (local)</p>
+  </div>
+  <div class="mr-panel">
+    <div class="mr-title">EU-WEST (Replica)</div>
+    <p class="yes">✅ Reads</p>
+    <p class="no2">❌ Writes (proxy → US)</p>
+    <p class="no2">❌ Range Allocator</p>
+    <hr class="divider">
+    <p class="db-line">PostgreSQL Async Replica</p>
+    <p class="db-line">Redis Cluster (local)</p>
+  </div>
+  <div class="mr-panel">
+    <div class="mr-title">AP-SOUTHEAST (Replica)</div>
+    <p class="yes">✅ Reads</p>
+    <p class="no2">❌ Writes (proxy → US)</p>
+    <p class="no2">❌ Range Allocator</p>
+    <hr class="divider">
+    <p class="db-line">PostgreSQL Async Replica</p>
+    <p class="db-line">Redis Cluster (local)</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">Alternative: Active-Active with Non-Overlapping Ranges</div>
+  <ul>
+    <li>Each region has its own range allocator with non-overlapping counter ranges</li>
+    <li>Writes happen locally — no cross-region coordination for standard URLs</li>
+    <li>Trade-off: More complex; custom aliases still need global coordination</li>
+    <li>When to use: If write latency from remote regions becomes a user-facing problem</li>
+  </ul>
+</div>
+
+<!-- AOMB -->
+<div class="aomb" id="aomb">
+  <div class="aomb-title">AOMB Completeness Checklist — L7 Full (All Verified)</div>
+  <ul>
+    <li>Edge compute (CDN Workers) for validation at edge</li>
+    <li>Separate services for redirect vs. create (single responsibility)</li>
+    <li>Code snippet showing redirect service implementation (Go)</li>
+    <li>Synchronous replication justification tied to RPO requirement</li>
+    <li>Latency budget allocation per step (redirect + write paths)</li>
+    <li>Three-tier failure analysis (availability, correctness, operational)</li>
+    <li>Golden signals observability dashboard mockup</li>
+    <li>Alert table with P1/P2/P3 severity levels and runbook references</li>
+    <li>Alert thresholds set below SLO with reasoning</li>
+    <li>Distributed tracing example with per-hop latency</li>
+    <li>Cost estimation with per-component breakdown</li>
+    <li>Unit economics: $0.54 per million redirects</li>
+    <li>Cost optimization opportunities listed</li>
+    <li>Multi-region evolution with active-passive vs active-active trade-offs</li>
+    <li>Closing principle: "The redirect path is sacred"</li>
+  </ul>
+</div>
+
+<!-- WOW MOMENTS -->
+<div id="wow" style="margin-top:32px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">The "Wow" Moments</h3>
+  <div class="wow">Three-tier failure classification — separated availability vs correctness vs operational. Most candidates lump these together.</div>
+  <div class="wow">Cost per million requests ($0.54) — proves they think about business, not just tech. Unprompted unit economics.</div>
+  <div class="wow">Alert thresholds set 10ms below SLO — "you want to catch the trend, not react to the violation"</div>
+  <div class="wow">Active-passive vs active-active comparison — didn't just say "add more regions," explained consistency model tradeoffs</div>
+  <div class="wow">"The redirect path is sacred" — articulated a design principle, not just a design</div>
+</div>
+
+<div style="margin-top:20px" class="callout extra">
+  <div class="callout-title">What Separates This From L6</div>
+  <p>L6 designs a working system with proper failure handling. L7 designs a system that is <strong>operable</strong> — complete with dashboards, alert thresholds, runbooks, cost analysis, and evolution roadmap. <mark class="g">They think not just about Day 1 (launch) but Day 365 (operate) and Day 730 (evolve).</mark></p>
+</div>
+
+<!-- PROGRESSION TABLE -->
+<div style="margin-top:36px" id="progression">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Progression Summary — Full Phase 4</h3>
+  <table class="prog">
+    <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+    <tbody>
+      <tr><td>No Hire → Lean Hire</td><td>Separates read/write paths, justifies technology choices, mentions HA</td></tr>
+      <tr><td>Lean Hire → Hire (L6)</td><td>CDN layer, estimation-backed sizing, latency breakdown, failure mode table, consistency strategy</td></tr>
+      <tr><td>Hire → Strong Hire (L7)</td><td>Edge compute, service separation by latency SLA, Go code sample, three-tier failure analysis, golden signals dashboard with alert table, cost estimation with unit economics, multi-region evolution roadmap with active-passive vs active-active comparison</td></tr>
+    </tbody>
+  </table>
+  <div class="callout info" style="margin-top:16px">
+    <div class="callout-title">The One Thing to Practice</div>
+    <p>After drawing your architecture, walk through ONE request end-to-end with latency at each step: <strong>"Request arrives at CDN, 5ms. Cache miss, forwarded to origin. Redis lookup, 1ms. Cache hit, return 301, 1ms. Total: ~10ms p50."</strong> This demonstrates you understand where time goes — and that's what separates L6 from L7.</p>
+  </div>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Phase 4 Complete</div>
+  <p><strong>L5 engineers</strong> draw architectures that work. <strong>L6 engineers</strong> draw architectures that scale and handle failures. <strong>L7 engineers</strong> draw architectures that are <em>operable</em> — they include monitoring, alerting, cost analysis, and evolution paths. They think about the full lifecycle, not just the happy path. The redirect path is sacred. Everything else serves it.</p>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- DATABASE DEEP DIVE -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr dive" id="db-deep-dive">
+  <div class="sec-eyebrow">Decision Deep Dive</div>
+  <h2>🔬 Database Selection</h2>
+  <hr>
+</div>
+
+<div class="callout deep">
+  <div class="callout-title">The Problem in Plain English</div>
+  <p>Store billions of URL mappings durably. Query by short code in &lt;10ms. Handle 2K writes/sec and 10K reads/sec (after cache miss). Never lose data. Five approaches — only one is right for this system at this scale.</p>
+</div>
+
+<!-- POSTGRES -->
+<div class="ac" id="db1">
+  <div class="ac-hdr" onclick="toggleAc(this)">
+    <div><div class="ac-num">Approach 1</div><div class="ac-title">PostgreSQL</div></div>
+    <span class="ac-toggle">▾</span>
+  </div>
+  <div class="ac-body">
+    <p>Open-source relational database with ACID transactions, strong consistency, and excellent indexing.</p>
+    <h5>Benefits</h5>
+    <ul>
+      <li>ACID transactions for strong consistency</li>
+      <li>Mature, battle-tested (Instagram runs on it)</li>
+      <li>Excellent B-tree indexes, partial indexes, covering indexes</li>
+      <li>Synchronous replication for durability</li>
+      <li>Rich ecosystem: PgBouncer, pg_auto_failover, JSONB</li>
+    </ul>
+    <h5>Limitations</h5>
+    <ul>
+      <li>Vertical scaling has limits (~50K QPS on single instance)</li>
+      <li>Horizontal write scaling requires sharding (complex)</li>
+      <li>Replication adds latency (sync) or risks data loss (async)</li>
+    </ul>
+    <h5>When to Use / When It Breaks</h5>
+    <p><strong>Use:</strong> Strong consistency required, data fits in single cluster (~10TB), query patterns known. <strong>Breaks:</strong> 100K+ write QPS, data exceeds 10-20TB, need automatic sharding.</p>
+    <h5>Operational Cost</h5>
+    <p>Medium. Need to manage connections (PgBouncer), vacuuming, replication lag, failover.</p>
+    <h5>Interview Signal</h5>
+    <div class="sig-pair">
+      <div class="sig-b">I'll use Postgres because I know it</div>
+      <div class="sig-g">Postgres for ACID compliance. At 2K writes/sec with covering indexes, a single primary handles our load. Synchronous replication to one replica for durability (RPO=0). If we outgrow it, migration path to CockroachDB for horizontal scaling.</div>
+    </div>
+  </div>
+</div>
+
+<!-- MYSQL -->
+<div class="ac" id="db2">
+  <div class="ac-hdr" onclick="toggleAc(this)">
+    <div><div class="ac-num">Approach 2</div><div class="ac-title">MySQL</div></div>
+    <span class="ac-toggle">▾</span>
+  </div>
+  <div class="ac-body">
+    <p>Mature relational database, particularly strong in read-heavy workloads.</p>
+    <h5>Benefits</h5>
+    <ul>
+      <li>Mature, proven at scale (Facebook, Twitter historically)</li>
+      <li>InnoDB is solid for most workloads</li>
+      <li>Good replication options; wide hosting availability</li>
+    </ul>
+    <h5>Limitations</h5>
+    <ul>
+      <li>Less feature-rich: no partial indexes, weaker JSON support vs Postgres</li>
+      <li>Replication setup more complex than Postgres</li>
+      <li>No native UPSERT until recently</li>
+    </ul>
+    <h5>When to Use / When It Breaks</h5>
+    <p><strong>Use:</strong> Read-heavy workloads, team has MySQL expertise. <strong>Breaks:</strong> Same ceiling as Postgres — horizontal write scaling.</p>
+    <h5>Interview Signal</h5>
+    <div class="sig-pair">
+      <div class="sig-b">MySQL or Postgres, they're basically the same</div>
+      <div class="sig-g">MySQL works, but I prefer Postgres for partial indexes (WHERE deleted_at IS NULL) and covering indexes with INCLUDE clause. Both handle our scale — the difference is in the operational niceties.</div>
+    </div>
+  </div>
+</div>
+
+<!-- DYNAMODB -->
+<div class="ac" id="db3">
+  <div class="ac-hdr" onclick="toggleAc(this)">
+    <div><div class="ac-num">Approach 3</div><div class="ac-title">DynamoDB</div></div>
+    <span class="ac-toggle">▾</span>
+  </div>
+  <div class="ac-body">
+    <p>AWS managed NoSQL key-value store with automatic scaling to millions of QPS.</p>
+    <h5>Benefits</h5>
+    <ul>
+      <li>Fully managed — zero database operations</li>
+      <li>Automatic scaling to millions of QPS</li>
+      <li>Single-digit millisecond latency; built-in replication</li>
+    </ul>
+    <h5>Limitations</h5>
+    <ul>
+      <li>No transactions across items (limitations with transactions API)</li>
+      <li>No secondary indexes without data duplication</li>
+      <li>Query patterns must be designed upfront; vendor lock-in</li>
+      <li>Cost can explode at very high scale</li>
+    </ul>
+    <h5>When to Use / When It Breaks</h5>
+    <p><strong>Use:</strong> Simple key-value lookups at massive scale, zero ops desired. <strong>Breaks:</strong> Complex queries, strong consistency needs, cost-sensitive at very high scale.</p>
+    <h5>Interview Signal</h5>
+    <div class="sig-pair">
+      <div class="sig-b">DynamoDB for NoSQL scalability</div>
+      <div class="sig-g">DynamoDB works for the redirect lookup (pure key-value). But custom alias uniqueness needs strong consistency — DynamoDB's conditional writes work but are more complex than a Postgres unique constraint. For our scale, Postgres is simpler. If we needed 100K+ write QPS, I'd reconsider.</div>
+    </div>
+  </div>
+</div>
+
+<!-- CASSANDRA -->
+<div class="ac" id="db4">
+  <div class="ac-hdr" onclick="toggleAc(this)">
+    <div><div class="ac-num">Approach 4</div><div class="ac-title">Cassandra</div></div>
+    <span class="ac-toggle">▾</span>
+  </div>
+  <div class="ac-body">
+    <p>Distributed NoSQL database designed for high write throughput and multi-datacenter availability.</p>
+    <h5>Benefits</h5>
+    <ul>
+      <li>Linear horizontal scaling; no single point of failure</li>
+      <li>High write throughput (100K+ QPS per node)</li>
+      <li>Multi-datacenter replication built-in</li>
+    </ul>
+    <h5>Limitations</h5>
+    <ul>
+      <li>Eventual consistency by default — tunable but complex</li>
+      <li>No transactions; secondary indexes are problematic</li>
+      <li>High operational complexity: JVM tuning, compaction, repair jobs</li>
+    </ul>
+    <h5>When to Use / When It Breaks</h5>
+    <p><strong>Use:</strong> Write-heavy workloads at massive scale, multi-datacenter deployments. <strong>Breaks:</strong> Strong consistency needed, complex queries, transactions.</p>
+    <h5>Operational Cost</h5>
+    <p>High. Requires significant Cassandra-specific expertise.</p>
+    <h5>Interview Signal</h5>
+    <div class="sig-pair">
+      <div class="sig-b">Cassandra for distributed data</div>
+      <div class="sig-g">Cassandra's eventual consistency complicates custom alias uniqueness. We could use Lightweight Transactions (LWT), but they're significantly slower. For URL shortener scale, Postgres with read replicas is simpler and sufficient. Cassandra makes sense if we 10x write volume.</div>
+    </div>
+  </div>
+</div>
+
+<!-- COCKROACHDB -->
+<div class="ac" id="db5">
+  <div class="ac-hdr" onclick="toggleAc(this)">
+    <div><div class="ac-num">Approach 5</div><div class="ac-title">CockroachDB / Spanner</div></div>
+    <span class="ac-toggle">▾</span>
+  </div>
+  <div class="ac-body">
+    <p>Distributed SQL databases offering horizontal scaling with strong consistency — the best of both worlds.</p>
+    <h5>Benefits</h5>
+    <ul>
+      <li>Horizontal scaling with automatic sharding</li>
+      <li>Strong consistency (serializable by default)</li>
+      <li>SQL interface — familiar and powerful</li>
+      <li>Multi-region with automatic data placement</li>
+    </ul>
+    <h5>Limitations</h5>
+    <ul>
+      <li>Higher write latency than single-node Postgres (~10-20ms)</li>
+      <li>Complexity: distributed transactions, Raft consensus overhead</li>
+      <li>Cost: Spanner is expensive; CockroachDB requires more nodes</li>
+      <li>Overkill for small-to-medium scale</li>
+    </ul>
+    <h5>When to Use / When It Breaks</h5>
+    <p><strong>Use:</strong> SQL + horizontal scaling + strong consistency all required simultaneously. <strong>Doesn't break</strong> — but expensive for workloads that don't need it.</p>
+    <h5>Operational Cost</h5>
+    <p>Medium (CockroachDB self-hosted) to Low (Spanner fully managed).</p>
+    <h5>Interview Signal</h5>
+    <div class="sig-pair">
+      <div class="sig-b">CockroachDB for scale</div>
+      <div class="sig-g">At our current scale, Postgres handles it with room to spare. If we 10x and need horizontal write scaling, CockroachDB gives us a migration path without abandoning SQL or strong consistency. I'd abstract the data layer behind a repository interface now to make that migration cheaper later.</div>
+    </div>
+  </div>
+</div>
+
+<!-- DB COMPARISON TABLE -->
+<div id="db-comparison" style="margin-top:32px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Database Comparison Table</h3>
+  <table class="db-table">
+    <thead><tr><th>Database</th><th>Write Scale</th><th>Read Scale</th><th>Consistency</th><th>Ops Cost</th><th>Best For</th></tr></thead>
+    <tbody>
+      <tr><td>PostgreSQL</td><td class="md">10-50K QPS</td><td class="lo">100K+ (replicas)</td><td class="lo">Strong</td><td class="md">Medium</td><td>Most cases &lt;10TB ✓</td></tr>
+      <tr><td>MySQL</td><td class="md">10-50K QPS</td><td class="lo">100K+ (replicas)</td><td class="lo">Strong</td><td class="md">Medium</td><td>Read-heavy, MySQL expertise</td></tr>
+      <tr><td>DynamoDB</td><td class="lo">Unlimited</td><td class="lo">Unlimited</td><td class="md">Eventual (tunable)</td><td class="lo">Low</td><td>Pure key-value, zero-ops</td></tr>
+      <tr><td>Cassandra</td><td class="lo">Unlimited</td><td class="lo">Unlimited</td><td class="hi">Eventual</td><td class="hi">High</td><td>Write-heavy, multi-DC</td></tr>
+      <tr><td>CockroachDB</td><td class="lo">Unlimited</td><td class="lo">Unlimited</td><td class="lo">Strong</td><td class="md">Medium</td><td>SQL + horizontal + strong</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- DECISION SCRIPT -->
+<div id="db-decision" style="margin-top:32px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 14px">Decision Framework Script</h3>
+  <div class="fb">
+    <div class="fb-title">⚙️ The Complete Decision Script</div>
+    <p>"For our database, I need: strong consistency for uniqueness guarantees, sub-10ms reads after cache miss, 2K writes/sec, 10K reads/sec, and durability (RPO=0).</p>
+    <p>I can rule out <strong>Cassandra</strong> immediately — eventual consistency complicates custom alias uniqueness. We could use Lightweight Transactions, but they're slow and add complexity without benefit at our scale.</p>
+    <p>I can rule out <strong>DynamoDB</strong> — our team prefers SQL semantics, and the conditional write logic for alias uniqueness is more complex than a Postgres unique constraint. Also, DynamoDB cost can surprise you at scale.</p>
+    <p>Between <strong>PostgreSQL</strong> and <strong>CockroachDB</strong>: Postgres is simpler and sufficient at our current scale. We're at 2K writes/sec, 15TB over 5 years — well within Postgres limits. CockroachDB adds distributed transaction overhead that would increase write latency 5-10ms for no benefit yet.</p>
+    <p>For THIS system: <strong>PostgreSQL with synchronous replication to one replica for durability (RPO=0), plus two async replicas for read scaling.</strong></p>
+    <p>The trade-off is horizontal write scaling — if we 10x to 20K writes/sec, we'd need to migrate to CockroachDB. I'd mitigate migration pain now by: (1) using standard SQL with no Postgres-specific features in application code, (2) abstracting data access behind a repository interface so we can swap the implementation layer.</p>
+    <p>That's a good problem to have."</p>
+  </div>
+
+  <div class="callout deep" style="margin-top:16px">
+    <div class="callout-title">Ready for Phase 5</div>
+    <p>Phase 4 is complete. The key architectural principle across all decisions: <mark class="g">the redirect path is sacred</mark> — every component, every service split, every technology choice optimizes for that critical hot path. Everything else — writes, analytics, cost — serves that goal.</p>
+  </div>
+</div>
+
+<!-- NAV CARDS -->
+<div class="nav-cards">
+  <a href="#" class="nav-card">
+    <div class="nav-card-label">← Part 2</div>
+    <div class="nav-card-title">Strong Hire (L7)</div>
+    <div class="nav-card-desc">Edge compute, service split, Go code sample, 9-step write path with latency budgets</div>
+  </a>
+  <a href="#" class="nav-card">
+    <div class="nav-card-label">Next Phase →</div>
+    <div class="nav-card-title">Phase 5: Deep Dives</div>
+    <div class="nav-card-desc">Caching strategy, rate limiting, scalability probes, and interviewer follow-up questions</div>
+  </a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+
+function toggleAc(h) { h.parentElement.classList.toggle('collapsed'); }
+
+function copyDiag(btn) {
+  const pre = btn.closest('.diag').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
