@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 4 (Part 1/3): Architecture Tiers — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--surface3:#21262d;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fadeIn .5s ease forwards}
+@keyframes fadeIn{to{opacity:1}}
+
+/* PROGRESS */
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--hire),var(--strong));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--strong);background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(88,166,255,.05)}
+.ni.active a{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.07)}
+.ni.sub a{padding-left:32px;font-size:.74rem}
+.ni.hidden,.ng.hidden{display:none}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dot-no{background:var(--no)}.dot-lean{background:var(--lean)}.dot-hire{background:var(--hire)}.dot-strong{background:var(--strong)}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:900px;padding:50px 52px 100px;min-width:0}
+
+/* BACK TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 20%,#58a6ff 60%,#F5A623);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;text-decoration:none;border:1px solid var(--border);color:var(--muted);transition:all .2s}
+.part-pill:hover{border-color:var(--accent);color:var(--accent)}
+.part-pill.active-part{background:rgba(88,166,255,.1);border-color:var(--accent);color:var(--accent)}
+
+/* PHASE HEADER */
+.phase-hdr{margin:0 0 36px;padding-bottom:22px;border-bottom:1px solid var(--border)}
+.phase-num{font-family:var(--fc);font-size:.67rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.phase-hdr h2{font-family:var(--fh);font-size:1.85rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.phase-time{font-family:var(--fc);font-size:.75rem;color:var(--dim);background:var(--surface2);padding:3px 10px;border-radius:20px;display:inline-block}
+.phase-prompt{margin-top:18px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--dim);border-radius:0 8px 8px 0;padding:14px 18px}
+.prompt-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:7px}
+.phase-prompt blockquote{font-style:italic;color:var(--muted);font-size:.92rem;line-height:1.65}
+
+/* TIER CARDS */
+.tier{border-radius:10px;border:1px solid var(--border);background:var(--surface);margin-bottom:24px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.tier:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.tier.no{border-left:4px solid var(--no)}
+.tier.lean{border-left:4px solid var(--lean)}
+.tier.hire{border-left:4px solid var(--hire)}
+.tier.strong{border-left:4px solid var(--strong)}
+.tier.no   .tier-hdr{background:rgba(255,107,107,.05)}
+.tier.lean .tier-hdr{background:rgba(255,215,0,.04)}
+.tier.hire .tier-hdr{background:rgba(0,191,165,.05)}
+.tier.strong .tier-hdr{background:rgba(245,166,35,.05)}
+.tier-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.tier-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tier-emoji{font-size:1.3rem}
+.tier-name{font-family:var(--fh);font-size:1.1rem;font-weight:700;color:var(--text)}
+.tier-badge{font-family:var(--fc);font-size:.64rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.tier.no   .tier-badge{background:rgba(255,107,107,.14);color:var(--no);border:1px solid rgba(255,107,107,.28)}
+.tier.lean .tier-badge{background:rgba(255,215,0,.11);color:var(--lean);border:1px solid rgba(255,215,0,.28)}
+.tier.hire .tier-badge{background:rgba(0,191,165,.11);color:var(--hire);border:1px solid rgba(0,191,165,.28)}
+.tier.strong .tier-badge{background:rgba(245,166,35,.11);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.tier-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.tier.collapsed .tier-toggle{transform:rotate(-90deg)}
+.tier-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.tier.collapsed .tier-body{max-height:0;opacity:0;padding-bottom:0}
+.tier-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:18px 0 9px}
+.tier-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.tier-body ul,.tier-body ol{padding-left:18px;margin:8px 0 13px}
+.tier-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.tier-body strong{color:var(--text);font-weight:600}
+
+/* SCRIPT QUOTE */
+.script{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px 18px 14px 48px;margin:14px 0;font-style:italic;font-size:.9rem;line-height:1.7;color:var(--muted);position:relative}
+.script::before{content:'"';font-family:var(--fh);font-size:3.5rem;color:var(--border);position:absolute;top:-6px;left:10px;line-height:1}
+.script p{margin-top:9px}.script p:first-child{margin-top:0}.script strong{color:var(--text);font-style:normal}
+
+/* DIAGRAM BLOCK */
+.diag{background:#010409;border:1px solid rgba(88,166,255,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(88,166,255,.06);border-bottom:1px solid rgba(88,166,255,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.7;color:#79c0ff;white-space:pre}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.fail  .callout-title{color:var(--no)}
+.callout.good  .callout-title{color:var(--hire)}
+.callout.info  .callout-title{color:var(--accent)}
+.callout.warn  .callout-title{color:var(--lean)}
+.callout.extra .callout-title{color:var(--strong)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INT QUOTE */
+.iq{background:var(--surface2);border-radius:8px;padding:16px 18px 14px 48px;margin:13px 0;position:relative;font-style:italic;font-size:.89rem;color:var(--muted);line-height:1.65}
+.iq::before{content:'❝';position:absolute;left:14px;top:12px;font-size:1.4rem;color:var(--dim)}
+.iq-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);font-style:normal;font-weight:600;display:block;margin-bottom:7px}
+
+/* FATAL */
+.fatal{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:12px 16px;margin:11px 0}
+.fatal-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:7px}
+.fatal ul{list-style:none;padding:0}
+.fatal li{display:flex;gap:7px;font-size:.86rem;color:var(--muted);padding:3px 0;line-height:1.5}
+.fatal li::before{content:'✕';color:var(--no);flex-shrink:0}
+
+/* UPGRADE */
+.upgrade{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:11px 0}
+.upgrade-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.upgrade p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* SIGNAL PHRASES */
+.signals{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--hire);border-radius:0 8px 8px 0;padding:14px 16px;margin:13px 0}
+.signals-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.signals ul{list-style:none;padding:0}
+.signals li{font-family:var(--fc);font-size:.8rem;color:var(--muted);padding:4px 0;border-bottom:1px solid rgba(48,54,61,.4);line-height:1.5}
+.signals li:last-child{border-bottom:none}
+.signals li::before{content:'→ ';color:var(--hire)}
+
+/* AOMB CHECKLIST */
+.aomb{background:rgba(0,191,165,.05);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.aomb-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.aomb ul{list-style:none;padding:0}
+.aomb li{display:flex;align-items:flex-start;gap:7px;padding:3px 0;font-size:.84rem;color:var(--muted);line-height:1.5}
+.aomb li::before{content:'☑';color:var(--hire);flex-shrink:0;margin-top:1px}
+
+/* INLINE MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* SIZING TABLE */
+.sz-table{width:100%;border-collapse:collapse;font-size:.83rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.sz-table thead tr{background:linear-gradient(90deg,rgba(88,166,255,.12),rgba(0,191,165,.08))}
+.sz-table th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--accent);border-bottom:1px solid rgba(88,166,255,.2)}
+.sz-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle}
+.sz-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.sz-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.sz-table td:first-child{font-weight:600;color:var(--text)}
+.sz-table td.sz{font-family:var(--fc);font-size:.78rem;color:var(--strong)}
+
+/* FAILURE TABLE */
+.fail-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.fail-table thead tr{background:linear-gradient(90deg,rgba(255,107,107,.12),rgba(255,215,0,.06))}
+.fail-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.2)}
+.fail-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.fail-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.fail-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.fail-table td:first-child{font-weight:600;color:var(--text)}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* SECTION HEADER */
+.sec-hdr{margin:44px 0 22px}
+.sec-hdr h3{font-family:var(--fh);font-size:1.35rem;font-weight:600;color:var(--text)}
+
+/* PROGRESSION TABLE */
+.prog{width:100%;border-collapse:collapse;font-size:.84rem;margin:16px 0;border-radius:8px;overflow:hidden}
+.prog thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.prog th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.prog td{padding:10px 14px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--muted);line-height:1.55;vertical-align:top}
+.prog tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.prog tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.prog td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+
+/* NEXT PART CARD */
+.next-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--strong);border-radius:10px;padding:20px 24px;margin:36px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.next-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:6px}
+.next-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.next-desc{font-size:.84rem;color:var(--muted);margin-top:4px}
+.next-btn{font-family:var(--fc);font-size:.75rem;padding:10px 18px;background:rgba(245,166,35,.12);border:1px solid var(--strong);color:var(--strong);border-radius:7px;text-decoration:none;transition:all .2s;white-space:nowrap;flex-shrink:0}
+.next-btn:hover{background:rgba(245,166,35,.22);transform:translateY(-1px)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<!-- SIDEBAR -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Phase 4: High-Level Architecture</div>
+    <div class="sb-part">Part 1 of 3 — 4-Tier Breakdown</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng">
+      <div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni"><a href="#phase4">Phase 4 Prompt</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">4-Tier Breakdown</div>
+      <li class="ni sub"><a href="#no-hire"><span class="dot dot-no"></span>No Hire (L4)</a></li>
+      <li class="ni sub"><a href="#lean-hire"><span class="dot dot-lean"></span>Lean Hire (L5)</a></li>
+      <li class="ni sub"><a href="#hire"><span class="dot dot-hire"></span>Hire (L6)</a></li>
+      <li class="ni sub"><a href="#hire-arch">↳ Architecture Diagram</a></li>
+      <li class="ni sub"><a href="#hire-write">↳ Write Path</a></li>
+      <li class="ni sub"><a href="#hire-read">↳ Read Path</a></li>
+      <li class="ni sub"><a href="#hire-sizing">↳ Component Sizing</a></li>
+      <li class="ni sub"><a href="#hire-failure">↳ Failure Analysis</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Synthesis</div>
+      <li class="ni"><a href="#progression">Progression Summary</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+    <li class="ng">
+      <div class="nl">Series Navigation</div>
+      <li class="ni"><a href="#next">Part 2 → Strong Hire</a></li>
+    </li>
+  </ul>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">System Design Interview · Study Guide · Phase 4 · Part 1 of 3</div>
+  <h1>High-Level<br>Architecture</h1>
+  <div class="hero-meta">
+    <span>⏱ 15–30 minutes</span>
+    <span>📐 No Hire → Hire (L6)</span>
+    <span>🏗 CDN + Architecture Diagrams</span>
+    <span>💥 Failure Mode Analysis</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill active-part">Part 1: Tiers No Hire → Hire</span>
+    <span class="part-pill">Part 2: Strong Hire (L7)</span>
+    <span class="part-pill">Part 3: Deep Dive — DB Selection</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The longest phase. This part covers the first three tiers — No Hire through Hire (L6) — with full architecture diagrams, step-by-step path walkthroughs, estimation-backed component sizing, and failure mode tables. Part 2 covers the L7 Strong Hire answer including edge compute, service separation, and operational excellence.</p>
+</section>
+
+<!-- PHASE HEADER -->
+<div id="phase4" class="phase-hdr">
+  <div class="phase-num">Phase 4 · 15–30 min</div>
+  <h2>High-Level Architecture</h2>
+  <span class="phase-time">15 – 30 minutes</span>
+  <div class="phase-prompt">
+    <div class="prompt-lbl">Interviewer Prompt</div>
+    <blockquote>"Good. Now walk me through your high-level architecture. I want to see the end-to-end flow for both creating a URL and redirecting. Show me every component, explain why it's there, and tell me where your single points of failure are."</blockquote>
+  </div>
+</div>
+
+<!-- ══════ NO HIRE ══════ -->
+<div class="tier no" id="no-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row">
+      <span class="tier-emoji">❌</span>
+      <span class="tier-name">No Hire</span>
+      <span class="tier-badge">L4 / Weak L5</span>
+    </div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"Okay, so here's my architecture. We'll have a load balancer in front that distributes traffic. Behind that, we have our API servers that handle the requests. The API servers talk to a MySQL database to store the URL mappings.</p>
+      <p>For caching, I'll use Redis to cache the frequently accessed URLs so we don't hit the database every time.</p>
+      <p>For the <strong>create flow:</strong> User sends request → Load balancer routes to API server → API server generates short code → Stores in MySQL → Returns short URL.</p>
+      <p>For the <strong>redirect flow:</strong> User clicks short URL → Load balancer → API server checks Redis cache → If not in cache, query MySQL → Return redirect.</p>
+      <p>I'll use Kafka for the analytics to track clicks. Should I go deeper on any part?"</p>
+    </div>
+
+    <div class="callout fail">
+      <div class="callout-title">Why This Fails</div>
+      <ul>
+        <li>No justification for any component — "I'll use Redis" but why Redis vs Memcached?</li>
+        <li>No scale numbers — How many API servers? What's the cache hit rate?</li>
+        <li>MySQL without reasoning — Why not Postgres? Why not NoSQL?</li>
+        <li>"Kafka for analytics" — How? What's the data flow? Pure buzzword dropping</li>
+        <li>No failure analysis — What happens when MySQL dies?</li>
+        <li>No multi-region consideration — Users are global, architecture is single-region</li>
+        <li><mark>No CDN</mark> — Redirect path doesn't leverage edge caching — the biggest miss</li>
+        <li>No rate limiting — How do we prevent abuse?</li>
+      </ul>
+    </div>
+
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Architecture is a checklist of components without reasoning. 'I'll use Kafka' without explaining how. No failure modes discussed. No numbers. This is tutorial-level thinking, not production design."
+    </div>
+
+    <div class="fatal">
+      <div class="fatal-title">Fatal Mistakes</div>
+      <ul>
+        <li>No "why" for any technology choice</li>
+        <li>No scale/capacity reasoning</li>
+        <li>No failure mode analysis</li>
+        <li>Single-region design for global users</li>
+        <li>Kafka mentioned but never integrated into data flow</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ LEAN HIRE ══════ -->
+<div class="tier lean" id="lean-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row">
+      <span class="tier-emoji">⚠️</span>
+      <span class="tier-name">Lean Hire</span>
+      <span class="tier-badge">Meets L5, Not L6</span>
+    </div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"Let me draw out the architecture for both read and write paths.</p>
+      <p><strong>Components:</strong> Load Balancer (AWS ALB), API Servers (stateless Node.js/Go, auto-scaled), Redis Cache, PostgreSQL (primary data store), Kafka (click events), Analytics Service.</p>
+      <p><strong>Write Path:</strong> Client → Load Balancer → API Server → Generate Code → Write to PostgreSQL → Return Short URL</p>
+      <p><strong>Read Path:</strong> Client → Load Balancer → API Server → Check Redis → (Cache miss?) → Query PostgreSQL → Return 301 Redirect</p>
+      <p><strong>Analytics Path:</strong> On redirect → API Server → Kafka → Analytics Service → Aggregates clicks</p>
+      <p>Why these choices: PostgreSQL for ACID, Redis for sub-millisecond cache, Kafka for async durable event streaming.</p>
+      <p>Scaling: API servers 10-20 instances. Redis single instance with replica for HA. PostgreSQL primary with read replicas.</p>
+      <p>For single points of failure, the PostgreSQL primary is one — we'd need automatic failover."</p>
+    </div>
+
+    <div class="callout good">
+      <div class="callout-title">What's Good</div>
+      <ul>
+        <li>Separated read/write paths clearly</li>
+        <li>Included analytics as async path</li>
+        <li>Some reasoning for technology choices</li>
+        <li>Mentioned read replicas and HA</li>
+        <li>Identified PostgreSQL primary as SPOF</li>
+      </ul>
+    </div>
+
+    <div class="callout fail">
+      <div class="callout-title">What's Missing for L6</div>
+      <ul>
+        <li><mark>No CDN for redirects</mark> — The single biggest gap for a read-heavy system</li>
+        <li>No estimation tie-in — "10-20 instances" but why? Based on what QPS?</li>
+        <li>No cache sizing or hit rate — How big is Redis? What hit rate do we expect?</li>
+        <li>No multi-region — Global users but single-region architecture</li>
+        <li>Rate limiting not shown — Where and how?</li>
+        <li>No code generation component — Where does the range allocator live?</li>
+        <li>Consistency model not explicit — What happens between write and cache populate?</li>
+        <li>Shallow failure analysis — Only mentioned one SPOF</li>
+      </ul>
+    </div>
+
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Reasonable architecture with read/write separation. Missing CDN is a significant gap for a read-heavy service. No estimation backing the component counts. Failure analysis is superficial. Meets L5 bar but needs more depth for L6."
+    </div>
+
+    <div class="upgrade">
+      <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+      <p>Add: <strong>CDN for redirect caching</strong>, estimation-backed component sizing, multi-region strategy, explicit <strong>cache population strategy</strong> (write-through vs write-behind), and comprehensive failure mode analysis for each component.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ HIRE (L6) ══════ -->
+<div class="tier hire" id="hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row">
+      <span class="tier-emoji">✅</span>
+      <span class="tier-name">Hire</span>
+      <span class="tier-badge">Meets L6 Bar</span>
+    </div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+
+    <div class="callout info" style="margin-top:0">
+      <div class="callout-title">L6 Opening — Requirements Drive Architecture</div>
+      <p>"Let me walk through the architecture with estimations, then analyze failure modes. <mark>The 50:1 read:write ratio tells me this is heavily read-optimized.</mark> My architecture will prioritize the redirect path."</p>
+      <ul>
+        <li>Write QPS: 2K peak (URL creation)</li>
+        <li>Read QPS: 100K peak (redirects)</li>
+        <li>Latency: p99 &lt; 50ms for redirects</li>
+        <li>Availability: 99.99% for redirects</li>
+        <li>Global users (US, Europe, Asia)</li>
+      </ul>
+    </div>
+
+    <!-- ARCHITECTURE DIAGRAM -->
+    <h4 id="hire-arch">High-Level Architecture Diagram</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · L6 Architecture — Full System</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+      <pre>┌─────────────────────────────────────────────────────────────────────┐
+│                         GLOBAL EDGE LAYER                           │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                     CDN (CloudFront/Fastly)                 │   │
+│  │   - Cache 301 redirects at edge                             │   │
+│  │   - 200+ PoPs globally                                      │   │
+│  │   - Target: 90% cache hit rate                              │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼ (cache miss only: 10K QPS)
+┌─────────────────────────────────────────────────────────────────────┐
+│                         ORIGIN REGION (US-EAST)                     │
+│                                                                     │
+│  ┌──────────────────┐     ┌──────────────────┐                     │
+│  │   Load Balancer  │     │   Rate Limiter   │                     │
+│  │    (AWS ALB)     │     │ (API Gateway +   │                     │
+│  │  Health checks,  │     │  Redis Token     │                     │
+│  │  TLS termination │     │  Bucket)         │                     │
+│  └────────┬─────────┘     └────────┬─────────┘                     │
+│           └───────────┬────────────┘                               │
+│                       ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    API SERVERS (Stateless)                   │   │
+│  │   Instances: 20 (each handles ~5K QPS)                      │   │
+│  │   Language: Go (low latency, high concurrency)              │   │
+│  │   Stateless — can scale horizontally                        │   │
+│  └──────────────────────────────┬──────────────────────────────┘   │
+│                                  │                                  │
+│               ┌──────────────────┴──────────────────┐              │
+│               ▼                                     ▼              │
+│  ┌─────────────────────┐            ┌─────────────────────┐        │
+│  │   Redis Cluster     │            │  Range Allocator    │        │
+│  │   - URL cache       │            │  Service            │        │
+│  │   - Rate limits     │            │  - Counter ranges   │        │
+│  │   - Idempotency     │            │  - FPE encoding     │        │
+│  │   Size: 32GB        │            │  Backed by PG seq   │        │
+│  │   (15GB working     │            │                     │        │
+│  │    set + buffer)    │            │                     │        │
+│  └──────────┬──────────┘            └─────────────────────┘        │
+│             │ Cache miss                                            │
+│             ▼                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │         PostgreSQL (Primary + 2 Read Replicas)              │   │
+│  │   Primary: Writes (2K QPS)                                  │   │
+│  │   Replicas: Read overflow (after cache miss)                │   │
+│  │   Instance: db.r6g.2xlarge (~$500/mo)                       │   │
+│  │   Storage: 500GB SSD    Connections: PgBouncer              │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ Click events (async)
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                       ANALYTICS PIPELINE                            │
+│                                                                     │
+│  ┌──────────────┐   ┌──────────────────┐   ┌─────────────────────┐ │
+│  │    Kafka     │──▶│  Click Counter   │──▶│ Postgres (url_stats)│ │
+│  │  (3 brokers) │   │   (Flink/Go)     │   │ Aggregated counts   │ │
+│  │ Retention:7d │   │ Batch writes:5s  │   └─────────────────────┘ │
+│  │ Partitions:12│   └──────────────────┘                          │
+│  └──────────────┘          │                                       │
+│                            ▼ (detailed analytics)                  │
+│                    ┌───────────────┐                               │
+│                    │  ClickHouse   │  Geo, referrer,               │
+│                    │  (OLAP store) │  device, time series          │
+│                    └───────────────┘                               │
+└─────────────────────────────────────────────────────────────────────┘</pre>
+    </div>
+
+    <!-- WRITE PATH -->
+    <h4 id="hire-write">Write Path (Create URL) — Step by Step</h4>
+    <div class="code">
+      <div class="code-hdr"><span class="code-lang">Flow · Create URL</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>1. Client POST /api/v1/urls with Idempotency-Key header
+   │
+   ▼
+2. Rate Limiter checks token bucket in Redis
+   - Key: user_id or IP
+   - Limit: 100/hour anonymous, 1000/hour authenticated
+   - If exceeded: return 429 immediately
+   │
+   ▼
+3. API Server receives request
+   ├─▶ 3a. Idempotency check: Redis GET idempotency:{key}
+   │       If exists: return cached response (200, not 201)
+   ├─▶ 3b. Validate long_url format and length
+   └─▶ 3c. Duplicate check: Query by url_hash if allow_duplicate=false
+   │
+   ▼
+4. Generate short code
+   - API server has pre-allocated range from Range Allocator
+   - Increment local counter, apply FPE
+   - If range exhausted: request new range (async pre-fetch at 80%)
+   │
+   ▼
+5. Write to PostgreSQL (primary)
+   - INSERT INTO urls (id, short_code, long_url, ...)
+   - Synchronous replication to at least 1 replica (durability)
+   │
+   ▼
+6. Write-through to Redis cache
+   - SET url:{short_code} {long_url} EX 86400
+   - Ensures immediate read-your-writes consistency
+   │
+   ▼
+7. Store idempotency record
+   - SET idempotency:{key} {response} EX 86400
+   │
+   ▼
+8. Return 201 Created with short URL
+
+Latency breakdown:
+  Rate limit check:   1ms
+  Idempotency check:  1ms
+  Code generation:    0.1ms
+  DB write:           10-20ms
+  Cache write:        1ms
+  ─────────────────────────────
+  Total:              ~15-25ms p50, <200ms p99</pre>
+    </div>
+
+    <!-- READ PATH -->
+    <h4 id="hire-read">Read Path (Redirect) — Step by Step</h4>
+    <div class="code">
+      <div class="code-hdr"><span class="code-lang">Flow · Redirect</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>1. Client GET /{shortCode}
+   │
+   ▼
+2. CDN Edge (CloudFront)
+   - Check cache for this short code
+   - Cache key: /{shortCode}
+   - If HIT (90% of requests): return 301 immediately (5-20ms)
+   - If MISS (10%): forward to origin
+   │
+   ▼ (cache miss: 10% of requests)
+
+3. Origin: API Server
+   ├─▶ 3a. Redis cache: GET url:{short_code}
+   │       If HIT (99% of origin requests): proceed to redirect
+   ├─▶ 3b. Cache MISS: Query PostgreSQL
+   │       SELECT long_url, redirect_type, expires_at
+   │       FROM urls WHERE short_code = ?
+   │       — Uses covering index (no heap access) — Latency: 5-10ms
+   └─▶ 3c. Populate Redis: SET url:{short_code} {long_url} EX 86400
+   │
+   ▼
+4. Check expiration
+   - If expires_at < now(): return 410 Gone
+   │
+   ▼
+5. Return 301 Redirect
+   - Location: {long_url}
+   - Cache-Control: public, max-age=86400
+   - CDN caches this for future requests
+   │
+   ▼
+6. Async: Emit click event to Kafka (fire-and-forget)
+   - Event: {short_code, timestamp, ip, user_agent, referrer}
+   - If Kafka unavailable: drop event (analytics can be lossy)
+
+Latency breakdown (CDN miss):
+  Redis lookup:           1ms
+  DB lookup (cache miss): 10ms
+  Return redirect:        1ms
+  Total:                  ~12ms p50 (cache hit), ~25ms p50 (cache miss)
+
+With 90% CDN hit rate:
+  Effective p50: 0.9 × 10ms (CDN) + 0.1 × 12ms (origin) ≈ 10ms ✓</pre>
+    </div>
+
+    <!-- COMPONENT SIZING -->
+    <h4 id="hire-sizing">Component Sizing (Estimation-Backed)</h4>
+    <table class="sz-table">
+      <thead><tr><th>Component</th><th>Sizing</th><th>Reasoning</th></tr></thead>
+      <tbody>
+        <tr><td>CDN</td><td class="sz">CloudFront, 200+ PoPs</td><td>Global users, edge caching target</td></tr>
+        <tr><td>API Servers</td><td class="sz">20 instances</td><td>100K QPS ÷ 5K per instance</td></tr>
+        <tr><td>Redis</td><td class="sz">32GB, 3-node cluster</td><td>15GB working set + buffer, HA</td></tr>
+        <tr><td>PostgreSQL</td><td class="sz">Primary + 2 replicas</td><td>2K write QPS, 5K read QPS overflow</td></tr>
+        <tr><td>Kafka</td><td class="sz">3 brokers, 12 partitions</td><td>100K events/sec, 7-day retention</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <div class="callout-title">Why Estimation-Backed Sizing Signals L6</div>
+      <p>L5 says "10-20 instances." L6 says <mark>"20 instances because 100K QPS ÷ 5K per instance."</mark> The number comes from math, not intuition. Every component has a reason behind its specification.</p>
+    </div>
+
+    <!-- FAILURE TABLE -->
+    <h4 id="hire-failure">Failure Mode Analysis</h4>
+    <table class="fail-table">
+      <thead><tr><th>Component</th><th>Failure</th><th>Impact</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td>CDN</td><td>PoP failure</td><td>Traffic routes to next PoP</td><td>Built-in CDN redundancy</td></tr>
+        <tr><td>CDN</td><td>Total outage</td><td>All traffic to origin</td><td>Origin overprovisioned at 100K QPS</td></tr>
+        <tr><td>API Server</td><td>Instance crash</td><td>Load balancer routes around</td><td>Health checks, 20 instances</td></tr>
+        <tr><td>Redis</td><td>Primary failure</td><td>1-2 sec failover</td><td>Redis Sentinel, async replication</td></tr>
+        <tr><td>Redis</td><td>Total outage</td><td>All requests hit DB (degraded)</td><td>DB handles it, alert triggers</td></tr>
+        <tr><td>PostgreSQL Primary</td><td>Failure</td><td>Writes fail for 30-60 sec</td><td>pg_auto_failover, automated promotion</td></tr>
+        <tr><td>PostgreSQL Primary</td><td>Failure</td><td>Reads continue from replicas</td><td>Read path unaffected</td></tr>
+        <tr><td>Kafka</td><td>Broker failure</td><td>Events buffer on API servers</td><td>Kafka replication factor 3</td></tr>
+        <tr><td>Kafka</td><td>Total outage</td><td>Analytics events lost</td><td>Acceptable — analytics is lossy</td></tr>
+        <tr><td>Range Allocator</td><td>Failure</td><td>Code gen stops when buffer exhausted</td><td>Workers have 10K buffer, alert at 80%</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout warn">
+      <div class="callout-title">Single Points of Failure (Explicitly Named)</div>
+      <ul>
+        <li><strong>PostgreSQL Primary</strong> — Mitigated by automated failover, but writes pause ~30 sec during promotion</li>
+        <li><strong>Range Allocator DB</strong> — If Postgres sequence unavailable, new ranges can't be allocated. Mitigation: workers have pre-fetched ranges; monitoring alerts well before exhaustion</li>
+      </ul>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-title">Consistency Model (Write-Through)</div>
+      <p>After a successful create, the URL is immediately resolvable. This is guaranteed by <strong>write-through cache on create</strong> — Redis is populated synchronously before returning 201. CDN will miss on first access (new URL not yet at edge), but origin Redis will serve it.</p>
+    </div>
+
+    <!-- AOMB -->
+    <div class="aomb">
+      <div class="aomb-title">AOMB Completeness Checklist — Verified</div>
+      <ul>
+        <li>Structured opening tying back to requirements (50:1 ratio)</li>
+        <li>CDN layer as first component (biggest win for read-heavy)</li>
+        <li>Separate read and write paths with detailed numbered steps</li>
+        <li>Component sizing backed by estimations from Phase 2</li>
+        <li>Rate limiting shown with mechanism (token bucket, Redis)</li>
+        <li>Idempotency flow shown in write path</li>
+        <li>Cache strategy explicitly stated (write-through, not write-behind)</li>
+        <li>Async analytics path (Kafka, fire-and-forget)</li>
+        <li>Latency breakdown for each path with CDN hit rate math</li>
+        <li>Failure mode table with mitigations for every component</li>
+        <li>SPOFs identified by name with specific mitigations</li>
+        <li>Consistency model discussed (read-your-writes guarantee)</li>
+        <li>Clear transition offering to go deeper</li>
+      </ul>
+    </div>
+
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Strong architecture with estimation backing. CDN placement shows understanding of read-heavy optimization. Failure analysis is systematic. Write-through cache shows consistency thinking. Would like to probe multi-region and deep dive on redirect hot path."
+    </div>
+
+    <div class="signals">
+      <div class="signals-title">Key Phrases That Signal L6 — Memorize These</div>
+      <ul>
+        <li>"The 50:1 read:write ratio tells me this is heavily read-optimized"</li>
+        <li>"Let me walk through the latency breakdown..."</li>
+        <li>"Write-through cache ensures immediate read-your-writes consistency"</li>
+        <li>"Kafka failure is acceptable — analytics can be lossy"</li>
+        <li>"Single points of failure are: [specific list with mitigations]"</li>
+        <li>"20 instances because 100K QPS ÷ 5K per instance"</li>
+      </ul>
+    </div>
+
+    <div class="callout good">
+      <div class="callout-title">What Separates This From L5</div>
+      <p>L5 draws boxes and arrows. L6 draws boxes and arrows <strong>with numbers</strong> — latency per step, sizing per component, and failure probabilities. L6 also makes explicit trade-offs: <mark class="gr">analytics is lossy, and that's intentionally acceptable.</mark> The write-through vs write-behind decision shows they understand consistency models, not just caching patterns.</p>
+    </div>
+
+  </div><!-- end tier-body -->
+</div><!-- end tier.hire -->
+
+<!-- PROGRESSION SUMMARY -->
+<div class="sec-hdr" id="progression"><h3>Progression Summary — Phase 4 (Part 1)</h3></div>
+<table class="prog">
+  <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+  <tbody>
+    <tr><td>No Hire → Lean Hire</td><td>Separates read/write paths, justifies technology choices, mentions HA and identifies at least one SPOF</td></tr>
+    <tr><td>Lean Hire → Hire (L6)</td><td>CDN layer first, estimation-backed component sizing, latency breakdown per step, write-through cache strategy, systematic failure mode table with all components</td></tr>
+    <tr><td>Hire → Strong Hire (L7)</td><td>Edge compute for validation, separate redirect/create services by latency SLA, Go code sample, three-tier failure classification, observability dashboard, cost estimation, multi-region roadmap</td></tr>
+  </tbody>
+</table>
+
+<div class="callout info" style="margin-top:16px">
+  <div class="callout-title">The One Thing to Practice</div>
+  <p>After drawing your architecture, walk through ONE request end-to-end with latency at each step: <strong>"Request arrives at CDN, 5ms. Cache miss, forwarded to origin. Redis lookup, 1ms. Cache hit, return 301, 1ms. Effective p50: 10ms."</strong> This demonstrates you understand where time goes.</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Phase 4</div>
+  <p><strong>L5 engineers</strong> draw architectures that work. <strong>L6 engineers</strong> draw architectures that scale and handle failures. <strong>L7 engineers</strong> draw architectures that are operable — they include monitoring, alerting, cost analysis, and evolution paths. They think about the full lifecycle, not just the happy path.</p>
+</div>
+
+<!-- NEXT PART -->
+<div class="next-card" id="next">
+  <div>
+    <div class="next-label">Continue the Series</div>
+    <div class="next-title">Part 2: Strong Hire (L7)</div>
+    <div class="next-desc">Edge compute, service split by latency SLA, Go code sample, three-tier failure analysis, observability golden signals, cost per million requests, multi-region evolution roadmap.</div>
+  </div>
+  <a href="#" class="next-btn">Part 2 →</a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+// Progress
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+
+function toggleTier(h) { h.parentElement.classList.toggle('collapsed'); }
+
+function copyCode(btn) {
+  const pre = btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+function copyDiag(btn) {
+  const pre = btn.closest('.diag').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+// Hamburger
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+
+// Search
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
