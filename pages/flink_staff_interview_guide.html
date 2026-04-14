@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apache Flink — Staff Engineer Interview Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #0f1525;
+    --bg3: #141c2e;
+    --bg4: #1a2340;
+    --surface: #1e2a42;
+    --surface2: #243050;
+    --border: rgba(99,153,255,0.15);
+    --border2: rgba(99,153,255,0.25);
+    --accent: #4e8bff;
+    --accent2: #7eb8ff;
+    --orange: #ff8c42;
+    --orange2: #ffad72;
+    --green: #3ddc84;
+    --green2: #6ef4ab;
+    --red: #ff5252;
+    --yellow: #ffd166;
+    --purple: #b197fc;
+    --teal: #3ddbd9;
+    --text: #e8edf7;
+    --text2: #9bacc8;
+    --text3: #5f7199;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Syne', sans-serif;
+    --serif: 'Lora', serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.75;
+    overflow-x: hidden;
+  }
+
+  /* HERO */
+  .hero {
+    background: linear-gradient(135deg, #060b18 0%, #0d1730 50%, #0a1520 100%);
+    border-bottom: 1px solid var(--border2);
+    padding: 80px 60px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(78,139,255,0.08) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -100px; left: -100px;
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(61,220,217,0.06) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .hero-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-family: var(--sans);
+    font-size: clamp(40px, 6vw, 72px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -2px;
+    color: #fff;
+    margin-bottom: 20px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero-sub {
+    font-family: var(--sans);
+    font-size: 18px;
+    color: var(--text2);
+    max-width: 600px;
+    margin-bottom: 40px;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .meta-chip {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+  }
+  .meta-chip strong { color: var(--accent2); font-weight: 500; }
+
+  /* NAV */
+  .toc {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 60px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .toc a {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text3);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .toc a:hover { background: var(--surface); color: var(--accent2); }
+
+  /* MAIN LAYOUT */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 60px; }
+
+  /* PILLAR */
+  .pillar {
+    padding: 80px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .pillar-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 48px;
+  }
+  .pillar-number {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    background: rgba(78,139,255,0.1);
+    border: 1px solid rgba(78,139,255,0.2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    white-space: nowrap;
+    margin-top: 8px;
+  }
+  .pillar h2 {
+    font-family: var(--sans);
+    font-size: clamp(24px, 3vw, 36px);
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: #fff;
+    line-height: 1.1;
+  }
+  .pillar h2 em { color: var(--accent); font-style: normal; }
+
+  /* SECTION */
+  .section { margin-bottom: 48px; }
+  .section h3 {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent2);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section h3::before {
+    content: '';
+    width: 3px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .section h4 {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--orange2);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    margin-top: 24px;
+  }
+  p { color: var(--text); margin-bottom: 16px; }
+  p:last-child { margin-bottom: 0; }
+
+  /* CALLOUTS */
+  .callout {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .callout-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    line-height: 1.5;
+  }
+  .callout-content { flex: 1; }
+  .callout-title {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .callout p { font-size: 14px; margin-bottom: 0; line-height: 1.6; }
+  .callout.fire { background: rgba(255,140,66,0.08); border: 1px solid rgba(255,140,66,0.25); }
+  .callout.fire .callout-title { color: var(--orange); }
+  .callout.lightning { background: rgba(78,139,255,0.08); border: 1px solid rgba(78,139,255,0.25); }
+  .callout.lightning .callout-title { color: var(--accent2); }
+  .callout.calc { background: rgba(61,220,132,0.08); border: 1px solid rgba(61,220,132,0.25); }
+  .callout.calc .callout-title { color: var(--green2); }
+  .callout.warning { background: rgba(255,209,102,0.08); border: 1px solid rgba(255,209,102,0.25); }
+  .callout.warning .callout-title { color: var(--yellow); }
+  .callout.info { background: rgba(61,219,217,0.08); border: 1px solid rgba(61,219,217,0.25); }
+  .callout.info .callout-title { color: var(--teal); }
+
+  /* CODE BLOCKS */
+  pre {
+    background: #060b18;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+    color: var(--text2);
+    margin: 20px 0;
+    white-space: pre;
+  }
+  .line-acc { color: var(--accent2); }
+  .line-green { color: var(--green2); }
+  .line-orange { color: var(--orange2); }
+  .line-yellow { color: var(--yellow); }
+  .line-purple { color: var(--purple); }
+  .line-teal { color: var(--teal); }
+  .line-red { color: var(--red); }
+  .line-dim { color: var(--text3); }
+  code {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: rgba(78,139,255,0.12);
+    border: 1px solid rgba(78,139,255,0.2);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: var(--accent2);
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 20px 0; border-radius: 10px; border: 1px solid var(--border2); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    background: var(--surface2);
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text2);
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border2);
+  }
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(78,139,255,0.04); }
+  td.good { color: var(--green); }
+  td.bad { color: var(--red); }
+  td.ok { color: var(--yellow); }
+  td strong { color: #fff; font-family: var(--sans); font-size: 13px; font-weight: 700; }
+
+  /* CARDS GRID */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border2); }
+  .card-icon { font-size: 24px; margin-bottom: 12px; }
+  .card h4 {
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .card p { font-size: 14px; color: var(--text2); margin: 0; line-height: 1.6; }
+  .card.accent { border-color: rgba(78,139,255,0.3); background: rgba(78,139,255,0.05); }
+  .card.orange { border-color: rgba(255,140,66,0.3); background: rgba(255,140,66,0.05); }
+  .card.green { border-color: rgba(61,220,132,0.3); background: rgba(61,220,132,0.05); }
+  .card.red { border-color: rgba(255,82,82,0.3); background: rgba(255,82,82,0.05); }
+
+  /* BADGE */
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 4px;
+    padding: 3px 8px;
+    margin: 2px;
+  }
+  .badge-blue { background: rgba(78,139,255,0.15); color: var(--accent2); border: 1px solid rgba(78,139,255,0.25); }
+  .badge-green { background: rgba(61,220,132,0.15); color: var(--green2); border: 1px solid rgba(61,220,132,0.25); }
+  .badge-orange { background: rgba(255,140,66,0.15); color: var(--orange2); border: 1px solid rgba(255,140,66,0.25); }
+  .badge-red { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid rgba(255,82,82,0.25); }
+  .badge-purple { background: rgba(177,151,252,0.15); color: var(--purple); border: 1px solid rgba(177,151,252,0.25); }
+
+  /* KEY TAKEAWAY */
+  .takeaway {
+    background: linear-gradient(135deg, rgba(78,139,255,0.1), rgba(61,219,217,0.05));
+    border: 1px solid rgba(78,139,255,0.3);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-top: 48px;
+  }
+  .takeaway-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .takeaway p { color: var(--text); font-size: 16px; font-style: italic; margin: 0; }
+
+  /* FAILURE SCENARIO */
+  .failure-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .failure-item h4 {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--red);
+    margin-bottom: 16px;
+    text-transform: none;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .failure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .failure-col { background: var(--bg4); border-radius: 8px; padding: 12px 16px; }
+  .failure-col-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .failure-col-title.detect { color: var(--yellow); }
+  .failure-col-title.recover { color: var(--green2); }
+  .failure-col-title.risk { color: var(--red); }
+  .failure-col-title.manual { color: var(--purple); }
+  .failure-col p { font-size: 13px; color: var(--text2); margin: 0; line-height: 1.6; }
+
+  /* SIMULATION BLOCK */
+  .simulation {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 36px;
+    margin: 32px 0;
+  }
+  .simulation-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 16px;
+  }
+  .simulation h3 {
+    font-family: var(--sans);
+    font-size: 22px;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 20px;
+  }
+  .simulation h3::before { display: none; }
+
+  /* QA */
+  .qa-item {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .qa-q {
+    background: var(--surface);
+    padding: 16px 20px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent2);
+  }
+  .qa-q span { color: var(--text3); font-weight: 500; margin-right: 8px; font-family: var(--mono); font-size: 13px; }
+  .qa-a {
+    padding: 16px 20px;
+    font-size: 14px;
+    color: var(--text2);
+    line-height: 1.7;
+    border-top: 1px solid var(--border);
+  }
+
+  /* INTERVIEW SECTION */
+  .interview-section {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  .interview-section h4 {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 800;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-bottom: 16px;
+    color: #fff;
+  }
+
+  /* DIVIDER */
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+
+  /* LISTS */
+  ul, ol { padding-left: 24px; color: var(--text); }
+  li { margin-bottom: 8px; line-height: 1.7; }
+  li strong { color: #fff; font-family: var(--sans); }
+
+  /* FOOTER */
+  .footer {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 40px 60px;
+    text-align: center;
+  }
+  .footer p { color: var(--text3); font-size: 14px; font-family: var(--sans); }
+  .footer strong { color: var(--accent2); }
+
+  @media (max-width: 768px) {
+    .hero, .container, .toc, .footer { padding-left: 24px; padding-right: 24px; }
+    .failure-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 36px; letter-spacing: -1px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-label">Staff / Principal Engineer · Interview Preparation</div>
+  <h1>Apache <span>Flink</span><br>Deep Dive</h1>
+  <p class="hero-sub">A comprehensive L7/L8 interview guide covering all 8 pillars — from first principles to Google-scale architecture decisions.</p>
+  <div class="hero-meta">
+    <div class="meta-chip"><strong>Version</strong> Flink 1.20 / 2.0-preview (2025)</div>
+    <div class="meta-chip"><strong>Level</strong> L7 / L8 Signal</div>
+    <div class="meta-chip"><strong>8 Pillars</strong> · Full Coverage</div>
+    <div class="meta-chip"><strong>Updated</strong> April 2026</div>
+  </div>
+</header>
+
+<!-- NAV -->
+<nav class="toc">
+  <a href="#p1">1. Core Concepts</a>
+  <a href="#p2">2. Architecture</a>
+  <a href="#p3">3. Trade-offs</a>
+  <a href="#p4">4. Failure Modes</a>
+  <a href="#p5">5. Scaling</a>
+  <a href="#p6">6. Real-World</a>
+  <a href="#p7">7. Google-Scale</a>
+  <a href="#p8">8. Interview Sim</a>
+</nav>
+
+<!-- PILLAR 1 -->
+<section id="p1" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 01</div>
+    <h2>Core Concepts &amp;<br><em>Mental Models</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>The World Before Flink — Why It Exists</h3>
+    <p>Before Apache Flink, the data engineering landscape was bifurcated into two uncomfortable worlds. On one side sat <strong>batch processing systems</strong> — MapReduce, Hive, Spark — which treated data as finite, bounded datasets. You collected data, wrote it to HDFS, and launched a job that ran to completion. This gave you high throughput but introduced fundamental latency that was measured in minutes to hours. Real-time business decisions were impossible.</p>
+    <p>On the other side sat <strong>micro-batch streaming systems</strong> (primarily Apache Spark Streaming and Apache Storm). Spark Streaming, the dominant approach, chopped the infinite stream into small time-bounded batches (say, 500ms or 1 second) and processed each batch as a mini MapReduce job. This was a hack — it gave the <em>appearance</em> of streaming but suffered from irreducible latency (minimum latency is 1 batch interval), inability to handle event-time semantics natively, and poor support for stateful operations across batch boundaries.</p>
+    <p>Apache Storm provided true event-by-event processing but offered no exactly-once guarantees, had no native state management (you had to bolt on external stores like Redis), had no concept of windowing at the framework level, and was operationally nightmarish. The result was that teams were forced to choose between <em>correctness</em> and <em>latency</em> — an impossible tradeoff in most real-world use cases.</p>
+    <p>Flink, born from the Stratosphere research project at TU Berlin (2014), was the first system to treat <strong>streaming as the fundamental paradigm</strong> and batch as a special case of streaming over bounded data. This philosophical inversion changed everything: time semantics became first-class, stateful computations became safe and recoverable, and exactly-once processing became achievable without sacrificing millisecond-level latency.</p>
+  </div>
+
+  <div class="section">
+    <h3>The Core Abstraction</h3>
+    <p>Flink's primary abstraction is the <strong>DataStream</strong> — an infinite, ordered (by time), partitioned sequence of records over which transformations are applied as a directed acyclic graph (DAG). What makes this abstraction powerful is threefold:</p>
+    <div class="cards">
+      <div class="card accent">
+        <div class="card-icon">⏱</div>
+        <h4>Time Domains</h4>
+        <p>Flink distinguishes between event time (when the event actually happened), ingestion time (when it entered Flink), and processing time (when it's being processed). You choose which clock governs your computation — this is not possible in any prior system.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon">💾</div>
+        <h4>Managed State</h4>
+        <p>Operators can maintain arbitrary state (maps, lists, aggregations) that is automatically checkpointed, versioned, and recoverable. State is co-located with computation, eliminating the external-store round-trip latency that plagued Storm deployments.</p>
+      </div>
+      <div class="card orange">
+        <div class="card-icon">💧</div>
+        <h4>Watermarks</h4>
+        <p>A mechanism for reasoning about completeness in event-time processing. A watermark W(t) is an assertion that all events with timestamp ≤ t have been observed. This enables correct windowing even when data arrives out-of-order.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔲</div>
+        <h4>Unified API</h4>
+        <p>The same DataStream API works for both bounded (batch) and unbounded (streaming) data. In Flink 1.12+, the DataStream API became the single unified API, eliminating the cognitive overhead of separate batch vs stream code paths.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Fundamental Guarantees Flink Makes</h3>
+    <h4>What Flink DOES Guarantee</h4>
+    <ul>
+      <li><strong>Exactly-once state consistency</strong> — With checkpointing enabled, even if a node crashes mid-computation, the internal state of all operators will be restored to a consistent snapshot. No record will be double-counted in state. This is achieved through Chandy-Lamport distributed snapshots, not through locking.</li>
+      <li><strong>Fault tolerance with configurable recovery</strong> — Flink can resume from the most recent checkpoint after any single TaskManager failure. The granularity is at the checkpoint boundary, so at most (checkpoint_interval) amount of progress can be lost, not all progress.</li>
+      <li><strong>Event-time correctness</strong> — Given sufficient watermark strategy configuration, Flink guarantees that windows over event time will fire correctly even with out-of-order records, up to the configured lateness threshold.</li>
+      <li><strong>Backpressure propagation</strong> — When a downstream operator is slow, Flink propagates backpressure upstream through its credit-based flow control, preventing unbounded buffer growth and memory exhaustion.</li>
+      <li><strong>State backend durability</strong> — With RocksDB state backend + HDFS/S3 checkpointing, state is durably stored on distributed storage and can survive total cluster loss.</li>
+    </ul>
+    <h4>What Flink Does NOT Guarantee</h4>
+    <ul>
+      <li><strong>Exactly-once end-to-end without sink support</strong> — Flink provides exactly-once state semantics, but end-to-end exactly-once (including the sink) requires the sink to support two-phase commit (Kafka, JDBC, etc.). Writing to an HTTP endpoint? You're at-least-once.</li>
+      <li><strong>Ordering of output records</strong> — Flink does NOT guarantee that output records will be emitted in event-time order. You may emit record A (t=10) before record B (t=5) from the same operator if B arrived late.</li>
+      <li><strong>Bounded recovery time</strong> — Recovery time scales with the size of operator state. A job with 500GB of RocksDB state will take significantly longer to recover than one with 1GB, which can cause prolonged downtime in certain failure scenarios.</li>
+      <li><strong>Processing-time determinism</strong> — Jobs using processing time for windows will produce different results on reprocessing the same data, since the clock differs.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h3>Invariants That Must Always Hold</h3>
+    <ul>
+      <li><strong>Watermark monotonicity:</strong> Watermarks must be non-decreasing within a partition. If an operator emits W(100), it must never subsequently emit W(99). Violation corrupts window firing semantics.</li>
+      <li><strong>Checkpoint barrier ordering:</strong> Checkpoint barriers injected at sources must flow through the DAG in topological order. Barriers for checkpoint N must not overtake barriers for checkpoint N-1.</li>
+      <li><strong>Operator parallelism consistency at restore:</strong> When restoring from a checkpoint, operator parallelism can change (rescaling), but Flink must correctly redistribute keyed state using key-group assignment.</li>
+      <li><strong>State backend isolation:</strong> State for different keys must be isolated — reading key A's state must never contaminate key B's state, even under concurrent access.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h3>Mental Model — Conceptual Architecture</h3>
+<pre>
+<span class="line-dim">╔════════════════════════════════════════════════════════════════════════╗</span>
+<span class="line-dim">║                    FLINK JOB — CONCEPTUAL VIEW                        ║</span>
+<span class="line-dim">╚════════════════════════════════════════════════════════════════════════╝</span>
+
+<span class="line-acc">INFINITE STREAM OF EVENTS (e.g., Kafka topic)</span>
+     │   │   │   │   │
+     ▼   ▼   ▼   ▼   ▼
+┌─────────────────────────────┐
+│  SOURCE OPERATOR            │  ← Partition 0..N, assigns event timestamps
+│  [Source 0] [Source 1]...   │    injects watermarks every N events/ms
+└──────────┬──────────────────┘
+           │  Records + Watermarks flow downstream
+           ▼
+┌─────────────────────────────┐
+│  keyBy() / SHUFFLE          │  ← Routes records to correct downstream
+│  Hash partitioning on key   │    parallel subtask by key hash
+└──────────┬──────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  STATEFUL OPERATOR          │  ← Each subtask owns a key-group shard
+│  [Sub 0]  [Sub 1]  [Sub 2]  │    Maintains ValueState / MapState / etc.
+│    ↕ RocksDB / Heap State   │    Emits results when window fires
+└──────────┬──────────────────┘
+           │
+           ▼
+┌─────────────────────────────┐
+│  SINK OPERATOR              │  ← Writes to Kafka / JDBC / S3
+│  2PC if exactly-once e2e    │    Commits on checkpoint completion
+└─────────────────────────────┘
+
+<span class="line-green">CHECKPOINTING (Chandy-Lamport):</span>
+  JobManager injects BARRIER at sources ───►  barrier flows with data
+  Operators snapshot state when all input barriers received
+  Snapshot written to S3/HDFS ──────────────► acknowledged to JM
+  If failure: restore all operators to last complete snapshot
+
+<span class="line-yellow">TIME SEMANTICS:</span>
+  Event Time:    ──── uses event_timestamp field from record
+  Watermark W(t):     "I've seen all events with ts ≤ t"
+  Late data:          goes to side output or discarded per config
+
+<span class="line-orange">BACKPRESSURE CHAIN:</span>
+  Slow Sink → buffer fills → upstream slows → source slows → Kafka lag increases
+  (Flink will NOT drop records; it propagates pressure back to source)
+</pre>
+  </div>
+
+  <div class="callout fire">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-content">
+      <div class="callout-title">Common Interview Mistake</div>
+      <p>Candidates conflate "exactly-once state semantics" with "exactly-once end-to-end delivery." Flink's checkpoint guarantee is about <em>state consistency</em>, not about preventing duplicate writes to sinks. End-to-end exactly-once requires a transactional sink (Kafka transactions, 2-phase commit JDBC) AND idempotent record IDs at the source. Without both, you have at-least-once delivery to external systems.</p>
+    </div>
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-content">
+      <div class="callout-title">L7/L8 Differentiator</div>
+      <p>Understand the difference between the three time domains and when each is appropriate. Event time is almost always correct for analytics (user behavior, financial transactions) but adds latency due to watermark lag. Processing time is correct only for monitoring pipelines where you care about "what's happening right now" (operational metrics, dashboards) and results don't need to be reproducible. Ingestion time is a middle ground — avoids out-of-order issues at the cost of not matching actual event occurrence time.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 1</div>
+    <p>Flink's foundational insight is that streaming is the <em>natural</em> model of the world, and batch is merely a bounded special case — this philosophical inversion enables correct, low-latency, stateful computation over infinite data that no prior system could achieve.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 2 -->
+<section id="p2" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 02</div>
+    <h2>Architecture<br><em>Deep Dive</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>Internal Components and Responsibilities</h3>
+    <div class="cards">
+      <div class="card accent">
+        <h4>JobManager (JM)</h4>
+        <p>The brain of the cluster. Receives the JobGraph from the client, translates it into an ExecutionGraph, schedules tasks onto TaskManagers, coordinates checkpoints, and handles failure recovery. In HA mode, multiple JMs run with one active leader elected via ZooKeeper/Kubernetes API. The JM is stateless itself — all state is persisted in the HA store.</p>
+      </div>
+      <div class="card">
+        <h4>ResourceManager (RM)</h4>
+        <p>Manages Task Slots across TaskManagers. On YARN, it requests containers from YARN RM. On Kubernetes, it creates/destroys TaskManager pods. On standalone, it manages a static pool. The RM decouples job scheduling from resource allocation — a key abstraction for multi-job clusters.</p>
+      </div>
+      <div class="card orange">
+        <h4>TaskManager (TM)</h4>
+        <p>Worker nodes that execute actual operator subtasks. Each TM has N task slots (typically = CPU cores). Each slot runs one pipeline of chained operators. TMs manage memory (heap + off-heap), network buffers between tasks, and local state storage. Flink 1.16+ uses "fine-grained resource management" to let slots vary in size.</p>
+      </div>
+      <div class="card green">
+        <h4>Dispatcher</h4>
+        <p>REST endpoint for job submission. Receives JAR files or job definitions, creates a JobMaster per job, and provides the monitoring WebUI. In session clusters, the Dispatcher runs permanently; in per-job mode (deprecated in 1.15), a Dispatcher spins up per job.</p>
+      </div>
+      <div class="card">
+        <h4>Checkpoint Coordinator</h4>
+        <p>Runs inside the JobManager. Periodically triggers checkpoint barriers at all source operators, tracks barrier propagation through the DAG, and declares a checkpoint complete when all operators have acknowledged their snapshot. Uses Akka-style messaging (Flink's own actor system, not raw Akka anymore since 1.13).</p>
+      </div>
+      <div class="card accent">
+        <h4>State Backends</h4>
+        <p>Three options: (1) HashMapStateBackend — all state on JVM heap, fastest but limited by heap size. (2) EmbeddedRocksDBStateBackend — state on local disk via RocksDB, scales to TBs, but slower due to serialization/deserialization. (3) ForStStateBackend (new in 1.19/2.0) — RocksDB-based but with improved compaction and tiered storage support for very large state.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Full Data Flow — Write Path (Record Processing)</h3>
+<pre>
+<span class="line-acc">STEP 1: CLIENT SUBMISSION</span>
+  Client compiles user code → JobGraph (logical DAG)
+  JobGraph submitted to Dispatcher REST endpoint
+  Dispatcher creates JobMaster instance for this job
+
+<span class="line-acc">STEP 2: JOB GRAPH → EXECUTION GRAPH</span>
+  JobMaster optimizes JobGraph → ExecutionGraph
+  Chains compatible operators (same parallelism, no shuffle between)
+    e.g., map() → filter() → keyBy() get chained into one pipeline
+  Assigns logical partition IDs to each subtask
+
+<span class="line-acc">STEP 3: RESOURCE ALLOCATION</span>
+  JobMaster requests N slots from ResourceManager
+  RM either allocates existing TM slots or provisions new TMs
+  TMs register themselves with JM via heartbeat protocol
+  Slots allocated, tasks deployed to TMs
+
+<span class="line-acc">STEP 4: SOURCE OPERATOR EXECUTION</span>
+  Source subtask connects to Kafka (or other connector)
+  Reads records from assigned Kafka partitions
+  Deserializes → assigns event timestamps via TimestampAssigner
+  Generates watermarks periodically (e.g., every 200ms or every N records)
+  Emits (Record, Watermark) stream into downstream network buffer
+
+<span class="line-acc">STEP 5: NETWORK TRANSFER (if shuffled)</span>
+  Records buffered in network buffers (32KB default)
+  Flushed immediately if watermark arrives (to propagate timeliness)
+  OR flushed when buffer is full (throughput optimization)
+  Serialized using Flink's TypeSerializer (faster than Java serialization)
+  Downstream TM reads from socket buffer into input buffer pool
+
+<span class="line-acc">STEP 6: STATEFUL OPERATOR PROCESSING</span>
+  Incoming record arrives at operator subtask
+  Key extracted → KeyContext set to this key's namespace
+  State backend lookup: RocksDB.get(key) → current state value
+  Process record → update state: RocksDB.put(key, newValue)
+  Check if window should fire (based on watermark vs window end time)
+  If window fires → emit aggregated result downstream
+
+<span class="line-acc">STEP 7: SINK OPERATOR + EXACTLY-ONCE</span>
+  Records arrive at sink subtask
+  If 2PC sink (Kafka): buffer records in pre-commit buffer
+  On checkpoint notification: pre-commit all buffered records
+  On checkpoint complete (all operators acked): commit transactions
+  On failure before commit: transactions rolled back automatically
+</pre>
+  </div>
+
+  <div class="section">
+    <h3>Checkpoint (Recovery) Path — Read Path</h3>
+<pre>
+<span class="line-green">TRIGGER:</span>
+  JobManager's CheckpointCoordinator fires every checkpoint_interval ms
+  Sends TriggerCheckpoint message to all source operators
+
+<span class="line-green">BARRIER INJECTION (at sources):</span>
+  Source operator pauses reading briefly
+  Injects a special CheckpointBarrier(checkpointId=N) record into stream
+  Resumes reading — barrier flows downstream mixed with data records
+
+<span class="line-green">BARRIER ALIGNMENT (at stateful operators):</span>
+  Operator receiving from multiple input channels waits for barrier on ALL channels
+  Records arriving after barrier on channel X are buffered
+  When all barriers received → take state snapshot
+  Forward single barrier downstream
+  Resume processing buffered records
+  ⚠ This is "aligned checkpointing" — adds latency proportional to skew
+  ✓ "Unaligned checkpointing" (Flink 1.11+): snapshot in-flight records too,
+    no waiting needed — much lower latency for skewed workloads
+
+<span class="line-green">SNAPSHOT STORAGE:</span>
+  HashMapStateBackend: serialize entire heap state → upload to S3/HDFS
+  RocksDB: upload SST files (incremental checkpoints in 1.13+)
+    incremental = only upload changed SST files since last checkpoint
+    can reduce checkpoint size from GB to MB in steady state
+  Async snapshot: main thread continues processing during upload
+
+<span class="line-green">ACKNOWLEDGMENT:</span>
+  Each operator ACKs checkpoint N to JM when snapshot complete
+  JM waits for all operators → declares checkpoint N complete
+  Notifies sinks to commit 2PC transactions (if any)
+  Saves checkpoint metadata to HA backend
+
+<span class="line-green">RECOVERY (on failure):</span>
+  JM detects TM failure via missed heartbeat (default 10s timeout)
+  Cancels all running tasks
+  Loads latest complete checkpoint metadata
+  Re-deploys all tasks to available TMs
+  Each operator restores state from checkpoint
+  Sources seek to their saved offsets (e.g., Kafka consumer group offsets)
+  Processing resumes from exactly the checkpointed state
+</pre>
+  </div>
+
+  <div class="section">
+    <h3>In-Memory and On-Disk Data Layout</h3>
+    <p>Flink's memory management is highly sophisticated and has evolved significantly over versions. Understanding this is critical at L7+:</p>
+    <p>The total JVM memory of a TaskManager is divided into several managed regions. The <strong>Framework Heap Memory</strong> (default 128MB) is used by Flink's own internal data structures, network buffers, and internal algorithms — it is never used for user state or record serialization. The <strong>Task Heap Memory</strong> is the user-visible heap where HashMapStateBackend stores state and where Flink's managed memory objects can reside. The <strong>Managed Off-Heap Memory</strong> (default 40% of total) is used by RocksDB's block cache and write buffers — this is off-JVM-heap native memory, which means it does NOT trigger GC pressure. The <strong>Network Buffer Pool</strong> allocates direct memory buffers for inter-TM network transfer — each input/output gate gets a configurable number of 32KB buffers.</p>
+    <p>For RocksDB specifically: the on-disk layout uses LSM tree structure with multiple levels of SST files. Level-0 holds recently flushed MemTables. Compaction merges L0 → L1 → L2 etc., with each level being ~10x larger. For Flink state, each key namespace is a column family in RocksDB. During incremental checkpointing, only the SST files that changed (new or modified) since the last checkpoint are uploaded to durable storage — this makes steady-state checkpoint sizes dramatically smaller.</p>
+  </div>
+
+  <div class="section">
+    <h3>Backpressure and Flow Control</h3>
+    <p>Flink uses a <strong>credit-based flow control</strong> mechanism introduced in Flink 1.5. When a downstream operator is ready to receive data, it sends a "credit" (number of available network buffers) to upstream. The upstream only sends records when it has received credits. This prevents any operator from flooding a slower downstream neighbor without any feedback, and without blocking threads.</p>
+    <p>When downstream has no available buffers (slow processing), it stops issuing credits. Upstream's output buffer fills up. The operator thread blocks on buffer write. This is detectable as backpressure in the Flink WebUI — each operator shows a backpressure ratio (0.0 = no pressure, 1.0 = fully blocked). Backpressure propagates all the way back to sources, which will slow their Kafka consumption rate. In Kafka, this manifests as growing consumer lag — a key operational signal to monitor.</p>
+  </div>
+
+  <div class="section">
+    <h3>Detailed ASCII Architecture Diagram</h3>
+<pre>
+<span class="line-dim">╔═══════════════════════════════════════════════════════════════════════════╗</span>
+<span class="line-dim">║                FLINK CLUSTER ARCHITECTURE (Flink 1.18+)                  ║</span>
+<span class="line-dim">╚═══════════════════════════════════════════════════════════════════════════╝</span>
+
+<span class="line-acc">  CLIENT</span>              <span class="line-acc">JOB MANAGER (LEADER)</span>            <span class="line-acc">HA STORE</span>
+  ┌────────┐           ┌──────────────────────────┐     ┌──────────┐
+  │  User  │           │  ┌────────────────────┐  │     │ZooKeeper │
+  │  Code  │──submit──►│  │  Dispatcher/REST   │  │◄───►│  or k8s  │
+  │  JAR   │           │  └────────────────────┘  │     │  leader  │
+  └────────┘           │  ┌────────────────────┐  │     │ election │
+                       │  │   JobMaster(s)     │  │     └──────────┘
+                       │  │  ExecutionGraph    │  │
+                       │  │  Checkpoint Coord  │  │     ┌──────────┐
+                       │  └────────────────────┘  │     │   S3 /   │
+                       │  ┌────────────────────┐  │◄───►│  HDFS    │
+                       │  │  ResourceManager   │  │     │(checkpts)│
+                       │  └────────────────────┘  │     └──────────┘
+                       └───────────┬──────────────┘
+                                   │ deploy tasks / heartbeat
+          ┌────────────────────────┼────────────────────────┐
+          ▼                        ▼                         ▼
+  ┌──────────────┐       ┌──────────────────┐      ┌──────────────┐
+  │ TASK MANAGER │       │  TASK MANAGER    │      │ TASK MANAGER │
+  │              │       │                  │      │              │
+  │ Slot 0  Sl 1 │       │ Slot 0  Slot 1   │      │ Slot 0  Sl 1 │
+  │ ┌──────────┐ │       │ ┌──────────────┐ │      │ ┌──────────┐ │
+  │ │Src[0]    │ │       │ │  Map[0]      │ │      │ │ Sink[0]  │ │
+  │ │→Map→Filt │ │──────►│ │  Window[0]  │ │─────►│ │ 2PC Kfk  │ │
+  │ │[chained] │ │       │ │  RocksDB st │ │      │ └──────────┘ │
+  │ └──────────┘ │       │ └──────────────┘ │      └──────────────┘
+  │              │       │                  │
+  │ Network Buf  │       │  Network Buf     │
+  │ Pool (direct)│       │  Pool (direct)   │
+  │              │       │                  │
+  │ JVM Heap     │       │  JVM Heap        │
+  │ Off-heap(RDB)│       │  Off-heap(RDB)   │
+  └──────────────┘       └──────────────────┘
+
+<span class="line-green">DATA FLOW (simplified):</span>
+  Kafka ──► Source[0..N] ──► keyBy(hash) ──► Stateful Op ──► Sink ──► Kafka
+
+<span class="line-yellow">CHECKPOINT BARRIERS:</span>
+  Source ──[data,data,BARRIER_3,data]──► Operator
+              waits for barrier on all inputs ──► snapshots state ──► acks JM
+</pre>
+  </div>
+
+  <div class="section">
+    <h3>Flink 2.0 Changes (2024–2025)</h3>
+    <p>Flink 2.0 (released as preview in 2024, stable in 2025) introduces several breaking changes worth knowing at L7+. The <strong>DataSet API has been completely removed</strong> — all batch processing now goes through the unified DataStream API with BATCH execution mode. The <strong>legacy SQL planner is removed</strong> — only Blink planner (now just called "Flink planner") remains. <strong>Unaligned checkpointing is now the default</strong> for better latency under backpressure. The new <strong>ForSt state backend</strong> (short for "Forward-looking State") replaces the original RocksDB backend with improved performance, cloud-native tiered storage support, and better integration with Flink's memory management. The <strong>Adaptive Batch Scheduler</strong> can now automatically determine parallelism for batch jobs based on input data size — a huge operational improvement.</p>
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-content">
+      <div class="callout-title">L7/L8 Differentiator</div>
+      <p>Know the difference between "aligned" and "unaligned" checkpointing in depth. Aligned checkpointing blocks processing on slow channels, adding latency proportional to inter-channel skew. Unaligned checkpointing (default in 2.0) snapshots in-flight network buffers along with operator state — much lower checkpoint latency but larger checkpoint sizes. The tradeoff matters in systems with persistent backpressure: aligned can cause checkpoint timeout failures and trigger job restarts, while unaligned avoids this at the cost of checkpoint size and restore time.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 2</div>
+    <p>The entire correctness of Flink rests on the Chandy-Lamport distributed snapshot algorithm — barriers flowing through the DAG are how a consistent global state is captured without stopping the world, and understanding this mechanism deeply differentiates staff from senior engineers.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 3 -->
+<section id="p3" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 03</div>
+    <h2>Trade-offs &amp;<br><em>Design Decisions</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>CAP Theorem Positioning</h3>
+    <p>Flink is a stream processing engine, not a storage system, so CAP applies in a nuanced way. Flink's state is CP by default — in the event of a network partition or node failure, Flink will <strong>stop processing</strong> (sacrifice availability) rather than continue with potentially inconsistent state that might produce wrong results. When a TaskManager is unreachable, the JobManager will cancel the job and restart from the last checkpoint rather than continue on partial data.</p>
+    <p>However, Flink can be configured to be more AP-like for specific use cases: if you use processing time (no event-time watermarks), disable checkpointing, and use at-least-once mode, Flink will continue processing through partitions with the risk of state inconsistency on recovery. This is the "speed over correctness" mode that might be appropriate for real-time dashboards where approximate counts are acceptable.</p>
+  </div>
+
+  <div class="section">
+    <h3>PACELC Analysis</h3>
+    <p>Under normal operations (no partition), Flink trades <strong>latency for consistency</strong> through its checkpoint mechanism. Each checkpoint interval (default 10 seconds) represents a consistency boundary. Records processed within a checkpoint interval are not durably committed until the checkpoint completes. If the checkpoint interval is short (1s), you get lower recovery gap but higher overhead (more frequent barrier injection and S3 uploads). If it's long (60s), you get better throughput but longer recovery lag.</p>
+    <p>The PACELC position: <strong>PA/EL</strong> in availability/partition mode (prioritizes availability by eventually recovering), <strong>EC</strong> in else mode (prefers eventual consistency — checkpoint-consistent — over minimum latency). You can shift toward EL by increasing checkpoint intervals at the cost of longer recovery windows.</p>
+  </div>
+
+  <div class="section">
+    <h3>Comprehensive Trade-off Matrix</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Trade-off Dimension</th><th>Default Choice</th><th>Why This Default</th><th>How to Change</th><th>Consequence</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Checkpoint Interval</strong></td>
+            <td class="ok">10 seconds</td>
+            <td>Balance between recovery lag and checkpoint overhead on S3</td>
+            <td><code>env.enableCheckpointing(1000)</code></td>
+            <td class="bad">1s: higher throughput penalty, larger S3 costs. 60s: 60s of reprocessing on failure.</td>
+          </tr>
+          <tr>
+            <td><strong>State Backend</strong></td>
+            <td class="ok">HashMapStateBackend</td>
+            <td>Zero serialization overhead, fastest for small state</td>
+            <td>Set RocksDB backend</td>
+            <td class="bad">RocksDB: 2-10x slower per operation due to serialization, but handles TB-scale state without heap pressure.</td>
+          </tr>
+          <tr>
+            <td><strong>Watermark Strategy</strong></td>
+            <td class="ok">BoundedOutOfOrderness(2s)</td>
+            <td>Handles typical out-of-order data without too much event-time lag</td>
+            <td>Tune maxOutOfOrderness</td>
+            <td class="bad">Too small: late data discarded, wrong aggregations. Too large: watermark advances slowly, windows fire late, high latency.</td>
+          </tr>
+          <tr>
+            <td><strong>Exactly-Once vs At-Least-Once</strong></td>
+            <td class="ok">Exactly-Once</td>
+            <td>Correctness by default</td>
+            <td><code>CheckpointingMode.AT_LEAST_ONCE</code></td>
+            <td class="good">At-least-once: up to 2x faster checkpointing (no barrier alignment wait). Use for idempotent sinks.</td>
+          </tr>
+          <tr>
+            <td><strong>Parallelism</strong></td>
+            <td class="ok">1 (default)</td>
+            <td>Conservative default to avoid resource waste</td>
+            <td><code>env.setParallelism(N)</code></td>
+            <td class="bad">Under-parallelism is the #1 cause of Flink production issues. Must match source partition count at sources.</td>
+          </tr>
+          <tr>
+            <td><strong>Incremental Checkpoints</strong></td>
+            <td class="ok">Disabled</td>
+            <td>Simpler recovery (no SST file chain to manage)</td>
+            <td><code>RocksDBStateBackend(true)</code></td>
+            <td class="good">Can reduce checkpoint size 10-100x in steady state. Recovery requires replaying SST file chain — longer if chain is very long. Use with periodic full checkpoints (savepoints).</td>
+          </tr>
+          <tr>
+            <td><strong>Network Buffer Size</strong></td>
+            <td class="ok">32KB per buffer</td>
+            <td>Good for mixed workloads</td>
+            <td><code>taskmanager.network.memory.segment-size</code></td>
+            <td class="bad">Larger buffers: better throughput, higher latency. Smaller: lower latency, more buffer management overhead.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Latency vs Throughput Knobs</h3>
+    <p>Flink exposes several explicit latency-throughput levers. The <strong>buffer timeout</strong> (default 100ms) controls how long records wait in network buffers before being flushed downstream. Setting this to 0 achieves minimum latency (records sent immediately) at the cost of much worse throughput due to small-packet network overhead. Setting it to -1 means buffers only flush when full, maximizing throughput but potentially adding hundreds of milliseconds of latency.</p>
+    <p>The <strong>micro-batch trick</strong> in Flink is using a tumbling window of 10-100ms as a deliberate aggregation step. This converts N individual record-level state operations into one bulk aggregation per window, dramatically increasing throughput at the cost of window-size latency. At Google-scale, where individual record processing might need to support millions of events per second, this is often the right tradeoff.</p>
+  </div>
+
+  <div class="callout calc">
+    <div class="callout-icon">📐</div>
+    <div class="callout-content">
+      <div class="callout-title">Back-of-Envelope — Checkpoint Overhead</div>
+      <p>A Flink job with 100 TaskManagers × 50GB RocksDB state per TM = 5TB total state. Full checkpoint at 10GB/s S3 upload bandwidth = 500 seconds per checkpoint. This is clearly wrong — you MUST use incremental checkpoints. With incremental at 1% change rate = 50GB delta per checkpoint interval. At 10GB/s = 5 seconds to upload. Checkpoint interval should be ≥ 10× upload time = min 50 seconds. At L7, you must size checkpoint intervals against your actual state size and network bandwidth to S3, not just use defaults.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 3</div>
+    <p>Every Flink configuration knob is a point on the latency-throughput-correctness-operability surface — the L7 skill is knowing which knobs to turn for a given SLA, and being able to explain the compounding second-order effects of each change.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 4 -->
+<section id="p4" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 04</div>
+    <h2>Failure Modes &amp;<br><em>Resilience</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>Failure Scenario Analysis</h3>
+
+    <div class="failure-item">
+      <h4>⚡ TaskManager (Worker) Crash</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>JM detects missed heartbeats after akka.ask.timeout (default 10s). Immediate detection if TM sends explicit disconnect message before crashing.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>JM restarts the entire job from last complete checkpoint. With RestartStrategies.fixedDelayRestart, attempts up to N restarts. New TMs provisioned if needed (YARN/k8s).</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>All records processed since last checkpoint are reprocessed. With at-least-once sources (Kafka seeks back to saved offset), records may be re-emitted. Exactly-once sinks prevent duplicates via 2PC rollback.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>Investigate TM OOM/crash logs. May need to adjust memory allocation or parallelism if crash was caused by data skew. Monitor for recurring restarts — symptom of systematic issue.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>💥 JobManager Crash</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>ZooKeeper session expires (30s default) or k8s liveness probe fails. Standby JM immediately initiates leader election upon detecting primary failure.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>Standby JM wins election, reads latest checkpoint metadata from HA store (ZK + HDFS/S3). Reconstructs ExecutionGraph, recontacts TMs if still alive, or triggers full restart from checkpoint.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>If TMs are still running, they will eventually disconnect (no heartbeat from JM). On new JM start, full job restart from checkpoint. Same reprocessing window as TM failure.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>HA must be configured before failure occurs. Without HA (single JM), the cluster is completely unavailable until JM restarts. Critical: always run HA in production.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>🌐 Network Partition — One Side Has Quorum</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>JM loses heartbeat contact with isolated TMs. ZooKeeper loses quorum on smaller partition (ZK requires majority).</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>JM marks isolated TMs as failed. Restarts affected tasks on remaining TMs. Job continues processing (possibly at reduced parallelism) from checkpoint.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>Isolated TMs may continue processing briefly before detecting lost JM connection. Their uncommitted state is lost. No split-brain at compute layer since JM is single leader.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>Monitor for processing lag spike during recovery. May need to manually trigger savepoint if partition is long-lived to ensure state is current.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>✂️ Network Partition — Even Split (No Quorum)</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>ZooKeeper loses quorum entirely — both JMs (if 2-node HA) unable to acquire lock. Both JMs enter standby mode.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>None. The job is unavailable for the duration of the partition. When partition heals, ZK quorum re-established, one JM wins election and restarts job from checkpoint.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>All records since last checkpoint are reprocessed after recovery. No state corruption (correctness preserved) but availability is zero during partition.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>This is why you run ZooKeeper with 3 or 5 nodes, never 2. Even split is theoretically impossible with 3-node ZK (2/3 = majority). Consider k8s Lease-based HA which handles this better.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>🐌 Slow/Degraded Node</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>Flink WebUI shows high backpressure ratio on specific TM. Checkpoint duration spikes (slow TM delays checkpoint completion for entire job). Checkpoint may timeout and fail.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>No automatic recovery — Flink does not speculatively re-execute tasks like Spark. Job continues processing but may become backpressured globally. If checkpoint times out, job restarts.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>If slow node causes checkpoint timeout → job restart → same reprocessing window. No data loss but latency spike and potential consumer lag buildup in Kafka.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>This is one of Flink's known weaknesses vs Spark. Must manually detect and decommission slow TMs. Use metrics: task.numBytesOutPerSecond, checkpoint duration per operator. Flink 2.0 adds speculative execution for batch but not yet for streaming.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>🕐 Clock Skew Between Nodes</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>Not directly detected by Flink. Manifests as watermarks advancing too fast or too slow on specific partitions, causing premature or delayed window firing.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>None — Flink uses system clocks only for processing time and internal coordination (heartbeats). Event time comes from the data itself. Clock skew affects heartbeat reliability.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>If NTP drift is large enough to cause heartbeat timeouts, it can trigger false TM failures. For processing-time windows, clock skew causes incorrect window boundaries.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>Enforce NTP synchronization with &lt;1ms drift across all cluster nodes. Use event time for all analytically critical computations — this completely eliminates clock skew as a correctness concern. Processing time is only safe for near-real-time dashboards.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>⚡ Thundering Herd After Recovery</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>Immediately post-recovery, all TMs start consuming from their saved Kafka offsets simultaneously. CPU and network spike. Kafka brokers may be overwhelmed with concurrent fetch requests.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>Flink has no built-in recovery rate limiting. All tasks resume at full speed simultaneously.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>Downstream systems (sinks) can be overwhelmed with the replay traffic. If sink has rate limits (API endpoints), 2PC transactions may time out, causing further restarts in a failure loop.</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>Use source rate limiting (RateLimiterStrategy in FlinkKafkaConsumer) during catch-up. Set maximum records per second at source to prevent overwhelming sinks. Alternatively, restore to a savepoint from a slightly earlier time and let the job catch up gradually.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-item">
+      <h4>🔁 Cascading Failure Prevention</h4>
+      <div class="failure-grid">
+        <div class="failure-col"><div class="failure-col-title detect">Detection</div><p>Pattern of repeated restarts (restart storm) where each restart fails quickly, consuming resources. JM restart counter is bounded by RestartStrategy — job eventually goes to FAILED state.</p></div>
+        <div class="failure-col"><div class="failure-col-title recover">Auto Recovery</div><p>ExponentialDelayRestartStrategy in Flink 1.13+ adds exponential backoff between restart attempts, preventing resource exhaustion during cascading failures.</p></div>
+        <div class="failure-col"><div class="failure-col-title risk">Data Risk</div><p>Prolonged FAILED state means source lag grows. If Kafka retention window is shorter than downtime, data can be permanently lost even with checkpointing (Kafka deletes old messages regardless).</p></div>
+        <div class="failure-col"><div class="failure-col-title manual">Manual Action</div><p>Set Kafka topic retention to minimum 3× your expected maximum recovery time. Alert on job restart count exceeding 3 in 10 minutes. Use dead letter queues for consistently failing records to break failure loops.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout fire">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-content">
+      <div class="callout-title">Common Interview Mistake</div>
+      <p>Candidates often forget that Kafka consumer offset management and Flink checkpoint offset management must be synchronized. Flink saves the Kafka offset as part of its checkpoint state. If you reset the Kafka consumer group offset manually (e.g., via kafka-consumer-groups.sh --reset-offsets) independently of a Flink savepoint, you break the consistency guarantee — Flink will restore state as of checkpoint time T but read from offset corresponding to time T', causing duplicates or gaps.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 4</div>
+    <p>Flink's resilience model is "checkpoint and restart" — it does not attempt to work around failures in-flight; every failure type ultimately traces back to the same recovery path, and the checkpoint interval is the single most important tunable for both recovery time objective and reprocessing blast radius.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 5 -->
+<section id="p5" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 05</div>
+    <h2>Scaling<br><em>Strategies</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>Vertical vs Horizontal Scaling</h3>
+    <p><strong>Vertical scaling</strong> in Flink means increasing the heap and managed memory per TaskManager. The primary bottleneck that hits first is JVM GC pressure — as heap grows beyond 8-16GB, full GC pauses become unpredictable and can cause Flink to miss heartbeat timeouts, falsely triggering TM failure detection. The solution is the RocksDB state backend, which moves state off-heap to native memory, dramatically reducing GC pressure. With RocksDB, individual TMs can efficiently manage 500GB+ of state. Beyond that, you're limited by local disk I/O — NVMe SSDs give 10-20× better RocksDB compaction performance than spinning disks, which becomes critical at large state sizes.</p>
+    <p><strong>Horizontal scaling</strong> is the primary scaling strategy for Flink. Increasing operator parallelism distributes both computation and state across more TaskManagers. The key architectural implication is that <strong>each new key-group assignment requires state redistribution</strong> — when you scale a stateful job from P=4 to P=8, Flink must repartition the RocksDB state across 8 new subtasks. This is done via savepoint + job restart with new parallelism, which introduces downtime proportional to state size and parallelism change magnitude. Flink 1.14+ introduced "rescalable state" which improves this, but it still requires a restart.</p>
+  </div>
+
+  <div class="section">
+    <h3>Partitioning Strategies</h3>
+    <p>Flink's primary partitioning mechanism is <code>keyBy()</code>, which uses hash partitioning on the specified key. The hash function is consistent — the same key always maps to the same operator subtask index. This is critical for correctness: all records for a given key must arrive at the same stateful operator instance for the state to be correct.</p>
+    <p><strong>Hot key / skew problem</strong> is the most common performance issue in production Flink jobs. If one key has 10× more records than others (e.g., a celebrity user in a social platform, a popular product in an e-commerce stream), the subtask handling that key becomes the bottleneck, while others are idle. Solutions include: (1) <strong>Pre-aggregation</strong> — add a first-pass keyBy on (key, random_shard) to distribute within-key computation, then aggregate results. (2) <strong>Composite keys</strong> — add a random salt to the key, creating N virtual partitions per actual key (reduces max skew from Nx to max(Nx/N_shards)). (3) <strong>Async I/O</strong> — for I/O-bound per-key operations, use AsyncFunction to allow other keys to be processed while waiting for I/O.</p>
+  </div>
+
+  <div class="section">
+    <h3>Scalability Architecture Diagram</h3>
+<pre>
+<span class="line-dim">SCALING DIMENSIONS IN FLINK</span>
+
+<span class="line-acc">Parallelism Scaling:</span>
+  Input: Kafka Topic (16 partitions)
+  Source operator: parallelism=16 (1:1 with Kafka partitions, optimal)
+  keyBy → Stateful op: parallelism=32 (2× for compute-heavy aggregation)
+  Sink: parallelism=16
+
+  ❌ WRONG: Source parallelism=32, Kafka has 16 partitions
+     → Half the source tasks idle, reading 0 events
+  ✓ RULE: Source parallelism must divide evenly into partition count
+
+<span class="line-yellow">State Scaling (key-group redistribution):</span>
+  P=4 with key-groups [0-127],[128-255],[256-383],[384-511]
+  Scale to P=8:
+    Savepoint → redistribute key-groups
+    [0-63][64-127][128-191][192-255][256-319][320-383][384-447][448-511]
+    ~= (old state size) / 2 must be transferred per new subtask
+    For 100GB state per operator × 4 ops = 400GB moved during scale
+
+<span class="line-green">Throughput at Scale (Back-of-envelope):</span>
+  Single Flink subtask (1 core, heap state):  ~500K records/sec simple map
+  Single Flink subtask (1 core, RocksDB):     ~50-100K records/sec w/ state
+  TaskManager with 32 cores, 32 slots:        ~1.6M records/sec (RocksDB)
+  Cluster of 100 TMs:                         ~160M records/sec
+  Facebook-scale (1000 TMs):                  ~1.6B records/sec
+
+<span class="line-orange">Memory Layout per TaskManager:</span>
+  Total JVM: 32GB typical production TM
+  Framework Heap:     512MB (Flink internals)
+  Task Heap:          4GB   (user code, small state)
+  Managed Off-Heap:   16GB  (RocksDB block cache + write buffers)
+  Network Buffers:    2GB   (32KB × 65,536 buffers)
+  JVM Overhead:       1GB   (GC metadata, JIT)
+  Remaining:          ~8GB  (OS, other)
+</pre>
+  </div>
+
+  <div class="section">
+    <h3>Cross-Region and Multi-Cluster Scaling</h3>
+    <p>Flink is designed to run within a single cluster/data center. Cross-region deployments are architected at the data layer, not the Flink layer. The typical pattern is <strong>Kafka MirrorMaker 2</strong> replicating topics cross-region, with independent Flink clusters in each region processing their local Kafka topics. Results are then written to regional databases or global stores (Spanner, DynamoDB Global Tables).</p>
+    <p>For active-active multi-region processing, the challenge is state consistency — two regional Flink jobs independently maintain their own state for the same logical computation. If you need globally consistent aggregations (e.g., unique user counts across all regions), you need a synchronization layer — typically a global database that regional jobs write to with idempotent upserts, or a two-level aggregation pattern where regional jobs produce partial aggregates and a "global reducer" job aggregates them.</p>
+    <p>The <strong>Flink Kubernetes Operator</strong> (GA in 1.14) enables multi-cluster deployment management with GitOps-style declarative configuration. At large scale, teams run separate Flink clusters per business domain (fraud detection, recommendations, analytics) to achieve fault isolation — a bad job in one cluster doesn't consume resources from or fail jobs in others.</p>
+  </div>
+
+  <div class="callout lightning">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-content">
+      <div class="callout-title">L7/L8 Differentiator</div>
+      <p>Understand Flink's Reactive Mode (GA in 1.13) — it enables automatic parallelism adjustment based on available TaskManager slots. When you add TaskManagers to the cluster (e.g., via k8s autoscaler), Flink automatically rescales jobs to use them. This enables true elastic streaming at cloud scale. The catch: every rescale requires a checkpoint + restart, so it's not zero-downtime. Flink 2.0's Adaptive Scheduler improves this with finer-grained resource awareness, but the fundamental restart requirement remains for stateful jobs.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 5</div>
+    <p>Flink scales horizontally through parallelism, but every scaling event for stateful jobs requires state redistribution via savepoint + restart — the operational cost of scaling is proportional to state size, which is why right-sizing parallelism upfront and using incremental state backends matters enormously.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 6 -->
+<section id="p6" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 06</div>
+    <h2>Real-World<br><em>Engineering Decisions</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>When Flink Shines Above All Alternatives</h3>
+    <p>Flink is the right choice when you need <strong>stateful stream processing with exactly-once guarantees at sub-second latency</strong>. Specifically: fraud detection (stateful per-user aggregations over sliding windows, must be exactly-once to prevent double-blocking), real-time feature engineering for ML (computing features like "user's last 5 purchases" that require maintaining per-user state), CEP (complex event processing — detecting patterns like "order placed but not shipped within 24h"), and ETL pipelines where exactly-once delivery to downstream databases is a regulatory requirement (financial services, healthcare).</p>
+  </div>
+
+  <div class="section">
+    <h3>Real-World Production Examples</h3>
+
+    <div class="cards">
+      <div class="card accent">
+        <h4>Alibaba — Real-Time Search Ranking</h4>
+        <p>Alibaba runs the world's largest Flink deployment (100,000+ nodes at peak shopping events like Single's Day). They use Flink for real-time feature computation that feeds their search ranking ML models. The challenge: compute per-product and per-user behavioral signals (click-through rates, purchase patterns) in real time across billions of events per minute. They extended Flink with their own "VVP" (Ververica Platform) — essentially a production hardening layer adding multi-tenant isolation, cost-based query optimization for Flink SQL, and automatic performance tuning. Key insight: at this scale, even 0.1% CPU inefficiency = 100 wasted machines.</p>
+      </div>
+      <div class="card orange">
+        <h4>Uber — Fraud Detection (Streaming Ledger)</h4>
+        <p>Uber replaced their batch-based fraud detection (which ran every 30 minutes, allowing 30 minutes of fraud exposure) with a Flink-based pipeline. The system maintains per-driver, per-rider, and per-trip state (total earnings, trip patterns, device fingerprints) using RocksDB state backend with TBs of aggregated state. Exactly-once to their Cassandra state store (custom 2PC sink) ensures no fraudulent payment blocks or double-blocks. They chose Flink over Spark Streaming specifically because Flink's exactly-once guarantees eliminated the reconciliation job they had needed with Spark to correct duplicates.</p>
+      </div>
+      <div class="card green">
+        <h4>Netflix — Real-Time A/B Testing Analytics</h4>
+        <p>Netflix uses Flink for their Keystone data pipeline — processing billions of events per day across member actions (play, pause, search) to feed real-time A/B test result dashboards. The key Flink feature: sessionization (session windows that track a user's continuous viewing session, regardless of duration). Session windows in Flink are dynamic — they close after a configurable inactivity period per key. This is impossible to implement correctly in Spark without enormous memory overhead. The pipeline produces per-experiment statistical signals in under 1 minute, vs 30+ minutes for their previous Hive-based batch system.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Anti-Patterns — When NOT to Use Flink</h3>
+    <ul>
+      <li><strong>Simple ETL with no state:</strong> If your pipeline is just "read from Kafka, transform, write to another Kafka topic" with no aggregations or joins, Flink's operational complexity (checkpointing configuration, state backend tuning, JM HA setup) far outweighs its benefits. A simple Kafka Streams application or even a microservice with Kafka consumer is far easier to operate and reason about.</li>
+      <li><strong>Batch jobs with no latency requirement:</strong> If you run a daily aggregation job over 1TB of data with a 1-hour SLA, use Spark, Hive, or BigQuery. Flink's unified API works for batch, but its operational model (cluster management, checkpointing overhead, network shuffle) is more complex than purpose-built batch systems for this use case.</li>
+      <li><strong>Ad-hoc interactive queries:</strong> Flink SQL can handle queries, but it's designed for persistent streaming queries, not interactive ad-hoc analysis. Use Presto/Trino, BigQuery, or Spark SQL for exploratory data analysis.</li>
+      <li><strong>Teams without operational expertise:</strong> Flink's failure modes are subtle and require deep expertise to diagnose (state backend issues, watermark delays, checkpoint failures). A team without streaming expertise should not run Flink in production without a managed service (Confluent Cloud, Ververica Platform, Amazon Managed Flink / Kinesis Data Analytics for Apache Flink).</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h3>Decision Matrix — Flink vs Alternatives</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Dimension</th><th>Apache Flink</th><th>Apache Spark Streaming</th><th>Kafka Streams</th><th>Google Dataflow</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Latency</strong></td><td class="good">~10ms (event-by-event)</td><td class="ok">100ms–1s (micro-batch)</td><td class="good">~10ms</td><td class="ok">50-200ms</td></tr>
+          <tr><td><strong>Exactly-Once</strong></td><td class="good">Yes (with 2PC sinks)</td><td class="ok">Yes (with WAL, slower)</td><td class="good">Yes (log-based)</td><td class="good">Yes (built-in)</td></tr>
+          <tr><td><strong>State Scale</strong></td><td class="good">TBs (RocksDB)</td><td class="ok">GBs (heap)</td><td class="ok">GBs (local RocksDB)</td><td class="good">TBs (managed)</td></tr>
+          <tr><td><strong>Ops Overhead</strong></td><td class="bad">High (cluster mgmt, tuning)</td><td class="ok">Medium (Spark expertise)</td><td class="good">Low (library, no cluster)</td><td class="good">Low (managed)</td></tr>
+          <tr><td><strong>SQL Support</strong></td><td class="good">Excellent (Flink SQL)</td><td class="good">Excellent (Spark SQL)</td><td class="bad">Minimal (KSQL addon)</td><td class="ok">Good (SQL transforms)</td></tr>
+          <tr><td><strong>Batch+Stream</strong></td><td class="good">Unified API</td><td class="good">Unified (RDD+DStream)</td><td class="bad">Streaming only</td><td class="good">Unified (Beam)</td></tr>
+          <tr><td><strong>Ecosystem</strong></td><td class="good">Large (Kafka, Hive, JDBC…)</td><td class="good">Largest</td><td class="ok">Kafka-only ecosystem</td><td class="ok">GCP-centric</td></tr>
+          <tr><td><strong>Cost at Scale</strong></td><td class="ok">Medium (self-managed)</td><td class="ok">Medium</td><td class="good">Low (co-located w/ Kafka)</td><td class="bad">High (per-CPU-second)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Day-1 Monitoring Setup</h3>
+    <ul>
+      <li><strong>numRecordsInPerSecond / numRecordsOutPerSecond</strong> — primary throughput metrics. Alert if drops below 50% baseline for 2+ minutes (indicates backpressure or source stall).</li>
+      <li><strong>lastCheckpointDuration</strong> — time to complete last checkpoint. Alert if exceeds 50% of checkpoint interval (leaves only 50% margin before timeout).</li>
+      <li><strong>lastCheckpointSize</strong> — checkpoint state size. Unexpected spikes indicate state accumulation bugs (forgot to expire old state — the #1 Flink production bug).</li>
+      <li><strong>numberOfFailedCheckpoints</strong> — any failed checkpoint is worth investigating; sustained failures will cause job restart.</li>
+      <li><strong>Kafka consumer lag</strong> — growing lag means Flink is falling behind source. Alert at 10K records lag for low-latency jobs, 1M for batch-like jobs.</li>
+      <li><strong>backPressuredTimeMsPerSecond</strong> — per-operator backpressure ratio. &gt;0.5 on any operator = investigate immediately.</li>
+      <li><strong>JVM GC duration</strong> — especially full GC. Any full GC &gt;500ms on a production TM is a red flag indicating state on heap.</li>
+      <li><strong>RocksDB compaction lag</strong> — if compaction can't keep up with write rate, read amplification grows, increasing state read latency exponentially.</li>
+    </ul>
+  </div>
+
+  <div class="callout fire">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-content">
+      <div class="callout-title">Common Production Mistake #1</div>
+      <p>State TTL not configured on keyed state. Every new key (user ID, session ID, product ID) ever seen is added to RocksDB state and never removed. Over weeks/months, state grows unboundedly until either disk is exhausted or checkpoint size explodes. Always set StateTtlConfig on every piece of keyed state with a TTL appropriate to your business logic (e.g., 30 days for user session state).</p>
+    </div>
+  </div>
+
+  <div class="callout fire">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-content">
+      <div class="callout-title">Common Production Mistake #2</div>
+      <p>Setting source parallelism higher than Kafka partition count. Each source subtask connects to one or more Kafka partitions. If you have 16 Kafka partitions and set source parallelism to 32, exactly half your source tasks will be idle (no partition to read from), wasting 50% of source resources. The only fix is to increase Kafka partitions, which may require topic recreation.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 6</div>
+    <p>Flink's production footprint in fraud detection, real-time ML features, and complex event processing at Alibaba, Uber, and Netflix validates its position as the best tool for stateful streaming — but the operational complexity demands either deep expertise or a managed service.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 7 -->
+<section id="p7" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 07</div>
+    <h2>Google-Scale<br><em>&amp; Beyond</em></h2>
+  </div>
+
+  <div class="section">
+    <h3>What Breaks at Each Scale Tier</h3>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Scale Tier</th><th>Records/sec</th><th>State Size</th><th>What Breaks</th><th>Architectural Fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Startup</strong></td>
+            <td>&lt;100K/s</td>
+            <td>&lt;10GB</td>
+            <td>Nothing — default config works</td>
+            <td>HashMapStateBackend, single TM is fine</td>
+          </tr>
+          <tr>
+            <td><strong>Growth</strong></td>
+            <td>100K–10M/s</td>
+            <td>10GB–1TB</td>
+            <td>GC pressure, checkpoint size, hot keys</td>
+            <td>RocksDB backend, incremental checkpoints, parallelism tuning</td>
+          </tr>
+          <tr>
+            <td><strong>Scale</strong></td>
+            <td>10M–100M/s</td>
+            <td>1TB–100TB</td>
+            <td>JobManager bottleneck, checkpoint coordination overhead, single-cluster limits</td>
+            <td>Multiple clusters, hierarchical aggregation, JM HA, k8s autoscaling</td>
+          </tr>
+          <tr>
+            <td><strong>Hyperscale</strong></td>
+            <td>&gt;100M/s</td>
+            <td>&gt;100TB</td>
+            <td>Cross-cluster coordination, global state consistency, multi-tenancy, cost</td>
+            <td>Custom extensions (like Alibaba's VVP), tiered state storage, disaggregated compute/storage</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>How Google Solves These Problems Differently</h3>
+    <p>Google's <strong>Apache Beam + Cloud Dataflow</strong> is their answer to Flink at hyperscale. The key innovations that differentiate it from vanilla Flink: (1) <strong>Runner agnosticism</strong> — Beam defines a portable execution model (Runner API) so the same pipeline can run on Dataflow, Flink, Spark, or samza without code changes. This enables Google to switch underlying execution engines without user-visible changes. (2) <strong>Autoscaling</strong> — Dataflow can add/remove workers mid-job without restarting. This is architecturally possible because Dataflow uses a shuffle service that is external to the worker (disaggregated), so workers can be replaced without losing shuffle data. Flink cannot do this without restarting. (3) <strong>Streaming shuffle disaggregation</strong> — the biggest architectural difference. Flink co-locates shuffle buffers on TaskManagers; Dataflow externalizes shuffle to a managed service, enabling independent scaling of compute and shuffle.</p>
+    <p>The "Flink equivalent of Spanner" would be a streaming processor with globally distributed, strongly consistent state — essentially what Google's <strong>Streaming Spanner</strong> and Dataflow's State API provides when combined. For this to exist in Flink, you'd need to replace RocksDB state backend with a distributed transactional store (like TiKV or a custom system), accept significantly higher state access latency (network instead of local disk), and design a new checkpointing protocol that works with distributed external state. This is an active research area.</p>
+  </div>
+
+  <div class="section">
+    <h3>Multi-Tenancy and Noisy Neighbor Isolation</h3>
+    <p>Flink has limited built-in multi-tenancy support. In a shared session cluster, all jobs share TaskManager slots from a common pool. A job with a CPU-intensive operator can starve neighboring jobs on the same TM. Best practices at Google-scale: (1) <strong>Per-team clusters</strong> — each business domain or team owns its own Flink cluster on Kubernetes with dedicated node pools and resource quotas. This is the most common approach and provides full isolation. (2) <strong>Priority-based scheduling</strong> — Flink 1.15 added slot sharing strategies that allow resource-priority hints, but this is not true preemption. Critical path jobs should be on dedicated clusters. (3) <strong>Task isolation via dedicated slots</strong> — disabling slot sharing (<code>slotSharingGroup("isolated")</code>) prevents multiple subtasks from sharing a single slot, giving each subtask guaranteed resources. This uses more slots but eliminates noisy neighbor at the intra-TM level.</p>
+  </div>
+
+  <div class="section">
+    <h3>Data Residency and Regulatory Compliance</h3>
+    <p>For GDPR, CCPA, and other data residency requirements, Flink deployments at Google-scale implement: (1) <strong>Regional Flink clusters</strong> — EU user data never leaves EU cluster. All processing, all state storage (RocksDB), all checkpoints (S3 EU region) stay within the geographic boundary. (2) <strong>Key-based routing at Kafka layer</strong> — Kafka Streams uses geographic key prefixes to ensure EU user events are written to EU Kafka clusters, which are read by EU Flink clusters. No cross-region event flow. (3) <strong>State encryption</strong> — Flink 1.11+ supports encrypted state backends (encryption at rest for RocksDB using platform-managed keys). Checkpoints written to S3 are encrypted using AWS KMS or GCP CMEK. (4) <strong>Right-to-erasure challenges</strong> — When a user requests data deletion, you cannot surgically remove their records from Flink state without replaying the entire stream from the beginning without that user's data. Solutions: (a) design state to expire naturally via TTL, (b) use a deletion flag approach where deleted users are "ignored" in aggregations, (c) use a Flink SQL UPSERT pattern where deletion is represented as a null value update.</p>
+  </div>
+
+  <div class="section">
+    <h3>Cost Optimization at Scale</h3>
+    <p>At hyperscale, stream processing infrastructure cost is dominated by compute (CPU/memory), storage (checkpoint storage, state backend I/O), and networking (cross-TM shuffle). Cost optimizations that are only worth pursuing past a certain threshold:</p>
+    <ul>
+      <li><strong>Spot/Preemptible instances for batch Flink:</strong> For bounded Flink jobs (batch mode), checkpointing lets you resume preempted jobs. A preemption-aware checkpoint strategy (shorter intervals to reduce replay cost) can achieve 70% cost reduction using spot instances. Not worth the operational complexity for jobs running &lt;1 hour.</li>
+      <li><strong>Tiered state storage (ForSt in Flink 2.0):</strong> Hot state in NVMe → warm state in S3 → cold state in Glacier. For state accessed rarely (old session data), moving it to S3 and accepting the latency hit for rare accesses can reduce SSD costs 10x. Only worth implementing at multi-TB state sizes.</li>
+      <li><strong>Operator fusion and chaining optimization:</strong> Profile CPU usage per operator. If map() → filter() are not chained (different parallelism), they require network serialization between them. Aligning parallelism to enable chaining eliminates the network transfer cost. At 1B records/day, this can represent hours of saved network I/O.</li>
+    </ul>
+  </div>
+
+  <div class="callout calc">
+    <div class="callout-icon">📐</div>
+    <div class="callout-content">
+      <div class="callout-title">Back-of-Envelope — Google-Scale Flink Sizing</div>
+      <p>Suppose: 1B users × 100 events/user/day = 100B events/day = ~1.16M events/sec average, ~5M events/sec peak (evening). With 50K events/sec per Flink subtask (RocksDB, medium state ops) → 100 subtasks needed at peak. With 32 slots per TM → 4 TMs at average, 20 TMs at peak. State: 1B users × 1KB per user state = 1TB state. Distributed across 20 TMs = 50GB/TM — comfortably on NVMe. Checkpoint at 1% change rate = 10GB delta per checkpoint, uploaded in ~2s at S3 10Gbps bandwidth. Total checkpoint interval should be ~30s minimum to avoid continuous checkpoint pressure.</p>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 7</div>
+    <p>The fundamental gap between vanilla Flink and Google-scale stream processing is disaggregated state and shuffle — Flink's co-location of compute, state, and shuffle on the same TaskManager is its simplicity strength but becomes its scalability ceiling above ~100TB of state, which is why Google's Dataflow architecture externalizes shuffle as a service.</p>
+  </div>
+</div>
+</section>
+
+<!-- PILLAR 8 -->
+<section id="p8" class="pillar">
+<div class="container">
+  <div class="pillar-header">
+    <div class="pillar-number">PILLAR 08</div>
+    <h2>Interview<br><em>Simulation</em></h2>
+  </div>
+
+  <!-- SIMULATION -->
+  <div class="simulation">
+    <div class="simulation-label">Step 1 — Staff-Level Design Problem</div>
+    <h3>Design a Real-Time Fraud Detection System for a Global Payment Network</h3>
+    <p>Your company processes 500 million payment transactions per day globally across 200 countries. You need to build a real-time fraud detection pipeline that can flag suspicious transactions with &lt;100ms end-to-end latency (from transaction initiation to fraud score returned to the payments gateway). The system must handle multiple fraud patterns (velocity checks, geographic anomalies, merchant category risk, peer network analysis), maintain per-user and per-merchant behavioral baselines, and support same-day model updates without dropping transactions or losing state. The system must also comply with GDPR (EU user data cannot leave EU) and PCI-DSS (audit trail for all decisions). What does your architecture look like?</p>
+  </div>
+
+  <div class="interview-section">
+    <h4>Step 2 — Strong Candidate Answer (L7/L8 Level)</h4>
+
+    <p><strong>Clarifying Questions (always ask these first):</strong></p>
+    <ul>
+      <li>What is the latency budget breakdown? 100ms total — how much is Kafka end-to-end, how much is processing, how much is gateway round-trip?</li>
+      <li>Synchronous or asynchronous fraud check? Does the payment gateway block on the fraud score or proceed and flag for review?</li>
+      <li>How many distinct fraud models/rules? Are they ML models, rule-based, or hybrid?</li>
+      <li>What is the false positive tolerance? Blocking legitimate transactions has direct revenue impact.</li>
+      <li>What are the state retention requirements? How far back does user behavioral history need to go?</li>
+      <li>Is there a warm path (real-time) and cold path (ML batch) that need to be unified?</li>
+    </ul>
+
+    <p><strong>Stated Assumptions:</strong></p>
+    <ul>
+      <li>Latency budget: 20ms Kafka produce, 40ms Flink processing, 20ms Kafka consume + gateway response = 80ms total, leaving 20ms headroom.</li>
+      <li>Asynchronous check with synchronous fallback: fraud score returned async, but if score exceeds a hard threshold, transaction held for up to 500ms synchronously.</li>
+      <li>500M transactions/day ≈ 6K TPS average, 30K TPS peak (holidays).</li>
+      <li>30-day behavioral window per user/merchant.</li>
+      <li>Regional clusters for GDPR: EU, US, APAC, each independently processing.</li>
+    </ul>
+
+    <p><strong>High-Level Architecture:</strong></p>
+<pre>
+<span class="line-acc">INGESTION LAYER:</span>
+  Payment Gateway ──► Kafka (regional cluster) ──► Flink Source
+  Topic: txn-events-{region} (32 partitions, keyed by user_id for ordering)
+  Flink source parallelism = 32 (matching Kafka partitions)
+  Latency target here: &lt;5ms Kafka produce + consume
+
+<span class="line-acc">FLINK PROCESSING PIPELINE:</span>
+  [Source] → keyBy(user_id) → [User Feature Extractor]
+                                      ├── Velocity check (N txns in last 60s)
+                                      ├── Amount anomaly (vs user baseline)
+                                      └── Country hop detection (geo distance / time)
+
+             keyBy(merchant_id) → [Merchant Feature Extractor]
+                                      ├── Chargeback rate (rolling 7-day)
+                                      └── Transaction velocity per merchant
+
+             → [Feature Aggregator] (union of user + merchant features)
+             → [Async ML Scoring] (AsyncFunction → model server gRPC)
+             → [Rule Engine] (hard-coded velocity rules, async I/O not needed)
+             → [Score Combiner] (weighted ensemble of ML score + rule hits)
+             → [Decision Emitter] → Kafka(fraud-decisions topic)
+             → [Audit Log Sink] → Immutable append-only store (BigTable / S3)
+
+<span class="line-green">STATE DESIGN:</span>
+  Per user (keyed by user_id, RocksDB):
+    - MapState&lt;String, Long&gt; recentTxnAmounts (last 100 transactions)
+    - ValueState&lt;Double&gt; rollingMeanAmount (EWMA, updated per txn)
+    - MapState&lt;String, Instant&gt; countryTimestamps (last 10 countries + times)
+    - ListState&lt;Long&gt; velocityBuckets (sliding 60s window, count per 10s bucket)
+    TTL: 30 days on all state
+
+  Per merchant (keyed by merchant_id):
+    - ValueState&lt;Double&gt; chargebackRate7d
+    - ValueState&lt;Long&gt; txnCountLastHour
+    TTL: 7 days
+
+<span class="line-yellow">MODEL UPDATE (zero-downtime):</span>
+  New model published to model registry (S3)
+  Model server (TorchServe/TFServing) hot-reloads model
+  Flink async function calls model server via gRPC — model update is transparent
+  No Flink job restart needed for model updates ✓
+  For new Flink rule logic: use savepoint-based blue-green deployment
+    1. Trigger savepoint on job v1
+    2. Start job v2 from savepoint (shadow mode on separate output topic)
+    3. A/B compare outputs for 30 minutes
+    4. Switch traffic to v2, stop v1
+
+<span class="line-purple">EXACTLY-ONCE TO AUDIT LOG:</span>
+  Audit sink uses 2-phase commit to BigTable / S3
+  Each fraud decision is idempotent (decision_id = txn_id + checkpoint_id)
+  On recovery: 2PC rollback prevents duplicate audit entries
+  PCI-DSS requirement: all decisions (allow/block) logged with feature values
+
+<span class="line-teal">REGIONAL ISOLATION (GDPR):</span>
+  EU transactions → EU Kafka → EU Flink cluster → EU S3 (Frankfurt)
+  No cross-region data flow for EU data
+  Global aggregate metrics (fraud rates by country) computed via:
+    Regional jobs → emit anonymized aggregate stats → global Kafka topic
+    Central analytics cluster aggregates these non-PII stats
+</pre>
+
+    <p><strong>Key Numbers:</strong></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Component</th><th>Size</th><th>Reasoning</th></tr></thead>
+        <tbody>
+          <tr><td>Flink parallelism (peak)</td><td>64 subtasks</td><td>30K TPS ÷ 500 TPS/subtask = 60, round up to 64</td></tr>
+          <tr><td>TMs (8 slots each)</td><td>8 TMs</td><td>64 ÷ 8 = 8 TMs per region</td></tr>
+          <tr><td>RocksDB state per TM</td><td>~50GB</td><td>500M users × 1KB state ÷ 8 TMs = ~62GB, fits on NVMe</td></tr>
+          <tr><td>Checkpoint interval</td><td>5 seconds</td><td>5s recovery lag acceptable; checkpoint size ~500MB delta</td></tr>
+          <tr><td>ML model latency budget</td><td>15ms</td><td>40ms total processing - 10ms Flink state ops - 15ms overhead = 15ms for model</td></tr>
+          <tr><td>Watermark lag</td><td>500ms</td><td>Handles network jitter; fraud detection doesn't need event-time windows</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="interview-section">
+    <h4>Step 3 — Tough Interviewer Critique</h4>
+
+    <p><strong>What they did well:</strong></p>
+    <ul>
+      <li>Correctly asked clarifying questions about latency budget breakdown — this shows systems thinking about end-to-end SLA, not just Flink processing time.</li>
+      <li>Properly sized RocksDB state with TTL — avoided the #1 production bug of unbounded state growth.</li>
+      <li>Correctly identified that ML model updates should NOT require Flink job restarts — used async I/O to model servers, which is the right pattern.</li>
+      <li>GDPR isolation at the correct layer (Kafka cluster level, not application level) — this is the architecturally sound approach.</li>
+    </ul>
+
+    <p><strong>What they missed or glossed over:</strong></p>
+    <ul>
+      <li><strong>Hot key problem:</strong> Large merchants (Amazon, Walmart) will receive millions of transactions per day, causing severe key skew on merchant_id. The answer needs to address this explicitly — either pre-aggregation with composite keys or a separate pipeline for high-volume merchants.</li>
+      <li><strong>Late event handling:</strong> What happens to a transaction that arrives in Flink 2 seconds late? Does it update user state? What if a window already fired? Need explicit side-output strategy for late events in fraud context.</li>
+      <li><strong>Recovery time under load:</strong> If the EU cluster fails during peak fraud season (Black Friday), recovery from a 500GB checkpoint with 64 operators will take significant time. What is the RTO? Is it acceptable to the payments gateway? Need a defined SLO for recovery time, not just checkpoint interval.</li>
+      <li><strong>Schema evolution:</strong> Over time, the fraud feature schema will change. How do you handle adding new state fields to an existing RocksDB state without triggering a full state recomputation from source? This requires careful state serializer versioning.</li>
+    </ul>
+
+    <p><strong>Follow-up questions to expose weaknesses:</strong></p>
+    <ul>
+      <li>"You mentioned using processing time for your velocity checks (N txns in last 60s). What happens if the Flink job falls behind and processes a backlog of 1000 transactions from 30 seconds ago all at once — is the velocity check still correct?"</li>
+      <li>"A user makes transactions on two different regional systems simultaneously — one in EU, one in US. How does your fraud system correlate these cross-region signals?"</li>
+      <li>"Your ML model scoring uses AsyncFunction with a model server. What is your fallback strategy if the model server is unavailable? Do you block all transactions?"</li>
+    </ul>
+
+    <p><strong>What an L8 answer would additionally include:</strong></p>
+    <ul>
+      <li>Explicit state schema versioning plan using TypeSerializerSnapshot and CompatibilityResult for safe state migration during upgrades.</li>
+      <li>Discussion of Flink's CEP library (ComplexEventProcessing) for multi-event pattern detection — e.g., detecting "card tested with small amounts followed by large purchase within 5 minutes" as a single CEP pattern rather than manual state management.</li>
+      <li>Data quality and schema validation layer before state update — protect state consistency from malformed/corrupt events.</li>
+      <li>Explicit RTO/RPO numbers and a defined recovery runbook, not just "restart from checkpoint."</li>
+      <li>Multi-region global fraud signal aggregation design (without violating GDPR) — how to compute "this card is being used simultaneously in 3 continents" as a real-time signal.</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h3>Step 4 — 10 Rapid-Fire Staff Questions</h3>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q1</span> Explain how Flink's Chandy-Lamport checkpoint works and what problem it solves vs stopping-the-world snapshots.</div>
+      <div class="qa-a">Chandy-Lamport takes a consistent global snapshot of a distributed system without stopping any process. In Flink, the JobManager injects checkpoint barriers at all sources, which flow downstream mixed with data records. When a stateful operator receives barriers on ALL its input channels, it takes a local state snapshot and forwards the barrier downstream. The snapshot captured at each operator represents the state at the moment it processed the barrier — this collectively forms a globally consistent snapshot. This avoids stopping the world because operators continue processing records from non-barrier channels during alignment; the only pause is when taking the actual state snapshot (milliseconds for RocksDB with async snapshotting). Without this, you'd need a distributed stop-the-world pause across all operators simultaneously, which is catastrophic for a streaming system with latency SLAs.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q2</span> What is a savepoint vs a checkpoint in Flink, and when do you use each?</div>
+      <div class="qa-a">A checkpoint is an automatic, periodic snapshot taken by Flink for fault tolerance — it's managed by the system, may be incremental, and is automatically deleted when superseded by newer checkpoints. A savepoint is a manually triggered, full snapshot of job state created for operational purposes like job upgrades, parallelism changes, cluster migrations, and code deployments — it is never automatically deleted and represents a durable point you control. Savepoints use a stable format with human-readable operator IDs, allowing state to be remapped when operator graph changes between versions. Checkpoints use internal format optimized for speed. Use checkpoints for continuous fault tolerance (always on), savepoints for any intentional operational change to the job (always before upgrades).</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q3</span> How would you handle a Flink job that processes events with extreme out-of-orderness (events arriving hours late) while maintaining low latency?</div>
+      <div class="qa-a">Use a split-stream approach: set the watermark strategy with a short delay (e.g., 30 seconds) for the main processing path to maintain low latency. Configure window allowed lateness (allowedLateness(Duration.ofHours(2))) to update window results when late events arrive, emitting corrections to a correction stream. Use a side output (sideOutputLateData()) to capture any events that arrive beyond the maximum allowed lateness. The main stream produces real-time results within 30 seconds of event time; the correction stream updates the sink with accurate figures as late events trickle in. The sink must support upserts (Cassandra, PostgreSQL ON CONFLICT DO UPDATE) to handle corrections. This pattern trades "eventual accuracy" for "immediate result" and is appropriate for analytics where corrections are acceptable.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q4</span> Describe how you'd implement a sliding window of the last 1 million events per user (not time-based, count-based) in Flink.</div>
+      <div class="qa-a">Flink's built-in windows are time-based, not count-based for global counts per key. Implement this manually using ListState or a RocksDB-backed custom structure. The operator maintains ListState&lt;Event&gt; per user, on each incoming event appending to the list and removing the oldest if list size exceeds 1M. For efficiency, rather than storing full events (which might be large), store only the necessary feature values (e.g., transaction amount as a double). With RocksDB, storing 1M × 8 bytes per user × 100M users = 800GB of state — you'd need to use a more compact representation (circular buffer with indexed access via MapState&lt;Integer, Double&gt;) and ensure TTL is set appropriately. In practice, for a window of 1M events per user, a ring-buffer pattern stored as a serialized byte array in ValueState is more RocksDB-efficient than a ListState (fewer SST entries per key).</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q5</span> A Flink job's checkpoint time has increased from 5 seconds to 5 minutes over the past month. How do you diagnose and fix this?</div>
+      <div class="qa-a">Systematic diagnosis: First, check checkpoint metadata in the Flink WebUI — which operator is the slowest to acknowledge? This narrows the root cause to a specific subtask. Second, check state size growth: if checkpoint size has grown from 1GB to 100GB, the state is unbounded (missing TTL). Fix: add StateTtlConfig to all keyed state. Third, check for backpressure — if a slow operator is causing barrier alignment delay, aligned checkpoint wait time adds to checkpoint duration. Fix: switch to unaligned checkpointing. Fourth, check RocksDB compaction lag — if RocksDB can't compact fast enough (disk I/O saturated), SST file count grows, reads slow, state snapshot takes longer. Fix: move to NVMe disk, increase compaction threads. Fifth, check incremental checkpoint chain length — if using incremental checkpoints without periodic full checkpoints (savepoints), the SST file chain grows indefinitely, increasing checkpoint time. Fix: schedule weekly savepoints to reset the chain.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q6</span> How does Flink's exactly-once guarantee interact with Kafka as both source and sink?</div>
+      <div class="qa-a">Flink achieves end-to-end exactly-once with Kafka through a combination of source offset management and sink transaction management. On the source side: Flink saves Kafka consumer offsets as part of its checkpoint state — when a job recovers, it seeks Kafka consumers back to the saved offsets, ensuring every record is re-read from the point of the last consistent checkpoint. On the sink side: the Flink Kafka producer uses Kafka's transactional API (KafkaProducer.beginTransaction/commitTransaction). Records are written to Kafka within open transactions during normal processing. When a Flink checkpoint completes, the Flink Kafka sink commits the transaction. If the job fails before checkpoint completes, the open transaction is aborted (either by Flink on recovery, or automatically by Kafka after transaction.timeout.ms). Kafka consumers reading from the output topic must use isolation.level=read_committed to only see committed (non-aborted) records. Without this consumer setting, you'll see speculative transactional records that may later be aborted, breaking the guarantee.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q7</span> What are key-groups in Flink and why do they matter for scalability?</div>
+      <div class="qa-a">Key-groups are the unit of state redistribution in Flink. The key space is divided into a fixed number of key-groups (default: max parallelism, e.g., 128). Each key is deterministically mapped to a key-group via hash(key) % maxParallelism. Key-groups are then assigned to operator subtasks in contiguous ranges — with parallelism P=4 and maxParallelism=128, subtask 0 gets key-groups [0-31], subtask 1 gets [32-63], etc. When you change parallelism (e.g., scale from 4 to 8), the key-group ranges are split and redistributed — no key-group assignment changes, just which subtask owns each range. This is why maxParallelism must be set at job creation time and cannot be changed without discarding state — it determines the granularity of state partitioning. Setting maxParallelism too low limits future scaling; too high wastes metadata overhead. Best practice: set maxParallelism to 128 or 1024 for most jobs, ensuring room to scale to many times current parallelism without state loss.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q8</span> How would you implement a Flink job that needs to join a high-velocity stream (1M events/sec) with a slow-changing reference dataset (1000 updates/day)?</div>
+      <div class="qa-a">This is a classic stream-table join pattern with three main approaches, each with different tradeoffs. Option 1 — Broadcast State Join: broadcast the reference dataset to all parallel instances of the stream-processing operator. Each operator maintains a full in-memory copy of the reference table (MapState in operator, not keyed). Works well when the reference dataset fits in memory (typically &lt;100MB) and updates are infrequent. Broadcast state is updated via a separate BroadcastStream; updates are processed sequentially in processElement on the broadcast side. Option 2 — Async I/O enrichment: for reference datasets too large for broadcast, use AsyncFunction to look up each event in an external store (Redis, HBase, Spanner) asynchronously. Set asyncCapacity=1000 (pending async requests) and timeout=10ms. Cache recent lookups with a local Caffeine cache (LRU, TTL matching reference update frequency). Option 3 — Temporal Table Join in Flink SQL: if using Flink SQL, define the reference dataset as a versioned temporal table, and the join automatically uses the correct version at event time. This is the cleanest approach for SQL-savvy teams but requires a changelog source for the reference table (Kafka CDC stream via Debezium).</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q9</span> Flink's watermarks are monotonically increasing per partition. What happens at a union of multiple sources with very different watermarks?</div>
+      <div class="qa-a">When Flink unions multiple sources or when data flows through a shuffle that combines multiple upstream partitions, the downstream operator receives watermarks from all upstream channels. The downstream operator advances its watermark to the <em>minimum</em> of all received upstream watermarks — this is the "watermark alignment" behavior. The reasoning is conservative correctness: if any upstream channel has not yet delivered a watermark past time T, it might still produce records with timestamp ≤ T, so the downstream cannot advance its event clock past T. The consequence is that a single slow upstream partition (one Kafka partition with low traffic) can hold back the entire downstream watermark, causing windows to fire much later than expected. Solutions: (1) set a maximum watermark lag (WatermarkStrategy.withIdleness(Duration.ofMinutes(1))) so idle partitions don't block the watermark — Flink will ignore them for watermark purposes after they've been idle for the configured duration. (2) Tune source parallelism to match actual Kafka partition activity distribution, avoiding assignment of hot + cold partitions to the same source subtask.</div>
+    </div>
+
+    <div class="qa-item">
+      <div class="qa-q"><span>Q10</span> What is the difference between Flink SQL's TUMBLE, HOP, and SESSION windows and when do you choose each?</div>
+      <div class="qa-a">TUMBLE windows are fixed-size, non-overlapping windows that partition the time axis into equal, disjoint segments (e.g., every 1 hour exactly). Each event belongs to exactly one window. Best for: periodic aggregation reports, billing, metrics snapshots where you want clean non-overlapping periods. HOP windows (also called sliding windows) have two parameters: window size and slide interval. A 1-hour window with 15-minute slide means each event belongs to 4 windows (1h ÷ 15m = 4), producing output every 15 minutes but aggregating over the last hour. This creates overlapping windows with higher compute cost (4× state updates vs TUMBLE) but smoother output. Best for: moving averages, trending metrics, any use case where you want continuous output without the "boundary effect" of TUMBLE windows. SESSION windows are dynamic — they group events by activity with a configurable inactivity gap. A session closes when no new event arrives for the gap duration (e.g., 30 minutes). Sessions are variable-length and per-key, making them perfect for user session analytics (web sessions, gaming sessions). The challenge: session state is unbounded until the session closes, and sessions can merge when late events bridge two previously separate sessions — Flink handles this with a mergeable session window trigger, but it requires careful state management.</div>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <div class="takeaway-label">Key Takeaway — Pillar 8</div>
+    <p>The L7→L8 jump in Flink interviews is the ability to articulate not just what the system does, but the second-order consequences of every design decision — from hot key skew to schema evolution to cross-region state consistency — and to present concrete numbered designs, not just conceptual diagrams.</p>
+  </div>
+</div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <p>Apache Flink Staff Engineer Interview Guide — Flink <strong>1.20 / 2.0</strong> · Compiled for <strong>L7/L8</strong> Preparation · April 2026</p>
+  <p style="margin-top: 8px;">All trademarks belong to their respective owners. Architecture patterns derived from public engineering blog posts and Apache Flink documentation.</p>
+</footer>
+
+</body>
+</html>
