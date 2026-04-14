@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>L6/L7 System Design — URL Shortener</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2129;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --accent: #58a6ff;
+  --strong-hire: #F5A623;
+  --hire: #00BFA5;
+  --lean-hire: #FFD700;
+  --no-hire: #FF6B6B;
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body: 'Source Serif 4', Georgia, serif;
+  --font-code: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; font-size: 16px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.75;
+  display: flex;
+  min-height: 100vh;
+  opacity: 0;
+  animation: fadeIn 0.6s ease forwards;
+}
+
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* PROGRESS BAR */
+#progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--hire));
+  width: 0%;
+  z-index: 1000;
+  transition: width 0.1s linear;
+}
+
+/* SIDEBAR */
+#sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  overflow-y: auto;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+}
+
+#sidebar::-webkit-scrollbar { width: 4px; }
+#sidebar::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-header {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.sidebar-title {
+  font-family: var(--font-heading);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 10px;
+}
+
+.sidebar-subtitle {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+#sidebar-search {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  margin-top: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#sidebar-search:focus { border-color: var(--accent); }
+#sidebar-search::placeholder { color: var(--text-dim); }
+
+#nav-list {
+  padding: 10px 0 20px;
+  list-style: none;
+}
+
+.nav-group { margin-bottom: 4px; }
+
+.nav-section-title {
+  padding: 6px 18px;
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.nav-item a {
+  display: block;
+  padding: 5px 18px 5px 26px;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+  line-height: 1.35;
+}
+
+.nav-item a:hover {
+  color: var(--text);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.nav-item.active a {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+.tier-nav a {
+  padding-left: 36px;
+  font-size: 0.75rem;
+}
+
+.tier-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.dot-no-hire { background: var(--no-hire); }
+.dot-lean-hire { background: var(--lean-hire); }
+.dot-hire { background: var(--hire); }
+.dot-strong-hire { background: var(--strong-hire); }
+
+/* HAMBURGER */
+#hamburger {
+  display: none;
+  position: fixed;
+  top: 12px; left: 12px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+/* MAIN CONTENT */
+#main {
+  margin-left: 280px;
+  flex: 1;
+  max-width: 860px;
+  padding: 52px 52px 80px;
+  min-width: 0;
+}
+
+/* BACK TO TOP */
+#back-to-top {
+  position: fixed;
+  bottom: 28px; right: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 99;
+  opacity: 0;
+  pointer-events: none;
+}
+#back-to-top.visible { opacity: 1; pointer-events: all; }
+#back-to-top:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent); transform: translateY(-2px); }
+
+/* HERO */
+.hero {
+  margin-bottom: 56px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-eyebrow {
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 14px;
+}
+
+.hero h1 {
+  font-family: var(--font-heading);
+  font-size: 2.8rem;
+  font-weight: 900;
+  line-height: 1.15;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #e6edf3 30%, #58a6ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-meta {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.hero-meta span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.config-item label {
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.config-item value {
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* PHASE HEADERS */
+.phase-header {
+  margin: 64px 0 36px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.phase-number {
+  font-family: var(--font-code);
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.phase-header h2 {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.phase-time {
+  font-family: var(--font-code);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: var(--surface2);
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: inline-block;
+}
+
+.phase-prompt {
+  margin-top: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-dim);
+  border-radius: 0 8px 8px 0;
+  padding: 16px 20px;
+}
+
+.phase-prompt .prompt-label {
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.phase-prompt blockquote {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+/* SECTION HEADERS */
+.section-header {
+  margin: 48px 0 24px;
+}
+
+.section-header h3 {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* TIER CARDS */
+.tier-card {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 24px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tier-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.tier-card-header {
+  padding: 18px 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+}
+
+.tier-card.no-hire { border-left: 4px solid var(--no-hire); }
+.tier-card.lean-hire { border-left: 4px solid var(--lean-hire); }
+.tier-card.hire { border-left: 4px solid var(--hire); }
+.tier-card.strong-hire { border-left: 4px solid var(--strong-hire); }
+
+.tier-card.no-hire .tier-card-header { background: rgba(255,107,107,0.05); }
+.tier-card.lean-hire .tier-card-header { background: rgba(255,215,0,0.05); }
+.tier-card.hire .tier-card-header { background: rgba(0,191,165,0.05); }
+.tier-card.strong-hire .tier-card-header { background: rgba(245,166,35,0.05); }
+
+.tier-title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.tier-emoji { font-size: 1.4rem; }
+
+.tier-card-title {
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tier-badge {
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.tier-card.no-hire .tier-badge { background: rgba(255,107,107,0.15); color: var(--no-hire); border: 1px solid rgba(255,107,107,0.3); }
+.tier-card.lean-hire .tier-badge { background: rgba(255,215,0,0.12); color: var(--lean-hire); border: 1px solid rgba(255,215,0,0.3); }
+.tier-card.hire .tier-badge { background: rgba(0,191,165,0.12); color: var(--hire); border: 1px solid rgba(0,191,165,0.3); }
+.tier-card.strong-hire .tier-badge { background: rgba(245,166,35,0.12); color: var(--strong-hire); border: 1px solid rgba(245,166,35,0.3); }
+
+.tier-toggle {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  transition: transform 0.3s;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.tier-card.collapsed .tier-toggle { transform: rotate(-90deg); }
+
+.tier-card-body {
+  padding: 0 22px 22px;
+  overflow: hidden;
+  transition: max-height 0.4s ease, opacity 0.3s ease;
+  max-height: 9999px;
+  opacity: 1;
+}
+
+.tier-card.collapsed .tier-card-body {
+  max-height: 0;
+  opacity: 0;
+  padding-bottom: 0;
+}
+
+/* SCRIPT BLOCK */
+.script-block {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin: 16px 0;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  position: relative;
+}
+
+.script-block::before {
+  content: '"';
+  font-family: var(--font-heading);
+  font-size: 4rem;
+  color: var(--border);
+  position: absolute;
+  top: -10px; left: 12px;
+  line-height: 1;
+}
+
+.script-block p { margin-top: 10px; }
+.script-block p:first-child { margin-top: 0; }
+
+/* WHY FAILS / EXCEPTIONAL CALLOUT */
+.callout {
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 16px 0;
+  font-size: 0.88rem;
+}
+
+.callout.fail {
+  background: rgba(255,107,107,0.08);
+  border: 1px solid rgba(255,107,107,0.2);
+}
+
+.callout.exceptional {
+  background: rgba(245,166,35,0.08);
+  border: 1px solid rgba(245,166,35,0.2);
+}
+
+.callout.good {
+  background: rgba(0,191,165,0.08);
+  border: 1px solid rgba(0,191,165,0.2);
+}
+
+.callout.info {
+  background: rgba(88,166,255,0.08);
+  border: 1px solid rgba(88,166,255,0.2);
+}
+
+.callout-title {
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.callout.fail .callout-title { color: var(--no-hire); }
+.callout.exceptional .callout-title { color: var(--strong-hire); }
+.callout.good .callout-title { color: var(--hire); }
+.callout.info .callout-title { color: var(--accent); }
+
+.callout ul, .callout ol { padding-left: 18px; }
+.callout li { margin-bottom: 5px; line-height: 1.55; }
+
+/* INTERVIEWER QUOTE */
+.interviewer-quote {
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 18px 20px 16px 52px;
+  margin: 16px 0;
+  position: relative;
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+.interviewer-quote::before {
+  content: '❝';
+  position: absolute;
+  left: 16px; top: 14px;
+  font-size: 1.5rem;
+  color: var(--text-dim);
+}
+
+.interviewer-quote .quote-label {
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  font-style: normal;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* KEY PHRASES */
+mark {
+  background: rgba(88, 166, 255, 0.18);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-style: normal;
+}
+
+mark.gold {
+  background: rgba(245, 166, 35, 0.15);
+  color: var(--strong-hire);
+}
+
+/* CHECKLIST */
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.check-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 0.85rem;
+}
+
+/* BODY CONTENT TYPOGRAPHY */
+.tier-card-body h4 {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 20px 0 10px;
+}
+
+.tier-card-body p {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.tier-card-body ul, .tier-card-body ol {
+  padding-left: 20px;
+  margin: 10px 0 14px;
+}
+
+.tier-card-body li {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.tier-card-body strong { color: var(--text); font-weight: 600; }
+
+/* PROGRESSION TABLE */
+.progression-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 0.87rem;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.progression-table thead tr {
+  background: linear-gradient(90deg, #1f2937, #161b22);
+}
+
+.progression-table th {
+  padding: 12px 16px;
+  text-align: left;
+  font-family: var(--font-code);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.progression-table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.6);
+  vertical-align: top;
+  line-height: 1.55;
+}
+
+.progression-table tbody tr:nth-child(odd) { background: rgba(22,27,34,0.5); }
+.progression-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.5); }
+.progression-table tbody tr:hover { background: rgba(88,166,255,0.05); }
+
+.progression-table td:first-child {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.progression-table td:last-child {
+  color: var(--text-muted);
+}
+
+/* SUMMARY TABLE (requirements) */
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.87rem;
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.summary-table thead tr {
+  background: linear-gradient(90deg, rgba(88,166,255,0.15), rgba(0,191,165,0.1));
+}
+
+.summary-table th {
+  padding: 11px 16px;
+  text-align: left;
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  border-bottom: 1px solid rgba(88,166,255,0.2);
+}
+
+.summary-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  vertical-align: middle;
+  line-height: 1.5;
+}
+
+.summary-table tbody tr:nth-child(odd) { background: rgba(22,27,34,0.6); }
+.summary-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.4); }
+
+.summary-table td:first-child { font-weight: 600; color: var(--text); font-size: 0.85rem; }
+.summary-table td:last-child { color: var(--hire); font-family: var(--font-code); font-size: 0.82rem; }
+
+/* GRID TABLE (p0/p1/p2 in strong hire) */
+.grid-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  margin: 14px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.grid-table thead tr {
+  background: var(--surface2);
+}
+
+.grid-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.grid-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  color: var(--text-muted);
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+.grid-table tbody tr:nth-child(odd) { background: rgba(22,27,34,0.4); }
+.grid-table tbody tr:nth-child(even) { background: rgba(28,33,41,0.3); }
+.grid-table td:first-child { font-weight: 600; color: var(--text); }
+
+/* LATENCY TABLE */
+.latency-table { font-family: var(--font-code); }
+.latency-table td { font-size: 0.82rem; }
+
+/* CODE / DIAGRAM */
+.code-block {
+  background: #010409;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 16px 0;
+  overflow: hidden;
+}
+
+.code-header {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.code-lang {
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.code-copy {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.code-copy:hover { background: var(--surface2); color: var(--accent); border-color: var(--accent); }
+
+.code-block pre {
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-family: var(--font-code);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: #c9d1d9;
+  white-space: pre;
+}
+
+/* KEY LESSON */
+.key-lesson {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px 28px;
+  margin: 32px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.key-lesson::before {
+  content: '🎯';
+  position: absolute;
+  right: 20px; top: 18px;
+  font-size: 2rem;
+  opacity: 0.15;
+}
+
+.key-lesson-title {
+  font-family: var(--font-code);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.key-lesson p {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.key-lesson strong { color: var(--text); }
+
+/* INTERVIEWER ANSWERS */
+.answers-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 22px 26px;
+  margin: 32px 0;
+}
+
+.answers-title {
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.answers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.answer-item {
+  background: var(--surface2);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.answer-item .answer-key {
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+
+.answer-item .answer-val {
+  font-size: 0.88rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* DERIVED REQUIREMENTS TABLE */
+.derived-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin: 28px 0;
+}
+
+.derived-title {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* GENERAL SECTION PROSE */
+.prose h4 {
+  font-family: var(--font-heading);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 20px 0 10px;
+}
+
+.prose p {
+  font-size: 0.92rem;
+  line-height: 1.72;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.prose ul, .prose ol {
+  padding-left: 22px;
+  margin: 8px 0 14px;
+}
+
+.prose li {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.prose strong { color: var(--text); font-weight: 600; }
+
+/* SEPARATOR */
+.sep {
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+  margin: 28px 0;
+}
+
+/* SIGNAL PHRASES */
+.signal-phrases {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--hire);
+  border-radius: 0 8px 8px 0;
+  padding: 16px 18px;
+  margin: 14px 0;
+}
+
+.signal-phrases-title {
+  font-family: var(--font-code);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--hire);
+  margin-bottom: 10px;
+}
+
+.signal-phrases ul {
+  list-style: none;
+  padding: 0;
+}
+
+.signal-phrases li {
+  font-family: var(--font-code);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  line-height: 1.5;
+}
+
+.signal-phrases li:last-child { border-bottom: none; }
+.signal-phrases li::before { content: '→ '; color: var(--hire); }
+
+/* AOMB CHECKLIST WITHIN CARD */
+.aomb-checklist {
+  background: rgba(0,191,165,0.06);
+  border: 1px solid rgba(0,191,165,0.2);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 14px 0;
+}
+
+.aomb-title {
+  font-family: var(--font-code);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--hire);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.aomb-checklist ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.aomb-checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.aomb-checklist li::before {
+  content: '☑';
+  color: var(--hire);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* FATAL MISTAKES */
+.fatal-list {
+  background: rgba(255,107,107,0.06);
+  border: 1px solid rgba(255,107,107,0.15);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin: 12px 0;
+}
+
+.fatal-title {
+  font-family: var(--font-code);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--no-hire);
+  margin-bottom: 8px;
+}
+
+.fatal-list ul {
+  list-style: none;
+  padding: 0;
+}
+
+.fatal-list li {
+  display: flex;
+  gap: 8px;
+  font-size: 0.87rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+  line-height: 1.5;
+}
+
+.fatal-list li::before { content: '✕'; color: var(--no-hire); flex-shrink: 0; }
+
+/* WOW MOMENTS */
+.wow-item {
+  background: rgba(245,166,35,0.06);
+  border: 1px solid rgba(245,166,35,0.15);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  font-size: 0.88rem;
+  font-family: var(--font-code);
+  color: var(--strong-hire);
+  line-height: 1.5;
+}
+
+.wow-item::before { content: '✦ '; opacity: 0.7; }
+
+/* STORAGE BREAKDOWN */
+.storage-block {
+  background: #010409;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: 12px 0;
+  font-family: var(--font-code);
+  font-size: 0.8rem;
+  color: #c9d1d9;
+  line-height: 1.8;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* TIER SEPARATOR LABEL */
+.tier-separator {
+  text-align: center;
+  font-family: var(--font-code);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  margin: 36px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tier-separator::before, .tier-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* UPGRADE NEEDED */
+.upgrade-block {
+  background: rgba(255,215,0,0.06);
+  border: 1px solid rgba(255,215,0,0.2);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin: 14px 0;
+}
+
+.upgrade-title {
+  font-family: var(--font-code);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--lean-hire);
+  margin-bottom: 8px;
+}
+
+.upgrade-block p {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+
+/* MOBILE */
+@media (max-width: 768px) {
+  #sidebar {
+    transform: translateX(-100%);
+  }
+  #sidebar.open { transform: translateX(0); }
+  #hamburger { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; }
+  #main { margin-left: 0; padding: 56px 20px 80px; }
+  .hero h1 { font-size: 2rem; }
+  #back-to-top { bottom: 16px; right: 16px; }
+}
+
+/* HIDDEN NAV ITEM */
+.nav-item.hidden { display: none; }
+.nav-group.hidden { display: none; }
+
+/* SECTION WRAPPER */
+.phase-section { margin-bottom: 8px; }
+
+/* SLOS TIER TABLE */
+.slo-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  margin: 12px 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.slo-table th {
+  padding: 9px 12px;
+  text-align: left;
+  background: var(--surface2);
+  font-family: var(--font-code);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.slo-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(48,54,61,0.4);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+.slo-table tbody tr:nth-child(odd) { background: rgba(22,27,34,0.5); }
+.slo-table td:first-child { font-weight: 600; color: var(--text); }
+.slo-table td.slo-val { font-family: var(--font-code); font-size: 0.8rem; color: var(--hire); }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<button id="hamburger" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-title">URL Shortener</div>
+    <div class="sidebar-subtitle">L6/L7 System Design Interview Study Guide</div>
+    <input type="text" id="sidebar-search" placeholder="Search sections…" aria-label="Search sections">
+  </div>
+  <ul id="nav-list">
+    <li class="nav-group">
+      <div class="nav-section-title">Overview</div>
+      <li class="nav-item"><a href="#config">Configuration</a></li>
+    </li>
+    <li class="nav-group">
+      <div class="nav-section-title">Phase 1 · 0–5 min</div>
+      <li class="nav-item"><a href="#phase1">Problem Clarification</a></li>
+      <li class="nav-item tier-nav"><a href="#p1-no-hire"><span class="tier-dot dot-no-hire"></span>No Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p1-lean-hire"><span class="tier-dot dot-lean-hire"></span>Lean Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p1-hire"><span class="tier-dot dot-hire"></span>Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p1-strong-hire"><span class="tier-dot dot-strong-hire"></span>Strong Hire</a></li>
+      <li class="nav-item"><a href="#p1-progression">Progression Summary</a></li>
+      <li class="nav-item"><a href="#p1-lesson">Key Lesson</a></li>
+      <li class="nav-item"><a href="#p1-answers">Interviewer Answers</a></li>
+    </li>
+    <li class="nav-group">
+      <div class="nav-section-title">Phase 2 · 5–10 min</div>
+      <li class="nav-item"><a href="#phase2">Requirements Gathering</a></li>
+      <li class="nav-item tier-nav"><a href="#p2-no-hire"><span class="tier-dot dot-no-hire"></span>No Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p2-lean-hire"><span class="tier-dot dot-lean-hire"></span>Lean Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p2-hire"><span class="tier-dot dot-hire"></span>Hire</a></li>
+      <li class="nav-item tier-nav"><a href="#p2-strong-hire"><span class="tier-dot dot-strong-hire"></span>Strong Hire</a></li>
+      <li class="nav-item"><a href="#p2-progression">Progression Summary</a></li>
+      <li class="nav-item"><a href="#p2-lesson">Key Lesson</a></li>
+      <li class="nav-item"><a href="#p2-derived">Derived Requirements</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero" id="config">
+    <div class="hero-eyebrow">System Design Interview — Study Guide</div>
+    <h1>URL Shortener<br>L6 / L7 Bar</h1>
+    <div class="hero-meta">
+      <span>📋 Interviewer: Principal Engineer</span>
+      <span>🎯 Two Phases Covered</span>
+      <span>📊 4-Tier Framework</span>
+    </div>
+    <div class="config-card">
+      <div class="config-item"><label>Preparation Level</label><value>Level 2 — Practicing for L6</value></div>
+      <div class="config-item"><label>Focus Area</label><value>All Areas Evenly</value></div>
+      <div class="config-item"><label>Default Mode</label><value>Study / AOMB</value></div>
+    </div>
+    <p style="margin-top:18px;font-size:0.85rem;color:var(--text-dim);">This guide shows exactly how candidates at each level respond — No Hire through Strong Hire — with scripts, analysis, and the specific signals that separate each tier.</p>
+  </section>
+
+  <!-- ═══════════════════════════ PHASE 1 ═══════════════════════════ -->
+  <section id="phase1">
+    <div class="phase-header">
+      <div class="phase-number">Phase 1</div>
+      <h2>Problem Clarification</h2>
+      <span class="phase-time">0 – 5 minutes</span>
+      <div class="phase-prompt">
+        <div class="prompt-label">The Problem — Interviewer Prompt</div>
+        <blockquote>"Design a URL shortener." — That's it. That's all you get.</blockquote>
+      </div>
+    </div>
+
+    <p style="font-size:0.9rem;color:var(--text-muted);margin-bottom:28px;">In Study/AOMB mode, the breakdown below shows exactly how candidates at each level approach the initial clarification phase — what questions they ask, how they structure their thinking, and what separates No Hire from Strong Hire.</p>
+
+    <!-- NO HIRE -->
+    <div class="tier-card no-hire" id="p1-no-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">❌</span>
+          <span class="tier-card-title">No Hire</span>
+          <span class="tier-badge">L4 / Weak L5</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Okay, a URL shortener. So we need to take long URLs and make them short. I'm thinking we can use a hash function to generate the short codes. We'll need a database to store the mappings. I'll use MySQL for that since it's reliable.</p>
+          <p>For the architecture, we'll have a web server that receives requests, generates the short URL, stores it in the database, and returns it to the user. For redirection, we just look up the short code in the database and redirect.</p>
+          <p>We should probably use Redis for caching since URL lookups need to be fast. And we'll put a load balancer in front of the web servers for scalability.</p>
+          <p>Should I start drawing the architecture?"</p>
+        </div>
+
+        <div class="callout fail">
+          <div class="callout-title">Why This Fails</div>
+          <ul>
+            <li>Zero clarifying questions asked — jumped straight to solution</li>
+            <li>Assumed scope without validation — didn't ask about custom aliases, analytics, expiration</li>
+            <li>No understanding of scale — didn't ask about QPS, storage requirements, geographic distribution</li>
+            <li>Technology choices before requirements — mentioned MySQL, Redis without understanding the actual needs</li>
+            <li>No discussion of success criteria — what does "working" mean for this system?</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Candidate immediately jumped to implementation. Did not demonstrate the ability to scope a problem or identify ambiguity. Concerning pattern — will they build the wrong thing in a real project?"
+        </div>
+
+        <div class="fatal-list">
+          <div class="fatal-title">Fatal Mistakes</div>
+          <ul>
+            <li>Started designing before understanding the problem</li>
+            <li>Never asked a single clarifying question</li>
+            <li>Mentioned specific technologies (MySQL, Redis) with no justification</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEAN HIRE -->
+    <div class="tier-card lean-hire" id="p1-lean-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">⚠️</span>
+          <span class="tier-card-title">Lean Hire</span>
+          <span class="tier-badge">Meets L5, Not L6</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Before I dive in, I'd like to ask a few clarifying questions.</p>
+          <p>First, what's the expected scale? How many URLs do we expect to shorten per day, and how many redirects? This will help me understand the read/write ratio.</p>
+          <p>Second, how long should the shortened URLs be valid? Do they expire, or are they permanent?</p>
+          <p>Third, do users need to be authenticated to create short URLs, or is this a public service?</p>
+          <p>Fourth, do we need analytics — like tracking how many times a short URL was clicked?</p>
+          <p>And finally, are there any latency requirements I should know about?"</p>
+        </div>
+
+        <div class="callout good">
+          <div class="callout-title">What's Good</div>
+          <ul>
+            <li>Asked clarifying questions before designing</li>
+            <li>Covered scale, expiration, authentication, and features</li>
+            <li>Showed awareness that requirements matter</li>
+          </ul>
+        </div>
+
+        <div class="callout fail">
+          <div class="callout-title">What's Missing for L6</div>
+          <ul>
+            <li>Questions are generic/checklist-style — not demonstrating deep thinking about <em>this</em> problem</li>
+            <li>Didn't ask about success criteria or what problem we're <em>actually</em> solving</li>
+            <li>No questions about existing systems or constraints — is this greenfield or integration?</li>
+            <li>Didn't ask about geographic distribution of users</li>
+            <li>No prioritization thinking — which questions are MOST important?</li>
+            <li>Didn't ask about custom short codes or collision handling</li>
+            <li>No business context questions — internal tool vs public service vs enterprise product?</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Candidate asked reasonable questions but they felt rehearsed. Didn't demonstrate ownership-level thinking about what could go wrong or what makes this problem uniquely challenging."
+        </div>
+
+        <div class="upgrade-block">
+          <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+          <p>Questions that show you understand the HARD parts of this problem — ID generation collisions, consistency requirements for short codes, abuse prevention — and questions that reveal business context rather than just technical parameters.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- HIRE -->
+    <div class="tier-card hire" id="p1-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">✅</span>
+          <span class="tier-card-title">Hire</span>
+          <span class="tier-badge">Meets L6 Bar</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Before I start designing, I want to make sure I understand the problem space and scope appropriately. Let me ask some clarifying questions, starting with the most important ones.</p>
+          <p>First, <mark>what problem are we actually solving, and for whom?</mark> Is this an internal tool for a company to share links, a public consumer service like bit.ly, or an enterprise product? This <mark>fundamentally changes our security model, abuse concerns, and scale characteristics.</mark></p>
+          <p>Second, <mark>what does success look like?</mark> Are we optimizing for redirect latency, URL creation throughput, analytics richness, or cost efficiency? I want to understand the primary metric we're designing for.</p>
+          <p>Third, <mark>what's the consistency requirement for short code uniqueness?</mark> If two users try to create short URLs at the same time, we need to guarantee no collisions. Is strong consistency required, or can we tolerate eventual consistency with conflict resolution?</p>
+          <p>Fourth, are we supporting custom aliases? For example, can a user request 'mysite.co/promo2024' specifically? This significantly complicates the ID generation strategy.</p>
+          <p>Fifth, what's the expected lifespan of URLs? Permanent storage has very different cost and design implications than 30-day expiration with cleanup.</p>
+          <p>Sixth, where are our users? Single region, multi-region, or global? This affects our consistency model and latency targets.</p>
+          <p>Seventh, is there an existing system I'm replacing or extending? Are there data migration concerns or API compatibility requirements?</p>
+          <p><mark>Let me pause there — these answers will significantly shape my design. Which of these are most relevant to scope for today's discussion?"</mark></p>
+        </div>
+
+        <div class="aomb-checklist">
+          <div class="aomb-title">AOMB Completeness Checklist — Verified</div>
+          <ul>
+            <li>Structured opening that frames the approach</li>
+            <li>Questions prioritized by impact on design</li>
+            <li>Business context questions (not just technical)</li>
+            <li>Consistency requirements asked explicitly</li>
+            <li>Geographic distribution considered</li>
+            <li>Existing systems/constraints explored</li>
+            <li>Clear handoff asking interviewer to help scope</li>
+          </ul>
+        </div>
+
+        <h4>L6 Signals Demonstrated</h4>
+        <ul style="padding-left:20px;margin:8px 0 14px;">
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Prioritization</strong> — asked about success criteria BEFORE scale numbers</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>System-level thinking</strong> — immediately identified collision/uniqueness as a hard problem</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Business awareness</strong> — distinguished internal vs public vs enterprise use cases</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Ownership mentality</strong> — asked about existing systems, not assuming greenfield</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Scoping instinct</strong> — explicitly asked interviewer to help narrow focus</li>
+        </ul>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Strong clarification approach. Candidate identified the genuinely hard parts of this problem (consistency for uniqueness, custom aliases). Questions were prioritized and showed real experience with distributed systems. Good signal."
+        </div>
+
+        <div class="signal-phrases">
+          <div class="signal-phrases-title">Key Phrases That Signal L6 — Memorize These</div>
+          <ul>
+            <li>"What problem are we actually solving, and for whom?"</li>
+            <li>"What does success look like? What's the primary metric?"</li>
+            <li>"What's the consistency requirement for [X]?"</li>
+            <li>"This fundamentally changes our [design aspect]..."</li>
+            <li>"Let me pause — which of these are most relevant for today?"</li>
+          </ul>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-title">Communication Technique Demonstrated</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">Candidate signposted ("starting with the most important"), numbered their questions for clarity, and explicitly invited the interviewer to help scope — showing they can drive a conversation while remaining collaborative.</p>
+        </div>
+
+        <div class="callout good">
+          <div class="callout-title">What Separates This From L5</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">L5 asks "What's the scale?" L6 asks "What does success look like?" <em>BEFORE</em> asking about scale. L6 recognizes that understanding the <em>why</em> shapes the <em>how</em> — a 99.9% availability internal tool looks completely different from a 99.99% public-facing service.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STRONG HIRE -->
+    <div class="tier-card strong-hire" id="p1-strong-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">🏆</span>
+          <span class="tier-card-title">Strong Hire</span>
+          <span class="tier-badge">L7 Signal · Exceptional</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Thank you. Before I design anything, I need to understand the problem space deeply. I'll organize my questions into three categories: business context, technical constraints, and scope boundaries.</p>
+          <p><strong>Business Context — what and why:</strong></p>
+          <p>What's the primary use case we're solving for? Internal link sharing, marketing campaign tracking, or general-purpose public shortening? <mark class="gold">Each has radically different threat models</mark> — a public service needs abuse prevention and rate limiting that an internal tool doesn't.</p>
+          <p>Who's the customer? If it's B2B enterprise, we might need tenant isolation, custom domains, and audit logging. If it's consumer, we're optimizing for simplicity and speed.</p>
+          <p>What's the business model? Free with ads means we need high-volume, low-cost infrastructure. Paid tiers mean we need metering and entitlements.</p>
+          <p><strong>Technical Constraints — the hard parts:</strong></p>
+          <p>What's the consistency requirement for short code uniqueness? I'm specifically thinking about the case where two users or two datacenters try to claim the same short code simultaneously. Do we need CP or can we tolerate AP with conflict resolution?</p>
+          <p>Are we supporting custom vanity URLs? This is often a premium feature, but it introduces a much harder coordination problem than random ID generation.</p>
+          <p>What's the URL validation requirement? Do we just check URL format, or do we need to verify the destination is live, safe (not phishing/malware), and appropriate?</p>
+          <p>What's the data retention policy? GDPR right-to-deletion for European users? Can we actually delete URLs or do we need audit trails?</p>
+          <p><strong>Scope Boundaries — what we're NOT building:</strong></p>
+          <p>Are analytics in scope? Click tracking, geographic breakdown, referrer analysis, device breakdown? This could be 50% of the system complexity.</p>
+          <p>Are we building the link preview/unfurling service, or just redirect?</p>
+          <p>Are we handling abuse at this layer — detecting spam campaigns, blocking malicious URLs — or is that a separate service?</p>
+          <p><mark class="gold">My mental model going in: The core URL shortening is straightforward — it's a key-value lookup.</mark> The interesting design challenges are: (1) globally unique ID generation at scale, (2) low-latency redirects with high availability, (3) abuse prevention without adding latency, and (4) analytics that don't slow down the redirect path.</p>
+          <p>Based on your answers, I'll timebox our discussion to the areas where I can demonstrate the most depth. Which aspects would you like me to prioritize?"</p>
+        </div>
+
+        <div class="aomb-checklist">
+          <div class="aomb-title">AOMB Completeness Checklist — Verified (L6 requirements plus)</div>
+          <ul>
+            <li>Non-obvious concerns: GDPR deletion, URL safety verification, tenant isolation</li>
+            <li>Business model implications on architecture</li>
+            <li>Explicit threat model thinking (abuse, phishing)</li>
+            <li>Proactively stated what's NOT in scope as questions</li>
+            <li>Articulated their mental model of where complexity lies</li>
+            <li>Drove the conversation by offering to prioritize</li>
+          </ul>
+        </div>
+
+        <h4>What Makes This Exceptional</h4>
+        <ul style="padding-left:20px;margin:8px 0 14px;">
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;">Categorized questions into <strong>business/technical/scope</strong> — showing structured thinking</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;">Identified the REAL hard problems <strong>before being told</strong> — ID generation, abuse, analytics isolation</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;">Mentioned <strong>compliance (GDPR) proactively</strong> — most candidates never think of this</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Threat model thinking</strong> — distinguished internal vs public threat surfaces</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Business model to architecture connection</strong> — "free with ads means high-volume, low-cost"</li>
+          <li style="font-size:0.9rem;color:var(--text-muted);margin-bottom:6px;line-height:1.6;"><strong>Drove the interview</strong> — offered to prioritize and timebox</li>
+        </ul>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Exceptional problem decomposition. Candidate clearly has experience building and operating systems at scale. Identified GDPR, abuse prevention, and analytics isolation without prompting. This is someone who's been burned by missing requirements before."
+        </div>
+
+        <h4>The "Wow" Moments</h4>
+        <div class="wow-item">"Each has radically different threat models" — shows security-first thinking</div>
+        <div class="wow-item">"The core URL shortening is straightforward — it's a key-value lookup" — immediately identified that the OBVIOUS part isn't the HARD part</div>
+        <div class="wow-item">"Analytics that don't slow down the redirect path" — understood the performance isolation requirement</div>
+
+        <div class="callout exceptional">
+          <div class="callout-title">What Separates This From L6</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">L6 asks good clarifying questions. L7 articulates their <strong>mental model of where the complexity lies</strong> BEFORE starting the design. They say "here's what I already know is hard, and here's what I need you to tell me." This shows genuine expertise, not just a checklist.</p>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-title">The Non-Obvious Insight</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">The candidate recognized that <strong>analytics isolation</strong> is a key architectural challenge. Most candidates think of analytics as "just log the click." But at scale, synchronous analytics kills redirect latency. The Strong Hire candidate already knows this will require async processing, sampling, or a separate write path — before even starting the design.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROGRESSION SUMMARY -->
+    <div class="section-header" id="p1-progression">
+      <h3>Progression Summary — Phase 1</h3>
+    </div>
+
+    <table class="progression-table">
+      <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+      <tbody>
+        <tr><td>No Hire → Lean Hire</td><td>Actually asks clarifying questions instead of jumping to solutions</td></tr>
+        <tr><td>Lean Hire → Hire (L6)</td><td>Questions show prioritization, identify hard problems, ask about success criteria before scale</td></tr>
+        <tr><td>Hire → Strong Hire (L7)</td><td>Articulates mental model of complexity, structures questions, identifies non-obvious concerns (compliance, abuse, analytics isolation), drives the interview</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info" style="margin-top:20px;">
+      <div class="callout-title">The One Thing to Practice</div>
+      <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">Before your interview, for each common problem, write down: "The obvious part is X. The actually hard parts are Y, Z, W." Then lead with that framing.</p>
+    </div>
+
+    <!-- KEY LESSON -->
+    <div class="key-lesson" id="p1-lesson">
+      <div class="key-lesson-title">🎯 Key Lesson — Phase 1</div>
+      <p><strong>L5 engineers</strong> ask "what should I build?" <strong>L6 engineers</strong> ask "what does success look like and what's actually hard about this?" <strong>L7 engineers</strong> articulate their mental model upfront, showing they already understand the complexity landscape before being told.</p>
+    </div>
+
+    <!-- INTERVIEWER ANSWERS -->
+    <div class="answers-section" id="p1-answers">
+      <div class="answers-title">📋 Interviewer Answers <span style="font-size:0.8rem;font-weight:400;color:var(--text-muted);font-family:var(--font-body);">(for this simulation)</span></div>
+      <p style="font-size:0.87rem;color:var(--text-muted);margin-bottom:14px;">Based on Strong Hire clarification, here's what you'd be told:</p>
+      <div class="answers-grid">
+        <div class="answer-item"><div class="answer-key">Use Case</div><div class="answer-val">Public URL shortening service, similar to bit.ly</div></div>
+        <div class="answer-item"><div class="answer-key">Scale</div><div class="answer-val">100M DAU, 500M URLs/month created, 10B redirects/month</div></div>
+        <div class="answer-item"><div class="answer-key">Success Metric</div><div class="answer-val">Redirect latency p99 &lt; 50ms, availability 99.99%</div></div>
+        <div class="answer-item"><div class="answer-key">Custom Aliases</div><div class="answer-val">Yes — premium feature</div></div>
+        <div class="answer-item"><div class="answer-key">Expiration</div><div class="answer-val">Permanent by default, optional expiration for premium</div></div>
+        <div class="answer-item"><div class="answer-key">Analytics</div><div class="answer-val">Basic click counting in scope; detailed analytics is a stretch goal</div></div>
+        <div class="answer-item"><div class="answer-key">Region</div><div class="answer-val">Global — primarily US, Europe, Asia</div></div>
+        <div class="answer-item"><div class="answer-key">Existing System</div><div class="answer-val">Greenfield, but must be extensible</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ PHASE 2 ═══════════════════════════ -->
+  <section id="phase2">
+    <div class="phase-header">
+      <div class="phase-number">Phase 2</div>
+      <h2>Requirements Gathering</h2>
+      <span class="phase-time">5 – 10 minutes</span>
+      <div class="phase-prompt">
+        <div class="prompt-label">Interviewer Prompt</div>
+        <blockquote>"Alright, you understand the problem. Give me your requirements — functional and non-functional. I want your top 3 non-functional requirements with specific numbers, justified. And tell me explicitly what you're NOT building."</blockquote>
+      </div>
+    </div>
+
+    <!-- NO HIRE -->
+    <div class="tier-card no-hire" id="p2-no-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">❌</span>
+          <span class="tier-card-title">No Hire</span>
+          <span class="tier-badge">L4 / Weak L5</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Okay, so the functional requirements are: Users can create short URLs from long URLs. Users can click short URLs and get redirected. Users can see analytics for their URLs. Users can create custom short URLs. Users can set expiration dates. Users can delete their URLs. Users need to sign up and log in. Users can see a dashboard of all their URLs. The system should track click counts. We need an API for programmatic access.</p>
+          <p>For non-functional requirements: The system should be fast. The system should be scalable. The system should be reliable. The system should be secure.</p>
+          <p>I think that covers everything. Should I start on the design now?"</p>
+        </div>
+
+        <div class="callout fail">
+          <div class="callout-title">Why This Fails</div>
+          <ul>
+            <li><strong>Feature soup</strong> — listed 10 functional requirements with no prioritization</li>
+            <li><strong>Vague NFRs</strong> — "fast," "scalable," "reliable" are meaningless without numbers</li>
+            <li><strong>No SLAs</strong> — no latency targets, availability percentages, or throughput numbers</li>
+            <li><strong>No scope control</strong> — didn't say what's out of scope</li>
+            <li><strong>No justification</strong> — why these requirements? What drives them?</li>
+            <li><strong>Time mismanagement</strong> — would take months to build everything listed</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Candidate provided a feature wishlist, not prioritized requirements. No specific SLAs. 'Should be fast' is not an engineering requirement. Serious concern about ability to scope work."
+        </div>
+
+        <div class="fatal-list">
+          <div class="fatal-title">Fatal Mistakes</div>
+          <ul>
+            <li>Listed 10+ features without prioritization (P0/P1/P2)</li>
+            <li>Non-functional requirements had zero numbers</li>
+            <li>Never mentioned what's explicitly OUT of scope</li>
+            <li>No connection between requirements and business goals</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEAN HIRE -->
+    <div class="tier-card lean-hire" id="p2-lean-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">⚠️</span>
+          <span class="tier-card-title">Lean Hire</span>
+          <span class="tier-badge">Meets L5, Not L6</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Let me separate functional and non-functional requirements.</p>
+          <p>Functional Requirements: Create a short URL from a long URL — this is core functionality. Redirect from short URL to original URL — also core. Support custom aliases for premium users. Track click counts for each URL. Optional URL expiration.</p>
+          <p>Non-Functional Requirements: Latency: Redirects should be fast — under 100ms. Availability: System should have high uptime — 99.9%. Scalability: Should handle millions of requests.</p>
+          <p>Out of scope: Detailed analytics (geographic, device breakdown). Link preview/unfurling. User accounts for basic usage.</p>
+          <p>Does this look right?"</p>
+        </div>
+
+        <div class="callout good">
+          <div class="callout-title">What's Good</div>
+          <ul>
+            <li>Separated FR and NFR clearly</li>
+            <li>Provided some numbers for NFRs</li>
+            <li>Listed out of scope items</li>
+            <li>Kept functional requirements reasonable</li>
+          </ul>
+        </div>
+
+        <div class="callout fail">
+          <div class="callout-title">What's Missing for L6</div>
+          <ul>
+            <li>SLAs not specific enough — "under 100ms" but p50? p99? p999?</li>
+            <li>No read/write breakdown — what's the ratio? What's the QPS?</li>
+            <li>No storage requirements — how much data, how long retained?</li>
+            <li>No justification — WHY 99.9%? What's the business impact of 99.99%?</li>
+            <li>No consistency model — what happens on failure? Strong vs eventual?</li>
+            <li>Availability math not done — 99.9% = 8.7 hours/year downtime, is that acceptable?</li>
+            <li>Missing durability requirement — URLs should never disappear</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Candidate structured the requirements but lacked precision. '99.9% availability' — have they calculated what that means in downtime? No reasoning for why these specific numbers."
+        </div>
+
+        <div class="upgrade-block">
+          <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+          <p>Specific percentile latencies (p50/p99), calculated QPS with read/write ratio, justified availability target with business reasoning, explicit consistency model, and data durability requirements.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- HIRE -->
+    <div class="tier-card hire" id="p2-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">✅</span>
+          <span class="tier-card-title">Hire</span>
+          <span class="tier-badge">Meets L6 Bar</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Let me define prioritized requirements with specific, justified targets.</p>
+          <p><strong>Functional Requirements — prioritized:</strong></p>
+          <p>P0 — Must have for launch: URL shortening: Accept a long URL, return a short URL with a unique 7-character code. URL redirection: Given a short URL, redirect to the original URL with HTTP 301/302. Uniqueness guarantee: No two URLs ever map to the same short code.</p>
+          <p>P1 — Important, can fast-follow: Custom aliases. Basic analytics: Track click count per URL. URL expiration: Optional TTL on URLs.</p>
+          <p>P2 — Nice to have: Detailed analytics. User accounts and dashboard. API rate limiting tiers.</p>
+          <p><strong>Non-Functional Requirements — my top 3 with justification:</strong></p>
+          <p><strong>1. Availability: 99.99% (four nines)</strong> — Why 99.99% and not 99.9%? 99.9% = 8.7 hours downtime/year. For a public URL shortener, that's unacceptable — a marketing campaign could fail. 99.99% = 52 minutes downtime/year. 99.999% would require active-active multi-region with complex consistency — overkill for this use case.</p>
+          <p><strong>2. Latency: p50 &lt; 10ms, p99 &lt; 50ms for redirects</strong> — Redirects are in the critical path of user experience. For URL creation: p99 &lt; 200ms is acceptable — it's not user-facing latency-sensitive.</p>
+          <p><strong>3. Durability: Once created, a URL mapping must NEVER be lost</strong> — If a short URL stops working, it breaks links across the internet — in emails, documents, ads. This is different from availability. This means replicated storage with at least 3 copies across failure domains.</p>
+          <p><strong>Derived Capacity Requirements:</strong> Write QPS: 500M / (30 × 86,400) ≈ 200 writes/sec average, ~1,000/sec peak. Read QPS: 10B / (30 × 86,400) ≈ 4,000 reads/sec average, ~20,000/sec peak. Read:Write ratio: ~20:1 — this is a read-heavy system. Storage: 500M × 12 × 5 years × ~500 bytes ≈ 15 TB over 5 years.</p>
+          <p><mark>Strong consistency for writes.</mark> A newly created short URL must be immediately resolvable. <mark>Eventual consistency acceptable for analytics.</mark></p>
+          <p>Explicitly NOT building: Link safety scanning, link preview/unfurling, detailed analytics beyond click counts, multi-tenancy/white-labeling, user authentication for URL creation.</p>
+          <p>These requirements shape my architecture. Should I proceed to API design?"</p>
+        </div>
+
+        <div class="aomb-checklist">
+          <div class="aomb-title">AOMB Completeness Checklist — Verified</div>
+          <ul>
+            <li>P0/P1/P2 prioritization</li>
+            <li>Specific numbers for SLAs with percentiles</li>
+            <li>Business justification for availability target</li>
+            <li>Read/write QPS calculated with peak factors</li>
+            <li>Storage estimation done</li>
+            <li>Explicit consistency model stated</li>
+            <li>Clear list of what's NOT being built</li>
+            <li>Transition to next phase</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Candidate demonstrated clear requirements thinking. Particularly impressed by the durability vs availability distinction and the business justification for 99.99%. Good estimation approach. Ready to design."
+        </div>
+
+        <div class="signal-phrases">
+          <div class="signal-phrases-title">Key Phrases That Signal L6 — Memorize These</div>
+          <ul>
+            <li>"Let me prioritize as P0, P1, P2..."</li>
+            <li>"Why 99.99% and not 99.9%? Because..."</li>
+            <li>"p50 &lt; X, p99 &lt; Y for [operation]"</li>
+            <li>"This means [specific architectural implication]"</li>
+            <li>"Strong consistency for [X], eventual consistency acceptable for [Y]"</li>
+            <li>"Explicitly NOT building: [list]"</li>
+          </ul>
+        </div>
+
+        <div class="callout good">
+          <div class="callout-title">What Separates This From L5</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">L5 says "high availability." L6 says "99.99%, which means 52 minutes/year downtime, and here's why that's the right target for THIS system." The difference is <strong>justification and precision</strong> — L6 engineers can defend their numbers.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- STRONG HIRE -->
+    <div class="tier-card strong-hire" id="p2-strong-hire">
+      <div class="tier-card-header" onclick="toggleTier(this)">
+        <div class="tier-title-group">
+          <span class="tier-emoji">🏆</span>
+          <span class="tier-card-title">Strong Hire</span>
+          <span class="tier-badge">L7 Signal · Exceptional</span>
+        </div>
+        <span class="tier-toggle">▾</span>
+      </div>
+      <div class="tier-card-body">
+        <div class="script-block">
+          <p>"Let me structure this as prioritized requirements with success metrics, justified targets, and explicit trade-offs.</p>
+          <p><strong>Functional Requirements — with success criteria (P0 Launch Blockers):</strong></p>
+        </div>
+
+        <table class="grid-table">
+          <thead><tr><th>Requirement</th><th>Success Criteria</th><th>Why P0</th></tr></thead>
+          <tbody>
+            <tr><td>URL shortening</td><td>Given valid URL, return unique short code in &lt;200ms p99</td><td>Core value prop</td></tr>
+            <tr><td>URL redirection</td><td>Given valid short code, redirect in &lt;50ms p99</td><td>User-facing critical path</td></tr>
+            <tr><td>Uniqueness guarantee</td><td>Zero collisions, ever, globally</td><td>One collision destroys trust</td></tr>
+            <tr><td>Idempotency</td><td>Same long URL + user = same short URL (optional)</td><td>Prevents link duplication</td></tr>
+          </tbody>
+        </table>
+
+        <div class="script-block" style="margin-top:14px;">
+          <p>P1 — Fast-follow (week 2–4): Custom aliases with conflict detection. Click counting (async, eventually consistent). URL expiration with automatic cleanup.</p>
+          <p>P2 — Future roadmap: Rich analytics, user accounts, API tiers, abuse detection.</p>
+          <p><strong>Non-Functional Requirements — the three that drive architecture:</strong></p>
+          <p><strong>1. Availability: 99.99% — but let me break this down.</strong> I'm actually setting different SLOs for different operations:</p>
+        </div>
+
+        <table class="slo-table">
+          <thead><tr><th>Operation</th><th>Availability SLO</th><th>Justification</th></tr></thead>
+          <tbody>
+            <tr><td>Redirects</td><td class="slo-val">99.99%</td><td>Revenue-critical, brand-critical</td></tr>
+            <tr><td>URL Creation</td><td class="slo-val">99.9%</td><td>Can tolerate brief outages</td></tr>
+            <tr><td>Analytics Dashboard</td><td class="slo-val">99.5%</td><td>Non-critical, can degrade</td></tr>
+          </tbody>
+        </table>
+
+        <div class="script-block" style="margin-top:14px;">
+          <p>Why this tiering? Redirects are in the critical path of potentially millions of marketing campaigns, embedded links, QR codes. URL creation is only visible to our direct users. Analytics is internal tooling. This tiered approach lets me optimize architecture — redirects can be served from a heavily cached, read-optimized path, while creation can have more complex coordination.</p>
+          <p><strong>2. Latency — percentile targets with tail latency reasoning:</strong></p>
+        </div>
+
+        <table class="slo-table latency-table">
+          <thead><tr><th>Operation</th><th>p50</th><th>p99</th><th>p999</th></tr></thead>
+          <tbody>
+            <tr><td>Redirect</td><td class="slo-val">&lt;5ms</td><td class="slo-val">&lt;50ms</td><td class="slo-val">&lt;200ms</td></tr>
+            <tr><td>Create</td><td class="slo-val">&lt;50ms</td><td class="slo-val">&lt;200ms</td><td class="slo-val">&lt;500ms</td></tr>
+          </tbody>
+        </table>
+
+        <div class="script-block" style="margin-top:14px;">
+          <p><mark class="gold">Why p999 for redirects? At 20K QPS, p999 means 20 requests/second hit that latency.</mark> If p999 is 2 seconds, that's 20 frustrated users every second, 1.7M bad experiences daily. Tail latency matters at scale.</p>
+          <p>What drives these latencies? p50 assumes cache hit (Redis: &lt;1ms) + minimal processing. p99 assumes cache miss, single DB read (~10–20ms) + network. p999 assumes retry scenario or degraded path.</p>
+          <p><strong>3. Data Durability: RPO = 0, RTO &lt; 5 minutes</strong></p>
+          <p>RPO (Recovery Point Objective) = 0: Once we acknowledge a URL creation, that mapping must never be lost. Requires synchronous replication to at least 2 nodes before acknowledging. RTO (Recovery Time Objective) &lt; 5 minutes: If a primary fails, we must failover within 5 minutes.</p>
+          <p>Why is durability more important than availability? An unavailable system frustrates users temporarily. A system that loses data — where a short URL suddenly 404s — <mark class="gold">destroys trust permanently and breaks the internet's link graph.</mark></p>
+          <p><strong>Derived Capacity Requirements with Monte Carlo thinking:</strong></p>
+        </div>
+
+        <div class="code-block">
+          <div class="code-header">
+            <span class="code-lang">Estimation</span>
+            <button class="code-copy" onclick="copyCode(this)">Copy</button>
+          </div>
+          <pre>Writes (URL Creation):
+  Average: 500M / 2.6M seconds/month ≈ 190 QPS
+  Daily pattern: 2x during business hours (US + Europe overlap)
+  Peak: 5x average for viral events = ~1,000 QPS
+  Design target: 2,000 QPS (2x headroom)
+
+Reads (Redirects):
+  Average: 10B / 2.6M seconds ≈ 3,850 QPS
+  Peak (viral link): 10x = ~40,000 QPS
+  Design target: 100,000 QPS (2.5x headroom for growth)
+
+Storage per URL record:
+  short_code:  7  bytes
+  long_url:    200 bytes average
+  created_at:  8  bytes
+  expires_at:  8  bytes (nullable)
+  user_id:     8  bytes (nullable)
+  click_count: 8  bytes
+  metadata:    50 bytes
+  ─────────────────────
+  Total:       ~300 bytes per URL
+  With indexes and overhead: ~500 bytes per URL
+
+Storage growth:
+  Year 1: 500M × 12 × 500B = 3 TB
+  5 years: 15 TB raw, ~45 TB with 3x replication
+
+Bandwidth:
+  Redirect response: ~500 bytes (headers + 301 response)
+  At 100K QPS peak: 50 MB/s — trivial
+
+Cache Sizing:
+  Working set: ~10% of URLs are "hot" (power law)
+  500M × 10% × 300 bytes = 15 GB
+  Fits in single Redis instance with room to spare</pre>
+        </div>
+
+        <h4>Consistency Model with Explicit Trade-offs</h4>
+        <table class="slo-table">
+          <thead><tr><th>Data</th><th>Consistency</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>URL mappings</td><td class="slo-val">Strong (read-your-writes)</td><td>User creates URL, immediately shares it — must work</td></tr>
+            <tr><td>Custom alias claims</td><td class="slo-val">Linearizable</td><td>Can't have two users claiming same alias</td></tr>
+            <tr><td>Click counts</td><td class="slo-val">Eventual (seconds delay OK)</td><td>Async increment, no user-facing impact</td></tr>
+            <tr><td>Analytics aggregates</td><td class="slo-val">Eventual (minutes delay OK)</td><td>Dashboard refresh, not real-time</td></tr>
+          </tbody>
+        </table>
+
+        <div class="script-block" style="margin-top:14px;">
+          <p><strong>Explicit Non-Goals:</strong> Link safety scanning — assume external service, we just call it. SEO/preview metadata — separate system. User authentication — anonymous creation OK (rate limited by IP). Multi-tenancy — single service, no tenant isolation. Geographic compliance — no data residency requirements. Billing/metering — assume separate service.</p>
+          <p><strong>SLO Monitoring — how we'll know we're meeting requirements:</strong> Redirect latency p99 measured per region, alerted at &gt;40ms (10ms before SLO). Availability measured as success rate, alerted at &lt;99.95% over 5 minutes. Error budget: 0.01% errors/month = 100 errors per million requests — alerts when 50% consumed.</p>
+          <p>I'll use these requirements to drive my API design and architecture. The high read:write ratio (20:1+), strong consistency for writes, and p99 &lt; 50ms redirect requirement will push me toward aggressive caching and read replicas. Ready to proceed?"</p>
+        </div>
+
+        <div class="aomb-checklist">
+          <div class="aomb-title">AOMB Completeness Checklist — Verified (L6 requirements plus)</div>
+          <ul>
+            <li>Tiered availability SLOs by operation criticality</li>
+            <li>p999 reasoning — tail latency at scale with concrete math</li>
+            <li>RPO/RTO explicitly defined with justification</li>
+            <li>Field-level storage breakdown</li>
+            <li>Cache sizing calculated with working set assumption</li>
+            <li>Bandwidth estimated</li>
+            <li>Consistency model as a table with rationale per data type</li>
+            <li>SLO monitoring approach mentioned</li>
+            <li>Error budget concept introduced</li>
+            <li>Clear architectural implications stated</li>
+          </ul>
+        </div>
+
+        <div class="interviewer-quote">
+          <span class="quote-label">Interviewer's Notes</span>
+          "Exceptional requirements definition. Tiered SLOs show mature operational thinking — this person has run systems in production. RPO/RTO framing, error budgets, and tail latency awareness all signal genuine experience. Strong hire signal."
+        </div>
+
+        <h4>The "Wow" Moments</h4>
+        <div class="wow-item">"At 20K QPS, p999 means 20 requests/second hit that latency" — concrete math showing why tail latency matters</div>
+        <div class="wow-item">Tiered availability SLOs — most candidates give one number; this candidate recognized different operations have different criticality</div>
+        <div class="wow-item">"RPO = 0, RTO &lt; 5 minutes" — used the exact terms a production team would use</div>
+        <div class="wow-item">Error budget concept — proactively introduced SRE-style thinking</div>
+
+        <div class="callout exceptional">
+          <div class="callout-title">What Separates This From L6</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">L6 gives good numbers with justification. L7 thinks in <strong>distributions and operational reality</strong> — they mention p999, error budgets, tiered SLOs, and RPO/RTO. They show they've operated systems at scale, not just designed them on a whiteboard.</p>
+        </div>
+
+        <div class="callout info">
+          <div class="callout-title">The Non-Obvious Insight</div>
+          <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">Tiered availability SLOs by operation is something most candidates miss. Setting 99.99% for everything is expensive and unnecessary. By recognizing that redirects are more critical than URL creation, which is more critical than analytics dashboards, the candidate can optimize cost and complexity. This is genuine architectural wisdom.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROGRESSION SUMMARY -->
+    <div class="section-header" id="p2-progression">
+      <h3>Progression Summary — Phase 2</h3>
+    </div>
+
+    <table class="progression-table">
+      <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+      <tbody>
+        <tr><td>No Hire → Lean Hire</td><td>Separates FR/NFR, provides some numbers, mentions out of scope</td></tr>
+        <tr><td>Lean Hire → Hire (L6)</td><td>Precise SLAs with percentiles, P0/P1/P2 prioritization, business justification, explicit consistency model, derived capacity math</td></tr>
+        <tr><td>Hire → Strong Hire (L7)</td><td>Tiered SLOs by operation, RPO/RTO, tail latency reasoning, error budgets, field-level estimation, SLO monitoring approach</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info" style="margin-top:20px;">
+      <div class="callout-title">The One Thing to Practice</div>
+      <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.65;">For every NFR, ask yourself: "What percentile? Why this number and not higher/lower? What's the business impact of missing it? How will I know if I'm meeting it?"</p>
+    </div>
+
+    <!-- KEY LESSON -->
+    <div class="key-lesson" id="p2-lesson">
+      <div class="key-lesson-title">🎯 Key Lesson — Phase 2</div>
+      <p><strong>L5 engineers</strong> state requirements. <strong>L6 engineers</strong> justify requirements with business reasoning and specific numbers. <strong>L7 engineers</strong> think in operational reality — tiered SLOs, error budgets, tail latencies, and monitoring — because they've learned that requirements without measurement are just wishes.</p>
+    </div>
+
+    <!-- DERIVED REQUIREMENTS -->
+    <div class="derived-table-wrap" id="p2-derived">
+      <div class="derived-title">📊 Derived Requirements Summary <span style="font-size:0.8rem;font-weight:400;color:var(--text-muted);font-family:var(--font-body);">(for future phases)</span></div>
+      <table class="summary-table">
+        <thead><tr><th>Metric</th><th>Target</th></tr></thead>
+        <tbody>
+          <tr><td>Redirect availability</td><td>99.99%</td></tr>
+          <tr><td>Redirect latency</td><td>p50 &lt; 5ms, p99 &lt; 50ms</td></tr>
+          <tr><td>Create latency</td><td>p99 &lt; 200ms</td></tr>
+          <tr><td>Write QPS</td><td>2,000 (peak design target)</td></tr>
+          <tr><td>Read QPS</td><td>100,000 (peak design target)</td></tr>
+          <tr><td>Storage (5 years)</td><td>~15 TB raw</td></tr>
+          <tr><td>Cache working set</td><td>~15 GB</td></tr>
+          <tr><td>Consistency (writes)</td><td>Strong, read-your-writes</td></tr>
+          <tr><td>Consistency (analytics)</td><td>Eventual</td></tr>
+          <tr><td>Data durability</td><td>RPO = 0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+</main>
+
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+// Progress bar
+const bar = document.getElementById('progress-bar');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+  bar.style.width = pct + '%';
+
+  const btt = document.getElementById('back-to-top');
+  if (h.scrollTop > 300) btt.classList.add('visible');
+  else btt.classList.remove('visible');
+
+  updateActiveNav();
+});
+
+// Active nav on scroll
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id]');
+  const navItems = document.querySelectorAll('.nav-item a');
+  let current = '';
+  sections.forEach(s => {
+    if (s.getBoundingClientRect().top < 120) current = s.id;
+  });
+  navItems.forEach(a => {
+    a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+}
+
+// Tier toggle
+function toggleTier(header) {
+  const card = header.parentElement;
+  card.classList.toggle('collapsed');
+}
+
+// Copy code
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓';
+    btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+
+// Hamburger
+const ham = document.getElementById('hamburger');
+const sidebar = document.getElementById('sidebar');
+ham.addEventListener('click', () => sidebar.classList.toggle('open'));
+document.addEventListener('click', e => {
+  if (!sidebar.contains(e.target) && !ham.contains(e.target)) {
+    sidebar.classList.remove('open');
+  }
+});
+
+// Search
+const searchInput = document.getElementById('sidebar-search');
+searchInput.addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  const items = document.querySelectorAll('.nav-item');
+  const groups = document.querySelectorAll('.nav-group');
+  if (!q) {
+    items.forEach(i => i.classList.remove('hidden'));
+    groups.forEach(g => g.classList.remove('hidden'));
+    return;
+  }
+  items.forEach(item => {
+    const txt = item.textContent.toLowerCase();
+    item.classList.toggle('hidden', !txt.includes(q));
+  });
+  groups.forEach(group => {
+    const visible = [...group.querySelectorAll('.nav-item')].some(i => !i.classList.contains('hidden'));
+    group.classList.toggle('hidden', !visible);
+  });
+});
+</script>
+</body>
+</html>
