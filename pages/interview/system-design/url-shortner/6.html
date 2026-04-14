@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 5: What Breaks at 100x Scale — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--surface3:#21262d;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--strong),var(--deep));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(88,166,255,.05)}
+.ni.active a{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.07)}
+.ni.sub a{padding-left:32px;font-size:.74rem}
+.ni.hidden,.ng.hidden{display:none}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dn{background:var(--no)}.dl{background:var(--lean)}.dh{background:var(--hire)}.ds{background:var(--strong)}.dd{background:var(--deep)}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+
+/* BACk TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,#58a6ff 50%,#F5A623 80%,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+
+/* PHASE HEADER */
+.phase-hdr{margin:0 0 36px;padding-bottom:22px;border-bottom:1px solid var(--border)}
+.phase-num{font-family:var(--fc);font-size:.67rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.phase-hdr h2{font-family:var(--fh);font-size:1.85rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.phase-time{font-family:var(--fc);font-size:.75rem;color:var(--dim);background:var(--surface2);padding:3px 10px;border-radius:20px;display:inline-block}
+.phase-prompt{margin-top:18px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--dim);border-radius:0 8px 8px 0;padding:14px 18px}
+.prompt-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:7px}
+.phase-prompt blockquote{font-style:italic;color:var(--muted);font-size:.92rem;line-height:1.65}
+
+/* SCALE TABLE */
+.scale-table{width:100%;border-collapse:collapse;font-size:.84rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.scale-table thead tr{background:linear-gradient(90deg,rgba(88,166,255,.12),rgba(245,166,35,.08))}
+.scale-table th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--accent);border-bottom:1px solid rgba(88,166,255,.2)}
+.scale-table td{padding:9px 14px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle}
+.scale-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.scale-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.scale-table td:first-child{font-weight:600;color:var(--text)}
+.scale-table td.now{font-family:var(--fc);font-size:.8rem;color:var(--hire)}
+.scale-table td.then{font-family:var(--fc);font-size:.8rem;color:var(--no);font-weight:600}
+
+/* TIER CARDS */
+.tier{border-radius:10px;border:1px solid var(--border);background:var(--surface);margin-bottom:24px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.tier:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.tier.no{border-left:4px solid var(--no)}
+.tier.lean{border-left:4px solid var(--lean)}
+.tier.hire{border-left:4px solid var(--hire)}
+.tier.strong{border-left:4px solid var(--strong)}
+.tier.no   .tier-hdr{background:rgba(255,107,107,.05)}
+.tier.lean .tier-hdr{background:rgba(255,215,0,.04)}
+.tier.hire .tier-hdr{background:rgba(0,191,165,.05)}
+.tier.strong .tier-hdr{background:rgba(245,166,35,.05)}
+.tier-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.tier-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tier-emoji{font-size:1.3rem}
+.tier-name{font-family:var(--fh);font-size:1.1rem;font-weight:700;color:var(--text)}
+.tier-badge{font-family:var(--fc);font-size:.64rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.tier.no   .tier-badge{background:rgba(255,107,107,.14);color:var(--no);border:1px solid rgba(255,107,107,.28)}
+.tier.lean .tier-badge{background:rgba(255,215,0,.11);color:var(--lean);border:1px solid rgba(255,215,0,.28)}
+.tier.hire .tier-badge{background:rgba(0,191,165,.11);color:var(--hire);border:1px solid rgba(0,191,165,.28)}
+.tier.strong .tier-badge{background:rgba(245,166,35,.11);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.tier-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.tier.collapsed .tier-toggle{transform:rotate(-90deg)}
+.tier-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.tier.collapsed .tier-body{max-height:0;opacity:0;padding-bottom:0}
+.tier-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px}
+.tier-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.tier-body ul,.tier-body ol{padding-left:18px;margin:8px 0 13px}
+.tier-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.tier-body strong{color:var(--text);font-weight:600}
+
+/* SCRIPT QUOTE */
+.script{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px 18px 14px 48px;margin:14px 0;font-style:italic;font-size:.9rem;line-height:1.7;color:var(--muted);position:relative}
+.script::before{content:'"';font-family:var(--fh);font-size:3.5rem;color:var(--border);position:absolute;top:-6px;left:10px;line-height:1}
+.script p{margin-top:9px}.script p:first-child{margin-top:0}.script strong{color:var(--text);font-style:normal}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM BLOCK */
+.diag{background:#010409;border:1px solid rgba(88,166,255,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(88,166,255,.06);border-bottom:1px solid rgba(88,166,255,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.75rem;line-height:1.7;color:#79c0ff;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.fail .callout-title{color:var(--no)}.callout.good .callout-title{color:var(--hire)}
+.callout.info .callout-title{color:var(--accent)}.callout.warn .callout-title{color:var(--lean)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--deep)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* IQ */
+.iq{background:var(--surface2);border-radius:8px;padding:16px 18px 14px 48px;margin:13px 0;position:relative;font-style:italic;font-size:.89rem;color:var(--muted);line-height:1.65}
+.iq::before{content:'❝';position:absolute;left:14px;top:12px;font-size:1.4rem;color:var(--dim)}
+.iq-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);font-style:normal;font-weight:600;display:block;margin-bottom:7px}
+
+/* AOMB */
+.aomb{background:rgba(0,191,165,.05);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.aomb-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.aomb ul{list-style:none;padding:0}
+.aomb li{display:flex;align-items:flex-start;gap:7px;padding:3px 0;font-size:.84rem;color:var(--muted);line-height:1.5}
+.aomb li::before{content:'☑';color:var(--hire);flex-shrink:0;margin-top:1px}
+
+/* SIGNALS */
+.signals{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--hire);border-radius:0 8px 8px 0;padding:14px 16px;margin:13px 0}
+.signals-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:9px;font-weight:600}
+.signals ul{list-style:none;padding:0}
+.signals li{font-family:var(--fc);font-size:.8rem;color:var(--muted);padding:4px 0;border-bottom:1px solid rgba(48,54,61,.4);line-height:1.5}
+.signals li:last-child{border-bottom:none}
+.signals li::before{content:'→ ';color:var(--hire)}
+
+/* FATAL */
+.fatal{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:12px 16px;margin:11px 0}
+.fatal-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:7px}
+.fatal ul{list-style:none;padding:0}
+.fatal li{display:flex;gap:7px;font-size:.86rem;color:var(--muted);padding:3px 0;line-height:1.5}
+.fatal li::before{content:'✕';color:var(--no);flex-shrink:0}
+
+/* UPGRADE */
+.upgrade{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:11px 0}
+.upgrade-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.upgrade p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* WOW */
+.wow{background:rgba(245,166,35,.05);border:1px solid rgba(245,166,35,.15);border-radius:6px;padding:9px 13px;margin-bottom:8px;font-family:var(--fc);font-size:.84rem;color:var(--strong);line-height:1.5}
+.wow::before{content:'✦ ';opacity:.7}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* COMPARISON TABLES */
+.dt{width:100%;border-collapse:collapse;font-size:.83rem;margin:13px 0;border-radius:8px;overflow:hidden}
+.dt thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.dt th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.dt td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:top;line-height:1.5;color:var(--muted)}
+.dt tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dt tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dt tbody tr:hover{background:rgba(88,166,255,.04)}
+.dt td:first-child{font-weight:600;color:var(--text)}
+.dt td.mono{font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.dt td.red{color:var(--no);font-family:var(--fc);font-size:.77rem;font-weight:600}
+.dt td.grn{color:var(--hire);font-family:var(--fc);font-size:.77rem}
+.dt td.amb{color:var(--lean);font-family:var(--fc);font-size:.77rem}
+
+/* BOTTLENECK LABEL */
+.bn-label{display:flex;align-items:center;gap:10px;margin:28px 0 14px;padding:12px 16px;border-radius:8px;border:1px solid}
+.bn-label.red{background:rgba(255,107,107,.06);border-color:rgba(255,107,107,.2)}
+.bn-label.yellow{background:rgba(255,215,0,.05);border-color:rgba(255,215,0,.2)}
+.bn-label.green{background:rgba(0,191,165,.05);border-color:rgba(0,191,165,.2)}
+.bn-label.blue{background:rgba(88,166,255,.05);border-color:rgba(88,166,255,.2)}
+.bn-icon{font-size:1.3rem;flex-shrink:0}
+.bn-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text)}
+.bn-subtitle{font-family:var(--fc);font-size:.72rem;color:var(--muted);margin-top:2px}
+.bn-label.red .bn-title{color:var(--no)}.bn-label.yellow .bn-title{color:var(--lean)}
+.bn-label.green .bn-title{color:var(--hire)}.bn-label.blue .bn-title{color:var(--accent)}
+
+/* ROADMAP TABLE */
+.rm-table{width:100%;border-collapse:collapse;font-size:.83rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.rm-table thead tr{background:linear-gradient(90deg,rgba(245,166,35,.12),rgba(0,191,165,.08))}
+.rm-table th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--strong);border-bottom:1px solid rgba(245,166,35,.2)}
+.rm-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle}
+.rm-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.rm-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.rm-table td:first-child{font-weight:700;color:var(--strong);font-family:var(--fc);font-size:.8rem}
+.rm-table td:nth-child(2){font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.rm-table td:nth-child(3){font-family:var(--fc);font-size:.76rem;color:var(--dim)}
+
+/* COST TABLE */
+.cost-table{width:100%;border-collapse:collapse;font-size:.83rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.cost-table thead tr{background:linear-gradient(90deg,rgba(0,191,165,.1),rgba(88,166,255,.06))}
+.cost-table th{padding:10px 13px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--hire);border-bottom:1px solid rgba(0,191,165,.2)}
+.cost-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle}
+.cost-table tbody tr:nth-child(odd){background:rgba(22,27,34,.6)}
+.cost-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.cost-table td:first-child{font-weight:600;color:var(--text)}
+.cost-table td.c1{font-family:var(--fc);font-size:.78rem;color:var(--hire)}
+.cost-table td.c2{font-family:var(--fc);font-size:.78rem;color:var(--no)}
+.cost-table td.c3{font-family:var(--fc);font-size:.78rem;color:var(--strong)}
+.cost-total td{border-top:2px solid var(--hire)!important;background:rgba(0,191,165,.06)!important}
+.cost-total td.c3{font-size:.88rem;font-weight:700;color:var(--hire)}
+
+/* CDN STRATEGY TABLE */
+.cdn-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.cdn-table thead tr{background:linear-gradient(90deg,rgba(88,166,255,.12),rgba(0,191,165,.06))}
+.cdn-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.61rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);border-bottom:1px solid rgba(88,166,255,.2)}
+.cdn-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.cdn-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.cdn-table td:first-child{font-weight:600;color:var(--text)}
+.cdn-table td.impact{font-family:var(--fc);font-size:.75rem;color:var(--hire)}
+
+/* SECTION HEADER */
+.sec-hdr{margin:44px 0 22px}
+.sec-hdr h3{font-family:var(--fh);font-size:1.35rem;font-weight:600;color:var(--text)}
+
+/* PROGRESSION TABLE */
+.prog{width:100%;border-collapse:collapse;font-size:.84rem;margin:16px 0;border-radius:8px;overflow:hidden}
+.prog thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.prog th{padding:10px 14px;text-align:left;font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.prog td{padding:10px 14px;border-bottom:1px solid rgba(48,54,61,.5);color:var(--muted);line-height:1.55;vertical-align:top}
+.prog tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.prog tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.prog td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--accent);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Phase 5: What Breaks at 100x Scale</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni"><a href="#scale-table">Scale Numbers</a></li>
+    </li>
+    <li class="ng"><div class="nl">4-Tier Breakdown</div>
+      <li class="ni sub"><a href="#no-hire"><span class="dot dn"></span>No Hire (L4)</a></li>
+      <li class="ni sub"><a href="#lean-hire"><span class="dot dl"></span>Lean Hire (L5)</a></li>
+      <li class="ni sub"><a href="#hire"><span class="dot dh"></span>Hire (L6)</a></li>
+      <li class="ni sub"><a href="#hire-bn1">↳ Bottleneck 1: DB Writes</a></li>
+      <li class="ni sub"><a href="#hire-bn2">↳ Bottleneck 2: Cache Size</a></li>
+      <li class="ni sub"><a href="#hire-bn3">↳ Bottleneck 3: Origin Traffic</a></li>
+      <li class="ni sub"><a href="#hire-bn4">↳ Bottleneck 4: Kafka</a></li>
+      <li class="ni sub"><a href="#hire-roadmap">↳ Roadmap &amp; Cost</a></li>
+      <li class="ni sub"><a href="#strong-hire"><span class="dot ds"></span>Strong Hire (L7)</a></li>
+      <li class="ni sub"><a href="#sh-powerlaw">↳ Power Law Insight</a></li>
+      <li class="ni sub"><a href="#sh-sharding">↳ DB Sharding + Migration</a></li>
+      <li class="ni sub"><a href="#sh-tieredcache">↳ 3-Tier Cache + Hot Keys</a></li>
+      <li class="ni sub"><a href="#sh-cdn">↳ CDN Optimization</a></li>
+      <li class="ni sub"><a href="#sh-kafka">↳ Kafka Sampling</a></li>
+      <li class="ni sub"><a href="#sh-thundering">↳ Thundering Herd</a></li>
+      <li class="ni sub"><a href="#sh-roadmap">↳ Migration Roadmap</a></li>
+    </li>
+    <li class="ng"><div class="nl">Synthesis</div>
+      <li class="ni"><a href="#aomb">AOMB Checklist</a></li>
+      <li class="ni"><a href="#wow">Wow Moments</a></li>
+      <li class="ni"><a href="#progression">Progression Summary</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">System Design Interview · Study Guide · Phase 5</div>
+  <h1>What Breaks<br>at 100x Scale?</h1>
+  <div class="hero-meta">
+    <span>📐 4-Tier Framework</span>
+    <span>🔢 100x Numbers Analysis</span>
+    <span>🏗 DB Sharding Strategy</span>
+    <span>⚡ Power Law Distribution</span>
+    <span>💸 Sub-Linear Cost Scaling</span>
+    <span>🌩 Thundering Herd Recovery</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The scaling deep-dive phase. Tests whether you can identify bottlenecks in order of impact, design sharding strategies, optimize the CDN hit rate as the biggest lever, and think about power-law traffic distribution — not uniform growth. The L7 insight: 100x traffic can cost only 35x with smart optimization.</p>
+</section>
+
+<div id="scale-table" class="phase-hdr">
+  <div class="phase-num">Phase 5 · Bottlenecks, Scale &amp; Operational Readiness</div>
+  <h2>What Breaks at 100x Scale</h2>
+  <div class="phase-prompt">
+    <div class="prompt-lbl">Interviewer Question</div>
+    <blockquote>"What breaks first at 100x traffic, and how do you fix it?"</blockquote>
+  </div>
+  <h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px">Current Scale → 100x Scale</h4>
+  <table class="scale-table">
+    <thead><tr><th>Metric</th><th>Current</th><th>At 100x</th></tr></thead>
+    <tbody>
+      <tr><td>Redirect QPS</td><td class="now">100K</td><td class="then">10M</td></tr>
+      <tr><td>Create QPS</td><td class="now">2K</td><td class="then">200K</td></tr>
+      <tr><td>Storage Growth</td><td class="now">500M URLs/year</td><td class="then">50B URLs/year</td></tr>
+      <tr><td>Cache Working Set</td><td class="now">15GB</td><td class="then">1.5TB (naive)</td></tr>
+      <tr><td>Kafka Events</td><td class="now">100K/sec</td><td class="then">10M/sec</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════ NO HIRE ══════ -->
+<div class="tier no" id="no-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">❌</span><span class="tier-name">No Hire</span><span class="tier-badge">L4 / Weak L5</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"At 100x scale, we'd need to add more servers. I'd increase the API servers from 20 to 2000. We'd also need a bigger database, probably shard it somehow. Redis would need to be bigger too, maybe 100 nodes instead of 3.</p>
+      <p>For Kafka, we'd add more partitions. And we'd probably need more CDN capacity, but CDNs scale automatically so that should be fine.</p>
+      <p>We might also want to consider microservices to split up the monolith. And maybe use Kubernetes for better orchestration. I think with these changes we could handle 100x traffic."</p>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Why This Fails</div>
+      <ul>
+        <li>Linear thinking — "20 to 2000 servers" isn't how scaling works</li>
+        <li>Vague handwaving — "shard it somehow" without any strategy</li>
+        <li>No identification of actual bottlenecks — just "make everything bigger"</li>
+        <li>No understanding of what breaks <em>FIRST</em> — treated all components equally</li>
+        <li>Mentioned irrelevant things — Kubernetes doesn't solve scaling problems</li>
+        <li>No cost consideration — 100x servers = 100x cost?</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Candidate threw hardware at the problem without analysis. No understanding of which components are actually bottlenecks. 'Shard it somehow' shows lack of distributed systems experience."
+    </div>
+    <div class="fatal">
+      <div class="fatal-title">Fatal Mistakes</div>
+      <ul>
+        <li>Didn't identify the actual bottleneck (it's usually ONE thing that breaks first)</li>
+        <li>No math or analysis — pure vibes-based scaling</li>
+        <li>Confused orchestration (Kubernetes) with horizontal scaling</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ LEAN HIRE ══════ -->
+<div class="tier lean" id="lean-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">⚠️</span><span class="tier-name">Lean Hire</span><span class="tier-badge">Meets L5, Not L6</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="script">
+      <p>"Let me think about what breaks at 100x. Database writes — currently 2K QPS, at 200K QPS a single Postgres instance can't handle it. We'd need to shard the database. Cache size — current 15GB working set becomes 1.5TB. Can't fit in a single Redis instance, need Redis Cluster with many nodes. API servers — going from 100K to 10M QPS means we need 100x more servers, so around 2000 instances. Kafka — 10M events/sec is beyond a normal Kafka cluster, we'd need to scale out significantly. I'd prioritize the database sharding first since that's our source of truth. Then scale Redis, then API servers."</p>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">What's Good</div>
+      <ul>
+        <li>Identified multiple components that would struggle</li>
+        <li>Some math (2K → 200K writes)</li>
+        <li>Prioritized database as source of truth</li>
+        <li>Mentioned sharding as a solution</li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">What's Missing for L6</div>
+      <ul>
+        <li>Didn't identify the <mark>FIRST</mark> bottleneck — what breaks at 10x before we get to 100x?</li>
+        <li>No hot partition analysis — not all URLs are accessed equally</li>
+        <li>No CDN analysis — CDN is our best friend at scale (biggest lever)</li>
+        <li>Linear scaling assumption — 100x traffic ≠ 100x resources if we're smart</li>
+        <li>No cost analysis — is 2000 servers acceptable?</li>
+        <li>Database sharding strategy not specified — shard by what key?</li>
+        <li>No read vs write path separation — they have different bottlenecks</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Candidate identified scaling concerns but treated it as linear multiplication. Didn't distinguish between read and write path bottlenecks or consider CDN's role in absorbing traffic growth. Missing hot partition thinking."
+    </div>
+    <div class="upgrade">
+      <div class="upgrade-title">Upgrade Needed to Reach L6</div>
+      <p>Identify the FIRST bottleneck (usually one thing breaks before everything else), analyze read vs. write paths separately, discuss hot partition handling, quantify the CDN's ability to absorb traffic growth, and provide a phased roadmap.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ HIRE (L6) ══════ -->
+<div class="tier hire" id="hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">✅</span><span class="tier-name">Hire</span><span class="tier-badge">Meets L6 Bar</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="callout info" style="margin-top:0">
+      <div class="callout-title">L6 Opening — Recompute the Numbers First</div>
+      <p>"Let me analyze what breaks at 100x systematically, starting with <mark>what breaks FIRST</mark>."</p>
+    </div>
+
+    <h4>Step 1: Recompute 100x Numbers with CDN Impact</h4>
+    <table class="dt">
+      <thead><tr><th>Component</th><th>Current</th><th>100x</th><th>Analysis</th></tr></thead>
+      <tbody>
+        <tr><td>Redirect QPS</td><td class="mono">100K</td><td class="red">10M</td><td>CDN handles most of this</td></tr>
+        <tr><td>Origin QPS (10% CDN miss)</td><td class="mono">10K</td><td class="red">1M</td><td><strong>THIS is concerning</strong></td></tr>
+        <tr><td>Write QPS</td><td class="mono">2K</td><td class="red">200K</td><td>Database bottleneck</td></tr>
+        <tr><td>Storage per year</td><td class="mono">3TB</td><td class="red">300TB</td><td>Sharding required</td></tr>
+        <tr><td>Cache working set</td><td class="mono">15GB</td><td class="red">1.5TB</td><td>Redis Cluster needed</td></tr>
+        <tr><td>Kafka events</td><td class="mono">100K/s</td><td class="red">10M/s</td><td>Multiple clusters</td></tr>
+      </tbody>
+    </table>
+
+    <!-- BOTTLENECK 1 -->
+    <div class="bn-label red" id="hire-bn1">
+      <span class="bn-icon">🔴</span>
+      <div><div class="bn-title">First to Break: PostgreSQL Writes (breaks around 10-20x)</div><div class="bn-subtitle">Single Postgres instance maxes out at 30-50K write QPS — we hit the wall at 10x</div></div>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7">Every URL creation MUST write to Postgres synchronously (RPO=0 requirement). No caching helps the write path. At 20K write QPS (10x), we're already stressed. At 200K (100x), it's impossible.</p>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7"><strong>Solution: Horizontal sharding with short_code as shard key.</strong></p>
+    <div class="callout info">
+      <div class="callout-title">Why short_code as the Shard Key?</div>
+      <ul>
+        <li>Every redirect query has <code>short_code</code> — no scatter-gather needed</li>
+        <li>Uniformly distributed (thanks to our FPE encoding)</li>
+        <li><strong>No hot partitions</strong> — unlike <code>user_id</code> which would hot-partition on viral users</li>
+      </ul>
+      <p style="margin-top:8px;font-size:.86rem"><strong>Start with 16 shards:</strong> 200K QPS ÷ 16 = 12.5K QPS per shard — well within Postgres limits, room to grow to 64 without re-architecture.</p>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted)"><strong>Custom alias challenge:</strong> Aliases need global uniqueness check. Solutions: (1) Route to dedicated "alias coordinator" shard, (2) Reserve a prefix range for aliases, (3) Use a distributed lock in Redis for alias claims.</p>
+
+    <!-- BOTTLENECK 2 -->
+    <div class="bn-label yellow" id="hire-bn2">
+      <span class="bn-icon">🟡</span>
+      <div><div class="bn-title">Second to Break: Cache Size (breaks around 20-50x)</div><div class="bn-subtitle">15GB working set → 1.5TB at 100x. Cache hit rate drop cascades to DB.</div></div>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7"><strong>Solution: Redis Cluster + Tiered caching</strong></p>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Tiered Cache Architecture</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Tier 1: Local in-process cache (LRU, 1GB per server)
+  - Catches extreme hot URLs
+  - < 0.1ms latency
+
+Tier 2: Redis Cluster (distributed)
+  - 32 nodes × 64GB = 2TB capacity
+  - Handles 90% of requests
+  - < 1ms latency
+
+Tier 3: Database (source of truth)
+  - Only for cache misses
+  - < 10ms latency</pre></div>
+
+    <!-- BOTTLENECK 3 -->
+    <div class="bn-label green" id="hire-bn3">
+      <span class="bn-icon">🟢</span>
+      <div><div class="bn-title">Third to Break: Origin Traffic (breaks around 30-50x)</div><div class="bn-subtitle">1M QPS to origin at 100x — this is the biggest lever to optimize</div></div>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7"><strong>Solution: Drive CDN hit rate from 90% → 99%</strong></p>
+    <div class="callout good">
+      <div class="callout-title">The Key Math</div>
+      <p>Current: 10M QPS × 10% miss = 1M QPS to origin (too high)</p>
+      <p><strong>Target: 10M QPS × 1% miss = 100K QPS to origin (same as current total!)</strong></p>
+      <p>Going from 90% → 99% CDN hit rate brings origin traffic back to today's level. <mark>This is the biggest single lever.</mark></p>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted)"><strong>How to improve CDN hit rate:</strong> Increase TTL (24h → 7 days), stale-while-revalidate, edge validation at CDN (reject invalid formats), prefetch on URL creation, negative caching for 404s.</p>
+
+    <!-- BOTTLENECK 4 -->
+    <div class="bn-label blue" id="hire-bn4">
+      <span class="bn-icon">🔵</span>
+      <div><div class="bn-title">Fourth to Break: Kafka Throughput (breaks around 50x)</div><div class="bn-subtitle">10M events/sec beyond single Kafka cluster practical limits</div></div>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7"><strong>Solutions:</strong> Regional Kafka clusters (each region has its own, merge for analytics), sampling (at extreme scale, sample 10% of events), client-side batching (100 events per message).</p>
+
+    <h4>What Doesn't Break (Surprisingly)</h4>
+    <div class="callout good">
+      <div class="callout-title">These Scale Naturally</div>
+      <ul>
+        <li><strong>CDN</strong> — CloudFront/Fastly handle billions of requests. Cost scales, but it works.</li>
+        <li><strong>Range Allocator</strong> — Already distributed. Each region has its own. 200K QPS = 20K per region = fine.</li>
+        <li><strong>API Servers</strong> — Stateless, horizontal. Add more servers. Auto-scaling handles it.</li>
+      </ul>
+    </div>
+
+    <!-- ROADMAP & COST -->
+    <div id="hire-roadmap">
+      <h4>Scaling Roadmap (Phased Approach)</h4>
+      <table class="rm-table">
+        <thead><tr><th>Scale</th><th>Actions Required</th><th>Timeline</th></tr></thead>
+        <tbody>
+          <tr><td>1x → 10x</td><td>Add read replicas, increase cache size</td><td>Month 1</td></tr>
+          <tr><td>10x → 30x</td><td>Shard database (16 shards), Redis Cluster</td><td>Month 3</td></tr>
+          <tr><td>30x → 50x</td><td>Improve CDN hit rate to 99%, add regional origins</td><td>Month 6</td></tr>
+          <tr><td>50x → 100x</td><td>Kafka federation, analytics sampling, cost optimization</td><td>Month 12</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Cost at 100x (Naive vs Optimized)</h4>
+      <table class="cost-table">
+        <thead><tr><th>Component</th><th>Current</th><th>100x Naive</th><th>100x Optimized</th></tr></thead>
+        <tbody>
+          <tr><td>CDN</td><td class="c1">$1,500</td><td class="c2">$150,000</td><td class="c3">$100,000</td></tr>
+          <tr><td>Compute</td><td class="c1">$800</td><td class="c2">$80,000</td><td class="c3">$30,000</td></tr>
+          <tr><td>Database</td><td class="c1">$1,200</td><td class="c2">$120,000</td><td class="c3">$50,000</td></tr>
+          <tr><td>Cache</td><td class="c1">$500</td><td class="c2">$50,000</td><td class="c3">$20,000</td></tr>
+          <tr class="cost-total"><td><strong>Total</strong></td><td class="c1">$5,000</td><td class="c2">$500,000</td><td class="c3">~$200,000</td></tr>
+        </tbody>
+      </table>
+      <div class="callout good">
+        <div class="callout-title">Key Insight: Sub-Linear Cost Scaling</div>
+        <p><mark class="gr">With optimization, 100x scale costs ~40x, not 100x.</mark> CDN committed use discounts, reserved instances, and tiered caching turn a $500K/month bill into $200K.</p>
+      </div>
+    </div>
+
+    <div class="aomb">
+      <div class="aomb-title">AOMB Completeness Checklist — Verified (L6)</div>
+      <ul>
+        <li>Specific numbers for current vs. 100x scale with CDN impact analysis</li>
+        <li>Bottlenecks identified in ORDER of what breaks first</li>
+        <li>Database sharding strategy with shard key reasoning (short_code, not user_id)</li>
+        <li>Custom alias challenge acknowledged and solved</li>
+        <li>Tiered caching strategy (in-process + Redis + DB)</li>
+        <li>CDN optimization as biggest lever (90% → 99% hit rate math)</li>
+        <li>Phased scaling roadmap with timelines</li>
+        <li>Cost analysis (naive vs. optimized) showing sub-linear scaling</li>
+        <li>Identified what DOESN'T break (CDN, Range Allocator, API Servers)</li>
+      </ul>
+    </div>
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Strong scaling analysis. Correctly identified database writes as first bottleneck and CDN optimization as biggest lever. Shard key reasoning was solid. Cost analysis shows business awareness. Good candidate."
+    </div>
+    <div class="signals">
+      <div class="signals-title">Key Phrases That Signal L6 — Memorize These</div>
+      <ul>
+        <li>"Let me identify what breaks FIRST"</li>
+        <li>"With 99% CDN hit rate, origin traffic stays manageable"</li>
+        <li>"Shard by short_code because it's uniformly distributed — not user_id which hot-partitions"</li>
+        <li>"100x scale doesn't mean 100x cost if we're smart"</li>
+        <li>"Let me walk through a phased roadmap"</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">What Separates This From L5</div>
+      <p>L5 lists everything that needs to scale. L6 identifies <mark>what breaks FIRST</mark>, quantifies the actual limits, and proposes solutions in priority order. L6 also recognizes that scaling isn't linear — 100x traffic can be handled with 40x cost if you optimize correctly.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ STRONG HIRE (L7) ══════ -->
+<div class="tier strong" id="strong-hire">
+  <div class="tier-hdr" onclick="toggleTier(this)">
+    <div class="tier-title-row"><span class="tier-emoji">🏆</span><span class="tier-name">Strong Hire</span><span class="tier-badge">L7 Signal · Exceptional</span></div>
+    <span class="tier-toggle">▾</span>
+  </div>
+  <div class="tier-body">
+    <div class="callout extra" style="margin-top:0">
+      <div class="callout-title">L7 Opening — Three Angles</div>
+      <p>"Let me analyze this from three angles: what breaks first, the mitigation strategy for each, and <mark class="g">the migration path to get there without downtime.</mark>"</p>
+    </div>
+
+    <!-- POWER LAW -->
+    <div class="bn-label blue" id="sh-powerlaw">
+      <span class="bn-icon">📊</span>
+      <div><div class="bn-title">Pre-Analysis: Power Law Distribution</div><div class="bn-subtitle">Traffic is NOT uniformly distributed — this changes everything</div></div>
+    </div>
+    <div class="callout extra">
+      <div class="callout-title">The Crucial Insight L5/L6 Candidates Miss</div>
+      <p>"100x scale" doesn't mean all URLs get 100x traffic. URL access follows a power law:</p>
+      <ul>
+        <li>Top <strong>1%</strong> of URLs → <strong>50%</strong> of traffic</li>
+        <li>Top <strong>10%</strong> of URLs → <strong>90%</strong> of traffic</li>
+        <li>Remaining <strong>90%</strong> of URLs → <strong>10%</strong> of traffic</li>
+      </ul>
+      <p style="margin-top:8px">This is GOOD NEWS — caching is incredibly effective. But it creates <strong>HOT PARTITION problems</strong> — a single viral URL could receive 10M QPS alone.</p>
+    </div>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7"><strong>Key insight from power law for cache sizing:</strong> We don't need to cache ALL URLs, just the hot ones. At 500M total URLs, the top 10% (50M) × 300 bytes = 15GB. <mark>Same as today!</mark> With smart eviction, the cache doesn't need to grow linearly with URL count.</p>
+
+    <!-- DB SHARDING L7 -->
+    <div class="bn-label red" id="sh-sharding">
+      <span class="bn-icon">🔴</span>
+      <div><div class="bn-title">First to Break: PostgreSQL Write Path (around 10x)</div><div class="bn-subtitle">Application-level sharding with consistent hashing + zero-downtime migration path</div></div>
+    </div>
+
+    <h4>Sharding Architecture</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Shard Router + 16-Shard Layout</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>┌─────────────────────────────────────────────────────────────────────┐
+│                  SHARD ROUTER (in API server)                       │
+│                                                                     │
+│   def get_shard(short_code):                                       │
+│       hash = xxhash64(short_code)                                  │
+│       shard_id = hash % NUM_SHARDS                                 │
+│       return shard_connections[shard_id]                           │
+│                                                                     │
+│   def create_url(long_url, short_code):                            │
+│       shard = get_shard(short_code)                                │
+│       shard.insert(short_code, long_url)                           │
+│                                                                     │
+│   def get_url(short_code):                                         │
+│       shard = get_shard(short_code)                                │
+│       return shard.select(short_code)                              │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+   ┌────────────────────────┼────────────────────────┐
+   ▼                        ▼                        ▼
+┌─────────┐           ┌─────────┐           ┌─────────┐
+│ Shard 0 │           │ Shard 1 │  . . . .  │Shard 15 │
+│ Primary │           │ Primary │           │ Primary │
+│ +2 Sync │           │ +2 Sync │           │ +2 Sync │
+│ Replicas│           │ Replicas│           │ Replicas│
+│ Range:  │           │ Range:  │           │ Range:  │
+│ 0-6.25% │           │ 6.25-   │           │ 93.75-  │
+│ of codes│           │ 12.5%   │           │ 100%    │
+└─────────┘           └─────────┘           └─────────┘
+
+16 shards × ~15K write QPS each = 240K write QPS capacity
+With 2x headroom for peaks: 16 shards sufficient for 100x</pre>
+    </div>
+
+    <h4>Custom Alias Challenge — The Hard Part</h4>
+    <div class="callout extra">
+      <div class="callout-title">Option C: Redis-Based Alias Registry (Best Solution)</div>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Python · Custom Alias Claim with Redis + DB</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>def claim_custom_alias(alias, short_code, long_url):
+    # Try to claim in Redis (distributed lock - atomic NX)
+    result = redis.set(f"alias:{alias}", short_code, nx=True, ex=86400)
+    if not result:
+        raise AliasAlreadyTaken()
+
+    # Redis claim successful, now write to database
+    # If DB write fails, release the Redis key
+    try:
+        shard = get_shard(short_code)
+        shard.insert(short_code, long_url, alias=alias)
+        # Make Redis claim permanent (remove TTL)
+        redis.persist(f"alias:{alias}")
+    except Exception:
+        redis.delete(f"alias:{alias}")
+        raise</pre></div>
+
+    <h4>Zero-Downtime Migration Path</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Migration Steps · Zero Downtime</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Step 1: Add shard routing logic → route EVERYTHING to "shard 0" (current DB)
+Step 2: Set up new shard primaries (shards 1-15) with replication
+Step 3: Double-write — new URLs go to correct shard + shard 0
+Step 4: Backfill — migrate existing URLs from shard 0 to correct shards
+Step 5: Verify — read from both, compare results
+Step 6: Cutover — read from correct shard, stop writing to shard 0
+Step 7: Cleanup — remove duplicates from shard 0
+
+Timeline: ~2-4 weeks with proper testing
+Rollback: At EACH step, we can revert to reading from shard 0</pre></div>
+
+    <!-- TIERED CACHE L7 -->
+    <div class="bn-label yellow" id="sh-tieredcache">
+      <span class="bn-icon">🟡</span>
+      <div><div class="bn-title">Second to Break: Cache Working Set (around 20x)</div><div class="bn-subtitle">Three-tier caching with adaptive TTL + hot key detection and replication</div></div>
+    </div>
+
+    <h4>Three-Tier Cache with Adaptive TTL</h4>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · 3-Tier Cache Architecture</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 1: In-Process Cache (per API server)                         │
+│   Size: 500MB per server (LRU eviction)                            │
+│   TTL: 60 seconds                                                   │
+│   Latency: < 0.1ms                                                 │
+│   Purpose: Catch thundering herd on same server                    │
+│   Key insight: viral URL gets 100K QPS on one server →             │
+│   misses cache once per minute (99.999% hit rate for hot URLs)     │
+└─────────────────────────────────────────────────────────────────────┘
+                           │ miss
+                           ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 2: Redis Cluster (distributed)                                │
+│   Size: 32 nodes × 32GB = 1TB usable                               │
+│   TTL: Adaptive based on access frequency:                         │
+│      - High frequency (>100 hits/hour): 24h TTL                    │
+│      - Medium frequency:                 1h TTL                    │
+│      - Low frequency:                    5min TTL                  │
+│   Latency: < 1ms                                                   │
+│   Self-tuning: hot URLs stay cached, cold URLs evict quickly       │
+└─────────────────────────────────────────────────────────────────────┘
+                           │ miss
+                           ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 3: Database (sharded)                                         │
+│   Covering index: (short_code) INCLUDE (long_url)                  │
+│   Latency: 5-10ms                                                  │
+└─────────────────────────────────────────────────────────────────────┘</pre>
+    </div>
+
+    <h4>Hot Key Detection + Replication</h4>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Python · Hot Key Detector</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>class HotKeyDetector:
+    def __init__(self):
+        self.hot_keys = set()
+        self.counts = defaultdict(int)
+
+    async def track(self, key):
+        self.counts[key] += 1
+        if self.counts[key] > HOT_THRESHOLD:  # e.g., 10K hits/minute
+            if key not in self.hot_keys:
+                self.hot_keys.add(key)
+                await self.broadcast_hot_key(key)
+
+    async def broadcast_hot_key(self, key):
+        # Tell all servers to cache this locally
+        # Also replicate to multiple Redis slots
+        value = await redis.get(key)
+        for i in range(NUM_REPLICAS):
+            await redis.set(f"{key}:replica:{i}", value)
+
+# For EXTREME cases: programmatically push to CDN with long TTL
+# If URL exceeds 100K QPS → CDN handles 10M+ QPS trivially</pre></div>
+
+    <!-- CDN L7 -->
+    <div class="bn-label green" id="sh-cdn">
+      <span class="bn-icon">🟢</span>
+      <div><div class="bn-title">Third to Break: CDN / Origin Balance (around 50x)</div><div class="bn-subtitle">Drive CDN hit rate to 99%+ — each percentage point = 100K QPS saved</div></div>
+    </div>
+
+    <table class="cdn-table">
+      <thead><tr><th>Strategy</th><th>Impact</th><th>Implementation</th></tr></thead>
+      <tbody>
+        <tr><td>Increase TTL (24h → 7 days)</td><td class="impact">+3% hit rate</td><td><code>Cache-Control: max-age=604800</code></td></tr>
+        <tr><td>stale-while-revalidate</td><td class="impact">+2% hit rate</td><td><code>Cache-Control: stale-while-revalidate=86400</code></td></tr>
+        <tr><td>Edge format validation</td><td class="impact">+2% hit rate</td><td>Reject invalid format at edge (never hit origin)</td></tr>
+        <tr><td>Prefetch on create</td><td class="impact">+1% hit rate</td><td>When URL created, warm CDN cache proactively</td></tr>
+        <tr><td>Negative caching</td><td class="impact">+1% hit rate</td><td>Cache 404s for 5 minutes (prevent bot hammering)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-top:8px"><strong>Regional Origins at extreme scale:</strong> Deploy regional origins (US, EU, APAC). Each handles ~33K QPS (100K / 3). Data sync via async replication with 100-200ms lag (acceptable for redirects).</p>
+
+    <!-- KAFKA L7 -->
+    <div class="bn-label blue" id="sh-kafka">
+      <span class="bn-icon">🔵</span>
+      <div><div class="bn-title">Fourth to Break: Analytics Pipeline (around 70x)</div><div class="bn-subtitle">Sampling + federation — at 100x, do we need 100% of click data?</div></div>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Go · Analytics Sampling at Redirect</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>func emitClickEvent(shortCode string, r *http.Request) {
+    if isPremiumURL(shortCode) || rand.Float32() < SAMPLE_RATE {
+        // Full fidelity for premium URLs and sampled free tier
+        kafka.Produce(clickEvent)
+    } else {
+        // Just increment counter in Redis (free tier)
+        redis.Incr("clicks:" + shortCode)
+    }
+}
+
+// SAMPLE_RATE = 0.10 (10%) for free tier
+// Statistical accuracy: ±0.3% at 99% confidence
+// Reduces Kafka load by 90% for free tier
+// Premium URLs (1% of total) still get full tracking</pre></div>
+
+    <!-- THUNDERING HERD -->
+    <div class="bn-label red" id="sh-thundering">
+      <span class="bn-icon">⚡</span>
+      <div><div class="bn-title">The Thundering Herd Scenario (Unprompted — L7 Signal)</div><div class="bn-subtitle">What happens when the primary DB recovers after a 10-minute outage?</div></div>
+    </div>
+    <div class="callout extra">
+      <div class="callout-title">Why Most Candidates Miss This</div>
+      <p>The outage was bad. But <strong>the recovery can be worse</strong>. When DB comes back, all buffered writes + all expired cache entries hit it simultaneously. This can knock the DB down again — a cascading failure.</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Python · Circuit Breaker Implementation</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>class CircuitBreaker:
+    def __init__(self):
+        self.state = "CLOSED"
+        self.failure_count = 0
+        self.last_failure = None
+
+    async def call(self, func):
+        if self.state == "OPEN":
+            if time.now() - self.last_failure > BACKOFF:
+                self.state = "HALF_OPEN"
+            else:
+                raise CircuitOpen()
+        try:
+            result = await func()
+            self.reset()
+            return result
+        except Exception:
+            self.record_failure()
+            raise
+
+    def record_failure(self):
+        self.failure_count += 1
+        self.last_failure = time.now()
+        if self.failure_count > THRESHOLD:
+            self.state = "OPEN"
+
+# Usage: wrap all DB calls
+result = await circuit_breaker.call(lambda: db.query(sql))</pre></div>
+    <div class="callout info">
+      <div class="callout-title">Post-Outage Recovery Playbook</div>
+      <ul>
+        <li><strong>Gradual traffic admission:</strong> Don't accept 100% traffic immediately. Start at 10%, ramp up over 5 minutes</li>
+        <li><strong>Request coalescing:</strong> Multiple requests for same short_code during recovery get collapsed into one DB query</li>
+        <li><strong>Cache warming:</strong> Proactively warm cache from DB backup or read replica before promoting primary</li>
+      </ul>
+    </div>
+
+    <!-- COST OPTIMIZATION L7 -->
+    <h4>Cost Optimization at 100x — Sub-Linear Scaling</h4>
+    <table class="cost-table">
+      <thead><tr><th>Strategy</th><th>Monthly Savings</th></tr></thead>
+      <tbody>
+        <tr><td>CDN committed use discount</td><td class="c3">$30,000</td></tr>
+        <tr><td>Reserved instances (1-year)</td><td class="c3">$25,000</td></tr>
+        <tr><td>Spot instances for analytics workers</td><td class="c3">$10,000</td></tr>
+        <tr><td>Tiered storage (cold data → S3)</td><td class="c3">$5,000</td></tr>
+        <tr><td>Right-sizing (over-provisioned Redis)</td><td class="c3">$5,000</td></tr>
+        <tr><td>Sampling analytics (90% reduction)</td><td class="c3">$10,000</td></tr>
+        <tr class="cost-total"><td><strong>Total monthly savings</strong></td><td class="c3" style="font-size:.9rem">~$85,000</td></tr>
+      </tbody>
+    </table>
+    <div class="callout extra">
+      <div class="callout-title">The Headline Number</div>
+      <p><mark class="g">100x traffic at ~35x cost</mark> with optimizations. This is what L7 thinking looks like — not "add more hardware," but "design the system so 100x traffic costs 35x, not 100x."</p>
+    </div>
+
+    <!-- MIGRATION ROADMAP L7 -->
+    <div id="sh-roadmap">
+      <h4>Complete Migration Roadmap</h4>
+      <table class="rm-table">
+        <thead><tr><th>Phase</th><th>Scale</th><th>Duration</th><th>Key Changes</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>1x (now)</td><td>Now</td><td>Establish baseline metrics, instrument everything</td></tr>
+          <tr><td>1</td><td>3x</td><td>Month 1</td><td>Add read replicas, increase cache, improve CDN TTLs</td></tr>
+          <tr><td>2</td><td>10x</td><td>Month 3</td><td>Database sharding (16 shards), Redis Cluster, regional origins</td></tr>
+          <tr><td>3</td><td>30x</td><td>Month 6</td><td>CDN hit rate to 99%, hot key detection, adaptive TTL</td></tr>
+          <tr><td>4</td><td>100x</td><td>Month 12</td><td>Analytics sampling, Kafka federation, cost optimization</td></tr>
+        </tbody>
+      </table>
+      <div class="callout extra">
+        <div class="callout-title">Key Principle</div>
+        <p>"We don't build for 100x on day 1. We have a phased roadmap that matches anticipated growth. Each phase is a reversible change." Each step can be rolled back — no big-bang migrations.</p>
+      </div>
+    </div>
+
+    <!-- AOMB L7 -->
+    <div class="aomb" id="aomb">
+      <div class="aomb-title">AOMB Completeness Checklist — L7 (All Verified)</div>
+      <ul>
+        <li>Power law distribution analysis as opening insight (not uniform traffic)</li>
+        <li>Hot partition problem deeply analyzed for viral URL scenario</li>
+        <li>Database sharding with application-level consistent hashing</li>
+        <li>Zero-downtime migration path with 7 explicit steps + rollback at each</li>
+        <li>Custom alias challenge with Redis-based NX claim solution</li>
+        <li>Three-tier caching with adaptive TTL (self-tuning)</li>
+        <li>Hot key detection and replication system</li>
+        <li>CDN hit rate optimization table with per-strategy impact</li>
+        <li>Analytics sampling code for cost efficiency</li>
+        <li>Thundering herd scenario (unprompted) with circuit breaker code</li>
+        <li>Post-outage recovery playbook</li>
+        <li>Cost optimization breakdown ($85K/month savings = 35x not 100x)</li>
+        <li>Phased migration roadmap with timeline per phase</li>
+      </ul>
+    </div>
+
+    <div class="iq">
+      <span class="iq-lbl">Interviewer's Notes</span>
+      "Exceptional scaling analysis. Power law insight showed real-world experience — most candidates assume uniform distribution. Hot key detection, adaptive TTL, and thundering herd mitigation are all production-grade patterns. Migration roadmap with timeline shows they've done this before. Strong hire."
+    </div>
+
+    <h4 id="wow">The "Wow" Moments</h4>
+    <div class="wow">"Traffic is not uniformly distributed" as the opening insight — changes the entire analysis</div>
+    <div class="wow">Adaptive TTL based on access frequency — self-tuning cache that needs no manual configuration</div>
+    <div class="wow">"100x traffic at ~35x cost" — quantified the efficiency of smart scaling</div>
+    <div class="wow">Thundering herd scenario without being asked — showed they've operated systems through outages</div>
+    <div class="wow">Zero-downtime migration path with explicit rollback at every step — showed they've shipped migrations to prod</div>
+    <div class="wow">Analytics sampling code — solved the Kafka throughput problem with 1% of the cost</div>
+
+    <div class="callout extra">
+      <div class="callout-title">What Separates This From L6</div>
+      <p>L6 identifies bottlenecks and proposes solutions. L7 thinks about <strong>migration paths</strong> (how do we get there without downtime?), <strong>failure recovery</strong> (thundering herd), and <strong>cost efficiency</strong> (sub-linear scaling). L7 also recognizes that real traffic follows power laws, which fundamentally changes the scaling strategy — and the cache sizing math.</p>
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESSION -->
+<div class="sec-hdr" id="progression"><h3>Progression Summary — Phase 5</h3></div>
+<table class="prog">
+  <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+  <tbody>
+    <tr><td>No Hire → Lean Hire</td><td>Identifies multiple bottlenecks, suggests sharding, does basic math</td></tr>
+    <tr><td>Lean Hire → Hire (L6)</td><td>Orders bottlenecks by breaking point, quantifies CDN impact (biggest lever), provides phased roadmap, includes cost analysis showing sub-linear scaling</td></tr>
+    <tr><td>Hire → Strong Hire (L7)</td><td>Power law distribution insight, hot key detection, adaptive TTL, zero-downtime migration path, thundering herd recovery, circuit breaker code, sub-linear cost scaling with specific $$ breakdown</td></tr>
+  </tbody>
+</table>
+<div class="callout info" style="margin-top:16px">
+  <div class="callout-title">The One Thing to Practice</div>
+  <p>Before answering "what breaks at scale," ask yourself: <strong>"Is traffic uniformly distributed?"</strong> For most systems, the answer is NO (power law). This single insight means caching is incredibly effective, hot partitions are the real problem, and your cache doesn't need to grow linearly with your URL count.</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Phase 5</div>
+  <p><strong>L5 engineers</strong> scale by multiplying resources. <strong>L6 engineers</strong> identify bottlenecks and solve them efficiently. <strong>L7 engineers</strong> recognize that traffic follows power laws, design adaptive systems that self-tune, plan zero-downtime migrations, and achieve sub-linear cost scaling. <strong>100x traffic should never cost 100x.</strong></p>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleTier(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const el = btn.closest('.code, .diag');
+  const pre = el.querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
