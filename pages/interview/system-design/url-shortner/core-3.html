@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive: Shortcode Generation (Part 3/3) — Walkthroughs, Trade-offs & Edge Cases</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--hire),var(--accent),var(--deep),var(--strong));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--hire);background:rgba(0,191,165,.1);border:1px solid rgba(0,191,165,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(0,191,165,.05)}
+.ni.active a{color:var(--hire);border-left-color:var(--hire);background:rgba(0,191,165,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+
+/* BACK TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--hire);border-color:var(--hire);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--hire);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--hire) 40%,var(--accent) 70%,var(--deep));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(0,191,165,.1);border-color:var(--hire);color:var(--hire)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:52px 0 22px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* WALKTHROUGH CARDS */
+.wt-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:22px;overflow:hidden;transition:transform .18s,box-shadow .18s}
+.wt-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.wt-card.w1{border-left:4px solid var(--hire)}
+.wt-card.w2{border-left:4px solid var(--accent)}
+.wt-card.w3{border-left:4px solid var(--strong)}
+.wt-card.w4{border-left:4px solid var(--rose)}
+.wt-card.w1 .wt-hdr{background:rgba(0,191,165,.05)}
+.wt-card.w2 .wt-hdr{background:rgba(88,166,255,.05)}
+.wt-card.w3 .wt-hdr{background:rgba(245,166,35,.05)}
+.wt-card.w4 .wt-hdr{background:rgba(251,113,133,.05)}
+.wt-hdr{padding:14px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.wt-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.wt-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.wt-card.w1 .wt-label{color:var(--hire)}.wt-card.w2 .wt-label{color:var(--accent)}
+.wt-card.w3 .wt-label{color:var(--strong)}.wt-card.w4 .wt-label{color:var(--rose)}
+.wt-name{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.wt-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.wt-card.w1 .wt-badge{background:rgba(0,191,165,.12);color:var(--hire);border:1px solid rgba(0,191,165,.28)}
+.wt-card.w2 .wt-badge{background:rgba(88,166,255,.12);color:var(--accent);border:1px solid rgba(88,166,255,.28)}
+.wt-card.w3 .wt-badge{background:rgba(245,166,35,.12);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.wt-card.w4 .wt-badge{background:rgba(251,113,133,.12);color:var(--rose);border:1px solid rgba(251,113,133,.28)}
+.wt-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.wt-card.collapsed .wt-toggle{transform:rotate(-90deg)}
+.wt-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.wt-card.collapsed .wt-body{max-height:0;opacity:0;padding-bottom:0}
+.wt-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.wt-body ul{padding-left:18px;margin:8px 0 13px}
+.wt-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.wt-body strong{color:var(--text);font-weight:600}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM BLOCK */
+.diag{background:#010409;border:1px solid rgba(88,166,255,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(88,166,255,.06);border-bottom:1px solid rgba(88,166,255,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#79c0ff;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--accent)}.callout.good .callout-title{color:var(--hire)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--deep)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* COMPARISON TABLE (key differences) */
+.key-diff-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.key-diff-table thead tr{background:linear-gradient(90deg,rgba(0,191,165,.1),rgba(88,166,255,.06))}
+.key-diff-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--hire);border-bottom:1px solid rgba(0,191,165,.2)}
+.key-diff-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.81rem}
+.key-diff-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.key-diff-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.key-diff-table td:first-child{font-weight:600;color:var(--text);white-space:nowrap}
+.key-diff-table td.good{color:var(--hire);font-family:var(--fc);font-size:.77rem}
+.key-diff-table td.bad{color:var(--no);font-family:var(--fc);font-size:.77rem}
+.key-diff-table td.neutral{color:var(--muted);font-family:var(--fc);font-size:.77rem}
+
+/* TRADE-OFF MATRIX */
+.to-matrix{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.to-matrix thead tr{background:linear-gradient(90deg,rgba(167,139,250,.14),rgba(88,166,255,.08))}
+.to-matrix th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--deep);border-bottom:1px solid rgba(167,139,250,.2)}
+.to-matrix td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.8rem}
+.to-matrix tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.to-matrix tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.to-matrix td:first-child{font-weight:700;color:var(--deep);font-family:var(--fc);font-size:.78rem;white-space:nowrap}
+
+/* DIST SYSTEMS TABLE */
+.dist-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.dist-table thead tr{background:linear-gradient(90deg,rgba(88,166,255,.1),rgba(167,139,250,.06))}
+.dist-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);border-bottom:1px solid rgba(88,166,255,.2)}
+.dist-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.dist-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dist-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dist-table td:first-child{font-weight:600;color:var(--text)}
+
+/* FAILURE DEEP DIVE TABLE */
+.fail-deep{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.fail-deep thead tr{background:linear-gradient(90deg,rgba(255,107,107,.12),rgba(249,115,22,.06))}
+.fail-deep th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.2)}
+.fail-deep td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.fail-deep tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.fail-deep tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.fail-deep td:first-child{font-weight:600;color:var(--text);font-family:var(--fc);font-size:.76rem}
+
+/* EDGE CASE CARDS */
+.edge-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--deep);border-radius:0 8px 8px 0;padding:16px 18px;margin-bottom:16px}
+.edge-hdr{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none;margin-bottom:0}
+.edge-title{font-family:var(--fh);font-size:.95rem;font-weight:600;color:var(--deep)}
+.edge-badge{font-family:var(--fc);font-size:.62rem;font-weight:600;padding:2px 8px;border-radius:12px;background:rgba(167,139,250,.12);color:var(--deep);border:1px solid rgba(167,139,250,.25)}
+.edge-toggle{font-size:.76rem;color:var(--dim);transition:transform .3s}
+.edge-card.collapsed .edge-toggle{transform:rotate(-90deg)}
+.edge-body{overflow:hidden;transition:max-height .4s,opacity .3s;max-height:9999px;opacity:1;margin-top:12px}
+.edge-card.collapsed .edge-body{max-height:0;opacity:0;margin-top:0}
+.edge-body p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.edge-body ul{padding-left:16px;margin:6px 0}
+.edge-body li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.edge-body strong{color:var(--text)}
+
+/* BOUNDARY TABLE */
+.bound-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.bound-table thead tr{background:linear-gradient(90deg,rgba(245,166,35,.1),rgba(167,139,250,.06))}
+.bound-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--strong);border-bottom:1px solid rgba(245,166,35,.2)}
+.bound-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.bound-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.bound-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.bound-table td:first-child{font-family:var(--fc);font-size:.77rem;color:var(--text);font-weight:600}
+.bound-table td.fix{color:var(--hire);font-size:.77rem}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(167,139,250,.1),rgba(0,191,165,.06));border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--deep);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--hire);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* MIGRATION PHASE */
+.phase-block{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px}
+.phase-header{font-family:var(--fc);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:8px;font-weight:600}
+.phase-block p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:6px}
+.phase-block ul{padding-left:16px;margin:4px 0}
+.phase-block li{font-size:.86rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.phase-block strong{color:var(--text)}
+
+/* PART HEADER BANNER */
+.part-banner{background:linear-gradient(135deg,rgba(0,191,165,.08),rgba(88,166,255,.05));border:1px solid rgba(0,191,165,.2);border-radius:12px;padding:22px 26px;margin:0 0 40px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--hire);margin-bottom:8px}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* DT BLOCK (decision tree diagram) */
+.dt-block{background:#010409;border:1px solid rgba(167,139,250,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.dt-hdr{background:rgba(167,139,250,.06);border-bottom:1px solid rgba(167,139,250,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.dt-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--deep);font-weight:600}
+.dt-block pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Shortcode Generation</div>
+    <div class="sb-part">Part 3 of 3 — Walkthroughs, Trade-offs &amp; Edge Cases</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.3 Detailed Walkthroughs</div>
+      <li class="ni sub"><a href="#wt-scenario">Scenario Setup</a></li>
+      <li class="ni sub"><a href="#wt1">Auto-Increment Walkthrough</a></li>
+      <li class="ni sub"><a href="#wt2">Pre-Allocated Ranges Walkthrough</a></li>
+      <li class="ni sub"><a href="#wt3">Snowflake Walkthrough</a></li>
+      <li class="ni sub"><a href="#wt4">Hash-Based Walkthrough</a></li>
+      <li class="ni sub"><a href="#wt-compare">Key Differences Table</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.4 Visual Mental Models</div>
+      <li class="ni sub"><a href="#vm-autoinc">Auto-Increment Diagram</a></li>
+      <li class="ni sub"><a href="#vm-ranges">Pre-Allocated Ranges Diagram</a></li>
+      <li class="ni sub"><a href="#vm-snowflake">Snowflake Diagram</a></li>
+      <li class="ni sub"><a href="#vm-hash">Hash-Based Diagram</a></li>
+      <li class="ni sub"><a href="#vm-pool">Pre-Generated Pool Diagram</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.5 Decision Framework</div>
+      <li class="ni sub"><a href="#decision-tree">Decision Tree</a></li>
+      <li class="ni sub"><a href="#questions">Questions to Ask</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.6 Migration &amp; Hybrids</div>
+      <li class="ni sub"><a href="#hybrids">Hybrid Approaches</a></li>
+      <li class="ni sub"><a href="#migration">Auto-Inc → Snowflake Migration</a></li>
+      <li class="ni sub"><a href="#real-world">What Real Systems Do</a></li>
+    </li>
+    <li class="ng"><div class="nl">§3 Trade-offs &amp; Nuances</div>
+      <li class="ni sub"><a href="#tradeoffs-matrix">Trade-offs Matrix</a></li>
+      <li class="ni sub"><a href="#dist-twist">Distributed Systems Twist</a></li>
+      <li class="ni sub"><a href="#failure-deep">Failure Modes Deep-Dive</a></li>
+      <li class="ni sub"><a href="#fail-open-closed">Fail-Open vs Fail-Closed</a></li>
+    </li>
+    <li class="ng"><div class="nl">§3.4 Edge Cases</div>
+      <li class="ni sub"><a href="#edge1">Snowflake Sequence Exhaustion</a></li>
+      <li class="ni sub"><a href="#edge2">Hash Determinism Attack</a></li>
+      <li class="ni sub"><a href="#edge3">Range Service Thundering Herd</a></li>
+      <li class="ni sub"><a href="#boundary">Boundary Conditions</a></li>
+    </li>
+    <li class="ng"><div class="nl">Synthesis</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">URL Shortener · Deep Dive Series · Part 3 of 3</div>
+  <h1>Walkthroughs,<br>Trade-offs &amp;<br>Edge Cases</h1>
+  <div class="hero-meta">
+    <span>🎬 4 Crash Scenarios Walked Through</span>
+    <span>🗺 5 Visual Mental Models</span>
+    <span>⚖️ Trade-offs Matrix</span>
+    <span>🌐 Distributed Systems Twist</span>
+    <span>🔮 Edge Cases That Impress</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + Variants 1–3</span>
+    <span class="part-pill">Part 2: Variants 4–6 + Decision Framework</span>
+    <span class="part-pill active-part">Part 3: Walkthroughs, Trade-offs &amp; Edge Cases</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The mastery layer. Concrete step-by-step walkthroughs of the same crash scenario across all 4 approaches, visual mental models for every variant, the complete decision tree, hybrid approaches, zero-downtime migration path, and the edge cases (sequence exhaustion, determinism attacks, thundering herd) that separate L7 from L6.</p>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<!-- §2.3 DETAILED WALKTHROUGHS          -->
+<!-- ════════════════════════════════════ -->
+<div class="part-banner">
+  <div class="part-banner-label">Section 2.3</div>
+  <h2>Detailed Example Walkthroughs</h2>
+  <p>The same scenario across all 4 approaches: 5 servers, 1000 requests/sec total (200/server), one server crashes at t=10s. Watch how each strategy handles it differently.</p>
+</div>
+
+<div class="callout info" id="wt-scenario">
+  <div class="callout-title">Scenario Setup</div>
+  <ul>
+    <li>5 servers, 1000 requests/sec total (200/server average)</li>
+    <li>Server 3 crashes at t=10s (was handling ~200 req/sec)</li>
+    <li>Load balancer detects failure at t=11s and redistributes</li>
+    <li>Server 3 restarts at t=15s</li>
+  </ul>
+</div>
+
+<!-- WALKTHROUGH 1: AUTO-INCREMENT -->
+<div class="wt-card w1" id="wt1">
+  <div class="wt-hdr" onclick="toggleWt(this)">
+    <div class="wt-title-row">
+      <div><div class="wt-label">Walkthrough 1</div><div class="wt-name">DB Auto-Increment</div></div>
+      <span class="wt-badge">Single Bottleneck, Simple Recovery</span>
+    </div>
+    <span class="wt-toggle">▾</span>
+  </div>
+  <div class="wt-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Timeline</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=0s:  All 5 servers connect to single database
+       Database handles 1,000 inserts/sec
+       IDs generated: 1, 2, 3, ... 1,000
+
+t=5s:  State is healthy
+       IDs: 1-5,000 assigned
+       All servers functioning
+
+t=10s: Server 3 crashes (was handling ~200 req/sec)
+       Database: STILL HEALTHY, continues incrementing
+       Other 4 servers: Still connected, working
+       Impact: 200 req/sec fail until LB redirects
+
+t=11s: Load balancer detects Server 3 down
+       Traffic redistributed to 4 servers (250 req/sec each)
+       Database: Still single point, now 800 req/sec
+       No ID gaps or issues
+
+t=15s: New steady state
+       4 servers handling 1,000 req/sec via database
+       IDs: Continuous sequence, no gaps
+       Full availability restored</pre></div>
+    <div class="callout good">
+      <div class="callout-title">Key Observation</div>
+      <p>The database is the single point — it never noticed Server 3 died. <strong>No ID gaps, no wasted namespace, clean recovery.</strong> The bottleneck is the DB's insert throughput, which increases slightly from 1K to 800/sec after recovery.</p>
+    </div>
+  </div>
+</div>
+
+<!-- WALKTHROUGH 2: PRE-ALLOCATED RANGES -->
+<div class="wt-card w2" id="wt2">
+  <div class="wt-hdr" onclick="toggleWt(this)">
+    <div class="wt-title-row">
+      <div><div class="wt-label">Walkthrough 2</div><div class="wt-name">Pre-Allocated Ranges</div></div>
+      <span class="wt-badge">~1M IDs Orphaned on Crash</span>
+    </div>
+    <span class="wt-toggle">▾</span>
+  </div>
+  <div class="wt-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Timeline</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=0s:  Each server has range of 1M IDs
+       Server 1: [0, 1M),   current=0
+       Server 2: [1M, 2M),  current=1M
+       Server 3: [2M, 3M),  current=2M
+       Server 4: [3M, 4M),  current=3M
+       Server 5: [4M, 5M),  current=4M
+
+t=5s:  Each server advanced ~1,000 in counter
+       Server 3: current=2,001,000
+
+t=10s: Server 3 crashes at current=2,002,000
+       Range [2M, 3M) still "allocated" to Server 3
+       IDs 2,002,000 to 2,999,999 are ORPHANED
+
+t=11s: Server 3 restarts
+       Requests NEW range from Range Service
+       Gets [5M, 6M), starts at 5,000,000
+       Old range [2M, 3M) PERMANENTLY LOST (~998,000 IDs wasted)
+
+t=15s: New steady state
+       Server 3 working with new range [5M, 6M)
+       ~998K IDs permanently unused (acceptable wastage)</pre></div>
+    <div class="callout warn">
+      <div class="callout-title">Key Observation</div>
+      <p><strong>~998,000 IDs permanently wasted.</strong> In a Kubernetes environment with frequent pod restarts, this wastage accumulates fast. At 100 pods each restarting once a day with 1M ranges, that's ~50M IDs/day wasted. Plan your namespace accordingly.</p>
+    </div>
+  </div>
+</div>
+
+<!-- WALKTHROUGH 3: SNOWFLAKE -->
+<div class="wt-card w3" id="wt3">
+  <div class="wt-hdr" onclick="toggleWt(this)">
+    <div class="wt-title-row">
+      <div><div class="wt-label">Walkthrough 3</div><div class="wt-name">Snowflake IDs</div></div>
+      <span class="wt-badge">No Coordination, Instant Resume</span>
+    </div>
+    <span class="wt-toggle">▾</span>
+  </div>
+  <div class="wt-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Timeline</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=0s:  Each server has unique machine ID (1-5)
+       All clocks synchronized
+
+t=5s:  Server 3 generating IDs:
+       1718294405000 | 3 | 0
+       1718294405000 | 3 | 1
+       ...
+
+t=10s: Server 3 crashes
+       In-flight requests fail
+       NO coordination needed for other servers
+       Servers 1,2,4,5 continue generating INDEPENDENTLY
+
+t=11s: Server 3 restarts
+       Still has machine_id=3 (persistent assignment)
+       Clock is synchronized (NTP running)
+       Immediately resumes:
+       1718294411000 | 3 | 0  ← new timestamp, fresh sequence
+       NO range service call needed!
+
+t=15s: New steady state
+       All 5 servers generating independently
+       No wasted IDs, no coordination required
+       Only "lost" time: the seconds Server 3 was down</pre></div>
+    <div class="callout good">
+      <div class="callout-title">Key Observation</div>
+      <p><mark class="gr">Zero wasted IDs, zero coordination needed at restart.</mark> The machine ID persists, the clock self-corrects, and generation resumes instantly. This is why Snowflake is the choice for extreme scale. The only "waste" is the gap in timestamps while Server 3 was down — but timestamps are ephemeral, not scarce.</p>
+    </div>
+  </div>
+</div>
+
+<!-- WALKTHROUGH 4: HASH-BASED -->
+<div class="wt-card w4" id="wt4">
+  <div class="wt-hdr" onclick="toggleWt(this)">
+    <div class="wt-title-row">
+      <div><div class="wt-label">Walkthrough 4</div><div class="wt-name">Hash-Based</div></div>
+      <span class="wt-badge">Idempotent Recovery — Failed URLs Retry Same Code</span>
+    </div>
+    <span class="wt-toggle">▾</span>
+  </div>
+  <div class="wt-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Timeline</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=0s:  All servers hash-and-check independently
+       Each request: hash(URL) → check DB → insert
+
+t=5s:  System has ~5,000 shortcodes
+       Collision rate: ~0% (namespace nearly empty)
+       Per request: hash → DB check → insert (3 operations)
+
+t=10s: Server 3 crashes
+       DB connections close
+       In-flight hash-and-inserts: ROLLED BACK
+       URLs being shortened: get error response
+
+t=11s: Server 3 restarts
+       Reconnects to DB
+       No special recovery needed
+
+t=15s: New steady state
+       Any URLs that failed during crash:
+       - If re-submitted: get SAME shortcode (idempotency!)
+         Because hash("https://example.com/path") always = "a1b2c3d"
+       - If not re-submitted: user must retry
+       
+       This is hash-based's SUPERPOWER:
+       Retried requests = no duplicates, no confusion</pre></div>
+    <div class="callout info">
+      <div class="callout-title">Key Observation — Idempotency Shines Here</div>
+      <p>A failed URL creation that gets retried produces <strong>the exact same shortcode</strong>. No duplicate entries, no user confusion. This is the feature no other approach can match. The counter: if the user never retries, that URL just doesn't get shortened — but that's the user's choice, not a system bug.</p>
+    </div>
+  </div>
+</div>
+
+<!-- KEY DIFFERENCES TABLE -->
+<div id="wt-compare" style="margin-top:32px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">Key Differences After Server 3 Crashes</h3>
+  <table class="key-diff-table">
+    <thead><tr><th>Aspect</th><th>Auto-Increment</th><th>Range-Based</th><th>Snowflake</th><th>Hash-Based</th></tr></thead>
+    <tbody>
+      <tr><td>Detection time</td><td class="neutral">Immediate</td><td class="neutral">Immediate</td><td class="neutral">Immediate</td><td class="neutral">Immediate</td></tr>
+      <tr><td>Recovery mechanism</td><td>Reconnect to DB</td><td>Get new range</td><td class="good">Just resume</td><td>Reconnect to DB</td></tr>
+      <tr><td>Data consistency</td><td class="good">Perfect</td><td class="good">Perfect</td><td class="good">Perfect</td><td class="good">Perfect</td></tr>
+      <tr><td>Wasted resources</td><td class="good">None</td><td class="bad">~1M IDs</td><td class="good">None</td><td class="good">None</td></tr>
+      <tr><td>Coordination needed</td><td class="bad">Every request</td><td>On restart</td><td class="good">Startup only</td><td class="bad">Every request</td></tr>
+      <tr><td>Recovery speed</td><td class="good">Instant</td><td>~10ms (range fetch)</td><td class="good">Instant</td><td class="good">Instant</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- §2.4 VISUAL MENTAL MODELS           -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="visual-models">
+  <h2>§2.4 Visual Mental Models</h2>
+</div>
+
+<div class="diag" id="vm-autoinc">
+  <div class="diag-hdr"><span class="diag-lbl">Auto-Increment · Single Bottleneck</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>           ┌─────────────────┐
+           │   Database      │
+           │   Counter: 123  │
+           └────────┬────────┘
+                    │
+        ┌───────────┼───────────┐
+        │           │           │
+        ▼           ▼           ▼
+    [Server 1]  [Server 2]  [Server 3]
+        │           │           │
+    Request     Request     Request
+        │           │           │
+        └───────────┼───────────┘
+                    │
+              All go to DB
+              (single bottleneck)</pre>
+</div>
+
+<div class="diag" id="vm-ranges">
+  <div class="diag-hdr"><span class="diag-lbl">Pre-Allocated Ranges · Amortized Coordination</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>           ┌─────────────────┐
+           │  Range Service  │
+           │  Next: 4M       │
+           └────────┬────────┘
+                    │ (only on startup/exhaustion)
+        ┌───────────┴───────────┐
+        │                       │
+        ▼                       ▼
+    [Server 1]              [Server 2]
+    Range: 0-1M             Range: 1M-2M
+    Current: 50,000         Current: 1,050,000
+        │                       │
+        ▼                       ▼
+    Requests served         Requests served
+    LOCALLY (fast!)         LOCALLY (fast!)
+
+No DB call for 99.9% of requests ✓</pre>
+</div>
+
+<div class="diag" id="vm-snowflake">
+  <div class="diag-hdr"><span class="diag-lbl">Snowflake · Zero Coordination During Operation</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>┌─────────────────────────────────────────────────┐
+│        No coordination during operation!         │
+└─────────────────────────────────────────────────┘
+
+    [Server 1]           [Server 2]           [Server 3]
+    Machine ID: 1        Machine ID: 2        Machine ID: 3
+    Clock: 12:34:56.789  Clock: 12:34:56.789  Clock: 12:34:56.789
+        │                    │                    │
+        ▼                    ▼                    ▼
+    ts|1|seq             ts|2|seq             ts|3|seq
+    (unique!)            (unique!)            (unique!)
+
+    IDs EMBED uniqueness structure → Collision impossible</pre>
+</div>
+
+<div class="diag" id="vm-hash">
+  <div class="diag-hdr"><span class="diag-lbl">Hash-Based · Coordination on Collision Check</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>    [Server 1]         [Server 2]
+        │                  │
+    hash(URL)          hash(URL)
+        │                  │
+        ▼                  ▼
+    "a1b2c3d"          "x7y8z9a"
+        │                  │
+        └───────┬──────────┘
+                │
+                ▼
+        ┌──────────────┐
+        │   Database   │
+        │  Check if    │
+        │  exists      │
+        └──────────────┘
+                │
+    Collision? → Retry with different hash
+    No collision? → Insert and return</pre>
+</div>
+
+<div class="diag" id="vm-pool">
+  <div class="diag-hdr"><span class="diag-lbl">Pre-Generated Pool · Separation of Concerns</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>    ┌────────────────────────────────────┐
+    │         AVAILABLE POOL             │
+    │  [a1B2] [x7Y8] [m4N5] [...]       │
+    │  ← Pop from here (SKIP LOCKED)     │
+    └──────────────────────┬─────────────┘
+                           │
+    ┌──────────────────────┴──────────────┐
+    │          USED CODES                 │
+    │  [c3D4] [z9A0] [...]               │
+    │  ← Move here after allocation       │
+    └──────────────────────┬──────────────┘
+                           │
+                    Background Job
+                    (cold path, low priority)
+                           │
+                    Generate 1M codes
+                    Check collisions
+                    Add to available pool
+
+    User allocation: O(1), no retries, no collision logic ✓</pre>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- §2.5 DECISION FRAMEWORK             -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="decision-section">
+  <h2>§2.5 Decision Framework with Reasoning</h2>
+</div>
+
+<div class="dt-block" id="decision-tree">
+  <div class="dt-hdr"><span class="dt-lbl">Decision Tree · Full Annotated</span><button class="copy-btn" onclick="copyDt(this)">Copy</button></div>
+  <pre>Q1: Do you need idempotency (same URL → same shortcode)?
+├── YES → Consider Hash-Based
+│   └── Q2: Will you exceed 10M unique URLs?
+│       ├── YES → Hash-Based won't scale; use Snowflake + dedup layer
+│       └── NO  → Hash-Based is perfect for you
+│
+└── NO → Continue to Q3
+
+Q3: What's your write throughput requirement?
+├── < 10K writes/sec → DB Auto-Increment (simplest)
+│   └── Q4: Do you need unpredictable codes?
+│       ├── YES → Counter + Random Suffix
+│       └── NO  → Pure Auto-Increment
+│
+├── 10K - 1M writes/sec → Pre-Allocated Ranges or Snowflake
+│   └── Q5: Is time-ordering valuable?
+│       ├── YES → Snowflake (IDs sort chronologically)
+│       └── NO  → Pre-Allocated Ranges (simpler)
+│
+└── > 1M writes/sec → Snowflake
+    └── Q6: Do you have clock synchronization infrastructure?
+        ├── YES → Snowflake is your answer
+        └── NO  → Build clock sync first, then Snowflake</pre>
+</div>
+
+<h3 id="questions" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:28px 0 14px">The Questions to Ask (or Your Interviewer)</h3>
+<div class="callout extra">
+  <div class="callout-title">6 Questions That Reveal Which Strategy Is Right</div>
+  <ul>
+    <li><strong>"What's our expected write throughput at scale?"</strong> — determines if distributed generation is needed</li>
+    <li><strong>"Do we need the same URL to always get the same shortcode?"</strong> — determines if hash-based is in play</li>
+    <li><strong>"Are predictable/sequential codes a security concern?"</strong> — determines if obfuscation is needed</li>
+    <li><strong>"Do we need time-sorted IDs for database performance?"</strong> — Snowflake gives this for free</li>
+    <li><strong>"What's our availability target during region failures?"</strong> — determines coordination tolerance</li>
+    <li><strong>"How long can shortcodes be?"</strong> — 6 chars vs 11 chars changes your options</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- §2.6 MIGRATION AND HYBRIDS          -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="migration-section">
+  <h2>§2.6 Migration and Hybrid Approaches</h2>
+</div>
+
+<h3 id="hybrids" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:0 0 16px">Can Variants Be Combined? (Yes — Sophisticated Systems Do This)</h3>
+
+<div class="callout info">
+  <div class="callout-title">3 Effective Hybrid Patterns</div>
+  <ul>
+    <li><strong>Snowflake + Hash for lookup:</strong> Generate with Snowflake (unique, time-sorted), store hash of URL for deduplication check. Best of both: unique IDs + idempotent lookups.</li>
+    <li><strong>Range-Based + Random Suffix:</strong> Get range from service (uniqueness guarantee), add random bits (unpredictability). Simple coordination + security.</li>
+    <li><strong>Pool + Snowflake overflow:</strong> Primary = Pre-generated pool (predictable latency). Fallback = Snowflake when pool depletes. Resilience + consistent latency.</li>
+  </ul>
+</div>
+
+<h3 id="migration" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:28px 0 14px">Migration Path: Auto-Increment → Snowflake (Zero Downtime)</h3>
+
+<div class="phase-block">
+  <div class="phase-header">Phase 1: Preparation (Week 1-2)</div>
+  <ul>
+    <li>Deploy Snowflake ID generation service</li>
+    <li>Set Snowflake epoch and machine ID allocation</li>
+    <li>Ensure Snowflake IDs don't collide with existing IDs (e.g., existing IDs &lt;1B, Snowflake starts &gt;10B)</li>
+  </ul>
+</div>
+<div class="phase-block">
+  <div class="phase-header">Phase 2: Dual-Write (Week 3-4)</div>
+  <ul>
+    <li>New URLs get Snowflake IDs</li>
+    <li>Store <code>generation_method</code> column: 'auto_inc' or 'snowflake'</li>
+    <li>Old URLs still work with old IDs</li>
+    <li>Monitor Snowflake system stability</li>
+  </ul>
+</div>
+<div class="phase-block">
+  <div class="phase-header">Phase 3: Cutover (Week 5)</div>
+  <ul>
+    <li>All new writes use Snowflake</li>
+    <li>Auto-increment system in maintenance mode</li>
+    <li>Old IDs remain valid indefinitely</li>
+  </ul>
+</div>
+<div class="phase-block">
+  <div class="phase-header">Phase 4: Cleanup (Month 2+)</div>
+  <ul>
+    <li>Remove dual-write logic</li>
+    <li>Simplify codebase</li>
+    <li>Old ID format becomes "legacy" but still works</li>
+  </ul>
+</div>
+
+<h3 id="real-world" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:28px 0 14px">What Sophisticated Systems Actually Do</h3>
+<div class="callout good">
+  <div class="callout-title">Real-World Examples</div>
+  <ul>
+    <li><strong>Twitter (Original Snowflake Paper):</strong> Snowflake for tweet IDs. Custom machine ID allocation via Zookeeper. GPS + NTP time synchronization.</li>
+    <li><strong>Instagram:</strong> Similar to Snowflake but with PostgreSQL sharding. Uses PostgreSQL schema for machine ID ranges. Each shard generates within its ID space.</li>
+    <li><strong>Distributed URL Shorteners:</strong> Often range-based for simplicity. Pool of pre-generated codes per region. Fallback to real-time generation.</li>
+  </ul>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — Comparing Variants</div>
+  <p>"Auto-increment is your starting point — don't over-engineer. When you hit 10K writes/sec, move to range-based or Snowflake. Range-based is simpler but wastes IDs; Snowflake is elegant but needs clock synchronization. Hash-based is the right answer only when you need idempotency. At Google scale, you're almost certainly running Snowflake-like with GPS/atomic clock time sources."</p>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- §3: TRADE-OFFS AND NUANCES          -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="tradeoffs-section">
+  <h2>§3 Trade-offs &amp; Nuances — The L6/L7 Differentiator</h2>
+</div>
+
+<div class="part-banner" style="border-color:rgba(167,139,250,.2);background:linear-gradient(135deg,rgba(167,139,250,.08),rgba(88,166,255,.04))">
+  <div class="part-banner-label" style="color:var(--deep)">Section 3.1</div>
+  <h2 style="color:var(--deep)">Fundamental Trade-offs Matrix</h2>
+  <p>What L6/L7 candidates know that L5 candidates don't: every design decision is a deliberate trade-off, not a default choice.</p>
+</div>
+
+<table class="to-matrix" id="tradeoffs-matrix">
+  <thead><tr><th>Trade-off</th><th>What It Optimizes</th><th>What It Sacrifices</th><th>Why Acceptable</th><th>When NOT Acceptable</th></tr></thead>
+  <tbody>
+    <tr><td>Coordination vs. Independence</td><td>Strong uniqueness guarantee</td><td>Latency and availability</td><td>When correctness &gt;&gt; speed</td><td>Real-time systems, global scale</td></tr>
+    <tr><td>Predictability vs. Security</td><td>Debuggability, sortability</td><td>Enumeration protection</td><td>Internal systems, analytics</td><td>Public-facing security-sensitive URLs</td></tr>
+    <tr><td>Code Length vs. Namespace</td><td>User experience, memorability</td><td>Future scalability</td><td>Small scale, short lifecycle</td><td>Billions of codes, long-term system</td></tr>
+    <tr><td>Idempotency vs. Simplicity</td><td>Duplicate handling</td><td>Implementation complexity</td><td>Same URL = same code requirement</td><td>When codes must be unique per request</td></tr>
+    <tr><td>Time-sortability vs. Randomness</td><td>DB performance, debugging</td><td>Timestamp privacy</td><td>Analytics, B-tree efficiency</td><td>Privacy-sensitive applications</td></tr>
+    <tr><td>Immediate Consistency vs. Availability</td><td>Zero duplicates</td><td>Availability during partitions</td><td>When duplicates are catastrophic</td><td>When availability matters more</td></tr>
+  </tbody>
+</table>
+
+<!-- DISTRIBUTED SYSTEMS TWIST -->
+<div class="sec-hdr" id="dist-twist"><h3>§3.2 The Distributed Systems Twist</h3></div>
+
+<h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:16px 0 10px">Auto-Increment: Single-node → Distributed</h4>
+<table class="dist-table">
+  <thead><tr><th>Aspect</th><th>Single Node</th><th>Distributed</th></tr></thead>
+  <tbody>
+    <tr><td>Behavior</td><td>Simple counter, atomic increment</td><td>Need consensus for counter</td></tr>
+    <tr><td>New failure modes</td><td>Node crash = downtime</td><td>Network partition = split brain</td></tr>
+    <tr><td>Consistency</td><td>Perfect</td><td>Requires leader election</td></tr>
+    <tr><td>Coordination cost</td><td>Zero</td><td>Paxos/Raft overhead</td></tr>
+  </tbody>
+</table>
+<div class="callout info">
+  <div class="callout-title">The Concrete Example</div>
+  <p>"On a single node, auto-increment guarantees no duplicates because there's one counter. Across 10 nodes, you face the <strong>split-brain problem</strong>: if the network partitions and two nodes both think they're the leader, both might issue the same ID. The common solution is Raft-based consensus, but this trades off availability for consistency — during leader election, no IDs can be generated."</p>
+</div>
+
+<h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 10px">Snowflake: Single-node → Distributed</h4>
+<table class="dist-table">
+  <thead><tr><th>Aspect</th><th>Single Node</th><th>Distributed</th></tr></thead>
+  <tbody>
+    <tr><td>Behavior</td><td>Timestamp + sequence</td><td>Timestamp + machine ID + sequence</td></tr>
+    <tr><td>New failure modes</td><td>Clock issues</td><td>Clock DRIFT between machines</td></tr>
+    <tr><td>Consistency</td><td>Perfect</td><td>Clocks must be synchronized</td></tr>
+    <tr><td>Coordination cost</td><td>Zero</td><td>Clock sync infrastructure</td></tr>
+  </tbody>
+</table>
+<div class="callout info">
+  <div class="callout-title">The Concrete Example</div>
+  <p>"On a single node, Snowflake works perfectly — local clock + sequence is unique. Across 10 nodes, you face <strong>clock skew</strong>: if Server A's clock is 100ms ahead of Server B, Server A might generate IDs that 'belong to the future' from B's perspective. At Google scale, this is solved with TrueTime (GPS + atomic clocks). At startup scale, you tolerate the small risk or add clock monitoring."</p>
+</div>
+
+<!-- FAILURE MODES DEEP DIVE -->
+<div class="sec-hdr" id="failure-deep"><h3>§3.3 Failure Modes Deep-Dive</h3></div>
+
+<table class="fail-deep">
+  <thead><tr><th>Failure</th><th>What Happens</th><th>Detection</th><th>Recovery Steps</th><th>Blast Radius</th><th>Prevention</th></tr></thead>
+  <tbody>
+    <tr><td>Counter DB crash</td><td>No new IDs generated</td><td>Connection timeouts</td><td>Promote replica, reconnect</td><td>100% of writes</td><td>HA database setup</td></tr>
+    <tr><td>Range service crash</td><td>Servers at boundary can't continue</td><td>Boot failures, range errors</td><td>Restart range service, clear stale leases</td><td>Servers at range boundary</td><td>Redundant range service</td></tr>
+    <tr><td>Clock drift (Snowflake)</td><td>Duplicate IDs possible, or service blocks</td><td>Clock skew monitoring alerts</td><td>NTP correction, wait for catch-up</td><td>Single server</td><td>GPS time, continuous monitoring</td></tr>
+    <tr><td>Hash collision storm</td><td>Exponential latency increase</td><td>p99 latency spike</td><td>Increase code length, migrate</td><td>All writes</td><td>Monitor namespace utilization</td></tr>
+    <tr><td>Pool exhaustion</td><td>No codes available</td><td>Pool depth metric at zero</td><td>Emergency pool generation</td><td>All writes</td><td>Auto-scaling pool generation</td></tr>
+  </tbody>
+</table>
+
+<!-- FAIL-OPEN VS FAIL-CLOSED -->
+<div id="fail-open-closed" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">Fail-Open vs. Fail-Closed Analysis</h3>
+
+  <div class="callout warn">
+    <div class="callout-title">Fail-Open: When Something Goes Wrong, Keep Operating (Weaken Guarantees)</div>
+    <p><strong>Example:</strong> If clock sync fails, generate IDs anyway (risk: possible duplicates)</p>
+  </div>
+  <div class="callout fail">
+    <div class="callout-title">Fail-Closed: When Something Goes Wrong, Stop (Preserve Guarantees)</div>
+    <p><strong>Example:</strong> If clock sync fails, refuse to generate IDs until clock is fixed</p>
+  </div>
+
+  <div class="callout extra">
+    <div class="callout-title">For Shortcode Generation: Fail-Closed Is Usually Correct</div>
+    <ul>
+      <li>Duplicates are catastrophic — one shortcode pointing to two different URLs = security incident, data corruption</li>
+      <li>Users can tolerate "try again later" better than broken links</li>
+      <li><strong>Switch to fail-open when:</strong> You have duplicate detection downstream, the cost of unavailability exceeds cost of rare duplicates, or you can detect and repair duplicates quickly</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- §3.4 EDGE CASES                     -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="edge-cases-section">
+  <h2>§3.4 Edge Cases That Impress Interviewers</h2>
+</div>
+
+<div class="callout deep">
+  <div class="callout-title">Why Edge Cases Matter</div>
+  <p>These are questions that separate candidates who've <strong>operated</strong> these systems from those who've only <strong>designed</strong> them. Mentioning them proactively is a Strong Hire signal.</p>
+</div>
+
+<!-- EDGE CASE 1 -->
+<div class="edge-card" id="edge1">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 1: Snowflake Sequence Exhaustion</span>
+      <span class="edge-badge">L7 Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> 4,096 IDs per millisecond per machine. What if you need more?</p>
+    <p><strong>What happens:</strong> Snowflake blocks until the next millisecond (wastes CPU time waiting). At 4M requests/second per machine, you'll hit this. That's rare for normal traffic, but entirely possible for batch processing.</p>
+    <p><strong>Sophisticated answer:</strong></p>
+    <ul>
+      <li>Monitor sequence exhaustion events (alert on any occurrence)</li>
+      <li>If frequent: move to microsecond resolution (need 10 fewer sequence bits but 10 more timestamp bits)</li>
+      <li>Or: Use multiple machine IDs per physical machine</li>
+      <li>Twitter's note: They've never hit this on real-user traffic at Twitter scale</li>
+    </ul>
+    <div class="callout extra">
+      <div class="callout-title">Why This Impresses</div>
+      <p>Most candidates just say "Snowflake gives 4,096 IDs/ms" and move on. Knowing the <em>failure mode</em> when that ceiling is hit — and having a mitigation — signals you've actually thought about operating this at extreme scale.</p>
+    </div>
+  </div>
+</div>
+
+<!-- EDGE CASE 2 -->
+<div class="edge-card" id="edge2">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 2: Hash-Based Determinism Attack</span>
+      <span class="edge-badge">Security Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> Attacker wants to find all URLs you've shortened.</p>
+    <p><strong>What happens:</strong> They generate millions of URLs, hash them, try each as a shortcode. Since your hash is deterministic, they can check "does https://competitor.com/secret-product exist?" by computing its hash and checking.</p>
+    <p><strong>Sophisticated answers:</strong></p>
+    <ul>
+      <li><strong>Add user-specific salt:</strong> <code>hash(URL + user_id)</code> — different users get different codes for same URL</li>
+      <li><strong>Add time-based salt:</strong> <code>hash(URL + creation_date)</code> — but now you lose idempotency!</li>
+      <li><strong>Or:</strong> Rate limit shortcode resolution endpoint to prevent enumeration</li>
+    </ul>
+    <div class="callout warn">
+      <div class="callout-title">The Trade-off</div>
+      <p>Adding salt defeats the determinism attack but destroys idempotency — the main reason to use hash-based in the first place. This is a real trade-off that must be explicitly acknowledged.</p>
+    </div>
+  </div>
+</div>
+
+<!-- EDGE CASE 3 -->
+<div class="edge-card" id="edge3">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 3: Range Service Thundering Herd</span>
+      <span class="edge-badge">Operational Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> All your servers restart simultaneously (deployment, region failure recovery).</p>
+    <p><strong>What happens:</strong> 100 servers all request ranges at the same instant → range service gets 100× normal traffic spike → range service itself becomes a bottleneck or fails.</p>
+    <p><strong>Sophisticated answers:</strong></p>
+    <ul>
+      <li><strong>Add startup jitter:</strong> <code>sleep(random(0, 5s))</code> before requesting a range — spreads the thundering herd across 5 seconds</li>
+      <li><strong>Use larger ranges:</strong> Servers don't exhaust simultaneously if ranges are large (pre-fetching helps too)</li>
+      <li><strong>Pre-provision ranges during deployment:</strong> Assign ranges before traffic cuts over, so servers start with full ranges already allocated</li>
+    </ul>
+    <div class="callout extra">
+      <div class="callout-title">Why This Impresses</div>
+      <p>Thundering herd on range service startup is a real operational problem in deployment. Mentioning jitter unprompted signals you've seen this in production or thought deeply about operational patterns.</p>
+    </div>
+  </div>
+</div>
+
+<!-- BOUNDARY CONDITIONS -->
+<div id="boundary" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">Boundary Conditions</h3>
+  <table class="bound-table">
+    <thead><tr><th>Condition</th><th>What Happens</th><th>Handle With</th></tr></thead>
+    <tbody>
+      <tr><td>N=0 (first ever ID)</td><td>base62(0) = "0" (one character)</td><td class="fix">Pad to minimum length</td></tr>
+      <tr><td>Namespace 99% full</td><td>Collision rate spikes dramatically</td><td class="fix">Alert at 1%, increase code length</td></tr>
+      <tr><td>Clock at epoch boundary</td><td>Snowflake timestamp wraps (69 years out)</td><td class="fix">Plan for this, document epoch expiry</td></tr>
+      <tr><td>Machine ID = max</td><td>Can't assign more machines (1024 with 10 bits)</td><td class="fix">Plan for growth, use larger machine ID space</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Complete Deep Dive Series — Final Lesson</div>
+  <p>The fundamental trade-off in shortcode generation: <strong>coordination overhead versus uniqueness guarantee strength.</strong> Pure coordination (single counter) = perfect uniqueness but terrible availability. Pure independence (hash without checking) = great availability but statistical uniqueness. Every real system picks a point on this spectrum.</p>
+  <p style="margin-top:10px"><strong>The art is knowing which point is right for your constraints</strong> — and being able to explain why you eliminated each alternative. That explanation, with specific numbers and failure modes, is what separates L6 from L7.</p>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Complete Final Soundbite</div>
+  <p>"The fundamental trade-off in shortcode generation is coordination overhead versus uniqueness guarantee strength. Pure coordination gives perfect uniqueness but terrible availability. Pure independence gives great availability but statistical uniqueness. Every real system picks a point on this spectrum — the art is knowing which point is right for your constraints."</p>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleWt(h) { h.parentElement.classList.toggle('collapsed'); }
+function toggleEdge(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const pre = btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+function copyDiag(btn) {
+  const pre = btn.closest('.diag').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+function copyDt(btn) {
+  const pre = btn.closest('.dt-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
