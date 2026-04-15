@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive: URL Shortcode Generation (Part 1/2) — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--surface3:#21262d;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--deep),var(--accent),var(--hire));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--deep);background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(167,139,250,.05)}
+.ni.active a{color:var(--deep);border-left-color:var(--deep);background:rgba(167,139,250,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+
+/* BACk TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--deep);border-color:var(--deep);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--deep);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--deep) 45%,var(--accent) 75%,var(--hire));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;text-decoration:none;border:1px solid var(--border);color:var(--muted);transition:all .2s}
+.part-pill.active-part{background:rgba(167,139,250,.1);border-color:var(--deep);color:var(--deep)}
+
+/* PART 1: CORE UNDERSTANDING */
+.part-banner{background:linear-gradient(135deg,rgba(167,139,250,.1),rgba(88,166,255,.05));border:1px solid rgba(167,139,250,.2);border-radius:12px;padding:24px 28px;margin:0 0 40px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--deep);margin-bottom:8px}
+.part-banner h2{font-family:var(--fh);font-size:1.6rem;font-weight:700;color:var(--text);margin-bottom:8px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* CONCEPT CARD */
+.concept-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px;transition:transform .18s,box-shadow .18s}
+.concept-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.concept-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none;background:rgba(167,139,250,.04);border-bottom:1px solid var(--border)}
+.concept-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.concept-icon{font-size:1.3rem}
+.concept-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.concept-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;background:rgba(167,139,250,.14);color:var(--deep);border:1px solid rgba(167,139,250,.28)}
+.concept-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.concept-card.collapsed .concept-toggle{transform:rotate(-90deg)}
+.concept-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.concept-card.collapsed .concept-body{max-height:0;opacity:0;padding-bottom:0}
+.concept-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:18px 0 9px}
+.concept-body h5{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.concept-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.concept-body ul,.concept-body ol{padding-left:18px;margin:8px 0 13px}
+.concept-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.concept-body strong{color:var(--text);font-weight:600}
+
+/* VARIANT CARDS */
+.variant-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px;transition:transform .18s,box-shadow .18s}
+.variant-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.variant-card.v1{border-left:4px solid var(--hire)}
+.variant-card.v2{border-left:4px solid var(--accent)}
+.variant-card.v3{border-left:4px solid var(--strong)}
+.variant-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.variant-card.v1 .variant-hdr{background:rgba(0,191,165,.05)}
+.variant-card.v2 .variant-hdr{background:rgba(88,166,255,.05)}
+.variant-card.v3 .variant-hdr{background:rgba(245,166,35,.05)}
+.variant-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.variant-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.variant-card.v1 .variant-num{color:var(--hire)}
+.variant-card.v2 .variant-num{color:var(--accent)}
+.variant-card.v3 .variant-num{color:var(--strong)}
+.variant-name{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.variant-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.variant-card.v1 .variant-badge{background:rgba(0,191,165,.12);color:var(--hire);border:1px solid rgba(0,191,165,.28)}
+.variant-card.v2 .variant-badge{background:rgba(88,166,255,.12);color:var(--accent);border:1px solid rgba(88,166,255,.28)}
+.variant-card.v3 .variant-badge{background:rgba(245,166,35,.12);color:var(--strong);border:1px solid rgba(245,166,35,.28)}
+.variant-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.variant-card.collapsed .variant-toggle{transform:rotate(-90deg)}
+.variant-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.variant-card.collapsed .variant-body{max-height:0;opacity:0;padding-bottom:0}
+.variant-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 9px}
+.variant-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.variant-body h5:first-child{margin-top:0}
+.variant-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.variant-body ul,.variant-body ol{padding-left:18px;margin:8px 0 13px}
+.variant-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.variant-body strong{color:var(--text);font-weight:600}
+
+/* SECTION LABELS */
+.section-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;padding:4px 10px;border-radius:5px;margin:16px 0 8px;font-weight:600}
+.section-tag.what{background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.2)}
+.section-tag.how{background:rgba(0,191,165,.1);color:var(--hire);border:1px solid rgba(0,191,165,.2)}
+.section-tag.strengths{background:rgba(0,191,165,.08);color:var(--hire);border:1px solid rgba(0,191,165,.15)}
+.section-tag.limits{background:rgba(255,107,107,.08);color:var(--no);border:1px solid rgba(255,107,107,.15)}
+.section-tag.ops{background:rgba(249,115,22,.08);color:var(--obs);border:1px solid rgba(249,115,22,.15)}
+.section-tag.nuances{background:rgba(245,166,35,.08);color:var(--strong);border:1px solid rgba(245,166,35,.15)}
+.section-tag.analogy{background:rgba(167,139,250,.1);color:var(--deep);border:1px solid rgba(167,139,250,.2)}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout.obs{background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--accent)}.callout.good .callout-title{color:var(--hire)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--deep)}
+.callout.obs .callout-title{color:var(--obs)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* INTERVIEW SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(167,139,250,.1),rgba(88,166,255,.06));border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--deep);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* TABLES */
+.dt{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.dt thead tr{background:linear-gradient(90deg,#1f2937,#161b22)}
+.dt th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.61rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);border-bottom:1px solid var(--border)}
+.dt td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:top;line-height:1.5;color:var(--muted)}
+.dt tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dt tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dt tbody tr:hover{background:rgba(167,139,250,.04)}
+.dt td:first-child{font-weight:600;color:var(--text)}
+.dt td.mono{font-family:var(--fc);font-size:.77rem;color:var(--hire)}
+.dt td.amber{font-family:var(--fc);font-size:.77rem;color:var(--strong)}
+.dt td.red{color:var(--no)}
+
+/* SCALE TABLE */
+.scale-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.scale-table thead tr{background:linear-gradient(90deg,rgba(88,166,255,.12),rgba(167,139,250,.08))}
+.scale-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);border-bottom:1px solid rgba(88,166,255,.2)}
+.scale-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.scale-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.scale-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.scale-table td:first-child{font-weight:600;color:var(--text)}
+.scale-table td.works{color:var(--hire);font-family:var(--fc);font-size:.77rem}
+
+/* DEBUG TABLE */
+.debug-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.debug-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(255,107,107,.06))}
+.debug-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.debug-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.debug-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.debug-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.debug-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc);font-size:.78rem}
+
+/* GUARANTEE TABLE */
+.guarantee-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.guarantee-table thead tr{background:linear-gradient(90deg,rgba(0,191,165,.1),rgba(88,166,255,.06))}
+.guarantee-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--hire);border-bottom:1px solid rgba(0,191,165,.2)}
+.guarantee-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.guarantee-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.guarantee-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.guarantee-table td:first-child{font-weight:600;color:var(--text)}
+
+/* TRADEOFF PILLS */
+.tradeoff-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.tradeoff-pill{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:12px 14px}
+.tp-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:5px}
+.tp-content{font-size:.86rem;color:var(--muted);line-height:1.5}
+.tp-content strong{color:var(--text)}
+
+/* SWEET SPOT BOX */
+.sweet-spot{background:rgba(0,191,165,.06);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.sweet-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:8px;font-weight:600}
+.sweet-spot ul{padding-left:16px}
+.sweet-spot li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+
+/* FAILURE SCENARIO */
+.failure-box{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:13px 16px;margin:12px 0}
+.failure-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:8px;font-weight:600}
+
+/* GOTCHA BOX */
+.gotcha{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:12px 0}
+.gotcha-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.gotcha p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* L6L7 NUANCE BOX */
+.nuance{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.18);border-radius:8px;padding:14px 16px;margin:12px 0}
+.nuance-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--strong);margin-bottom:9px;font-weight:600}
+.nuance p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.nuance p:last-child{margin-bottom:0}
+.nuance strong{color:var(--text)}
+
+/* INLINE QUOTE */
+.inline-q{background:var(--surface2);border-left:3px solid var(--deep);padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-style:italic;font-size:.88rem;color:var(--muted);line-height:1.6}
+
+/* SECTION HEADER */
+.sec-hdr{margin:48px 0 22px}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--deep)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.35rem;font-weight:600;color:var(--text)}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--deep);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* NEXT CARD */
+.next-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--deep);border-radius:10px;padding:20px 24px;margin:36px 0;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.next-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:6px}
+.next-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.next-desc{font-size:.84rem;color:var(--muted);margin-top:4px}
+.next-btn{font-family:var(--fc);font-size:.75rem;padding:10px 18px;background:rgba(167,139,250,.12);border:1px solid var(--deep);color:var(--deep);border-radius:7px;text-decoration:none;transition:all .2s;white-space:nowrap;flex-shrink:0}
+.next-btn:hover{background:rgba(167,139,250,.22);transform:translateY(-1px)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .tradeoff-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Shortcode Generation</div>
+    <div class="sb-part">Part 1 of 2 — Core + Variants 1–3</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">Part 1: Core Understanding</div>
+      <li class="ni sub"><a href="#elevator">Elevator Pitch</a></li>
+      <li class="ni sub"><a href="#analogy">The Analogy</a></li>
+      <li class="ni sub"><a href="#mental-model">Mental Model (5 Concepts)</a></li>
+      <li class="ni sub"><a href="#guarantees">Guarantees Table</a></li>
+      <li class="ni sub"><a href="#tradeoffs">Core Trade-offs</a></li>
+      <li class="ni sub"><a href="#when">When This Comes Up</a></li>
+      <li class="ni sub"><a href="#scale-thresholds">Scale Thresholds</a></li>
+    </li>
+    <li class="ng"><div class="nl">Part 2: Variants</div>
+      <li class="ni sub"><a href="#variant1">Variant 1: Auto-Increment + Base62</a></li>
+      <li class="ni sub"><a href="#v1-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v1-strengths">↳ Strengths &amp; Sweet Spot</a></li>
+      <li class="ni sub"><a href="#v1-limits">↳ Limitations &amp; Failures</a></li>
+      <li class="ni sub"><a href="#v1-ops">↳ Operational Considerations</a></li>
+      <li class="ni sub"><a href="#v1-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#variant2">Variant 2: Pre-Allocated Ranges</a></li>
+      <li class="ni sub"><a href="#v2-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v2-strengths">↳ Strengths &amp; Sweet Spot</a></li>
+      <li class="ni sub"><a href="#v2-limits">↳ Limitations &amp; Failures</a></li>
+      <li class="ni sub"><a href="#v2-ops">↳ Operational Considerations</a></li>
+      <li class="ni sub"><a href="#v2-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#variant3">Variant 3: Snowflake IDs</a></li>
+      <li class="ni sub"><a href="#v3-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v3-strengths">↳ Strengths &amp; Sweet Spot</a></li>
+      <li class="ni sub"><a href="#v3-limits">↳ Limitations &amp; Failures</a></li>
+      <li class="ni sub"><a href="#v3-ops">↳ Operational Considerations</a></li>
+      <li class="ni sub"><a href="#v3-nuances">↳ L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Series Navigation</div>
+      <li class="ni"><a href="#next">Part 2 →</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">URL Shortener · Deep Dive Series · Part 1 of 2</div>
+  <h1>Shortcode<br>Generation<br>Strategies</h1>
+  <div class="hero-meta">
+    <span>🎯 Complete Mastery Guide</span>
+    <span>📐 3 Variants (of 5 total)</span>
+    <span>⚡ Scale Analysis</span>
+    <span>🔬 L6/L7 Nuances</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill active-part">Part 1: Core + Variants 1–3</span>
+    <span class="part-pill">Part 2: Variants 4–5 + Decision Framework</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The deepest technical topic in URL shortener interviews. This part covers the foundational mental model — why shortcode generation is fundamentally a distributed consensus problem — and the first three variants: Auto-Increment, Pre-Allocated Ranges, and Snowflake IDs. Each variant includes mechanics, sweet spot, failure modes, operational considerations, and L6/L7 nuances.</p>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<!-- PART 1: CORE UNDERSTANDING          -->
+<!-- ════════════════════════════════════ -->
+<div class="part-banner">
+  <div class="part-banner-label">Part 1 · Core Understanding</div>
+  <h2>Make It Click</h2>
+  <p>Before comparing strategies, internalize the fundamental insight: shortcode generation is a distributed unique ID problem. The real challenge isn't generating random strings — it's guaranteeing uniqueness without coordination overhead. Every strategy picks its position on the coordination-independence spectrum.</p>
+</div>
+
+<!-- ELEVATOR PITCH -->
+<div class="concept-card" id="elevator">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">🎙</span><span class="concept-title">The Elevator Pitch</span><span class="concept-badge">Start Here</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <div class="callout info">
+      <div class="callout-title">For a Smart Non-Engineer</div>
+      <p>"We need to create unique, short codes (like 'abc123') for billions of long URLs, ensuring no two URLs ever get the same code — even when thousands of computers are creating codes simultaneously."</p>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">For a Fellow Engineer</div>
+      <p>"Shortcode generation is a distributed unique ID problem with constraints on length (typically 6-8 characters), character set (base62), and a requirement for unpredictability while maintaining collision-free guarantees across a globally distributed system."</p>
+    </div>
+    <div class="callout extra">
+      <div class="callout-title">The "Aha Moment"</div>
+      <p>The real challenge isn't generating random strings — it's <mark class="g">guaranteeing uniqueness at scale without coordination overhead</mark>. Every shortcode generation strategy is fundamentally making a trade-off between coordination (slow but guaranteed unique) and probability (fast but statistically unique). <strong>The art is knowing when you can trust math vs. when you need consensus.</strong></p>
+    </div>
+    <div class="soundbite">
+      <div class="soundbite-label">🔑 Interview Sound Bite</div>
+      <p>"Shortcode generation is fundamentally a distributed consensus problem in disguise. The question isn't 'how do I generate random strings' — it's 'how do I guarantee uniqueness without coordination, or minimize the cost of coordination I need?' Every strategy is picking its position on the coordination-independence spectrum."</p>
+    </div>
+  </div>
+</div>
+
+<!-- ANALOGY -->
+<div class="concept-card" id="analogy">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">🚗</span><span class="concept-title">The License Plate Factory Analogy</span><span class="concept-badge">Mental Model</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-top:4px">Imagine you're running the DMV for all 50 states, and every state has its own license plate factory. You need to guarantee that no two cars in America ever get the same plate number.</p>
+
+    <div class="section-tag analogy">Approach 1: Central Registry</div>
+    <p style="font-size:.88rem;color:var(--muted);line-height:1.65">Like a <strong>database counter</strong>. One central office in D.C. assigns every single plate number. Every state calls D.C., waits, then stamps it. <mark>Guaranteed unique, but D.C. becomes a massive bottleneck</mark> — imagine 10,000 calls per second.</p>
+
+    <div class="section-tag analogy">Approach 2: Pre-Allocated Ranges</div>
+    <p style="font-size:.88rem;color:var(--muted);line-height:1.65">Like <strong>range-based ID generation</strong>. D.C. says: "California, you get plates 1M-2M. Texas, you get 2M-3M." Each state works independently. Fast, but when California runs out, they call D.C. for more — that allocation moment is still a coordination point.</p>
+
+    <div class="section-tag analogy">Approach 3: State-Encoded Plates</div>
+    <p style="font-size:.88rem;color:var(--muted);line-height:1.65">Like <strong>Snowflake/timestamp-based</strong>. Every plate starts with state + timestamp + factory line: "CA-20250613-143052-LINE3-0001". <mark>No coordination needed</mark> — the combination is inherently unique. But plates are longer and somewhat predictable.</p>
+
+    <div class="section-tag analogy">Approach 4: Random + Verification</div>
+    <p style="font-size:.88rem;color:var(--muted);line-height:1.65">Like <strong>hash-based with collision check</strong>. Each factory generates random strings and checks a shared database: "Is ABC123 taken? No? Great." Fast most of the time, but as plates fill up, more collisions and retries accumulate.</p>
+
+    <div class="callout fail">
+      <div class="callout-title">Failure Scenario Extension</div>
+      <ul>
+        <li><strong>D.C. goes down (Approach 1):</strong> All plate production stops</li>
+        <li><strong>California's range corrupted (Approach 2):</strong> Potential duplicates within that range</li>
+        <li><strong>Server clocks drift (Approach 3):</strong> Timestamp collisions possible</li>
+        <li><strong>Verification DB lags (Approach 4):</strong> Duplicate plates before propagation catches up</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- MENTAL MODEL -->
+<div class="concept-card" id="mental-model">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">🧠</span><span class="concept-title">The Mental Model — 5 Concepts You MUST Internalize</span><span class="concept-badge">Core</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <h5>1. Uniqueness Guarantee Spectrum</h5>
+    <p>There's a spectrum from "mathematically proven unique" to "statistically impossible to collide." <strong>Both can be acceptable</strong> depending on your requirements.</p>
+
+    <h5>2. Coordination vs. Independence</h5>
+    <p>Every uniqueness strategy either requires machines to talk to each other (coordination) or embeds enough entropy/structure that they don't need to (independence).</p>
+
+    <h5>3. Namespace Exhaustion</h5>
+    <p>With 6 characters in base62, you have 62⁶ = ~56 billion combinations. At 1,000 URLs/second, you'll exhaust it in ~1,800 years. At 1M URLs/second, it's 1.8 years. <mark>Namespace size drives your strategy.</mark></p>
+
+    <h5>4. Predictability vs. Security</h5>
+    <p>Sequential codes (abc001, abc002) are predictable — attackers can enumerate URLs. Random codes hide your scale but are harder to generate uniquely.</p>
+
+    <h5>5. Generation vs. Storage Are Separate Problems</h5>
+    <p>You can generate IDs one way (e.g., Snowflake) and store them another way (e.g., hash for even distribution). <strong>Don't conflate them.</strong></p>
+  </div>
+</div>
+
+<!-- GUARANTEES -->
+<div class="concept-card" id="guarantees">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">📋</span><span class="concept-title">What Each Strategy Guarantees vs. NOT</span><span class="concept-badge">Reference</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <table class="guarantee-table">
+      <thead><tr><th>Guarantee</th><th>What It Means</th><th>What It Doesn't Mean</th></tr></thead>
+      <tbody>
+        <tr><td>Uniqueness</td><td>No two URLs get the same shortcode</td><td>Doesn't guarantee uniform distribution</td></tr>
+        <tr><td>Unpredictability</td><td>Can't guess the next code</td><td>Doesn't guarantee cryptographic security</td></tr>
+        <tr><td>Availability</td><td>Can generate codes even during partitions</td><td>Doesn't guarantee immediate global visibility</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TRADEOFFS -->
+<div class="concept-card" id="tradeoffs">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">⚖️</span><span class="concept-title">Fundamental Trade-offs Baked In</span><span class="concept-badge">Core</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <div class="tradeoff-grid">
+      <div class="tradeoff-pill">
+        <div class="tp-label">Coordination ↔ Latency</div>
+        <div class="tp-content">More coordination = <strong>stronger guarantees</strong> but higher latency per generation</div>
+      </div>
+      <div class="tradeoff-pill">
+        <div class="tp-label">Entropy ↔ Length</div>
+        <div class="tp-content">More randomness needs <strong>more characters</strong> or collision checking overhead</div>
+      </div>
+      <div class="tradeoff-pill">
+        <div class="tp-label">Predictability ↔ Debuggability</div>
+        <div class="tp-content">Random codes are secure but <strong>hard to trace</strong>; structured codes are traceable but enumerable</div>
+      </div>
+      <div class="tradeoff-pill">
+        <div class="tp-label">Simplicity ↔ Scale</div>
+        <div class="tp-content">Simple solutions work at 1M codes; <strong>complex solutions needed</strong> at 1T codes</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WHEN IT COMES UP -->
+<div class="concept-card" id="when">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">🎯</span><span class="concept-title">When Does This Come Up?</span><span class="concept-badge">Interview Trigger</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <h5>Keywords That Should Trigger This Topic</h5>
+    <div class="callout info">
+      <div class="callout-title">Trigger Keywords</div>
+      <ul>
+        <li>URL shortener (obviously) · Unique ID generation · Distributed ID</li>
+        <li>Avoiding collisions · Ticket servers · Snowflake IDs</li>
+        <li>Short, unique identifiers · QR code generation · Invite/referral codes</li>
+        <li>Session tokens · Tracking IDs</li>
+      </ul>
+    </div>
+    <h5>The "Smell Test" for When This Is the Right Topic</h5>
+    <div class="callout good">
+      <div class="callout-title">All 5 Should Be True</div>
+      <ul>
+        <li>You need <strong>short identifiers</strong> (not UUIDs)</li>
+        <li>Multiple servers need to generate them <strong>independently</strong></li>
+        <li>Uniqueness is <strong>non-negotiable</strong> (not "probably unique")</li>
+        <li>The system will scale to <strong>billions of identifiers</strong></li>
+        <li>You care about either predictability or distribution</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- SCALE THRESHOLDS -->
+<div class="concept-card" id="scale-thresholds">
+  <div class="concept-hdr" onclick="toggleCard(this)">
+    <div class="concept-title-row"><span class="concept-icon">📊</span><span class="concept-title">Scale Thresholds — What Works Where</span><span class="concept-badge">Reference</span></div>
+    <span class="concept-toggle">▾</span>
+  </div>
+  <div class="concept-body">
+    <table class="scale-table">
+      <thead><tr><th>Scale</th><th>What Works</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>&lt;1M codes</td><td class="works">Simple auto-increment + encode</td><td>Single database handles it</td></tr>
+        <tr><td>1M – 100M codes</td><td class="works">Pre-allocated ranges</td><td>Need some distribution</td></tr>
+        <tr><td>100M – 10B codes</td><td class="works">Snowflake/timestamp-based</td><td>Coordination overhead matters</td></tr>
+        <tr><td>&gt;10B codes</td><td class="works">Hybrid approaches</td><td>Namespace exhaustion becomes real</td></tr>
+        <tr><td>&gt;1000 writes/sec</td><td class="works">Distributed generation required</td><td>Single coordination point fails</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 1: AUTO-INCREMENT + BASE62  -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant1">
+  <h2>Variant 1: Database Auto-Increment + Base62 Encoding</h2>
+</div>
+
+<div class="variant-card v1">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 1</div><div class="variant-name">Auto-Increment + Base62</div></div>
+      <span class="variant-badge">Simple · Single-Region</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>Use a database's auto-incrementing primary key, then convert that number to base62 to create the shortcode.</p>
+    <div class="inline-q">Core insight: The database already solves uniqueness — we're just "encoding" its sequential numbers into a shorter character representation.</div>
+    <p><strong>The inventor's problem:</strong> "I need unique IDs, I already have a database, and I trust its ACID guarantees. Why reinvent the wheel?"</p>
+
+    <div class="section-tag how" id="v1-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step · Base62 Encoding</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>1. User submits: https://example.com/very-long-path
+2. INSERT row → DB assigns auto-increment ID: 123456789
+3. Convert 123456789 to base62:
+   123456789 ÷ 62 = 1991238 remainder 53 → 'R'
+   1991238   ÷ 62 = 32116   remainder 46 → 'k'
+   32116     ÷ 62 = 518     remainder  0 → '0'
+   518       ÷ 62 = 8       remainder 22 → 'W'
+   8         ÷ 62 = 0       remainder  8 → '8'
+   Result: "8W0kR" (reverse the string)
+4. Return shortcode: 8W0kR
+
+Concrete example:
+  Request at t=0ms: DB assigns 1,000,001 → base62 = "4C92"
+  Request at t=1ms: DB assigns 1,000,002 → base62 = "4C93"
+
+DB state:
+  id        | short_code | original_url
+  1,000,001 | 4C92       | https://example.com/a
+  1,000,002 | 4C93       | https://example.com/b</pre></div>
+
+    <h5>Communication Pattern</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Flow</span></div>
+    <pre>Client → App Server → Database (single write)
+                 ↓ Return ID
+           Encode to base62
+                 ↓
+           Return shortcode</pre></div>
+
+    <div class="section-tag strengths" id="v1-strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>100 – 5,000 writes/second</li>
+        <li>Single region deployment</li>
+        <li>Writes can tolerate 5-20ms latency</li>
+        <li>Team size &lt;20 engineers</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>Low-to-medium scale:</strong> Under 10,000 writes/second</li>
+        <li><strong>Strong consistency requirements:</strong> Must never have duplicates</li>
+        <li><strong>Simple operations teams:</strong> No complex infrastructure to manage</li>
+        <li><strong>Startup phase:</strong> When you're optimizing for development velocity</li>
+        <li><strong>Real examples:</strong> bit.ly early days, most MVP URL shorteners, internal corporate link shorteners</li>
+      </ul>
+    </div>
+
+    <div class="section-tag limits" id="v1-limits">D) Limitations &amp; Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Write throughput ceiling:</strong> Single DB bottlenecks around 10K-50K writes/second</li>
+        <li><strong>Single point of failure:</strong> Database down = no new codes</li>
+        <li><strong>Predictable sequences:</strong> 8W0kR tells you 8W0kS probably exists (security issue)</li>
+        <li><strong>Cross-region latency:</strong> Writes must go to single master, adding latency for global users</li>
+      </ul>
+    </div>
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario: DB Primary Fails</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Timeline</span></div>
+      <pre>t=0s:   DB healthy, 5,000 writes/sec
+t=10s:  DB primary fails
+t=10.1s: App gets connection errors
+t=10.1–30s: NO NEW SHORTCODES CAN BE GENERATED
+            (Writes queue up or fail)
+t=30s:  Replica promoted to primary
+t=30.1s: Service resumes; IDs may have gaps
+         (Gap is cosmetic, not functional)</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>Sequential IDs <strong>leak business metrics</strong>. A competitor can track your growth by creating shortlinks periodically and watching ID progression: "They went from ID 5M to 6M in one month — that's 1M new links!" This is the information leak most candidates never mention.</p>
+    </div>
+
+    <div class="section-tag ops" id="v1-ops">E) Operational Considerations</div>
+    <h5>How to Monitor</h5>
+    <div class="callout obs">
+      <div class="callout-title">Key Metrics</div>
+      <ul>
+        <li>Writes per second — approaching DB throughput limits?</li>
+        <li>Insert latency (p99) — should be &lt;10ms</li>
+        <li>Replication lag — risk window for duplicate reads</li>
+        <li>ID sequence gaps — indicates failed transactions</li>
+      </ul>
+    </div>
+    <h5>How to Debug</h5>
+    <table class="debug-table">
+      <thead><tr><th>Symptom</th><th>Likely Cause</th><th>Investigation</th></tr></thead>
+      <tbody>
+        <tr><td>Duplicate shortcodes</td><td>Replication lag + read-from-replica</td><td>Check replication status</td></tr>
+        <tr><td>Gaps in sequence</td><td>Rolled-back transactions</td><td>Check error logs</td></tr>
+        <tr><td>Increasing latency</td><td>Index bloat or lock contention</td><td>Check slow query log</td></tr>
+        <tr><td>Connection errors</td><td>Connection pool exhaustion</td><td>Check pool metrics</td></tr>
+      </tbody>
+    </table>
+    <h5>Migration Story</h5>
+    <p>When this stops working, migrate to pre-allocated ranges:</p>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Migration Steps</span></div>
+    <pre>1. Partition ID space (e.g., 1-100M stays, 100M+ uses new system)
+2. Deploy range-based system for new writes
+3. Keep old system for read compatibility
+4. Eventually sunset old system</pre></div>
+
+    <div class="section-tag nuances" id="v1-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How would you handle the trade-off between write availability and sequence predictability when the database master fails over?"</p>
+      <p><strong>Non-obvious insight:</strong> The base62 encoding is hiding information. As IDs grow, shortcode length grows predictably — ID 56,800,235,584 requires exactly 7 characters. Competitors can estimate your total URL count from <em>shortcode length distribution</em>.</p>
+      <p><strong>Google-scale vs. startup-scale:</strong> At Google scale (millions of writes/second), this is a non-starter — hundreds of shards make "simple auto-increment" not simple. <mark>At startup scale, this should be your default choice. Don't over-engineer.</mark></p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 2: PRE-ALLOCATED RANGES     -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant2">
+  <h2>Variant 2: Pre-Allocated Ranges (Range-Based ID Generation)</h2>
+</div>
+
+<div class="variant-card v2">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 2</div><div class="variant-name">Pre-Allocated Ranges</div></div>
+      <span class="variant-badge">Amortized Coordination</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>A central service hands out ranges of IDs (e.g., 1M-2M) to each application server, which then generates IDs independently within its range.</p>
+    <div class="inline-q">Core insight: Amortize the coordination cost — instead of coordinating per-ID, coordinate per-range (every million IDs or every hour).</div>
+    <p><strong>Real examples:</strong> Flickr's Ticket Servers (famous blog post), Twitter (pre-Snowflake), many enterprise systems.</p>
+
+    <div class="section-tag how" id="v2-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step · Range Allocation</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Initial State:
+  Range Service: next_available = 0
+  Server 1, 2: no range assigned
+
+t=0s: Server 1 boots → requests range
+  Range Service: assigns [0, 999,999], next_available = 1,000,000
+  Server 1: local_counter = 0
+
+t=0.001s: Server 2 boots → requests range
+  Range Service: assigns [1,000,000, 1,999,999]
+  Server 2: local_counter = 1,000,000
+
+t=1s: Request hits Server 1
+  Returns base62(0) = "0", local_counter = 1
+
+t=1s: Request hits Server 2
+  Returns base62(1,000,000) = "4c92", local_counter = 1,000,001
+
+IDs are NOT globally sequential (0, 1M, 1, 1M+1...)
+But they ARE unique.
+
+When Server 1 dies at counter = 500,000:
+  IDs 500,000 to 999,999 are LOST (never used — that's OK)
+  Server 1 restarts → gets NEW range [2,000,000, 2,999,999]</pre></div>
+
+    <h5>Communication Pattern</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Communication</span></div>
+    <pre>Startup / Range Exhaustion (infrequent):
+  App Server → Range Service: "Give me a range"
+  Range Service → App Server: "Here's [start, end]"
+
+Normal Operation (99.9% of requests):
+  App Server (local_counter++) → Return shortcode
+  NO NETWORK CALL NEEDED</pre></div>
+
+    <div class="section-tag strengths" id="v2-strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>10,000 – 1,000,000 writes/second</li>
+        <li>5-50 application servers</li>
+        <li>Can tolerate some ID space wastage</li>
+        <li>Want simple mental model (not complex distributed algorithms)</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>High write throughput:</strong> 100K+ writes/second (local counters are nanoseconds)</li>
+        <li><strong>Mostly-available requirements:</strong> Can generate IDs while range service is briefly down</li>
+        <li><strong>Batch processing:</strong> Pre-fetch ranges for offline ID generation</li>
+      </ul>
+    </div>
+
+    <div class="section-tag limits" id="v2-limits">D) Limitations &amp; Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Range wastage:</strong> Crashed servers lose unused IDs in their range</li>
+        <li><strong>Still predictable:</strong> Within a range, IDs are sequential</li>
+        <li><strong>Cold start latency:</strong> New server must contact range service before serving requests</li>
+        <li><strong>Range service as single point:</strong> Under extreme server churn, allocation becomes a bottleneck</li>
+      </ul>
+    </div>
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario: Range Service Goes Down</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Timeline</span></div>
+      <pre>t=0s:   All servers healthy, each with 50% range remaining
+t=10s:  Range service crashes
+t=10-60s:
+  - Servers with remaining range: CONTINUE WORKING ✅
+  - Servers needing new range: BLOCKED ❌
+t=30s:  Server 3 exhausts its range → fails on Server 3
+t=60s:  Range service recovers
+t=60.1s: Server 3 gets new range, resumes
+
+KEY: PARTIAL AVAILABILITY during outage
+     (Better than DB auto-increment which fails completely)</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>If range size is 1M and you have 100 servers restarting daily, you <strong>waste up to 50M IDs per day</strong> (average 500K per server restart). At that rate, a 62⁶ namespace exhausts faster than expected. Container environments with ephemeral pods make this much worse.</p>
+    </div>
+
+    <div class="section-tag ops" id="v2-ops">E) Operational Considerations</div>
+    <h5>How to Monitor</h5>
+    <div class="callout obs">
+      <div class="callout-title">Key Metrics</div>
+      <ul>
+        <li>Range allocation rate — sudden spikes indicate server churn or misconfigured range size</li>
+        <li>Range utilization — what % of ranges are used before server death/restart</li>
+        <li>Range service latency — critical path during cold starts</li>
+        <li>Remaining capacity — total IDs left before namespace exhaustion</li>
+      </ul>
+    </div>
+    <h5>How to Debug</h5>
+    <table class="debug-table">
+      <thead><tr><th>Symptom</th><th>Likely Cause</th><th>Investigation</th></tr></thead>
+      <tbody>
+        <tr><td>IDs exhausting fast</td><td>Range wastage or too-small ranges</td><td>Check range utilization metrics</td></tr>
+        <tr><td>Cold start slow</td><td>Range service latency</td><td>Check range service performance</td></tr>
+        <tr><td>Duplicate IDs (rare)</td><td>Range service data corruption</td><td>Check range service state</td></tr>
+        <tr><td>Gaps in IDs</td><td>Normal! (server restart)</td><td>Explain expected behavior</td></tr>
+      </tbody>
+    </table>
+    <h5>How to Tune</h5>
+    <p><strong>Range size depends on environment:</strong></p>
+    <ul style="padding-left:18px;margin:6px 0">
+      <li style="font-size:.87rem;color:var(--muted);margin-bottom:4px"><strong>High-churn (Kubernetes pods):</strong> Smaller ranges (10K-100K) to reduce wastage</li>
+      <li style="font-size:.87rem;color:var(--muted);margin-bottom:4px"><strong>Stable servers:</strong> Larger ranges (1M-10M) for less coordination</li>
+      <li style="font-size:.87rem;color:var(--muted);margin-bottom:4px"><strong>Pre-fetch strategy:</strong> Request new range at 80% exhausted, not 100%</li>
+    </ul>
+
+    <div class="section-tag nuances" id="v2-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How would you size ranges to minimize wastage while maintaining availability targets during rolling deployments?"</p>
+      <p><strong>Non-obvious insight:</strong> Range-based systems have an inherent "lease" concept even if you don't call it that. A range is effectively leased to a server. You can enhance this by making ranges expire and return to the pool — but now you've reinvented distributed lease management with all its complexity.</p>
+      <p><strong>Google-scale vs. startup-scale:</strong> At Google scale, you'd have hierarchical range allocation (regional range servers that sub-allocate to datacenter range servers). At startup scale, a single highly-available range service (e.g., replicated MySQL or etcd) works fine.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 3: SNOWFLAKE IDs            -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant3">
+  <h2>Variant 3: Timestamp-Based / Snowflake IDs</h2>
+</div>
+
+<div class="variant-card v3">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 3</div><div class="variant-name">Snowflake IDs (Timestamp-Based)</div></div>
+      <span class="variant-badge">Zero Coordination · Time-Sortable</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>Embed uniqueness into the ID structure itself by combining timestamp + machine ID + sequence number, so no coordination is needed during normal operation.</p>
+    <div class="inline-q">Core insight: If we encode "when" and "where" and "which one at that moment" into the ID, uniqueness is guaranteed by physics — no two events can happen at the same time on the same machine with the same sequence.</div>
+    <p><strong>Real examples:</strong> Twitter (invented Snowflake for tweet IDs), Discord (message IDs), Instagram (media IDs).</p>
+
+    <div class="section-tag how" id="v3-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Snowflake Structure · 64 bits</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>64 bits total:
+ ├── 1 bit:   Sign (always 0)
+ ├── 41 bits: Timestamp (ms since custom epoch)
+ ├── 10 bits: Machine ID (1024 possible machines)
+ └── 12 bits: Sequence (4096 per ms per machine)
+
+ Capacity: 4,096 IDs per millisecond per machine
+         = 4,096,000 IDs per second per machine
+         = 4+ billion IDs per second with 1000 machines</pre></div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step · ID Generation</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Server 42, Server 99 generate simultaneously:
+
+t=1718294400000ms:
+  Server 42: ts=1718294400000, machine=42, seq=0
+             ID = 7207896817778601984
+             shortcode = base62(ID) = "1Y2p0gjP"
+
+  Server 99: ts=1718294400000, machine=99, seq=0
+             ID = 7207896817778835456  ← DIFFERENT machine bits
+             shortcode = base62(ID) = "1Y2p0gkD"
+
+Same millisecond, different machine IDs → DIFFERENT IDs ✓
+
+2nd request on Server 42 at same ms:
+  Server 42: ts=1718294400000, machine=42, seq=1
+             ID = 7207896817778601985
+             shortcode = "1Y2p0gjQ"
+
+Same machine, same ms, different sequence → DIFFERENT IDs ✓</pre></div>
+
+    <h5>Clock Goes Backward — The Hard Problem</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Clock Drift Scenario</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=1718294400100: Server 42 generates ID with ts=100
+t=1718294400099: Clock drifts backward (NTP correction)
+
+Problem: If we use ts=99, might generate same ID as before!
+
+Solutions:
+1. WAIT:           Sleep until clock catches up (Snowflake's default)
+2. ERROR:          Refuse to generate IDs (fail-closed)
+3. EXTEND SEQUENCE: Use remaining sequence bits (advanced)</pre></div>
+
+    <div class="section-tag strengths" id="v3-strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>100,000+ writes/second</li>
+        <li>Global deployment across multiple regions</li>
+        <li>Need time-sortable IDs for database performance (index locality)</li>
+        <li>Have infrastructure for clock synchronization (GPS/NTP)</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>Extreme write throughput:</strong> Millions per second possible</li>
+        <li><strong>Time-sortable:</strong> IDs naturally sort chronologically — great for DB indexes</li>
+        <li><strong>Zero coordination:</strong> Normal operation needs NO network calls</li>
+        <li><strong>Globally distributed:</strong> Works across datacenters without coordination overhead</li>
+      </ul>
+    </div>
+
+    <div class="section-tag limits" id="v3-limits">D) Limitations &amp; Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Clock dependency:</strong> Requires accurate, synchronized clocks across all servers</li>
+        <li><strong>Machine ID management:</strong> Still need some coordination for machine ID assignment</li>
+        <li><strong>ID length:</strong> Full 64-bit IDs convert to 11+ base62 characters (longer than other methods)</li>
+        <li><strong>Predictable structure:</strong> Time portion reveals creation time; machine ID reveals server info</li>
+      </ul>
+    </div>
+
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario 1: Clock Synchronization Failure</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Clock Drift Timeline</span></div>
+      <pre>t=0s:    Server 42 clock correct at 1718294400000
+t=10s:   NTP daemon fails silently
+t=300s:  Server 42 drifts to 1718294400250 (250ms fast)
+t=600s:  Clock corrected → jumps BACK to 1718294400500
+
+Problem at t=600s:
+  Server previously generated IDs with ts=550
+  Clock is now 500
+  Any ID in next 50ms could COLLIDE
+
+Protection: Block until clock catches up
+Effect: 50ms UNAVAILABILITY on Server 42
+
+At scale (1000 servers):
+  Probability of at least one clock issue is non-trivial
+  This becomes an operational concern, not edge case</pre></div>
+    </div>
+
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario 2: Machine ID Collision (Catastrophic)</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Duplicate Machine ID</span></div>
+      <pre>Server A (machine_id=42) generating IDs normally
+Server B (machine_id=42) boots due to config error
+
+t=1718294400000:
+  Server A: ts=1718294400000, machine=42, seq=0 → ID X
+  Server B: ts=1718294400000, machine=42, seq=0 → ID X (DUPLICATE!)
+
+This is catastrophic — guaranteed collision.
+
+Prevention: Machine ID assignment must be bulletproof
+  - Zookeeper with ephemeral nodes
+  - Database with unique constraints
+  - Pre-assigned static IDs in config</pre></div>
+    </div>
+
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>Snowflake IDs <strong>encode creation time</strong> — privacy implications. If you generate a shortcode for a URL, someone can extract the timestamp and know exactly when that URL was shortened. For private links or business intelligence contexts, this is an <strong>information leak</strong>.</p>
+    </div>
+
+    <div class="section-tag ops" id="v3-ops">E) Operational Considerations</div>
+    <h5>How to Monitor</h5>
+    <div class="callout obs">
+      <div class="callout-title">Key Metrics</div>
+      <ul>
+        <li>Clock drift — alert if any server differs from reference by &gt;10ms</li>
+        <li>Sequence exhaustion — track max sequence per millisecond</li>
+        <li>Machine ID conflicts — detect duplicate machine IDs</li>
+        <li>Time-blocked events — count how often servers wait for clock catch-up</li>
+      </ul>
+    </div>
+    <h5>How to Debug</h5>
+    <table class="debug-table">
+      <thead><tr><th>Symptom</th><th>Likely Cause</th><th>Investigation</th></tr></thead>
+      <tbody>
+        <tr><td>Duplicate IDs</td><td>Machine ID collision</td><td>Check machine ID registry</td></tr>
+        <tr><td>Gaps in time-sequence</td><td>Server clock jumped forward</td><td>Check NTP logs</td></tr>
+        <tr><td>Availability spikes</td><td>Clock drift backward</td><td>Check time-blocked metrics</td></tr>
+        <tr><td>IDs not time-ordered</td><td>Clock not synchronized</td><td>Verify NTP across fleet</td></tr>
+      </tbody>
+    </table>
+
+    <div class="section-tag nuances" id="v3-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How would you handle the trade-off between clock synchronization requirements and ID generation availability during network partitions that affect NTP?"</p>
+      <p><strong>Non-obvious insight:</strong> The 41-bit timestamp gives you ~69 years from your epoch. If you set your epoch to 2020 and you're still running in 2089, you have a Y2K-style problem. <mark>Document your epoch and its expiration!</mark></p>
+      <p><strong>Google-scale vs. startup-scale:</strong> At Google scale, clock synchronization is critical infrastructure (TrueTime with GPS and atomic clocks — literally). At startup scale, standard NTP is usually fine — but you should still monitor drift. The "wait for clock catch-up" behavior is acceptable at small scale but becomes an availability risk at massive scale.</p>
+    </div>
+  </div>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Part 1 Summary — The Three Foundational Variants</div>
+  <p>Auto-Increment (start simple, bottlenecks at DB) → Pre-Allocated Ranges (amortize coordination, partial availability) → Snowflake (zero coordination but clock dependency). Each removes the bottleneck of the previous at the cost of added complexity. <strong>The L6/L7 differentiation: knowing not just how each works but WHY the tradeoff exists and WHEN to make each choice.</strong></p>
+</div>
+
+<!-- NEXT CARD -->
+<div class="next-card" id="next">
+  <div>
+    <div class="next-label">Continue the Series</div>
+    <div class="next-title">Part 2: Variants 4–5 + Decision Framework</div>
+    <div class="next-desc">Hash-based random generation with collision check, Pre-generated pool (Key Service) — plus the complete decision framework script for choosing the right approach in an interview.</div>
+  </div>
+  <a href="#" class="next-btn">Part 2 →</a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleCard(h) { h.parentElement.classList.toggle('collapsed'); }
+function toggleVariant(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const pre = btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
