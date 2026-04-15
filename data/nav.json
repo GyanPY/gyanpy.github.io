@@ -85,8 +85,20 @@
           "file": "pages/interview/system-design/url-shortner/7.html"
         },
           {
-          "title": "Core-Part",
-          "file": "pages/interview/system-design/url-shortner/core.html"
+          "title": "Deep-Dive-1",
+          "file": "pages/interview/system-design/url-shortner/core-1.html"
+        },
+           {
+          "title": "Deep-Dive-2",
+          "file": "pages/interview/system-design/url-shortner/core-2.html"
+        },
+           {
+          "title": "Deep-Dive-3",
+          "file": "pages/interview/system-design/url-shortner/core-3.html"
+        },
+           {
+          "title": "Deep-Dive-4",
+          "file": "pages/interview/system-design/url-shortner/core-4.html"
         }
       ]
     }
