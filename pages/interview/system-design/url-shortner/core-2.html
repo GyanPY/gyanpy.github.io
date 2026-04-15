@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive: URL Shortcode Generation (Part 2/2) — URL Shortener L6/L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--rose),var(--obs),var(--strong));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--strong);background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--accent)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(245,166,35,.05)}
+.ni.active a{color:var(--strong);border-left-color:var(--strong);background:rgba(245,166,35,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+
+/* HAMBURGER */
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+
+/* BACK TO TOP */
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--strong);border-color:var(--strong);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--strong);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--rose) 40%,var(--strong) 70%,var(--obs));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero-meta span{display:flex;align-items:center;gap:5px}
+.part-nav{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(245,166,35,.1);border-color:var(--strong);color:var(--strong)}
+
+/* VARIANT CARDS */
+.variant-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px;transition:transform .18s,box-shadow .18s}
+.variant-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.variant-card.v4{border-left:4px solid var(--rose)}
+.variant-card.v5{border-left:4px solid var(--obs)}
+.variant-card.v6{border-left:4px solid var(--lean)}
+.variant-card.v4 .variant-hdr{background:rgba(251,113,133,.05)}
+.variant-card.v5 .variant-hdr{background:rgba(249,115,22,.05)}
+.variant-card.v6 .variant-hdr{background:rgba(255,215,0,.04)}
+.variant-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.variant-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.variant-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.variant-card.v4 .variant-num{color:var(--rose)}
+.variant-card.v5 .variant-num{color:var(--obs)}
+.variant-card.v6 .variant-num{color:var(--lean)}
+.variant-name{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.variant-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.variant-card.v4 .variant-badge{background:rgba(251,113,133,.12);color:var(--rose);border:1px solid rgba(251,113,133,.28)}
+.variant-card.v5 .variant-badge{background:rgba(249,115,22,.12);color:var(--obs);border:1px solid rgba(249,115,22,.28)}
+.variant-card.v6 .variant-badge{background:rgba(255,215,0,.11);color:var(--lean);border:1px solid rgba(255,215,0,.28)}
+.variant-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.variant-card.collapsed .variant-toggle{transform:rotate(-90deg)}
+.variant-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.variant-card.collapsed .variant-body{max-height:0;opacity:0;padding-bottom:0}
+.variant-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:20px 0 9px}
+.variant-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.variant-body h5:first-child{margin-top:0}
+.variant-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.variant-body ul,.variant-body ol{padding-left:18px;margin:8px 0 13px}
+.variant-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.variant-body strong{color:var(--text);font-weight:600}
+
+/* SECTION TAGS */
+.section-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;padding:4px 10px;border-radius:5px;margin:16px 0 8px;font-weight:600}
+.section-tag.what{background:rgba(88,166,255,.1);color:var(--accent);border:1px solid rgba(88,166,255,.2)}
+.section-tag.how{background:rgba(0,191,165,.1);color:var(--hire);border:1px solid rgba(0,191,165,.2)}
+.section-tag.strengths{background:rgba(0,191,165,.08);color:var(--hire);border:1px solid rgba(0,191,165,.15)}
+.section-tag.limits{background:rgba(255,107,107,.08);color:var(--no);border:1px solid rgba(255,107,107,.15)}
+.section-tag.ops{background:rgba(249,115,22,.08);color:var(--obs);border:1px solid rgba(249,115,22,.15)}
+.section-tag.nuances{background:rgba(245,166,35,.08);color:var(--strong);border:1px solid rgba(245,166,35,.15)}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--accent);border-color:var(--accent)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(88,166,255,.07);border:1px solid rgba(88,166,255,.2)}
+.callout.good{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--accent)}.callout.good .callout-title{color:var(--hire)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--deep)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* MARKS */
+mark{background:rgba(88,166,255,.16);color:var(--accent);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(0,191,165,.12);color:var(--hire)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* INLINE QUOTE */
+.inline-q{background:var(--surface2);border-left:3px solid var(--strong);padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-style:italic;font-size:.88rem;color:var(--muted);line-height:1.6}
+
+/* SWEET SPOT */
+.sweet-spot{background:rgba(0,191,165,.06);border:1px solid rgba(0,191,165,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.sweet-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--hire);margin-bottom:8px;font-weight:600}
+.sweet-spot ul{padding-left:16px}
+.sweet-spot li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+
+/* FAILURE BOX */
+.failure-box{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:13px 16px;margin:12px 0}
+.failure-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:8px;font-weight:600}
+
+/* GOTCHA */
+.gotcha{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:12px 0}
+.gotcha-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.gotcha p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* NUANCE */
+.nuance{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.18);border-radius:8px;padding:14px 16px;margin:12px 0}
+.nuance-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--strong);margin-bottom:9px;font-weight:600}
+.nuance p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.nuance p:last-child{margin-bottom:0}
+.nuance strong{color:var(--text)}
+
+/* DEBUG TABLE */
+.debug-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.debug-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(255,107,107,.06))}
+.debug-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.debug-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.debug-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.debug-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.debug-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc);font-size:.77rem}
+
+/* BIRTHDAY PARADOX TABLE */
+.birthday-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.birthday-table thead tr{background:linear-gradient(90deg,rgba(251,113,133,.12),rgba(255,107,107,.06))}
+.birthday-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--rose);border-bottom:1px solid rgba(251,113,133,.2)}
+.birthday-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.birthday-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.birthday-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.birthday-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc)}
+.birthday-table td.ok{color:var(--hire);font-family:var(--fc);font-size:.77rem}
+.birthday-table td.warn2{color:var(--lean);font-family:var(--fc);font-size:.77rem;font-weight:600}
+.birthday-table td.bad{color:var(--no);font-family:var(--fc);font-size:.77rem;font-weight:700}
+
+/* MASTER COMPARISON TABLE */
+.comp-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin:20px 0;overflow-x:auto}
+.comp-wrap h3{font-family:var(--fh);font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.comp-table{width:100%;border-collapse:collapse;font-size:.78rem;min-width:800px}
+.comp-table thead tr{background:linear-gradient(90deg,rgba(167,139,250,.14),rgba(88,166,255,.06))}
+.comp-table th{padding:10px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--deep);border-bottom:1px solid rgba(167,139,250,.2);white-space:nowrap}
+.comp-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.comp-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.comp-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.comp-table tbody tr:hover{background:rgba(167,139,250,.04)}
+.comp-table td:first-child{font-weight:700;color:var(--text);white-space:nowrap}
+.comp-table td.v1c{color:var(--hire);font-family:var(--fc);font-size:.75rem}
+.comp-table td.v2c{color:var(--accent);font-family:var(--fc);font-size:.75rem}
+.comp-table td.v3c{color:var(--strong);font-family:var(--fc);font-size:.75rem}
+.comp-table td.v4c{color:var(--rose);font-family:var(--fc);font-size:.75rem}
+.comp-table td.v5c{color:var(--obs);font-family:var(--fc);font-size:.75rem}
+.comp-table td.v6c{color:var(--lean);font-family:var(--fc);font-size:.75rem}
+
+/* SECTION HEADER */
+.sec-hdr{margin:48px 0 22px}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.35rem;font-weight:600;color:var(--text)}
+
+/* DECISION FRAMEWORK */
+.df-card{background:var(--surface2);border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:20px 22px;margin:16px 0}
+.df-step{display:flex;gap:14px;margin-bottom:18px;align-items:flex-start}
+.df-step:last-child{margin-bottom:0}
+.df-step-num{font-family:var(--fc);font-size:.72rem;font-weight:700;color:var(--deep);background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.df-step-content h5{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text);margin-bottom:5px}
+.df-step-content p{font-size:.87rem;color:var(--muted);line-height:1.65}
+.df-step-content code{font-family:var(--fc);font-size:.8rem;background:var(--surface);border:1px solid var(--border);padding:1px 5px;border-radius:3px;color:var(--hire)}
+
+/* DECISION TREE */
+.dt-wrap{background:#010409;border:1px solid rgba(167,139,250,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.dt-hdr{background:rgba(167,139,250,.06);border-bottom:1px solid rgba(167,139,250,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.dt-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--deep);font-weight:600}
+.dt-wrap pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.77rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(167,139,250,.1),rgba(88,166,255,.06));border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--deep);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--strong);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* VARIANT CHIP ROW */
+.variant-chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.vchip{font-family:var(--fc);font-size:.72rem;padding:4px 12px;border-radius:20px;border:1px solid;font-weight:600}
+.vchip.c1{color:var(--hire);border-color:rgba(0,191,165,.3);background:rgba(0,191,165,.08)}
+.vchip.c2{color:var(--accent);border-color:rgba(88,166,255,.3);background:rgba(88,166,255,.08)}
+.vchip.c3{color:var(--strong);border-color:rgba(245,166,35,.3);background:rgba(245,166,35,.08)}
+.vchip.c4{color:var(--rose);border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.08)}
+.vchip.c5{color:var(--obs);border-color:rgba(249,115,22,.3);background:rgba(249,115,22,.08)}
+.vchip.c6{color:var(--lean);border-color:rgba(255,215,0,.28);background:rgba(255,215,0,.06)}
+
+/* NAV CARD */
+.prev-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--deep);border-radius:10px;padding:18px 22px;margin:32px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.prev-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:5px}
+.prev-title{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--text)}
+.prev-desc{font-size:.82rem;color:var(--muted);margin-top:4px}
+.prev-btn{font-family:var(--fc);font-size:.74rem;padding:9px 16px;background:rgba(167,139,250,.1);border:1px solid var(--deep);color:var(--deep);border-radius:7px;text-decoration:none;white-space:nowrap;flex-shrink:0;transition:all .2s}
+.prev-btn:hover{background:rgba(167,139,250,.2);transform:translateY(-1px)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">URL Shortener · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Shortcode Generation</div>
+    <div class="sb-part">Part 2 of 2 — Variants 4–6 + Decision Framework</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">Variants 4–6</div>
+      <li class="ni sub"><a href="#variant4">Variant 4: Hash-Based</a></li>
+      <li class="ni sub"><a href="#v4-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v4-birthday">↳ Birthday Paradox Math</a></li>
+      <li class="ni sub"><a href="#v4-strengths">↳ Strengths &amp; Sweet Spot</a></li>
+      <li class="ni sub"><a href="#v4-limits">↳ Limitations &amp; Failures</a></li>
+      <li class="ni sub"><a href="#v4-ops">↳ Operational Considerations</a></li>
+      <li class="ni sub"><a href="#v4-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#variant5">Variant 5: Pre-Generated Pool</a></li>
+      <li class="ni sub"><a href="#v5-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v5-strengths">↳ Strengths &amp; Sweet Spot</a></li>
+      <li class="ni sub"><a href="#v5-limits">↳ Limitations &amp; Failures</a></li>
+      <li class="ni sub"><a href="#v5-ops">↳ Operational Considerations</a></li>
+      <li class="ni sub"><a href="#v5-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#variant6">Variant 6: Counter + Random Suffix</a></li>
+      <li class="ni sub"><a href="#v6-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#v6-nuances">↳ L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Master Comparison</div>
+      <li class="ni"><a href="#comparison">All 6 Variants Table</a></li>
+      <li class="ni"><a href="#decision-framework">Decision Framework</a></li>
+      <li class="ni"><a href="#decision-tree">Decision Tree</a></li>
+    </li>
+    <li class="ng"><div class="nl">Synthesis</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">URL Shortener · Deep Dive Series · Part 2 of 2</div>
+  <h1>Shortcode Generation<br>Variants 4–6 +<br>Decision Framework</h1>
+  <div class="hero-meta">
+    <span>🔴 Hash-Based (Birthday Paradox)</span>
+    <span>🟠 Pre-Generated Pool</span>
+    <span>🟡 Counter + Random</span>
+    <span>📊 6-Variant Comparison Table</span>
+    <span>⚙️ Decision Framework Script</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + Variants 1–3</span>
+    <span class="part-pill active-part">Part 2: Variants 4–6 + Decision Framework</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">This part covers the three remaining strategies: Hash-Based generation (with birthday paradox math), Pre-Generated Pool (the "separation of concerns" approach), and Counter + Random (best of both worlds). Ends with the definitive 6-variant comparison table and a decision framework script you can use verbatim in an interview.</p>
+</section>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 4: HASH-BASED               -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant4">
+  <h2>Variant 4: Hash-Based (MD5/SHA256 of URL)</h2>
+</div>
+
+<div class="variant-card v4">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 4</div><div class="variant-name">Hash-Based Generation</div></div>
+      <span class="variant-badge">Idempotent · Birthday Paradox Risk</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>Hash the original URL and take the first N characters of the hash as the shortcode, with collision detection/resolution.</p>
+    <div class="inline-q">Core insight: Cryptographic hashes already produce uniformly distributed, deterministic outputs. We're borrowing their entropy for uniqueness — but truncation destroys the collision-resistance properties.</div>
+    <p><strong>The inventor's problem:</strong> "I want idempotency — the same URL should always get the same shortcode. Also, I don't want any coordination or counters."</p>
+
+    <div class="section-tag how" id="v4-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step · Hash + Collision Resolution</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>1. User submits: https://example.com/my-long-path
+2. Compute: MD5("https://example.com/my-long-path") = "a1b2c3d4e5f6..."
+3. Take first 7 characters: "a1b2c3d"
+4. Check DB: "Is a1b2c3d taken?"
+   Case A: NO → Insert and return "a1b2c3d"  ✓
+   Case B: YES, same URL → Return existing (idempotent!) ✓
+   Case C: YES, different URL (COLLISION!):
+     Option 1: Slide window: take chars 1-8 → "1b2c3d4"
+     Option 2: hash(hash + nonce): hash("a1b2c3d4..." + "1")
+     Repeat until unique
+
+Concrete collision scenario:
+  URL1 = "https://example.com/page-a"
+    MD5 = "a1b2c3d4e5f6..."
+    shortcode "a1b2c3d" → NOT IN DB → SUCCESS
+
+  URL2 = "https://example.com/page-b"
+    MD5 = "a1b2c3d999..."   ← same first 7 chars!
+    shortcode "a1b2c3d" → IN DB, different URL → COLLISION
+    Try:  "1b2c3d9" → NOT IN DB → SUCCESS</pre></div>
+
+    <h5 id="v4-birthday">Birthday Paradox Collision Probability</h5>
+    <p style="font-size:.88rem;color:var(--muted)">With 7 hex characters: 16⁷ = ~268 million possibilities. Collision probability after N URLs:</p>
+    <table class="birthday-table">
+      <thead><tr><th>URL Count</th><th>Collision Probability</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>10,000</td><td class="ok">~0.02%</td><td class="ok">Safe ✓</td></tr>
+        <tr><td>100,000</td><td class="warn2">~2%</td><td class="warn2">Watch ⚠</td></tr>
+        <tr><td>1,000,000</td><td class="bad">~86%</td><td class="bad">Broken ✗</td></tr>
+        <tr><td>10,000,000</td><td class="bad">&gt;99.99%</td><td class="bad">Unusable ✗</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.85rem;color:var(--muted)">Formula: P(collision) ≈ 1 − e^(−n² / 2 × 268M)</p>
+
+    <div class="section-tag strengths" id="v4-strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>Idempotency is a hard requirement</li>
+        <li>Moderate scale (&lt;10M unique URLs)</li>
+        <li>Read-heavy workload (same URL → same code, fast)</li>
+        <li>Natural deduplication of identical URLs</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>Idempotency:</strong> Same URL always gets same shortcode</li>
+        <li><strong>Truly stateless computation:</strong> Before the DB check, no coordination needed</li>
+        <li><strong>Content-based addressing:</strong> Similar to git (SHA-1 of content)</li>
+        <li><strong>Deduplication:</strong> Identical URLs naturally collapse to one code</li>
+      </ul>
+    </div>
+
+    <div class="section-tag limits" id="v4-limits">D) Limitations &amp; Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Collision rate scales with N²:</strong> Birthday paradox makes this untenable at scale</li>
+        <li><strong>Collision resolution is expensive:</strong> Each collision = DB check + retry</li>
+        <li><strong>Not time-sortable:</strong> Hash order is meaningless</li>
+        <li><strong>Short codes = more collisions:</strong> The length vs. collision trade-off is brutal</li>
+      </ul>
+    </div>
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario: Collision Storm at Scale</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Full Parking Lot Problem</span></div>
+      <pre>State: 50M URLs in system, using 7-char shortcodes
+
+New URL submitted:
+  Attempt 1: Hash prefix = "a1b2c3d" → COLLISION
+  Attempt 2: Shifted prefix = "x7y8z9a" → COLLISION
+  ...
+  Attempt 47: Finally find unique code
+
+When 90% of codes are taken, finding an empty spot
+takes 10x longer on average.
+
+System slows dramatically as namespace fills.</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>MD5/SHA256 are cryptographic hashes designed to resist collisions on the <em>full</em> hash. When you truncate to 7 characters, <strong>you lose all those security properties</strong>. The 7-character prefix collides at birthday paradox rates, not cryptographic rates. Using "SHA256" doesn't make 7 characters any safer than random characters.</p>
+    </div>
+
+    <div class="section-tag ops" id="v4-ops">E) Operational Considerations</div>
+    <div class="callout info">
+      <div class="callout-title">Key Metrics to Monitor</div>
+      <ul>
+        <li>Collision rate — % of generations requiring retry (alert at &gt;1%)</li>
+        <li>Average retries per success — should stay &lt;1.1</li>
+        <li>Namespace utilization — % of possible shortcodes used</li>
+        <li>p99 latency — tail latency grows with collision rate</li>
+      </ul>
+    </div>
+    <table class="debug-table">
+      <thead><tr><th>Symptom</th><th>Likely Cause</th><th>Investigation</th></tr></thead>
+      <tbody>
+        <tr><td>Latency increasing over time</td><td>Rising collision rate</td><td>Check namespace utilization</td></tr>
+        <tr><td>Duplicate shortcodes</td><td>Collision resolution bug</td><td>Check retry logic</td></tr>
+        <tr><td>Uneven shortcode distribution</td><td>Poor hash function</td><td>Analyze character distribution</td></tr>
+        <tr><td>Idempotency failure</td><td>Cache/DB inconsistency</td><td>Check same-URL detection</td></tr>
+      </tbody>
+    </table>
+    <h5>Shortcode Length vs. Namespace</h5>
+    <div class="callout warn">
+      <div class="callout-title">Each Character Adds 62x Namespace (base62)</div>
+      <ul>
+        <li>6 chars: 56 billion possible</li>
+        <li>7 chars: 3.5 trillion possible</li>
+        <li>8 chars: 218 trillion possible</li>
+      </ul>
+    </div>
+
+    <div class="section-tag nuances" id="v4-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "At what namespace utilization percentage would you switch from hash-based to a different strategy, and how would you calculate that threshold?"</p>
+      <p><strong>Non-obvious insight:</strong> Hash-based generation <em>seems</em> "coordination-free" but actually requires coordination at the collision-check step. <mark class="g">The DB check IS coordination — you've just deferred it.</mark> As collision rate rises, you do MORE coordination, not less. The "coordination-free" claim is misleading.</p>
+      <p><strong>Google-scale vs. startup-scale:</strong> At Google scale, hash-based is generally avoided for primary key generation — collision rates at billions of URLs are unacceptable. At startup scale, it's fine and has the nice property of idempotency. <strong>The key: migrate around 0.1% collision rate, not when things are broken.</strong></p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 5: PRE-GENERATED POOL       -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant5">
+  <h2>Variant 5: Pre-Generated Pool (Key Service)</h2>
+</div>
+
+<div class="variant-card v5">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 5</div><div class="variant-name">Pre-Generated Pool</div></div>
+      <span class="variant-badge">Zero Collision · Consistent Latency</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>Generate millions of random shortcodes in advance, store them in a pool, and hand them out on demand.</p>
+    <div class="inline-q">Core insight: Separate generation from allocation. Generate codes when you have spare capacity; allocate them when users need them. This moves the expensive collision check to the cold path.</div>
+    <p><strong>Real examples:</strong> Gift card numbers (pre-generated, handed out at purchase), lottery tickets, beta invite codes.</p>
+
+    <div class="section-tag how" id="v5-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step · Pool Architecture</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Pool State at t=0:
+  code    | status
+  a1B2c3D | available
+  x7Y8z9A | available
+  m4N5o6P | available
+  ... (10 million more)
+
+Request arrives at t=1s:
+  BEGIN TRANSACTION
+    SELECT code FROM pool
+    WHERE status='available'
+    LIMIT 1
+    FOR UPDATE SKIP LOCKED  ← critical: avoid hot row problem
+  → Returns "a1B2c3D"
+    UPDATE pool SET status='used' WHERE code='a1B2c3D'
+  COMMIT
+
+Pool State at t=1s:
+  a1B2c3D | used      ← Now taken
+  x7Y8z9A | available
+  m4N5o6P | available
+
+Background Generator (runs when pool < 1M available):
+  1. Generate 1M random 7-character strings
+  2. Check against used codes (one-time check)
+  3. INSERT valid codes with status='available'
+  4. Continue until pool refilled</pre></div>
+
+    <div class="callout warn">
+      <div class="callout-title">Hot Row Problem — Critical Implementation Detail</div>
+      <p>Naive implementation: <code>SELECT ... WHERE status='available' LIMIT 1 FOR UPDATE</code> creates a hot row problem. Every server wants the same "first" available row → lock contention → latency spikes.</p>
+      <p style="margin-top:8px"><strong>Solution:</strong> Use <code>SKIP LOCKED</code> (Postgres) — servers skip rows locked by other transactions and grab the next available one. Or partition the pool across servers.</p>
+    </div>
+
+    <div class="section-tag strengths" id="v5-strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>Security-sensitive applications (codes can't be enumerated)</li>
+        <li>Moderate scale (10K–1M allocations/day)</li>
+        <li>Have capacity for background processing</li>
+        <li>Need consistent, predictable allocation latency</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>Unpredictable codes:</strong> No sequence, no pattern, can't enumerate</li>
+        <li><strong>Guaranteed uniqueness:</strong> Collision check happens at generation (cold path), not allocation (hot path)</li>
+        <li><strong>Consistent latency:</strong> Allocation is O(1), no retry loops</li>
+        <li><strong>Graceful degradation:</strong> Pool depletes gradually, not suddenly</li>
+      </ul>
+    </div>
+
+    <div class="section-tag limits" id="v5-limits">D) Limitations &amp; Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Pool exhaustion:</strong> If allocation rate exceeds generation rate, pool empties</li>
+        <li><strong>Storage overhead:</strong> Must store millions of pre-generated codes</li>
+        <li><strong>Hot key problem:</strong> Pool table becomes contention point without SKIP LOCKED</li>
+        <li><strong>Wastage:</strong> Codes generated but never used</li>
+      </ul>
+    </div>
+    <div class="failure-box">
+      <div class="failure-title">Failure Scenario: Traffic Spike Exhausts Pool</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Pool Exhaustion Timeline</span></div>
+      <pre>t=0:     Pool: 10M available codes
+         Normal traffic: 100 allocations/sec
+         Generation rate: 1,000 codes/sec
+         Steady state: pool grows ✓
+
+t=60m:   Viral event! Traffic → 50,000 allocations/sec
+         Pool draining at 49,000 codes/sec
+
+t=63m:   Pool EXHAUSTED (0 available)
+         New requests fail or block
+
+t=63m+:  Generation still only 1,000/sec
+         Recovery time: 10M / 1,000 = ~166 minutes!
+
+Impact: ~3 hours of degraded service after exhaustion
+
+Fix: Pre-warm pool to 100M+ codes, scale generator
+     during high traffic, alert at 20% depletion</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>Naive <code>SELECT ... LIMIT 1 FOR UPDATE</code> creates a hot row problem. At 10,000 req/sec, all servers compete for the same "first" row → lock contention → latency spikes. Fix: use <code>SKIP LOCKED</code> in PostgreSQL, which lets servers skip locked rows and grab the next available one atomically.</p>
+    </div>
+
+    <div class="section-tag ops" id="v5-ops">E) Operational Considerations</div>
+    <div class="callout info">
+      <div class="callout-title">Key Metrics to Monitor</div>
+      <ul>
+        <li>Pool depth — available codes remaining (alert at 20%)</li>
+        <li>Allocation rate — codes used per second</li>
+        <li>Generation rate — codes added per second</li>
+        <li>Pool depletion ETA — at current rate, when does pool hit zero?</li>
+      </ul>
+    </div>
+    <table class="debug-table">
+      <thead><tr><th>Symptom</th><th>Likely Cause</th><th>Investigation</th></tr></thead>
+      <tbody>
+        <tr><td>Pool depleting fast</td><td>Traffic spike or generation failure</td><td>Check both rates</td></tr>
+        <tr><td>High allocation latency</td><td>Hot key contention</td><td>Check lock wait times</td></tr>
+        <tr><td>Duplicate codes</td><td>Concurrent allocation bug</td><td>Check transaction isolation</td></tr>
+        <tr><td>Generation failing</td><td>Collisions with existing codes</td><td>Check namespace utilization</td></tr>
+      </tbody>
+    </table>
+    <h5>Tuning Guide</h5>
+    <div class="callout warn">
+      <div class="callout-title">Sizing Rules of Thumb</div>
+      <ul>
+        <li><strong>Pool size:</strong> 10× expected daily allocation rate</li>
+        <li><strong>Refill threshold:</strong> Start generating at 80% depletion</li>
+        <li><strong>Partition count:</strong> 1 partition per 1,000 req/sec capacity</li>
+        <li><strong>Code length:</strong> Start with 7 chars; increase if utilization &gt;1%</li>
+      </ul>
+    </div>
+
+    <div class="section-tag nuances" id="v5-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How would you design the pool allocation to avoid hot spots while maintaining transactional guarantees across multiple datacenter regions?"</p>
+      <p><strong>Non-obvious insight:</strong> Pool approach moves collision resolution from <mark>hot path (user request) to cold path (background generation)</mark>. This is a classic latency optimization pattern: do expensive work when you have time, cache the results, serve them quickly. Most candidates don't name this pattern explicitly — doing so signals L7 thinking.</p>
+      <p><strong>Google-scale vs. startup-scale:</strong> At Google scale, you'd need distributed pools per region/datacenter with careful capacity planning — the pool becomes its own distributed system. At startup scale, a single partitioned database table with SKIP LOCKED works fine.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- VARIANT 6: COUNTER + RANDOM SUFFIX  -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="variant6">
+  <h2>Variant 6: Counter + Random Suffix</h2>
+</div>
+
+<div class="variant-card v6">
+  <div class="variant-hdr" onclick="toggleVariant(this)">
+    <div class="variant-title-row">
+      <div><div class="variant-num">Variant 6</div><div class="variant-name">Counter + Random Suffix</div></div>
+      <span class="variant-badge">Best of Both Worlds</span>
+    </div>
+    <span class="variant-toggle">▾</span>
+  </div>
+  <div class="variant-body">
+
+    <div class="section-tag what">A) What It Is</div>
+    <p>Combine a sequential counter for uniqueness with random characters for unpredictability.</p>
+    <div class="inline-q">Core insight: Sequential counters are great for uniqueness; random bits are great for security. Combine both to get both properties without sacrificing either.</div>
+
+    <div class="section-tag how" id="v6-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Strategy 1: Concatenate Counter + Random</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Strategy: 4-char counter + 3-char random
+
+Request 1:
+  Counter: 1 → base62: "0001"
+  Random 3 chars: "xYz"
+  Shortcode: "0001xYz"
+
+Request 2:
+  Counter: 2 → base62: "0002"
+  Random 3 chars: "aBc"
+  Shortcode: "0002aBc"
+
+Result: Unique (counter) but hard to predict (random)
+Attacker must guess "0001???" — 62³ = 238,328 possibilities per code</pre></div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">Strategy 2: XOR Obfuscation</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Counter: 12345
+Secret key: 98765 (fixed, stored securely)
+XOR:    12345 XOR 98765 = 110876
+base62(110876) = "Rxq"
+
+Counter: 12346
+XOR:    12346 XOR 98765 = 110879
+base62(110879) = "Rxt"
+
+Output looks random, but deterministically REVERSIBLE with key.
+Counter is recoverable: base62_decode("Rxq") XOR 98765 = 12345</pre></div>
+
+    <div class="callout good">
+      <div class="callout-title">Where It Shines</div>
+      <ul>
+        <li><strong>Best of both worlds:</strong> Unique (counter) AND unpredictable (random/XOR)</li>
+        <li><strong>Simple to implement:</strong> Small tweak to counter approach</li>
+        <li><strong>Reversible (if needed):</strong> With XOR, can recover counter from code for debugging</li>
+        <li><strong>Real examples:</strong> YouTube video IDs, analytics tracking codes</li>
+      </ul>
+    </div>
+
+    <div class="callout fail">
+      <div class="callout-title">Where It Breaks Down</div>
+      <ul>
+        <li><strong>Longer codes:</strong> Need space for both counter and random bits</li>
+        <li><strong>More complex:</strong> More logic than pure counter, more failure modes</li>
+        <li><strong>XOR is NOT cryptographic:</strong> Attackers can collect codes and potentially recover the key</li>
+      </ul>
+    </div>
+
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>Simple XOR with a fixed key is NOT cryptographically secure. Attackers can collect multiple shortcodes and potentially recover the key through statistical analysis. For real security, use proper <strong>Format-Preserving Encryption (FPE)</strong> like FF1 or FF3 — this gives you XOR-like simplicity with cryptographic strength.</p>
+    </div>
+
+    <div class="section-tag nuances" id="v6-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How would you design the obfuscation to prevent statistical attacks while maintaining the ability to debug production issues?"</p>
+      <p><strong>Non-obvious insight:</strong> Simple XOR is not cryptographically secure. For real security, use <strong>Format-Preserving Encryption (FPE)</strong> like FF1/FF3. FPE takes a number, encrypts it, and outputs a number of the same length — so base62(7) in gives base62(7) out, but with true cryptographic guarantees. This is what URL shorteners that claim "unpredictable codes" should be using.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- MASTER COMPARISON TABLE             -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="comparison">
+  <h2>All 6 Variants — Comprehensive Comparison</h2>
+</div>
+
+<div class="variant-chips">
+  <span class="vchip c1">V1: Auto-Increment</span>
+  <span class="vchip c2">V2: Pre-Allocated Ranges</span>
+  <span class="vchip c3">V3: Snowflake</span>
+  <span class="vchip c4">V4: Hash-Based</span>
+  <span class="vchip c5">V5: Pre-Generated Pool</span>
+  <span class="vchip c6">V6: Counter + Random</span>
+</div>
+
+<div class="comp-wrap">
+  <h3>📊 Master Comparison Table</h3>
+  <table class="comp-table">
+    <thead>
+      <tr>
+        <th>Variant</th>
+        <th>Core Mechanism</th>
+        <th>Best For</th>
+        <th>Worst For</th>
+        <th>Key Trade-off</th>
+        <th>Failure Mode</th>
+        <th>Real-World User</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="v1c">DB Auto-Increment</td>
+        <td>Single counter, base62 encode</td>
+        <td>Simple systems, MVP, &lt;10K writes/sec</td>
+        <td>Global distribution, high throughput</td>
+        <td>Simplicity vs. Scale</td>
+        <td>Single DB = SPOF</td>
+        <td>bit.ly (early)</td>
+      </tr>
+      <tr>
+        <td class="v2c">Pre-Allocated Ranges</td>
+        <td>Batch ID ranges to servers</td>
+        <td>High throughput, low coordination</td>
+        <td>Server churn (wastes IDs)</td>
+        <td>Coordination frequency vs. Wastage</td>
+        <td>Range service down = partial outage</td>
+        <td>Flickr Ticket Servers</td>
+      </tr>
+      <tr>
+        <td class="v3c">Snowflake/Timestamp</td>
+        <td>Timestamp + Machine ID + Sequence</td>
+        <td>Extreme scale, global, time-sorted</td>
+        <td>Clock synchronization challenges</td>
+        <td>Coordination-free vs. Clock dependency</td>
+        <td>Clock drift = availability loss</td>
+        <td>Twitter, Discord</td>
+      </tr>
+      <tr>
+        <td class="v4c">Hash-Based</td>
+        <td>Hash URL, truncate</td>
+        <td>Idempotency needed, deduplication</td>
+        <td>Large scale (birthday paradox)</td>
+        <td>Idempotency vs. Collision rate</td>
+        <td>High utilization = collision storm</td>
+        <td>git (similar concept)</td>
+      </tr>
+      <tr>
+        <td class="v5c">Pre-Generated Pool</td>
+        <td>Background-generate, allocate on demand</td>
+        <td>Unpredictable codes, consistent latency</td>
+        <td>Unpredictable traffic spikes</td>
+        <td>Predictability of allocation vs. Pool management</td>
+        <td>Pool exhaustion</td>
+        <td>Gift cards, invite codes</td>
+      </tr>
+      <tr>
+        <td class="v6c">Counter + Random</td>
+        <td>Counter for unique, random/XOR for obfuscation</td>
+        <td>Need both unique AND unpredictable</td>
+        <td>Extreme simplicity requirements</td>
+        <td>Code length vs. Properties</td>
+        <td>Implementation bugs</td>
+        <td>YouTube, analytics codes</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════ -->
+<!-- DECISION FRAMEWORK                  -->
+<!-- ════════════════════════════════════ -->
+<div class="sec-hdr" id="decision-framework">
+  <h2>Decision Framework — How to Choose in an Interview</h2>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">The 5-Question Decision Process</div>
+  <p>Walk through these questions in order. The first question that has a definitive answer determines your strategy. Don't skip ahead.</p>
+</div>
+
+<div class="df-card">
+  <div class="df-step">
+    <div class="df-step-num">1</div>
+    <div class="df-step-content">
+      <h5>Do you need idempotency? (Same URL = same code?)</h5>
+      <p>If YES → <code>Hash-Based (V4)</code>. Accept the collision trade-off; migrate away when utilization hits 0.1%.</p>
+      <p>If NO → continue to step 2.</p>
+    </div>
+  </div>
+  <div class="df-step">
+    <div class="df-step-num">2</div>
+    <div class="df-step-content">
+      <h5>What's your write throughput requirement?</h5>
+      <p>If &lt;10K writes/sec → <code>Auto-Increment (V1)</code>. Simplest, most debuggable, proven.</p>
+      <p>If 10K–100K writes/sec → <code>Pre-Allocated Ranges (V2)</code>. Amortize coordination cost.</p>
+      <p>If &gt;100K writes/sec → continue to step 3.</p>
+    </div>
+  </div>
+  <div class="df-step">
+    <div class="df-step-num">3</div>
+    <div class="df-step-content">
+      <h5>Can you tolerate clock synchronization requirements?</h5>
+      <p>If YES (have NTP/GPS infrastructure) → <code>Snowflake (V3)</code>. Zero coordination, time-sortable, scales to millions/sec.</p>
+      <p>If NO (clock reliability uncertain) → <code>Pre-Generated Pool (V5)</code>. Consistent latency, no clock dependency.</p>
+    </div>
+  </div>
+  <div class="df-step">
+    <div class="df-step-num">4</div>
+    <div class="df-step-content">
+      <h5>Do you need codes to be unpredictable but sequential-ish?</h5>
+      <p>If YES → <code>Counter + Random (V6)</code> or <code>Counter + FPE (V3 variant)</code>. Best of both worlds.</p>
+    </div>
+  </div>
+  <div class="df-step">
+    <div class="df-step-num">5</div>
+    <div class="df-step-content">
+      <h5>Is this for a URL shortener specifically at L6/L7 interview scale?</h5>
+      <p>At 500M URLs/month: <code>Pre-Allocated Ranges (V2) + FPE obfuscation</code>.</p>
+      <p>This gives zero collisions (counter-based), minimal coordination (range allocation), and unpredictable codes (FPE encryption).</p>
+    </div>
+  </div>
+</div>
+
+<!-- DECISION TREE DIAGRAM -->
+<div id="decision-tree">
+  <div class="dt-wrap">
+    <div class="dt-hdr"><span class="dt-lbl">Diagram · Decision Tree — Which Variant?</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+    <pre>Start: Shortcode Generation Strategy Decision
+            │
+            ▼
+    Need idempotency?
+    (Same URL → same code)
+       │          │
+      YES          NO
+       │            │
+   Hash-Based (V4)  ▼
+                Write QPS requirement?
+                │            │            │
+             < 10K       10K-100K       > 100K
+                │            │            │
+           Auto-Incr     Pre-Alloc      Can tolerate
+              (V1)        Ranges (V2)   clock sync?
+                                         │         │
+                                        YES         NO
+                                         │          │
+                                     Snowflake   Pre-Gen
+                                       (V3)      Pool (V5)
+                                         │
+                                 Need unpredictable
+                                 but sequential?
+                                         │
+                                        YES
+                                         │
+                                  Counter + FPE
+                                   (V6 variant)</pre>
+  </div>
+</div>
+
+<!-- COMPLETE SCRIPT -->
+<div class="sec-hdr" style="margin-top:40px"><h3>The Complete Interview Script — URL Shortener at 500M URLs/Month</h3></div>
+
+<div class="callout extra">
+  <div class="callout-title">Use This Verbatim (Adapted for Your System)</div>
+  <p>This is the complete L7-signal script for choosing a shortcode generation strategy in a URL shortener interview at the given scale.</p>
+</div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Complete Interview Script</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>"For shortcode generation at 500M URLs/month, let me walk through my requirements
+and eliminate options:
+
+I need: zero collisions (non-negotiable), &lt;10ms claim latency on the hot path,
+unpredictable codes (security — can't enumerate URLs), and multi-region support.
+
+I can rule out Auto-Increment (V1): predictable codes are a security risk for a
+public service — competitors can enumerate all URLs.
+
+I can rule out Hash-Based (V4): at 500M URLs, collision probability approaches
+~1%. The birthday paradox makes this untenable at our scale. Also, I don't
+actually need idempotency — I'm fine with the same URL getting different codes.
+
+I can rule out Snowflake (V3) as my primary shortcode mechanism: while it's great
+for internal IDs, the full 64-bit ID encodes creation time (privacy leak) and
+converts to 11+ base62 characters (too long for a URL shortener).
+
+Between Pre-Allocated Ranges (V2), Pre-Generated Pool (V5), and Counter+FPE:
+
+Pre-Generated Pool gives me unpredictability built-in, but pool exhaustion
+during traffic spikes is a reliability risk I'd rather avoid.
+
+My choice: Pre-Allocated Ranges + Format-Preserving Encryption (FPE)
+
+Architecture:
+  - Range Allocator: Backed by a Postgres sequence or etcd
+  - API servers request ranges of 10,000 IDs at startup
+  - Pre-fetch next range when 80% exhausted (zero blocking)
+  - Apply FPE (FF1 or FF3) to convert sequential counter to a
+    7-character base62 code that looks random but is reversible
+
+Why FPE over XOR? FPE is cryptographically secure — you can't recover the
+counter without the secret key, even with millions of samples.
+
+Operational properties:
+  - Zero collisions: mathematically guaranteed (counter-based)
+  - Minimal coordination: range fetch every 10K URLs, ~0.02% of requests
+  - Unpredictable: FPE output is indistinguishable from random
+  - Multi-region: each region gets non-overlapping counter ranges
+  - Fallback: if range allocator unavailable, serve from pre-fetched range
+
+Monitoring:
+  - Alert when range pool &lt;20% capacity
+  - Track range fetch latency (should be &lt;50ms, happens rarely)
+  - No collision monitoring needed (counter = impossible to collide)
+
+The tradeoff I'm accepting: more operational complexity than auto-increment,
+but the properties are exactly right for a public URL shortener at this scale."</pre></div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Complete Final Soundbite</div>
+  <p>"Every shortcode strategy is making one bet: either I trust coordination to guarantee uniqueness, or I trust math. At URL shortener scale, I trust math — counter-based generation with FPE obfuscation gives me mathematical uniqueness guarantees without the coordination cost. The key insight is that 'coordination-free' doesn't mean 'magic' — you're trading synchronization overhead for the careful design of a system where uniqueness is baked into the structure itself."</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Complete Deep Dive Summary</div>
+  <p>The 6 variants in order of sophistication: <strong>Auto-Increment</strong> (DB as coordinator) → <strong>Pre-Allocated Ranges</strong> (amortize coordination) → <strong>Snowflake</strong> (eliminate coordination with physics) → <strong>Hash-Based</strong> (trade coordination for idempotency) → <strong>Pre-Generated Pool</strong> (defer coordination to cold path) → <strong>Counter + FPE</strong> (uniqueness + security without trade-off). For a public URL shortener at L6/L7 interview scale: <strong>Pre-Allocated Ranges + FPE is the answer, and you should be able to explain why every other option was eliminated.</strong></p>
+</div>
+
+<!-- PREV CARD -->
+<div class="prev-card">
+  <div>
+    <div class="prev-label">← Part 1</div>
+    <div class="prev-title">Core Understanding + Variants 1–3</div>
+    <div class="prev-desc">Elevator pitch, analogy, mental model, Auto-Increment, Pre-Allocated Ranges, Snowflake IDs</div>
+  </div>
+  <a href="#" class="prev-btn">← Back to Part 1</a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleVariant(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const pre = btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+function copyDiag(btn) {
+  const pre = btn.closest('.dt-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--hire)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
