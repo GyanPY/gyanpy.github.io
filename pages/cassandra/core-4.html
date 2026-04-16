@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cassandra Internals (Part 4/4) — Interview Mastery & Quick Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--cass2),var(--cass),var(--cass3),var(--cass4),var(--strong));width:0%;z-index:1000;transition:width .1s}
+
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--strong);background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--strong)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(245,166,35,.05)}
+.ni.active a{color:var(--strong);border-left-color:var(--strong);background:rgba(245,166,35,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--strong);border-color:var(--strong);transform:translateY(-2px)}
+
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--strong);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--cass2) 35%,var(--cass3) 65%,var(--strong));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(245,166,35,.1);border-color:var(--strong);color:var(--strong)}
+
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+.part-banner{background:linear-gradient(135deg,rgba(245,166,35,.08),rgba(139,92,246,.04));border:1px solid rgba(245,166,35,.2);border-radius:12px;padding:22px 26px;margin:0 0 36px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--strong);margin-bottom:7px;font-weight:600}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* LEVEL MATRIX */
+.level-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.level-table thead tr{background:linear-gradient(90deg,rgba(139,92,246,.12),rgba(59,130,246,.06))}
+.level-table th{padding:10px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass2);border-bottom:1px solid rgba(139,92,246,.2);white-space:nowrap}
+.level-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5}
+.level-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.level-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.level-table td:first-child{font-weight:600;color:var(--text);white-space:nowrap;font-size:.81rem}
+.level-table td.l5{border-left:2px solid rgba(59,130,246,.25);color:var(--cass)}
+.level-table td.l6{border-left:2px solid rgba(0,191,165,.25);color:var(--hire)}
+.level-table td.l7{border-left:2px solid rgba(245,166,35,.25);color:var(--strong)}
+
+/* RED FLAGS */
+.rf-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.rf-table thead tr{background:linear-gradient(90deg,rgba(255,107,107,.12),rgba(251,113,133,.06))}
+.rf-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.2)}
+.rf-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5;font-size:.81rem}
+.rf-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.rf-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.rf-table td:first-child{font-family:var(--fc);font-weight:600;color:var(--no);font-size:.78rem}
+.rf-table td.fix{color:var(--cass4)}
+
+/* NUANCES GRID */
+.nuance-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.nuance-item{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--strong);border-radius:0 7px 7px 0;padding:12px 14px}
+.nuance-item p{font-size:.86rem;color:var(--muted);line-height:1.6}
+.nuance-item strong{color:var(--text)}
+
+/* CLARIFYING QUESTIONS */
+.cq-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start}
+.cq-q{font-family:var(--fc);font-size:.8rem;color:var(--cass3);font-weight:600;flex-shrink:0;font-style:italic}
+.cq-why{font-size:.86rem;color:var(--muted);line-height:1.55}
+.cq-why strong{color:var(--text)}
+
+/* SOUNDBITE COLLECTION */
+.sb-collection{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.sb-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 15px;position:relative}
+.sb-item::before{content:'"';font-family:var(--fh);font-size:2.8rem;color:var(--border);position:absolute;top:-5px;left:8px;line-height:1}
+.sb-label{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:7px}
+.sb-text{font-size:.84rem;color:var(--muted);line-height:1.6;font-style:italic;padding-left:8px}
+
+/* RUBRIC TABLE */
+.rubric-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.rubric-table thead tr{background:linear-gradient(90deg,rgba(0,191,165,.1),rgba(59,130,246,.05))}
+.rubric-table th{padding:10px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--hire);border-bottom:1px solid rgba(0,191,165,.18)}
+.rubric-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5;font-size:.8rem}
+.rubric-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.rubric-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.rubric-table td:first-child{font-weight:700;color:var(--text)}
+.rubric-table td.hero{color:var(--strong)}
+.rubric-table td.how{color:var(--cass3);font-style:italic}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--cass2)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+mark{background:rgba(59,130,246,.16);color:var(--cass);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* AMBIGUITY CARDS */
+.ambiguity{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--cass3);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:10px}
+.ambiguity-q{font-family:var(--fc);font-size:.8rem;color:var(--cass3);font-weight:600;margin-bottom:6px}
+.ambiguity-body p{font-size:.86rem;color:var(--muted);line-height:1.6}
+.ambiguity-body strong{color:var(--text)}
+
+/* QUICK REFERENCE */
+.qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.qr-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 18px;overflow:hidden}
+.qr-card.qr1{border-top:3px solid var(--cass)}
+.qr-card.qr2{border-top:3px solid var(--cass2)}
+.qr-card.qr3{border-top:3px solid var(--cass3)}
+.qr-card.qr4{border-top:3px solid var(--no)}
+.qr-card.qr5{border-top:3px solid var(--lean)}
+.qr-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px;font-weight:600}
+.qr-card.qr1 .qr-title{color:var(--cass)}.qr-card.qr2 .qr-title{color:var(--cass2)}
+.qr-card.qr3 .qr-title{color:var(--cass3)}.qr-card.qr4 .qr-title{color:var(--no)}
+.qr-card.qr5 .qr-title{color:var(--lean)}
+.qr-card p{font-size:.86rem;color:var(--muted);line-height:1.65;margin-bottom:6px}
+.qr-card ul{padding-left:16px;margin:4px 0}
+.qr-card li{font-size:.85rem;color:var(--muted);line-height:1.5;margin-bottom:3px}
+.qr-card strong{color:var(--text)}
+.qr-card code{font-family:var(--fc);font-size:.78rem;background:var(--surface2);border:1px solid var(--border);padding:1px 5px;border-radius:3px}
+
+/* CHECKLIST */
+.checklist{list-style:none;padding:0}
+.checklist li{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.3);font-size:.87rem;color:var(--muted);line-height:1.55}
+.checklist li:last-child{border-bottom:none}
+.checklist li::before{content:'☐';color:var(--strong);flex-shrink:0;font-size:1.1rem;margin-top:-2px}
+.checklist strong{color:var(--text)}
+
+/* SOUNDBITE HERO */
+.soundbite{background:linear-gradient(135deg,rgba(245,166,35,.1),rgba(59,130,246,.06));border:1px solid rgba(245,166,35,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--strong);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--strong);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* 30-second pitch */
+.pitch-card{background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(139,92,246,.05));border:1px solid rgba(59,130,246,.2);border-radius:10px;padding:20px 22px;margin:16px 0}
+.pitch-card h4{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass);margin-bottom:12px;font-weight:600}
+.pitch-card p{font-family:var(--fc);font-size:.86rem;color:var(--text);line-height:1.75}
+.pitch-card code{color:var(--cass2);background:transparent;border:none;padding:0}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .nuance-grid,.sb-collection,.qr-grid{grid-template-columns:1fr}
+  .cq-item{flex-direction:column;gap:5px}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Cassandra Architecture</div>
+    <div class="sb-part">Part 4 of 4 — Interview Mastery &amp; Quick Reference</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">§5 Interview Mastery</div>
+      <li class="ni sub"><a href="#level-matrix">L5 vs L6 vs L7 Matrix</a></li>
+      <li class="ni sub"><a href="#red-flags">Red Flags to Avoid</a></li>
+      <li class="ni sub"><a href="#nuances">Impressive Nuances</a></li>
+      <li class="ni sub"><a href="#clarifying-q">Clarifying Questions</a></li>
+      <li class="ni sub"><a href="#soundbites">Sound Bite Collection</a></li>
+    </li>
+    <li class="ng"><div class="nl">§6 Practice</div>
+      <li class="ni sub"><a href="#problem">Sample Problem: Messaging System</a></li>
+      <li class="ni sub"><a href="#ambiguities">Ambiguities to Clarify</a></li>
+      <li class="ni sub"><a href="#rubric">Strong Hire Rubric</a></li>
+    </li>
+    <li class="ng"><div class="nl">Quick Reference</div>
+      <li class="ni sub"><a href="#pitch">The 30-Second Pitch</a></li>
+      <li class="ni sub"><a href="#formulas">Key Formulas</a></li>
+      <li class="ni sub"><a href="#decisions">Critical Decisions</a></li>
+      <li class="ni sub"><a href="#danger">Danger Signs</a></li>
+      <li class="ni sub"><a href="#checklist">Interview Checklist</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Master Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 4 of 4</div>
+  <h1>Interview<br>Mastery &amp;<br>Quick Reference</h1>
+  <div class="hero-meta">
+    <span>⚖️ L5 vs L6 vs L7 Matrix</span>
+    <span>🚩 Red Flags to Avoid</span>
+    <span>💡 7 Impressive Nuances</span>
+    <span>🎬 Messaging System Practice Problem</span>
+    <span>📋 One-Page Quick Reference</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + 4 Mechanisms</span>
+    <span class="part-pill">Part 2: Compaction, Gossip &amp; Decisions</span>
+    <span class="part-pill">Part 3: Trade-offs, Scale &amp; Industry</span>
+    <span class="part-pill active-part">Part 4: Interview Mastery &amp; Quick Reference</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The final interview-focused layer. L5/L6/L7 differentiation matrix with exact phrases, red flags to avoid with better alternatives, seven impressive nuances to drop naturally, clarifying questions to ask, a 10-sound-bite collection, a complete messaging system practice problem with rubric, and the one-page quick reference card you can internalize before your interview.</p>
+</section>
+
+<!-- ======= PART 5: INTERVIEW MASTERY ======= -->
+<div class="part-banner">
+  <div class="part-banner-label">Part 5 · Interview Mastery</div>
+  <h2>Level Differentiation — L5 vs L6 vs L7</h2>
+  <p>Study the exact phrases. L7 answers are not longer — they're deeper. They show you've thought about the second-order effects, not just the primary design.</p>
+</div>
+
+<div id="level-matrix">
+  <table class="level-table">
+    <thead><tr><th>Aspect</th><th class="l5">L5 Answer (Solid)</th><th class="l6">L6 Answer (Strong)</th><th class="l7">L7 Answer (Exceptional)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Initial Approach</td>
+        <td class="l5">"I'll use Cassandra for this"</td>
+        <td class="l6">"Given write-heavy, multi-region requirements, Cassandra makes sense over DynamoDB because..."</td>
+        <td class="l7">"Let me first clarify the consistency requirements and access patterns — that determines whether Cassandra is the right choice or if we need a CP database"</td>
+      </tr>
+      <tr>
+        <td>Partition Key Design</td>
+        <td class="l5">"I'll use user_id as partition key"</td>
+        <td class="l6">"user_id gives even distribution but might create hot partitions for power users, so I'd bucket by time or hash"</td>
+        <td class="l7">"I'd analyze the access pattern: query by user + time range means user_id as partition key, timestamp as clustering column. For power users with millions of rows, I'd add a bucket suffix to bound partition size and enable parallel queries across buckets"</td>
+      </tr>
+      <tr>
+        <td>Consistency Level</td>
+        <td class="l5">"I'll use QUORUM for consistency"</td>
+        <td class="l6">"LOCAL_QUORUM for most operations to avoid cross-DC latency, EACH_QUORUM for critical writes"</td>
+        <td class="l7">"I'd tier consistency: CL=ONE for analytics writes, LOCAL_QUORUM for user data reads/writes, EACH_QUORUM with retry for financial operations, and client-side read-repair for cache coherence"</td>
+      </tr>
+      <tr>
+        <td>Compaction Strategy</td>
+        <td class="l5">"Default STCS"</td>
+        <td class="l6">"TWCS because it's time-series with TTL"</td>
+        <td class="l7">"TWCS with 1-hour windows because our queries are range scans over recent data, and 7-day TTL means clean SSTable drops. But I need to handle out-of-order writes which can cross window boundaries and create tombstones"</td>
+      </tr>
+      <tr>
+        <td>Failure Handling</td>
+        <td class="l5">"Cassandra handles failures automatically"</td>
+        <td class="l6">"Hinted handoff covers short outages, repair for longer ones, cross-DC replication for DC failures"</td>
+        <td class="l7">"Hinted handoff covers writes for 3 hours by default, but hints can overwhelm a returning node. I'd monitor pending hints and adjust max_hint_window. For longer outages, incremental repair on affected token ranges rather than full repair"</td>
+      </tr>
+      <tr>
+        <td>Operational Maturity</td>
+        <td class="l5">"We'll monitor it"</td>
+        <td class="l6">"I'd watch pending compactions, SSTable count, and P99 latency"</td>
+        <td class="l7">"Dashboards for SSTable count per read histogram (early warning for compaction lag), tombstone scans (delete pattern issues), cross-DC latency percentiles. Alerts: pending compactions &gt;50, SSTable count &gt;20 per read, P99 &gt;100ms with runbooks for each"</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- RED FLAGS -->
+<div class="sec-hdr" id="red-flags"><h2>§5.2 Red Flags to Avoid</h2></div>
+<table class="rf-table">
+  <thead><tr><th>Red Flag</th><th>What's Wrong</th><th>What to Say Instead</th></tr></thead>
+  <tbody>
+    <tr><td>"Cassandra is eventually consistent"</td><td>Missing nuance about tunable consistency</td><td class="fix">"Cassandra offers tunable consistency — CL=QUORUM gives strong consistency at the cost of latency"</td></tr>
+    <tr><td>"Just add more nodes if it's slow"</td><td>Doesn't identify actual bottleneck</td><td class="fix">"First check: compaction lag, hot partitions, or tombstones. Adding nodes only helps if the bottleneck is capacity, not data modeling"</td></tr>
+    <tr><td>"Use QUORUM for everything"</td><td>Ignores latency trade-off in multi-DC</td><td class="fix">"LOCAL_QUORUM for most reads (avoids cross-DC tax), escalate to EACH_QUORUM only for operations requiring global consistency"</td></tr>
+    <tr><td>"Cassandra doesn't do transactions"</td><td>Ignores LWT and batch capabilities</td><td class="fix">"Cassandra supports LWT for single-partition CAS, and logged batches for atomic multi-row writes within a partition. Cross-partition transactions aren't supported — design around that."</td></tr>
+    <tr><td>"We'll figure out the schema later"</td><td>Query-first design is essential in Cassandra</td><td class="fix">"In Cassandra, I model data for the queries I'll run. Let me understand the access patterns first: what queries, what frequency, what sort order?"</td></tr>
+  </tbody>
+</table>
+
+<!-- NUANCES -->
+<div class="sec-hdr" id="nuances"><h2>§5.3 Impressive Nuances to Demonstrate</h2></div>
+<div class="callout deep">
+  <div class="callout-title">💡 Drop One of These to Signal Deep Expertise</div>
+  <p>Each of these is a production-level insight. Mention one naturally in context and you signal L7 experience. Don't list them all — pick the one most relevant to your conversation.</p>
+</div>
+<div class="nuance-grid">
+  <div class="nuance-item"><p><strong>Partition key bucketing:</strong> "For time-series, I'd add a time bucket to the partition key to bound partition size and enable parallel queries across buckets — 10 buckets means 10 parallel reads."</p></div>
+  <div class="nuance-item"><p><strong>Read repair probability:</strong> "Read repair is probabilistic with dc_local_read_repair_chance. For critical data, I might set it higher or trigger manual repairs after known issues."</p></div>
+  <div class="nuance-item"><p><strong>Commit log group commit:</strong> "Cassandra batches commit log writes for efficiency. Setting commitlog_sync_period_in_ms affects the durability-latency trade-off — longer period = faster writes, wider data loss window."</p></div>
+  <div class="nuance-item"><p><strong>Speculative retry:</strong> "The driver can speculatively send reads to additional replicas if the first is slow — trading bandwidth for latency consistency. Useful for eliminating tail latency."</p></div>
+  <div class="nuance-item"><p><strong>Bloom filter tuning:</strong> "I'd increase bloom_filter_fp_chance for tables where I expect mostly misses, reducing memory footprint at the cost of more disk reads for misses."</p></div>
+  <div class="nuance-item"><p><strong>Incremental vs full repair:</strong> "Full repair is impractical at scale. Incremental repair maintains Merkle trees per SSTable and only repairs deltas — it's the only option for clusters above a few TB."</p></div>
+  <div class="nuance-item"><p><strong>Hybrid clock for LWT:</strong> "Cassandra's LWT uses Paxos with a hybrid logical clock. Understanding this explains the 4-round-trip latency — each round trip is a Paxos phase: PREPARE, PROMISE, PROPOSE, ACCEPT."</p></div>
+  <div class="nuance-item"><p><strong>Hinted handoff limits:</strong> "Hints are stored for max_hint_window (3 hours by default). If a node is down longer, it won't get replayed hints — only repair catches those gaps."</p></div>
+</div>
+
+<!-- CLARIFYING QUESTIONS -->
+<div class="sec-hdr" id="clarifying-q"><h2>§5.4 Clarifying Questions to Ask</h2></div>
+<p style="font-size:.9rem;color:var(--muted);margin-bottom:14px;line-height:1.7">Ask these before committing to a design. Each changes the data model or consistency strategy.</p>
+<div class="cq-item"><div class="cq-q">"Read-to-write ratio?"</div><div class="cq-why">Drives compaction strategy. <strong>Write-heavy → STCS, read-heavy → LCS, time-series → TWCS.</strong> This is the primary decision axis for storage engine tuning.</div></div>
+<div class="cq-item"><div class="cq-q">"Read-your-writes immediately?"</div><div class="cq-why">If I send a message, do I see it instantly in my sent folder? <strong>Yes → CL=LOCAL_QUORUM for both reads and writes.</strong> Shows you understand the W+R&gt;RF formula.</div></div>
+<div class="cq-item"><div class="cq-q">"Hot keys or celebrity users?"</div><div class="cq-why">Reveals partition key pitfalls. <strong>Power users with millions of rows need a bucket suffix</strong> to bound partition size. Shows you've seen the discord anti-pattern.</div></div>
+<div class="cq-item"><div class="cq-q">"Latency budget for reads/writes?"</div><div class="cq-why">Determines consistency level strategy. <strong>100ms budget → LOCAL_QUORUM. 500ms budget → EACH_QUORUM possible.</strong> Shows you understand the cross-DC latency tax.</div></div>
+<div class="cq-item"><div class="cq-q">"Cross-region consistency or local sufficient?"</div><div class="cq-why"><strong>Local → LOCAL_QUORUM (avoids 80-150ms cross-DC round-trip). Global → EACH_QUORUM.</strong> Shows you understand multi-DC cost vs benefit.</div></div>
+<div class="cq-item"><div class="cq-q">"Data retention policy?"</div><div class="cq-why">Determines whether TWCS is applicable. <strong>TTL-based retention → TWCS for clean SSTable drops.</strong> Shows you understand compaction implications.</div></div>
+<div class="cq-item"><div class="cq-q">"Queries beyond primary key lookups?"</div><div class="cq-why">Reveals if Cassandra is even the right choice. <strong>Need JOINs or ad-hoc queries → Cassandra is wrong tool.</strong> Shows you don't blindly reach for Cassandra.</div></div>
+
+<!-- SOUNDBITES -->
+<div class="sec-hdr" id="soundbites"><h2>§5.5 Sound Bite Collection</h2></div>
+<div class="callout extra">
+  <div class="callout-title">How to Use These</div>
+  <p>Memorize the concepts; let the words come organically. These aren't scripts — they're compressed insights that signal depth when woven naturally into your explanation.</p>
+</div>
+<div class="sb-collection">
+  <div class="sb-item">
+    <div class="sb-label">On the Core Concept</div>
+    <div class="sb-text">"Cassandra is a masterless, wide-column store optimized for write throughput and availability — my go-to when I need to survive data center failures without coordination overhead."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Compaction Selection</div>
+    <div class="sb-text">"STCS for write-heavy, LCS for read-heavy, TWCS for time-series with TTL. The key is understanding where the I/O budget should go."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Trade-offs</div>
+    <div class="sb-text">"Every Cassandra design decision traces back to CAP. I'm always trading consistency for availability or latency — I just get to choose where on the spectrum."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Scale</div>
+    <div class="sb-text">"Cassandra scales writes linearly, but operational complexity scales non-linearly. At 1000+ nodes, the bottleneck is automation and observability, not Cassandra itself."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Failures</div>
+    <div class="sb-text">"Cassandra's strength is that failures are boring — gossip detects them, hinted handoff covers them, and repair reconciles them. Graceful degradation, not catastrophic failure."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Distributed Complexity</div>
+    <div class="sb-text">"On a single node, Last Write Wins is deterministic. Across replicas with clock skew, it's a silent data loss mechanism. That's why I always verify NTP is working."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Operational Maturity</div>
+    <div class="sb-text">"I monitor three things obsessively: SSTable count per read (compaction health), pending compactions (backlog risk), and tombstone scans (delete pattern issues)."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Common Mistakes</div>
+    <div class="sb-text">"Two patterns kill Cassandra performance: hot partitions from poor partition key design, and tombstone accumulation from mass deletes. I design to avoid both from day one."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On Real-World Lessons</div>
+    <div class="sb-text">"At Netflix scale, they put EVCache in front of Cassandra for hot reads. At Apple scale, they shard into many clusters. Cassandra is the foundation — you build around its characteristics."</div>
+  </div>
+  <div class="sb-item">
+    <div class="sb-label">On the Key Insight</div>
+    <div class="sb-text">"Cassandra's brilliance is that every node is equal — no leader election, no coordination bottleneck. But equality means I must carefully design for access patterns, because Cassandra can't optimize what it doesn't know upfront."</div>
+  </div>
+</div>
+
+<!-- ======= PART 6: PRACTICE ======= -->
+<div class="sec-hdr" id="practice-section"><h2>§6 Practice &amp; Application</h2></div>
+
+<div class="callout info" id="problem">
+  <div class="callout-title">Sample Problem: Design a Global Messaging System</div>
+  <ul>
+    <li><strong>Users:</strong> 500M worldwide, 20% DAU = 100M daily active</li>
+    <li><strong>Scale:</strong> 50B messages/day = 580K writes/sec, average message 500 bytes</li>
+    <li><strong>Storage:</strong> 50B × 500B × 365 = 9PB/year raw</li>
+    <li><strong>Latency:</strong> &lt;100ms local, &lt;500ms global</li>
+    <li><strong>Availability:</strong> 99.99% — no message loss after acknowledgment</li>
+  </ul>
+</div>
+
+<h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:24px 0 14px" id="ambiguities">Ambiguities to Clarify First</h3>
+<div class="ambiguity">
+  <div class="ambiguity-q">"Do users need read-your-writes?" — If I send a message, do I see it immediately in my sent folder?</div>
+  <div class="ambiguity-body"><p><strong>If yes →</strong> CL=LOCAL_QUORUM for both reads and writes (W+R &gt; RF). <strong>If no →</strong> CL=LOCAL_ONE for writes, QUORUM for inbox reads.</p></div>
+</div>
+<div class="ambiguity">
+  <div class="ambiguity-q">"Is search real-time or eventual?" — Can search lag behind message delivery by seconds/minutes?</div>
+  <div class="ambiguity-body"><p>Usually yes → enables <strong>async indexing into Elasticsearch/OpenSearch</strong>. Real-time search with Cassandra is not supported natively.</p></div>
+</div>
+<div class="ambiguity">
+  <div class="ambiguity-q">"How important is ordering?" — Must messages display in exact send order?</div>
+  <div class="ambiguity-body"><p>Probably yes → <strong>timestamp as clustering column</strong> (ascending order). Use client-provided timestamps carefully given LWW risk.</p></div>
+</div>
+<div class="ambiguity">
+  <div class="ambiguity-q">"Group messages?" — 1:1 only, or also groups of 100+?</div>
+  <div class="ambiguity-body"><p><strong>Changes partition design dramatically.</strong> 1:1 → conversation_id as partition key. Groups → conversation_id + time_bucket to bound hot group partitions.</p></div>
+</div>
+
+<!-- RUBRIC -->
+<div class="sec-hdr" id="rubric"><h2>§6.2 Strong Hire Rubric</h2></div>
+<table class="rubric-table">
+  <thead><tr><th>Dimension</th><th>Average Candidate</th><th>Strong L6/L7 Hire</th><th>How to Demonstrate</th></tr></thead>
+  <tbody>
+    <tr><td>Problem Decomposition</td><td>Jumps to Cassandra immediately</td><td class="hero">Clarifies requirements, considers alternatives, then chooses</td><td class="how">"Before I design, let me understand: are there cross-conversation queries? That affects whether Cassandra is the right choice vs a combination of systems."</td></tr>
+    <tr><td>Technical Depth</td><td>"Use partition key for user_id"</td><td class="hero">conversation_id partition, timestamp clustering, explains tombstone handling for deletes</td><td class="how">"conversation_id as partition key, message_timestamp as clustering column. Soft deletes with TTL rather than hard deletes — avoid tombstone buildup."</td></tr>
+    <tr><td>Trade-off Analysis</td><td>"Use QUORUM for consistency"</td><td class="hero">Tiers consistency by operation type, explains latency implications</td><td class="how">"Read receipts use CL=LOCAL_ONE (ephemeral). Messages use LOCAL_QUORUM. Cross-region fan-out is async to avoid blocking sends on transatlantic latency."</td></tr>
+    <tr><td>Scale Reasoning</td><td>"Just add more nodes"</td><td class="hero">Calculates capacity, identifies bottleneck progression</td><td class="how">"580K writes/sec × 500B = 290MB/sec. With RF=3 across 3 DCs: 9 × 290MB/sec = 2.6GB/sec globally. Need to verify network bandwidth first."</td></tr>
+    <tr><td>Operational Thinking</td><td>"Monitor the cluster"</td><td class="hero">Specifies metrics, alert thresholds, runbooks for specific failure modes</td><td class="how">"Alert: pending compactions &gt;50/node, P99 message delivery &gt;200ms, cross-DC latency &gt;300ms. Runbook: hot conversation → identify partition, check volume, consider bucket splitting."</td></tr>
+    <tr><td>Communication</td><td>Unstructured explanation</td><td class="hero">Organizes: data model → write path → read path → failure scenarios → monitoring</td><td class="how">"Let me structure this: data model first, then write path for sending, then read path for conversation view, then failure scenarios, then operations."</td></tr>
+  </tbody>
+</table>
+
+<!-- QUICK REFERENCE -->
+<div class="sec-hdr" id="quick-ref"><h2>Quick Reference Card</h2></div>
+
+<div class="pitch-card" id="pitch">
+  <h4>The 30-Second Cassandra Pitch</h4>
+  <p>Cassandra = <code>Masterless</code> + <code>Wide-column</code> + <code>LSM-tree</code> + <code>Tunable consistency</code></p>
+  <p style="margin-top:10px;font-size:.85rem;color:var(--muted)">No single point of failure (any node serves any request) · Optimized for writes (sequential I/O via LSM-tree) · You choose consistency vs latency per operation · Best for: write-heavy, multi-region, known query patterns</p>
+</div>
+
+<div class="qr-grid" id="formulas">
+  <div class="qr-card qr1">
+    <div class="qr-title">The Key Formulas</div>
+    <p><strong>Strong consistency:</strong> Write CL + Read CL &gt; RF</p>
+    <p><strong>Quorum calculation:</strong> (RF ÷ 2) + 1</p>
+    <p><strong>Data distribution:</strong> murmur3(partition_key) → token → nodes</p>
+    <p><strong>Example RF=3:</strong> QUORUM = 2, ALL = 3, ONE = 1</p>
+    <p style="margin-top:8px;font-size:.82rem;color:var(--muted)">W=QUORUM(2) + R=QUORUM(2) = 4 &gt; 3 ✓ Strong</p>
+  </div>
+  <div class="qr-card qr2" id="decisions">
+    <div class="qr-title">The Critical Decisions</div>
+    <p><strong>Compaction:</strong><br>Write-heavy → STCS · Read-heavy → LCS · Time-series → TWCS</p>
+    <p style="margin-top:8px"><strong>Consistency:</strong><br>Fire-forget → ONE · Normal → QUORUM · Critical → EACH_QUORUM</p>
+    <p style="margin-top:8px"><strong>Partition key:</strong><br>High cardinality + access pattern aligned + bounded size (&lt;100MB)</p>
+  </div>
+</div>
+
+<div class="qr-card qr4" id="danger" style="margin-bottom:14px">
+  <div class="qr-title">The Danger Signs ❌</div>
+  <ul>
+    <li>Hot partitions (celebrity users, power users with millions of rows)</li>
+    <li>Large partitions (&gt;100MB — Cassandra's silent performance killer)</li>
+    <li>Mass deletes (tombstones accumulate, reads scan all of them)</li>
+    <li>Cross-partition transactions (Cassandra doesn't support them)</li>
+    <li>Ad-hoc queries (wrong database — use Postgres/Elasticsearch instead)</li>
+  </ul>
+</div>
+
+<div class="qr-card qr5" id="checklist">
+  <div class="qr-title">Before Proposing Cassandra — Interview Checklist</div>
+  <ul class="checklist">
+    <li>Is the workload write-heavy or time-series?</li>
+    <li>Do I know ALL query patterns upfront?</li>
+    <li>Can the data be denormalized for those query patterns?</li>
+    <li>Is eventual consistency acceptable (or tunable to sufficient level)?</li>
+    <li>Is multi-region deployment needed?</li>
+    <li>Are there hot keys or power users that need partition bucketing?</li>
+    <li>Is there a natural TTL that makes TWCS applicable?</li>
+    <li>Is there a latency budget that constrains CL choice?</li>
+  </ul>
+</div>
+
+<div class="soundbite" style="margin-top:28px">
+  <div class="soundbite-label">🔑 Final Soundbite — The Complete Picture</div>
+  <p>"Cassandra is the right answer for write-heavy, multi-region workloads with known access patterns. Get the partition key right first — everything else is tunable. Get the partition key wrong and no amount of configuration saves you."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Complete Cassandra Internals Deep Dive — The One Thing</div>
+  <p>Everything in this guide traces back to one principle: <strong>Cassandra is a system where access patterns must be known at design time.</strong> The partition key determines whether you get linear scaling or hot partitions. The consistency level determines whether you get strong guarantees or low latency. The compaction strategy determines whether reads are fast or slow. None of these can be changed easily after data is at scale.</p>
+  <p style="margin-top:10px">The L7 insight: when an interviewer asks "would you use Cassandra?", the L5 answer is "yes" or "no." The L7 answer is: <strong>"Let me understand the access patterns first. If X, then Cassandra with this data model. If Y, then we need something else."</strong> The ability to ask the right clarifying questions before committing is what separates senior from principal engineering thinking.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';
+  all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{
+    g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
