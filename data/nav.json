@@ -10,6 +10,22 @@
       {
         "title": "Internals",
         "file": "pages/cassandra/cassandra.html"
+      },
+       {
+        "title": "Deep Dive-1",
+        "file": "pages/cassandra/core-1.html"
+      },
+      {
+        "title": "Deep Dive-2",
+        "file": "pages/cassandra/core-2.html"
+      },
+      {
+        "title": "Deep Dive-3",
+        "file": "pages/cassandra/core-3.html"
+      },
+      {
+        "title": "Deep Dive-4",
+        "file": "pages/cassandra/core-4.html"
       }
     ],
     "Redis": [
