@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive: Cassandra Internals (Part 1/2) — Core Understanding & Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  /* Cassandra theme colors */
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--cass),var(--cass2),var(--cass3),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--cass2);background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--cass)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(59,130,246,.05)}
+.ni.active a{color:var(--cass);border-left-color:var(--cass);background:rgba(59,130,246,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:920px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--cass);border-color:var(--cass);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--cass) 40%,var(--cass2) 70%,var(--cass3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(139,92,246,.1);border-color:var(--cass2);color:var(--cass2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:52px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* PART BANNER */
+.part-banner{background:linear-gradient(135deg,rgba(59,130,246,.08),rgba(139,92,246,.05));border:1px solid rgba(59,130,246,.2);border-radius:12px;padding:22px 26px;margin:0 0 38px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--cass);margin-bottom:7px;font-weight:600}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* CONCEPT CARDS (collapsible) */
+.cc{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:18px;transition:transform .18s,box-shadow .18s}
+.cc:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.cc-hdr{padding:15px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none;background:rgba(59,130,246,.04);border-bottom:1px solid var(--border)}
+.cc-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cc-icon{font-size:1.3rem}
+.cc-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.cc-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;background:rgba(59,130,246,.14);color:var(--cass);border:1px solid rgba(59,130,246,.28)}
+.cc-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.cc.collapsed .cc-toggle{transform:rotate(-90deg)}
+.cc-body{padding:0 20px 20px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.cc.collapsed .cc-body{max-height:0;opacity:0;padding-bottom:0}
+.cc-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 7px}
+.cc-body h5:first-child{margin-top:12px}
+.cc-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:9px}
+.cc-body ul,.cc-body ol{padding-left:18px;margin:7px 0 12px}
+.cc-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.cc-body strong{color:var(--text)}
+
+/* MECHANISM CARDS (the 4 variants) */
+.mc{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px;transition:transform .18s,box-shadow .18s}
+.mc:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.mc.m1{border-left:4px solid var(--cass)}
+.mc.m2{border-left:4px solid var(--cass2)}
+.mc.m3{border-left:4px solid var(--cass3)}
+.mc.m4{border-left:4px solid var(--cass4)}
+.mc.m1 .mc-hdr{background:rgba(59,130,246,.05)}
+.mc.m2 .mc-hdr{background:rgba(139,92,246,.05)}
+.mc.m3 .mc-hdr{background:rgba(6,182,212,.05)}
+.mc.m4 .mc-hdr{background:rgba(16,185,129,.05)}
+.mc-hdr{padding:16px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.mc-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mc-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.mc.m1 .mc-num{color:var(--cass)}.mc.m2 .mc-num{color:var(--cass2)}
+.mc.m3 .mc-num{color:var(--cass3)}.mc.m4 .mc-num{color:var(--cass4)}
+.mc-name{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.mc-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.mc.m1 .mc-badge{background:rgba(59,130,246,.12);color:var(--cass);border:1px solid rgba(59,130,246,.28)}
+.mc.m2 .mc-badge{background:rgba(139,92,246,.12);color:var(--cass2);border:1px solid rgba(139,92,246,.28)}
+.mc.m3 .mc-badge{background:rgba(6,182,212,.12);color:var(--cass3);border:1px solid rgba(6,182,212,.28)}
+.mc.m4 .mc-badge{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.28)}
+.mc-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.mc.collapsed .mc-toggle{transform:rotate(-90deg)}
+.mc-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.mc.collapsed .mc-body{max-height:0;opacity:0;padding-bottom:0}
+.mc-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.mc-body h5:first-child{margin-top:0}
+.mc-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.mc-body ul,.mc-body ol{padding-left:18px;margin:8px 0 13px}
+.mc-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.mc-body strong{color:var(--text)}
+
+/* SECTION TAGS */
+.stag{display:inline-flex;align-items:center;gap:6px;font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;padding:4px 10px;border-radius:5px;margin:16px 0 8px;font-weight:600}
+.stag.what{background:rgba(59,130,246,.1);color:var(--cass);border:1px solid rgba(59,130,246,.2)}
+.stag.how{background:rgba(16,185,129,.1);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+.stag.strengths{background:rgba(16,185,129,.08);color:var(--cass4);border:1px solid rgba(16,185,129,.15)}
+.stag.limits{background:rgba(255,107,107,.08);color:var(--no);border:1px solid rgba(255,107,107,.15)}
+.stag.ops{background:rgba(249,115,22,.08);color:var(--obs);border:1px solid rgba(249,115,22,.15)}
+.stag.nuances{background:rgba(245,166,35,.08);color:var(--strong);border:1px solid rgba(245,166,35,.15)}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--cass);border-color:var(--cass)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM */
+.diag{background:#010409;border:1px solid rgba(59,130,246,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(59,130,246,.06);border-bottom:1px solid rgba(59,130,246,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#79c0ff;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout.cass{background:rgba(6,182,212,.07);border:1px solid rgba(6,182,212,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--cass2)}
+.callout.cass .callout-title{color:var(--cass3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* MARKS */
+mark{background:rgba(59,130,246,.16);color:var(--cass);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.p{background:rgba(139,92,246,.14);color:var(--cass2)}
+
+/* INLINE QUOTE */
+.iq{background:var(--surface2);border-left:3px solid var(--cass);padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-style:italic;font-size:.88rem;color:var(--muted);line-height:1.6}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(59,130,246,.1),rgba(139,92,246,.06));border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* ANALOGY TABLE */
+.analogy-table{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.analogy-table thead tr{background:linear-gradient(90deg,rgba(59,130,246,.12),rgba(139,92,246,.06))}
+.analogy-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--cass);border-bottom:1px solid rgba(59,130,246,.2)}
+.analogy-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.analogy-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.analogy-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.analogy-table td:first-child{font-weight:600;color:var(--text)}
+.analogy-table td:last-child{color:var(--cass);font-family:var(--fc);font-size:.78rem}
+
+/* GUARANTEES / TRADEOFFS TABLE */
+.gt{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.gt thead tr{background:linear-gradient(90deg,rgba(16,185,129,.1),rgba(59,130,246,.06))}
+.gt th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--cass4);border-bottom:1px solid rgba(16,185,129,.2)}
+.gt td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.gt tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.gt tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.gt td:first-child{font-weight:700;color:var(--text)}
+.gt td.yes{color:var(--cass4)}.gt td.no2{color:var(--no)}
+
+/* CONSISTENCY TABLE */
+.cl-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.cl-table thead tr{background:linear-gradient(90deg,rgba(139,92,246,.12),rgba(59,130,246,.06))}
+.cl-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass2);border-bottom:1px solid rgba(139,92,246,.2)}
+.cl-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.cl-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.cl-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.cl-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc);font-size:.78rem}
+.cl-table td.fast{color:var(--cass4)}.cl-table td.slow{color:var(--no)}.cl-table td.med{color:var(--lean)}
+
+/* DEBUG TABLE */
+.debug-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.debug-table thead tr{background:linear-gradient(90deg,rgba(249,115,22,.12),rgba(255,107,107,.06))}
+.debug-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--obs);border-bottom:1px solid rgba(249,115,22,.2)}
+.debug-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.debug-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.debug-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.debug-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc);font-size:.77rem}
+
+/* GOTCHA BOX */
+.gotcha{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:12px 0}
+.gotcha-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.gotcha p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* NUANCE BOX */
+.nuance{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.18);border-radius:8px;padding:14px 16px;margin:12px 0}
+.nuance-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--strong);margin-bottom:9px;font-weight:600}
+.nuance p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.nuance p:last-child{margin-bottom:0}
+.nuance strong{color:var(--text)}
+
+/* SWEET SPOT */
+.sweet-spot{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.18);border-radius:8px;padding:14px 16px;margin:13px 0}
+.sweet-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass4);margin-bottom:8px;font-weight:600}
+.sweet-spot ul{padding-left:16px}
+.sweet-spot li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+
+/* FAILURE BOX */
+.failure-box{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:13px 16px;margin:12px 0}
+.failure-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:8px;font-weight:600}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* NEXT CARD */
+.next-card{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--cass2);border-radius:10px;padding:18px 22px;margin:36px 0;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.next-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--dim);margin-bottom:5px}
+.next-title{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--text)}
+.next-desc{font-size:.82rem;color:var(--muted);margin-top:4px}
+.next-btn{font-family:var(--fc);font-size:.74rem;padding:9px 16px;background:rgba(139,92,246,.1);border:1px solid var(--cass2);color:var(--cass2);border-radius:7px;text-decoration:none;white-space:nowrap;flex-shrink:0;transition:all .2s}
+.next-btn:hover{background:rgba(139,92,246,.2);transform:translateY(-1px)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Cassandra Architecture</div>
+    <div class="sb-part">Part 1 of 2 — Core + 4 Mechanisms</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">Part 1: Core Understanding</div>
+      <li class="ni sub"><a href="#elevator">Elevator Pitch</a></li>
+      <li class="ni sub"><a href="#analogy">Franchise Restaurant Analogy</a></li>
+      <li class="ni sub"><a href="#mental-model">Mental Model (5 Concepts)</a></li>
+      <li class="ni sub"><a href="#guarantees">Guarantees Table</a></li>
+      <li class="ni sub"><a href="#tradeoffs">Trade-offs</a></li>
+      <li class="ni sub"><a href="#when">When Cassandra Applies</a></li>
+    </li>
+    <li class="ng"><div class="nl">Part 2: Mechanisms</div>
+      <li class="ni sub"><a href="#m1">M1: Consistent Hashing</a></li>
+      <li class="ni sub"><a href="#m1-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#m1-vnodes">↳ Virtual Nodes</a></li>
+      <li class="ni sub"><a href="#m1-limits">↳ Failure Modes</a></li>
+      <li class="ni sub"><a href="#m1-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#m2">M2: Replication Strategies</a></li>
+      <li class="ni sub"><a href="#m2-how">↳ How It Works</a></li>
+      <li class="ni sub"><a href="#m2-limits">↳ Failure Modes</a></li>
+      <li class="ni sub"><a href="#m2-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#m3">M3: Tunable Consistency</a></li>
+      <li class="ni sub"><a href="#m3-how">↳ CL Table &amp; Formula</a></li>
+      <li class="ni sub"><a href="#m3-limits">↳ Failure Modes</a></li>
+      <li class="ni sub"><a href="#m3-nuances">↳ L6/L7 Nuances</a></li>
+      <li class="ni sub"><a href="#m4">M4: LSM-Tree Storage Engine</a></li>
+      <li class="ni sub"><a href="#m4-write">↳ Write Path</a></li>
+      <li class="ni sub"><a href="#m4-read">↳ Read Path</a></li>
+      <li class="ni sub"><a href="#m4-sstable">↳ SSTable Structure</a></li>
+      <li class="ni sub"><a href="#m4-limits">↳ Failure Modes</a></li>
+      <li class="ni sub"><a href="#m4-nuances">↳ L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Navigation</div>
+      <li class="ni"><a href="#next">Part 2 →</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 1 of 2</div>
+  <h1>Cassandra<br>Internals</h1>
+  <div class="hero-meta">
+    <span>🔵 Consistent Hashing</span>
+    <span>🟣 Replication Strategies</span>
+    <span>🩵 Tunable Consistency</span>
+    <span>🟢 LSM-Tree Storage Engine</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill active-part">Part 1: Core + 4 Mechanisms</span>
+    <span class="part-pill">Part 2: Gossip, Compaction, Data Modeling & Ops</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">This part covers the foundational mental model — why Cassandra is a masterless AP database and when to reach for it — then deep-dives into the four core internal mechanisms: Consistent Hashing &amp; Partitioning, Replication Strategies (SimpleStrategy vs NetworkTopologyStrategy), Tunable Consistency Levels, and the LSM-Tree Storage Engine (write path, read path, SSTable structure).</p>
+</section>
+
+<!-- ════════════════════════════════ -->
+<!-- PART 1: CORE UNDERSTANDING      -->
+<!-- ════════════════════════════════ -->
+<div class="part-banner">
+  <div class="part-banner-label">Part 1 · Core Understanding</div>
+  <h2>Make It Click</h2>
+  <p>Cassandra's brilliance: it treats every node as equal — no master to fail, no leader election to wait for. This is why it's nearly impossible to take down and why writes are blazing fast, but also why different readers might briefly see different versions of the truth.</p>
+</div>
+
+<!-- ELEVATOR PITCH -->
+<div class="cc" id="elevator">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">🎙</span><span class="cc-title">The Elevator Pitch</span><span class="cc-badge">Start Here</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="callout info">
+      <div class="callout-title">For a Smart Non-Engineer</div>
+      <p>"Cassandra is a database that stores copies of your data on multiple computers around the world, so it never goes down and stays fast no matter how much data you throw at it."</p>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">For a Fellow Engineer</div>
+      <p>"Cassandra is a masterless, wide-column distributed database that uses consistent hashing for partitioning, quorum-based tunable consistency, and LSM-trees for writes — optimized for high write throughput and availability over strong consistency."</p>
+    </div>
+    <div class="callout deep">
+      <div class="callout-title">The "Aha Moment"</div>
+      <p>Cassandra's brilliance is that it treats every node as equal — there's no master to fail, no leader election to wait for. It's like a <mark>democracy of servers where any citizen can serve any request</mark>. This is why it's nearly impossible to take down and why writes are blazing fast (just append to a log!), but it also means you're accepting that different readers might briefly see different versions of the truth.</p>
+    </div>
+    <div class="soundbite">
+      <div class="soundbite-label">🔑 Interview Sound Bite</div>
+      <p>"Cassandra is my go-to for write-heavy, multi-region workloads with known query patterns — it trades away strong consistency and flexible querying in exchange for horizontal write scalability and five-nines availability. If I need JOINs or transactions, I reach for something else."</p>
+    </div>
+  </div>
+</div>
+
+<!-- ANALOGY -->
+<div class="cc" id="analogy">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">🍔</span><span class="cc-title">The Franchise Restaurant Analogy</span><span class="cc-badge">Mental Model</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <p>Imagine a restaurant chain like McDonald's with locations across every continent. Each restaurant has its own kitchen, can serve customers immediately, has a copy of the full menu, and can take orders without calling headquarters.</p>
+    <table class="analogy-table">
+      <thead><tr><th>Restaurant Concept</th><th>Cassandra Concept</th></tr></thead>
+      <tbody>
+        <tr><td>Each restaurant location</td><td>A Cassandra node</td></tr>
+        <tr><td>A region (West Coast restaurants)</td><td>A data center</td></tr>
+        <tr><td>The menu recipe book</td><td>The data / SSTables</td></tr>
+        <tr><td>Taking an order</td><td>A write operation</td></tr>
+        <tr><td>The order ticket pad</td><td>The commit log</td></tr>
+        <tr><td>The kitchen prep board</td><td>The memtable</td></tr>
+        <tr><td>Archived recipes in the basement</td><td>SSTables on disk</td></tr>
+        <tr><td>"Which restaurants carry this item?"</td><td>Consistent hashing / partition routing</td></tr>
+        <tr><td>"Let's confirm with 2 restaurants"</td><td>Quorum reads/writes</td></tr>
+      </tbody>
+    </table>
+    <div class="callout info">
+      <div class="callout-title">Failure Scenarios Through the Analogy</div>
+      <ul>
+        <li><strong>Node failure:</strong> One restaurant closes. Customers go to the next nearest. No big deal.</li>
+        <li><strong>Network partition:</strong> Pacific undersea cable breaks — West Coast can't talk to Asia. Each region continues serving independently (availability over consistency).</li>
+        <li><strong>Split brain:</strong> Two regions both accept different changes to the same recipe. When they reconnect, they compare timestamps and keep the newer version (Last Write Wins).</li>
+        <li><strong>Hinted handoff:</strong> Restaurant A is closed for renovation. Restaurant B takes orders meant for A and posts them on A's door when it reopens.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- MENTAL MODEL -->
+<div class="cc" id="mental-model">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">🧠</span><span class="cc-title">The 5 Core Concepts You MUST Internalize</span><span class="cc-badge">Core</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <h5>1. Ring Architecture with Consistent Hashing</h5>
+    <p>Data is distributed across a hash ring. Each node owns a range of hash values. When you write a row, its partition key is hashed, and that hash determines which nodes store it. Adding/removing nodes only affects their neighbors, not the whole cluster.</p>
+    <h5>2. Masterless Replication</h5>
+    <p>Every node is equal. Any node can coordinate any request. <strong>No leader election, no single point of failure.</strong> The "coordinator" is simply whoever receives the client request.</p>
+    <h5>3. Tunable Consistency</h5>
+    <p>You choose the trade-off per operation: ONE, QUORUM, ALL. This is Cassandra's superpower — you pick your spot on the CAP spectrum for each query.</p>
+    <h5>4. LSM-Tree Storage Engine</h5>
+    <p>Writes go to an in-memory structure (memtable) and are flushed to immutable disk files (SSTables). Reads may check multiple SSTables. Compaction merges them. <mark>Writes are fast (sequential I/O); reads can be slower (multiple file checks).</mark></p>
+    <h5>5. Gossip Protocol for Cluster State</h5>
+    <p>Nodes constantly chat with random peers to share who's alive, who's dead, and who's overloaded. No central registry. Information spreads like rumors at a party.</p>
+  </div>
+</div>
+
+<!-- GUARANTEES -->
+<div class="cc" id="guarantees">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">📋</span><span class="cc-title">What Cassandra Guarantees vs. Does NOT Guarantee</span><span class="cc-badge">Reference</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <table class="gt">
+      <thead><tr><th>Property</th><th>Guaranteed?</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>High availability during partitions</td><td class="yes">✅ Yes</td><td>With proper AP settings</td></tr>
+        <tr><td>Linear horizontal write scalability</td><td class="yes">✅ Yes</td><td>Add nodes, add capacity</td></tr>
+        <tr><td>No single point of failure</td><td class="yes">✅ Yes</td><td>Masterless architecture</td></tr>
+        <tr><td>Tunable consistency levels</td><td class="yes">✅ Yes</td><td>Per-operation choice</td></tr>
+        <tr><td>Eventual consistency</td><td class="yes">✅ Yes</td><td>All replicas converge</td></tr>
+        <tr><td>Durability (once committed)</td><td class="yes">✅ Yes</td><td>Commit log + RF&gt;1</td></tr>
+        <tr><td>Strong consistency</td><td class="no2">❌ No</td><td>Unless you use ALL (sacrifices availability)</td></tr>
+        <tr><td>ACID transactions across partitions</td><td class="no2">❌ No</td><td>No cross-row atomicity</td></tr>
+        <tr><td>Read-your-writes</td><td class="no2">❌ Conditional</td><td>Only if CL(write) + CL(read) &gt; RF</td></tr>
+        <tr><td>Fast ad-hoc queries / JOINs</td><td class="no2">❌ No</td><td>Must model data for access patterns upfront</td></tr>
+        <tr><td>Efficient range scans across partitions</td><td class="no2">❌ No</td><td>Range queries within a partition only</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TRADEOFFS -->
+<div class="cc" id="tradeoffs">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">⚖️</span><span class="cc-title">Fundamental Trade-offs</span><span class="cc-badge">CAP Position</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <table class="gt">
+      <thead><tr><th>Trade-off</th><th>Cassandra Chooses</th><th>Consequence</th></tr></thead>
+      <tbody>
+        <tr><td>AP vs CP (CAP theorem)</td><td class="yes">AP</td><td>May serve stale data during partitions</td></tr>
+        <tr><td>Write speed vs Read speed</td><td class="yes">Write optimization</td><td>Reads may hit multiple SSTables</td></tr>
+        <tr><td>Schema flexibility vs Query flexibility</td><td class="yes">Rigid query patterns</td><td>Must model data for queries upfront</td></tr>
+        <tr><td>Consistency vs Latency</td><td class="yes">Latency (by default)</td><td>Eventual consistency unless you pay the quorum tax</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- WHEN TO USE -->
+<div class="cc" id="when">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row"><span class="cc-icon">🎯</span><span class="cc-title">When Cassandra Applies — The Smell Test</span><span class="cc-badge">Interview Trigger</span></div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="callout good">
+      <div class="callout-title">Keywords That Should Trigger Cassandra</div>
+      <ul>
+        <li>Write-heavy workload · Time-series data · Event logging/ingestion</li>
+        <li>Multi-region / geo-distributed · High availability required</li>
+        <li>No single point of failure · Known query patterns upfront</li>
+        <li>Append-only / immutable data · Denormalization is acceptable</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">✅ Good Fit</div>
+      <ul>
+        <li>You know all your query patterns upfront</li>
+        <li>You can denormalize your data</li>
+        <li>Writes vastly outnumber reads (or write latency matters more)</li>
+        <li>You need multi-region deployments</li>
+        <li>You can tolerate eventual consistency</li>
+        <li><strong>Scale: &gt;50K writes/sec, &gt;10TB, &gt;10 nodes, &gt;1 region, 99.99%+ uptime</strong></li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">❌ Bad Fit</div>
+      <ul>
+        <li>You need ad-hoc queries and JOINs</li>
+        <li>You need strong consistency with transactions</li>
+        <li>Access patterns are unknown or constantly changing</li>
+        <li>Read-heavy workload with complex aggregations</li>
+        <li>Your data fits comfortably on a single machine</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ -->
+<!-- MECHANISM 1: CONSISTENT HASHING -->
+<!-- ════════════════════════════════ -->
+<div class="sec-hdr" id="m1">
+  <h2>Mechanism 1: Consistent Hashing &amp; Partitioning</h2>
+</div>
+
+<div class="mc m1">
+  <div class="mc-hdr" onclick="toggleMc(this)">
+    <div class="mc-title-row">
+      <div><div class="mc-num">Mechanism 1</div><div class="mc-name">Consistent Hashing &amp; Partitioning</div></div>
+      <span class="mc-badge">Ring Architecture</span>
+    </div>
+    <span class="mc-toggle">▾</span>
+  </div>
+  <div class="mc-body">
+    <div class="stag what">A) What It Is</div>
+    <p>Consistent hashing distributes data across nodes using a circular hash space where each node owns a range of hash values, so adding or removing nodes only affects their immediate neighbors.</p>
+    <div class="iq">Core insight: Traditional hashing (key % N nodes) breaks catastrophically when N changes — everything reshuffles. Consistent hashing makes the cluster elastic: only 1/N of keys move when a node joins or leaves.</div>
+    <p><strong>Historical origin:</strong> David Karger invented consistent hashing in 1997 for Akamai to distribute web cache across thousands of servers without reshuffling everything when servers failed or were added.</p>
+
+    <div class="stag how" id="m1-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Ring Layout · Data Placement</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Ring positions: 0 ──────────────────────────────────── 100
+
+Node A owns: 0-25
+Node B owns: 26-50
+Node C owns: 51-75
+Node D owns: 76-100
+
+Replication Factor = 3
+
+Write: user_id = "alice"
+Hash("alice") = 42  → lands in Node B's range
+Replicas stored on: B, C, D  (walk clockwise, pick 3 nodes)
+
+Write: user_id = "bob"
+Hash("bob") = 80  → lands in Node D's range
+Replicas stored on: D, A, B  (wraps around the ring)</pre></div>
+
+    <h5 id="m1-vnodes">Virtual Nodes (vnodes) — Why They Matter</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Without vs With Vnodes</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>WITHOUT VNODES (one contiguous range per node):
+  Node A: [0-25]     ← One big range
+  Node B: [26-50]
+  Node C: [51-75]    ← If C fails, huge range transferred
+  Node D: [76-100]
+
+WITH VNODES (num_tokens=4 per node, simplified):
+  Node A: [0-6], [26-31], [51-56], [76-81]
+  Node B: [7-12], [32-37], [57-62], [82-87]
+  Node C: [13-18], [38-43], [63-68], [88-93]
+  Node D: [19-25], [44-50], [69-75], [94-100]
+
+Benefits of vnodes (default: num_tokens=256):
+  ✓ When a node fails, load is distributed across all nodes
+  ✓ Better load balancing for heterogeneous hardware
+  ✓ Easier cluster expansion
+  Cost: More metadata, more streaming complexity at scale</pre></div>
+
+    <h5>Communication Pattern</h5>
+    <p>Client connects to <strong>any node</strong> (the "coordinator"). Coordinator hashes the partition key, identifies which nodes own that token range, forwards the request, aggregates responses, and returns to client. The client never needs to know who "owns" the data.</p>
+
+    <div class="stag strengths">C) Strengths &amp; Ideal Use Cases</div>
+    <div class="sweet-spot">
+      <div class="sweet-title">The Sweet Spot</div>
+      <ul>
+        <li>Clusters of 10–1000+ nodes</li>
+        <li>Dynamic scaling requirements (nodes added/removed regularly)</li>
+        <li>Real-world: Netflix (1000+ node clusters), Apple (75K+ nodes), Discord</li>
+      </ul>
+    </div>
+
+    <div class="stag limits" id="m1-limits">D) Failure Modes</div>
+    <div class="failure-box">
+      <div class="failure-title">Node Failure Scenario (RF=3)</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Timeline</span></div>
+      <pre>Initial: Data "X" (hash=30) → replicated on B, C, D
+
+t=0:  Node C crashes
+      Gossip hasn't detected failure yet
+      Client read with CL=QUORUM → B ✓, C ✗ (timeout), D ✓
+      2 of 3 responded → SUCCESS (degraded but available)
+
+t=10s: Gossip marks C as DOWN
+       New writes skip C, go to B, D
+       D stores "hints" for C (hinted handoff)
+
+t=10m: Node C recovers
+       D replays all hints to C
+       Anti-entropy (Merkle trees) catches any remaining gaps</pre></div>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Known Failure: Hot Partitions</div>
+      <p>If one partition key is extremely popular (e.g., a viral user's timeline), its 3 replicas get hammered while others sit idle. <mark class="rd">Consistent hashing doesn't help — it's a data modeling problem.</mark> You must redesign the partition key (add a bucket suffix, use a composite key).</p>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss #1</div>
+      <p>Adding nodes doesn't immediately balance load. New nodes start with 0 data. They must <strong>stream data from neighbors</strong>, which can take hours or days for large clusters. During streaming, the cluster is partially unbalanced.</p>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss #2</div>
+      <p>Token collisions are possible. Two different partition keys can hash to identical tokens — they'll colocate on the same nodes. With 256 vnodes/node, this is rare but possible and worth knowing.</p>
+    </div>
+
+    <div class="stag ops">E) Operational Considerations</div>
+    <div class="callout info">
+      <div class="callout-title">Key Commands &amp; Metrics</div>
+      <ul>
+        <li><code>nodetool ring</code> — see token distribution and load per node</li>
+        <li><code>nodetool status</code> — load per node (should be similar across nodes)</li>
+        <li><code>nodetool tablehistograms</code> — partition size distribution (detects hot partitions)</li>
+        <li>Always decommission gracefully: <code>nodetool decommission</code> — never just kill a node</li>
+      </ul>
+    </div>
+
+    <div class="stag nuances" id="m1-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "How do you handle the 'hot partition' problem when consistent hashing doesn't help?"</p>
+      <p><strong>Non-obvious insight:</strong> Virtual nodes were a controversial addition. The original Dynamo paper used single-token assignment. Vnodes add overhead (more metadata, more streaming complexity during node replacement) but provide better load distribution for heterogeneous hardware.</p>
+      <p><strong>Google-scale vs startup-scale:</strong> Startup → use default vnodes (256), let Cassandra handle distribution. Google/Apple scale → single-token assignment with automated capacity planning, because vnode streaming during node replacement can take hours on petabyte-scale nodes and the overhead of 256 vnodes per node is significant.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ -->
+<!-- MECHANISM 2: REPLICATION        -->
+<!-- ════════════════════════════════ -->
+<div class="sec-hdr" id="m2">
+  <h2>Mechanism 2: Replication Strategies</h2>
+</div>
+
+<div class="mc m2">
+  <div class="mc-hdr" onclick="toggleMc(this)">
+    <div class="mc-title-row">
+      <div><div class="mc-num">Mechanism 2</div><div class="mc-name">Replication Strategies</div></div>
+      <span class="mc-badge">Failure Domain Isolation</span>
+    </div>
+    <span class="mc-toggle">▾</span>
+  </div>
+  <div class="mc-body">
+    <div class="stag what">A) What It Is</div>
+    <p>Replication strategies determine where copies of your data live — same rack, different racks, different data centers — to balance durability against latency.</p>
+    <div class="iq">Core insight: Replication isn't just "make 3 copies." It's about failure domain isolation. If all 3 copies are in the same rack and that rack loses power, you've lost all copies. NetworkTopologyStrategy ensures replicas are spread across failure domains.</div>
+
+    <div class="stag how" id="m2-how">B) How It Works</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">SimpleStrategy · The Problem</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Ring: A (rack1) → B (rack1) → C (rack2) → D (rack2) → A
+
+Data with token=30 (falls in B's range), RF=3:
+Replicas: B, C, D  ← just walk clockwise
+
+⚠️ Problem: If B and C are both in rack1, and rack1 loses power,
+   you've lost 2 of 3 replicas from a single failure!</pre></div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">NetworkTopologyStrategy · Rack-Aware Placement</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>CREATE KEYSPACE myapp WITH replication = {
+  'class': 'NetworkTopologyStrategy',
+  'us-east': 3,
+  'us-west': 3,
+  'eu-west': 3
+};
+
+US-EAST nodes: A(rack1), B(rack1), C(rack2), D(rack2), E(rack3), F(rack3)
+
+Data with RF=3 in us-east, token falls in A's range:
+- A  → rack1 ✓  (first replica)
+- B  → rack1, same as A → SKIP
+- C  → rack2, different ✓  (second replica)
+- D  → rack2, same as C → SKIP
+- E  → rack3, different ✓  (third replica)
+
+Final: A(rack1), C(rack2), E(rack3) — maximum rack diversity
+
+With 12 nodes across 2 DCs:
+  Write "user123" → Total 5 copies: 3 in US-EAST, 2 in US-WEST
+  across 5 different racks — survives 4 simultaneous rack failures</pre></div>
+
+    <div class="stag limits" id="m2-limits">D) Failure Modes</div>
+    <div class="callout fail">
+      <div class="callout-title">Never Use SimpleStrategy in Production</div>
+      <ul>
+        <li>Rack failure can take out multiple replicas</li>
+        <li>Cannot use LOCAL_QUORUM (no concept of "local")</li>
+        <li>No multi-DC support</li>
+      </ul>
+    </div>
+    <div class="failure-box">
+      <div class="failure-title">Critical Failure: Misconfigured Snitch</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Scenario</span></div>
+      <pre>Reality: Node A is in rack1, Node B is in rack2
+Snitch config (WRONG): Both listed as rack1
+
+What Cassandra thinks: A and B are in the same rack
+What Cassandra does: Skips B, seeks "different rack" replica
+What actually happens: Picks Node C (also rack1, but snitch says rack2)
+
+Result: All 3 replicas end up in rack1
+Effect: Rack1 power outage → data unavailable (or lost!)
+
+Fix: Always verify with `nodetool describecluster`
+     GossipingPropertyFileSnitch for cloud deployments</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">The Gotcha Candidates Miss</div>
+      <p>Changing replication factor doesn't move data immediately. After <code>ALTER KEYSPACE</code>, you must run <code>nodetool repair</code> to actually create the new replicas. This can take days for large clusters and should never be done during peak traffic.</p>
+    </div>
+    <div class="callout warn">
+      <div class="callout-title">Cross-DC Replication Has a Latency Tax</div>
+      <p>A write with <code>CL=EACH_QUORUM</code> must wait for quorum acknowledgment in every DC. Transatlantic round-trip is ~80-150ms. This is why <code>LOCAL_QUORUM</code> is the standard for most multi-DC apps.</p>
+    </div>
+
+    <div class="stag nuances" id="m2-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Asymmetric RF is a valid production pattern:</strong> RF=3 in your primary DC, RF=2 in a DR DC. The DR site is for disaster recovery, not normal serving — you don't need full quorum there. This reduces cross-DC replication traffic by 33%.</p>
+      <p><strong>The snitch is more important than most engineers realize:</strong> The GossipingPropertyFileSnitch reads rack/DC from a local config file that each node manages. If even one node has a wrong config, replica placement can be corrupted cluster-wide. This is a common cause of "mysterious unavailability" incidents.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ -->
+<!-- MECHANISM 3: TUNABLE CONSISTENCY -->
+<!-- ════════════════════════════════ -->
+<div class="sec-hdr" id="m3">
+  <h2>Mechanism 3: Tunable Consistency Levels</h2>
+</div>
+
+<div class="mc m3">
+  <div class="mc-hdr" onclick="toggleMc(this)">
+    <div class="mc-title-row">
+      <div><div class="mc-num">Mechanism 3</div><div class="mc-name">Tunable Consistency</div></div>
+      <span class="mc-badge">CAP Spectrum Control</span>
+    </div>
+    <span class="mc-toggle">▾</span>
+  </div>
+  <div class="mc-body">
+    <div class="stag what">A) What It Is</div>
+    <p>Consistency levels let you choose, per-query, how many replicas must acknowledge a read or write before it's considered successful.</p>
+    <div class="iq">Core insight: This is Cassandra's answer to CAP theorem. Instead of a global consistency setting, you pick your trade-off for each operation. Need this write to survive a data center fire? Use EACH_QUORUM. Need maximum speed for logging? Use ONE.</div>
+
+    <div class="stag how" id="m3-how">B) The Formula &amp; Consistency Levels</div>
+    <div class="callout deep">
+      <div class="callout-title">The Formula That Matters</div>
+      <p>If <strong>(Write CL) + (Read CL) &gt; Replication Factor</strong> → <mark class="p">Strong consistency guaranteed (read-your-writes)</mark></p>
+      <p>Otherwise → Eventual consistency (may read stale data)</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Formula Examples · RF=3</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Write QUORUM (2) + Read QUORUM (2) = 4 > 3  ✅ Strong
+Write ONE (1)    + Read ONE (1)    = 2 < 3  ❌ Eventual
+Write ALL (3)    + Read ONE (1)    = 4 > 3  ✅ Strong (slow write!)
+Write ANY (0)    + Read ONE (1)    = 1 < 3  ❌ Eventual + unsafe!</pre></div>
+
+    <table class="cl-table">
+      <thead><tr><th>Level</th><th>Nodes Required</th><th>Latency</th><th>Use Case</th></tr></thead>
+      <tbody>
+        <tr><td>ONE</td><td>1 replica responds</td><td class="fast">Fastest</td><td>Logging, metrics, non-critical data</td></tr>
+        <tr><td>TWO</td><td>2 replicas respond</td><td class="fast">Fast</td><td>Slight durability improvement over ONE</td></tr>
+        <tr><td>QUORUM</td><td>(RF/2) + 1</td><td class="med">Medium</td><td>User data, profiles, most OLTP</td></tr>
+        <tr><td>LOCAL_QUORUM</td><td>Quorum within local DC</td><td class="med">Medium</td><td>Multi-DC with local consistency</td></tr>
+        <tr><td>EACH_QUORUM</td><td>Quorum in every DC</td><td class="slow">Slow (cross-DC)</td><td>Financial, compliance-critical</td></tr>
+        <tr><td>ALL</td><td>All replicas respond</td><td class="slow">Slowest</td><td>Almost never in production</td></tr>
+        <tr><td>LOCAL_ONE</td><td>1 node in local DC</td><td class="fast">Fastest local</td><td>High-volume non-critical local reads</td></tr>
+        <tr><td>ANY</td><td>Anyone (incl. hints)</td><td class="fast">Fastest write</td><td>Fire-and-forget (dangerous)</td></tr>
+      </tbody>
+    </table>
+
+    <h5>Write Path with QUORUM (RF=3)</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Client: INSERT INTO users (id, name) VALUES ('alice', 'Alice')
+        WITH CL=QUORUM
+
+1. Client → Coordinator (any node in cluster)
+2. Coordinator hashes 'alice' → finds replicas: B, C, D
+3. Coordinator sends write to B, C, D simultaneously
+4. B: writes to commitlog + memtable → SUCCESS
+5. C: writes to commitlog + memtable → SUCCESS
+6. D: slow (disk I/O)...
+7. Coordinator has 2 successes → QUORUM reached (2 = RF/2 + 1 for RF=3)
+8. Coordinator → Client: SUCCESS ✓
+9. D eventually completes (or fails, repaired later by anti-entropy)</pre></div>
+
+    <h5>Latency vs Throughput by CL (3-DC Cluster, RF=3 per DC)</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Numbers</span></div>
+    <pre>CL=LOCAL_ONE:
+  Latency: 1-2ms  |  Throughput: ~500K writes/sec  |  Durability: Low
+
+CL=LOCAL_QUORUM:
+  Latency: 5-10ms  |  Throughput: ~200K writes/sec  |  Durability: Medium
+
+CL=EACH_QUORUM:
+  Latency: 100-200ms (cross-Atlantic!)  |  Throughput: ~10K writes/sec
+
+CL=ALL (9 replicas across 3 DCs):
+  Latency: 200-500ms  |  Throughput: ~2K writes/sec
+  ⚠️ One slow node blocks everything</pre></div>
+
+    <div class="stag limits" id="m3-limits">D) Failure Modes</div>
+    <div class="failure-box">
+      <div class="failure-title">Partition Scenario with QUORUM then ONE</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Timeline</span></div>
+      <pre>Initial: 3 replicas (A, B, C), all healthy
+
+t=0:  Network partition splits [A, B] from [C]
+
+t=1:  Client1 (connected to A) writes "X=1" with CL=QUORUM
+      A+B respond → 2 of 3 → SUCCESS
+
+t=2:  Client2 (connected to C) reads "X" with CL=QUORUM
+      C can't reach A or B → only 1 of 3 available → UNAVAILABLE
+
+t=3:  Client2 retries with CL=ONE
+      C responds with OLD value (X=null or previous)
+      Client sees stale data!
+
+t=5:  Partition heals → anti-entropy syncs C → eventually consistent</pre></div>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Three Non-Obvious Gotchas</div>
+      <ul>
+        <li><mark class="rd">LOCAL_QUORUM isn't automatically safe across DCs.</mark> Write LOCAL_QUORUM to NYC, read LOCAL_QUORUM from LON → can read stale data (write hasn't propagated cross-DC yet).</li>
+        <li><mark class="rd">QUORUM with RF=2 equals ALL.</mark> QUORUM of 2 = (2/2)+1 = 2. Both nodes must respond. You've eliminated availability without gaining anything over ALL.</li>
+        <li><mark class="rd">CL=ANY accepts hints.</mark> The write might only exist in the coordinator's hint store, not on any actual replica. If coordinator crashes before replaying hints, data is lost.</li>
+      </ul>
+    </div>
+
+    <div class="stag nuances" id="m3-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Start with LOCAL_QUORUM for most apps:</strong> It gives you quorum consistency without the cross-DC latency tax. Drop to LOCAL_ONE for high-volume, non-critical paths (logging, analytics). Never use ALL in production.</p>
+      <p><strong>You can change CL per query — no cluster changes needed.</strong> This means you can gradually relax CL for specific code paths as you gain confidence in your data model.</p>
+      <p><strong>The formula is the key insight:</strong> If an interviewer asks "can you get strong consistency from Cassandra?", the answer is yes — by ensuring Write CL + Read CL &gt; RF. But you pay a significant latency and availability penalty for it, which defeats Cassandra's purpose.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════ -->
+<!-- MECHANISM 4: LSM-TREE           -->
+<!-- ════════════════════════════════ -->
+<div class="sec-hdr" id="m4">
+  <h2>Mechanism 4: LSM-Tree Storage Engine</h2>
+</div>
+
+<div class="mc m4">
+  <div class="mc-hdr" onclick="toggleMc(this)">
+    <div class="mc-title-row">
+      <div><div class="mc-num">Mechanism 4</div><div class="mc-name">LSM-Tree Storage Engine</div></div>
+      <span class="mc-badge">Write-Optimized · Sequential I/O</span>
+    </div>
+    <span class="mc-toggle">▾</span>
+  </div>
+  <div class="mc-body">
+    <div class="stag what">A) What It Is</div>
+    <p>Cassandra uses Log-Structured Merge-trees (LSM-trees) to convert random writes into sequential disk I/O, making writes extremely fast but requiring background compaction to maintain read performance.</p>
+    <div class="iq">Core insight: Traditional databases (B-trees) update data in place, requiring random disk seeks. LSM-trees never update in place — they append new versions and merge them later. Disk seeks are 100× slower than sequential I/O, so this trade-off is massive for write-heavy workloads.</div>
+
+    <div class="stag how" id="m4-write">B) The Write Path</div>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · Write Path</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>   Client Write
+         │
+         ▼
+   ┌───────────┐
+   │ Commit Log │ ─── Append-only, sequential writes (durability guarantee)
+   │  (on disk) │     If node crashes, replay commit log to recover
+   └─────┬─────┘
+         │
+         ▼
+   ┌───────────┐
+   │ MemTable  │ ─── In-memory sorted structure (Red-Black tree)
+   │  (RAM)    │     Fast reads of recent writes  ~0.01ms
+   └─────┬─────┘
+         │ When full (~128MB default)
+         ▼
+   ┌───────────┐
+   │ SSTable   │ ─── Immutable sorted file on disk
+   │  (disk)   │     Never modified after creation
+   └───────────┘
+
+Total write latency: ~1-2ms for CL=ONE
+Commit log is the durability guarantee
+MemTable is the performance layer</pre>
+    </div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step Write</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Write: UPDATE users SET email='new@email.com' WHERE id='alice'
+
+Step 1: Append to commit log          (~0.1ms, sequential disk write)
+        Durability guaranteed here — if crash, this replays
+
+Step 2: Insert into memtable          (~0.01ms, RAM only)
+        Sorted map: key → (value, timestamp)
+        No disk I/O
+
+Step 3: Acknowledge to client         (total: ~1-2ms for CL=ONE)
+
+Step 4: Background — when memtable reaches ~128MB:
+        - Create new memtable for incoming writes
+        - Flush old memtable → SSTable (sequential disk write)
+        - Delete corresponding commit log segment</pre></div>
+
+    <div class="stag how" id="m4-sstable">SSTable Structure</div>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · SSTable File Components</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>┌──────────────────────────────────────────────────────────────┐
+│                         SSTable File                          │
+├──────────────────────────────────────────────────────────────┤
+│  DATA: sorted key-value pairs                                │
+│  [alice:email=a@b.com:ts123]                                 │
+│  [bob:name=Bob:ts124]                                        │
+├──────────────────────────────────────────────────────────────┤
+│  INDEX: sparse index into data (every ~64KB)                 │
+│  alice → offset 0  |  dave → offset 65536                   │
+├──────────────────────────────────────────────────────────────┤
+│  BLOOM FILTER: probabilistic "is key here?"                  │
+│  Allows skipping entire SSTable if key definitely absent     │
+│  1% false positive rate → only 1% of misses hit disk        │
+├──────────────────────────────────────────────────────────────┤
+│  SUMMARY: sample of index (kept in RAM for fast lookup)     │
+├──────────────────────────────────────────────────────────────┤
+│  COMPRESSION INFO: offsets for decompressing chunks          │
+├──────────────────────────────────────────────────────────────┤
+│  STATISTICS: min/max timestamps, partition counts, etc.      │
+└──────────────────────────────────────────────────────────────┘</pre>
+    </div>
+
+    <h5 id="m4-read">The Read Path</h5>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Step-by-Step Read · SELECT * FROM users WHERE id='alice'</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>State: Memtable (50MB), SSTable-1 (1GB), SSTable-2 (500MB), SSTable-3 (200MB)
+
+Step 1: Check memtable(s)          → 0.01ms (RAM)
+        Current active + flushing memtables
+
+Step 2: Check Bloom filters of each SSTable
+        "Is 'alice' in SSTable-2?" → Definitely NOT → SKIP ENTIRELY ✓
+        "Is 'alice' in SSTable-1?" → Maybe (1% false positive)
+        "Is 'alice' in SSTable-3?" → Maybe
+        → 0.001ms each
+
+Step 3: For each "maybe" SSTable:
+        Check summary (RAM) → narrow to index chunk
+        Check index → find data offset
+        Seek to data offset, read row
+        → 1ms each (SSD), ~10ms (spinning disk)
+
+Step 4: Merge all results
+        alice found in SSTable-1 (ts=100) AND SSTable-3 (ts=200)
+        Keep SSTable-3 version (newer timestamp = Last Write Wins)
+
+Total: ~3ms (SSD) | ~30ms+ (spinning disk)
+
+⚠️ If alice was updated 10 times across 10 SSTables:
+   All 10 must be checked → ~10ms on SSD, ~100ms on HDD!</pre></div>
+
+    <div class="stag limits" id="m4-limits">D) Failure Modes</div>
+    <div class="failure-box">
+      <div class="failure-title">Compaction Falling Behind</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Degradation Timeline</span></div>
+      <pre>Hour 0: 10 SSTables, read latency 5ms
+Hour 1: 20 SSTables, read latency 10ms
+Hour 2: 40 SSTables, read latency 20ms
+Hour 3: 60 SSTables, ⚠️ compaction threads maxed out
+        read latency 35ms, disk filling up (space amplification)
+        Users experiencing timeouts
+
+Hour 4: Compaction catches up, 15 SSTables, latency 6ms
+        But 2 hours of degraded service already happened</pre></div>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Three LSM-Tree Gotchas</div>
+      <ul>
+        <li><strong>Tombstones accumulate:</strong> Deletes write a tombstone marker. Until compaction removes them, reads must process them. A table with 90% deleted data can be <em>slower</em> than one with live data.</li>
+        <li><strong>Row fragmentation:</strong> If you update different columns in separate writes, each update goes to a different SSTable. Reading the full row requires merging many files.</li>
+        <li><strong>Large partitions:</strong> A partition with 1M rows might span multiple SSTable blocks. Reading it requires assembling pieces from many files — and can OOM your coordinator.</li>
+      </ul>
+    </div>
+
+    <div class="stag ops">E) Operational Monitoring</div>
+    <div class="callout info">
+      <div class="callout-title">Key Metrics</div>
+      <ul>
+        <li><code>Table.PendingCompactions</code> — should be near 0; rising = trouble incoming</li>
+        <li><code>Table.SSTablesPerReadHistogram</code> — high numbers = slow reads</li>
+        <li><code>Table.TombstoneScannedHistogram</code> — lots of tombstones = data model problem</li>
+        <li>Disk usage vs data size — track space amplification (data exists in multiple SSTables pre-compaction)</li>
+      </ul>
+    </div>
+
+    <div class="stag nuances" id="m4-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances</div>
+      <p><strong>Question that shows deep understanding:</strong> "Walk me through why deletes are expensive in Cassandra."</p>
+      <p><strong>Three LSM amplification factors:</strong> <mark class="p">Read amplification</mark> (one read may touch N SSTables), <mark class="p">space amplification</mark> (data exists in multiple SSTables before compaction), <mark class="p">write amplification</mark> (data is written to commitlog, memtable, SSTable, then rewritten during each compaction round). Understanding all three signals production experience.</p>
+      <p><strong>Google-scale vs startup-scale:</strong> At Google/Facebook scale, RocksDB (LSM-tree variant) is used instead of Cassandra's storage engine for even more tuning control. ScyllaDB reimplements Cassandra's wire protocol with a Seastar-based C++ LSM engine. The fundamentals are identical — the difference is in how aggressively you can tune compaction parameters.</p>
+    </div>
+  </div>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Part 1 Summary — The Four Core Mechanisms</div>
+  <p><strong>Consistent Hashing</strong> (where data lives on the ring) → <strong>Replication Strategy</strong> (how many copies, in which failure domains) → <strong>Consistency Level</strong> (how many copies must confirm before success) → <strong>LSM-Tree</strong> (how writes and reads actually touch disk). These four mechanisms compose into Cassandra's core identity: a write-optimized, AP database that trades query flexibility for horizontal scale and availability.</p>
+</div>
+
+<!-- NEXT CARD -->
+<div class="next-card" id="next">
+  <div>
+    <div class="next-label">Continue the Series</div>
+    <div class="next-title">Part 2: Gossip, Compaction, Data Modeling &amp; Operations</div>
+    <div class="next-desc">Gossip protocol internals, compaction strategies (STCS vs LCS vs TWCS), data modeling patterns, anti-entropy repair, and operational best practices.</div>
+  </div>
+  <a href="#" class="next-btn">Part 2 →</a>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleCc(h) { h.parentElement.classList.toggle('collapsed'); }
+function toggleMc(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const el = btn.closest('.code, .diag');
+  navigator.clipboard.writeText(el.querySelector('pre').innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--cass4)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
