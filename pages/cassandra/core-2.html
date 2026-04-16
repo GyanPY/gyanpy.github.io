@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive: Cassandra Internals (Part 2/2) — Compaction, Gossip & Decision Framework</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;
+  --border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --stcs:#f97316;--lcs:#a78bfa;--twcs:#06b6d4;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--stcs),var(--lcs),var(--twcs),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--cass4);background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--cass)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(16,185,129,.05)}
+.ni.active a{color:var(--cass4);border-left-color:var(--cass4);background:rgba(16,185,129,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--cass4);border-color:var(--cass4);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass4);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--stcs) 38%,var(--lcs) 62%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.7rem;padding:5px 12px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(16,185,129,.1);border-color:var(--cass4);color:var(--cass4)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:52px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.7rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* COMPACTION CARDS */
+.cc{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:22px;transition:transform .18s,box-shadow .18s}
+.cc:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.cc.stcs{border-left:4px solid var(--stcs)}
+.cc.lcs{border-left:4px solid var(--lcs)}
+.cc.twcs{border-left:4px solid var(--twcs)}
+.cc.gossip{border-left:4px solid var(--cass4)}
+.cc.stcs .cc-hdr{background:rgba(249,115,22,.05)}
+.cc.lcs .cc-hdr{background:rgba(139,92,246,.05)}
+.cc.twcs .cc-hdr{background:rgba(6,182,212,.05)}
+.cc.gossip .cc-hdr{background:rgba(16,185,129,.05)}
+.cc-hdr{padding:15px 20px;cursor:pointer;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;user-select:none}
+.cc-title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cc-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.cc.stcs .cc-label{color:var(--stcs)}.cc.lcs .cc-label{color:var(--lcs)}
+.cc.twcs .cc-label{color:var(--twcs)}.cc.gossip .cc-label{color:var(--cass4)}
+.cc-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.cc-badge{font-family:var(--fc);font-size:.63rem;font-weight:600;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.cc.stcs .cc-badge{background:rgba(249,115,22,.12);color:var(--stcs);border:1px solid rgba(249,115,22,.28)}
+.cc.lcs  .cc-badge{background:rgba(139,92,246,.12);color:var(--lcs);border:1px solid rgba(139,92,246,.28)}
+.cc.twcs .cc-badge{background:rgba(6,182,212,.12);color:var(--twcs);border:1px solid rgba(6,182,212,.28)}
+.cc.gossip .cc-badge{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.28)}
+.cc-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0;margin-top:3px}
+.cc.collapsed .cc-toggle{transform:rotate(-90deg)}
+.cc-body{padding:0 20px 22px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.cc.collapsed .cc-body{max-height:0;opacity:0;padding-bottom:0}
+.cc-body h4{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:18px 0 9px}
+.cc-body h5{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 6px}
+.cc-body h5:first-child{margin-top:0}
+.cc-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.cc-body ul,.cc-body ol{padding-left:18px;margin:8px 0 12px}
+.cc-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:5px}
+.cc-body strong{color:var(--text)}
+
+/* SECTION TAGS */
+.stag{display:inline-flex;align-items:center;gap:6px;font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.12em;padding:4px 10px;border-radius:5px;margin:16px 0 8px;font-weight:600}
+.stag.what{background:rgba(59,130,246,.1);color:var(--cass);border:1px solid rgba(59,130,246,.2)}
+.stag.how{background:rgba(16,185,129,.1);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+.stag.compare{background:rgba(139,92,246,.1);color:var(--lcs);border:1px solid rgba(139,92,246,.2)}
+.stag.walk{background:rgba(245,166,35,.08);color:var(--strong);border:1px solid rgba(245,166,35,.15)}
+.stag.nuances{background:rgba(245,166,35,.08);color:var(--strong);border:1px solid rgba(245,166,35,.15)}
+.stag.ops{background:rgba(249,115,22,.08);color:var(--obs);border:1px solid rgba(249,115,22,.15)}
+.stag.limits{background:rgba(255,107,107,.08);color:var(--no);border:1px solid rgba(255,107,107,.15)}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--cass4);border-color:var(--cass4)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAG */
+.diag{background:#010409;border:1px solid rgba(59,130,246,.2);border-radius:8px;margin:14px 0;overflow:hidden}
+.diag-hdr{background:rgba(59,130,246,.06);border-bottom:1px solid rgba(59,130,246,.2);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.diag-lbl{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass);font-weight:600}
+.diag pre{padding:16px 18px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#79c0ff;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout.cass{background:rgba(6,182,212,.07);border:1px solid rgba(6,182,212,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--lcs)}
+.callout.cass .callout-title{color:var(--twcs)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* MARKS */
+mark{background:rgba(59,130,246,.16);color:var(--cass);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.p{background:rgba(139,92,246,.14);color:var(--lcs)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* IQ */
+.iq{background:var(--surface2);border-left:3px solid var(--cass3);padding:10px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-style:italic;font-size:.88rem;color:var(--muted);line-height:1.6}
+
+/* GOTCHA */
+.gotcha{background:rgba(255,215,0,.05);border:1px solid rgba(255,215,0,.18);border-radius:8px;padding:12px 16px;margin:12px 0}
+.gotcha-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--lean);margin-bottom:7px}
+.gotcha p{font-size:.87rem;color:var(--muted);line-height:1.65}
+
+/* NUANCE */
+.nuance{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.18);border-radius:8px;padding:14px 16px;margin:12px 0}
+.nuance-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--strong);margin-bottom:9px;font-weight:600}
+.nuance p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.nuance p:last-child{margin-bottom:0}
+.nuance strong{color:var(--text)}
+
+/* FAILURE BOX */
+.failure-box{background:rgba(255,107,107,.05);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:13px 16px;margin:12px 0}
+.failure-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:8px;font-weight:600}
+
+/* COMPACTION AMP TABLE */
+.amp-table{width:100%;border-collapse:collapse;font-size:.81rem;margin:13px 0;border-radius:8px;overflow:hidden}
+.amp-table thead tr{background:linear-gradient(90deg,rgba(139,92,246,.12),rgba(6,182,212,.06))}
+.amp-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--lcs);border-bottom:1px solid rgba(139,92,246,.2)}
+.amp-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.amp-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.amp-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.amp-table td:first-child{font-weight:700;color:var(--text)}
+.amp-table td.low{color:var(--cass4);font-family:var(--fc);font-size:.77rem}
+.amp-table td.high{color:var(--no);font-family:var(--fc);font-size:.77rem;font-weight:600}
+.amp-table td.med{color:var(--lean);font-family:var(--fc);font-size:.77rem}
+
+/* MASTER COMPARISON TABLE */
+.master-table{width:100%;border-collapse:collapse;font-size:.77rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.master-table thead tr{background:linear-gradient(90deg,rgba(59,130,246,.12),rgba(16,185,129,.06))}
+.master-table th{padding:9px 11px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass);border-bottom:1px solid rgba(59,130,246,.2);white-space:nowrap}
+.master-table td{padding:8px 11px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.master-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.master-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.master-table tbody tr:hover{background:rgba(59,130,246,.04)}
+.master-table td:first-child{font-weight:700;color:var(--text);white-space:nowrap}
+
+/* GOSSIP STATE */
+.gossip-state{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0}
+.gossip-state-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--cass4);margin-bottom:9px;font-weight:600}
+
+/* DECISION TREE */
+.dt-wrap{background:#010409;border:1px solid rgba(16,185,129,.2);border-radius:10px;margin:16px 0;overflow:hidden}
+.dt-hdr{background:rgba(16,185,129,.06);border-bottom:1px solid rgba(16,185,129,.2);padding:8px 16px;display:flex;align-items:center;justify-content:space-between}
+.dt-lbl{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass4);font-weight:600}
+.dt-wrap pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.77rem;line-height:1.8;color:#c9d1d9;white-space:pre}
+
+/* CQ LIST */
+.cq-list{list-style:none;padding:0;margin:0}
+.cq-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start}
+.cq-q{font-family:var(--fc);font-size:.79rem;color:var(--cass);font-weight:600;flex-shrink:0;min-width:fit-content}
+.cq-why{font-size:.86rem;color:var(--muted);line-height:1.55}
+.cq-why strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(59,130,246,.06));border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass4);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass4);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* STRATEGY INTRO TABLE */
+.strat-intro{width:100%;border-collapse:collapse;font-size:.82rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.strat-intro thead tr{background:linear-gradient(90deg,rgba(249,115,22,.1),rgba(139,92,246,.06),rgba(6,182,212,.06))}
+.strat-intro th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--stcs);border-bottom:1px solid rgba(249,115,22,.2)}
+.strat-intro td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.strat-intro tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.strat-intro tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.strat-intro td:first-child{font-weight:700;color:var(--text);font-family:var(--fc);font-size:.8rem}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .cq-item{flex-direction:column;gap:5px}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn" aria-label="Toggle navigation">☰ Menu</button>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Cassandra Architecture</div>
+    <div class="sb-part">Part 2 of 2 — Compaction, Gossip &amp; Decision Framework</div>
+    <input type="text" id="search" placeholder="Search sections…" aria-label="Search">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.5 Compaction Strategies</div>
+      <li class="ni sub"><a href="#strat-intro">Strategy Overview</a></li>
+      <li class="ni sub"><a href="#stcs">STCS — Snowball</a></li>
+      <li class="ni sub"><a href="#lcs">LCS — Filing Cabinet</a></li>
+      <li class="ni sub"><a href="#twcs">TWCS — Daily Archive</a></li>
+      <li class="ni sub"><a href="#compaction-compare">Comparison Table</a></li>
+      <li class="ni sub"><a href="#compaction-walk">Walkthrough Scenarios</a></li>
+      <li class="ni sub"><a href="#compaction-nuances">L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.6 Gossip Protocol</div>
+      <li class="ni sub"><a href="#gossip">Gossip Internals</a></li>
+      <li class="ni sub"><a href="#phi-accrual">Phi Accrual Failure Detection</a></li>
+      <li class="ni sub"><a href="#gossip-timeline">9-Second Timeline</a></li>
+      <li class="ni sub"><a href="#gossip-failures">Failure Modes</a></li>
+      <li class="ni sub"><a href="#gossip-nuances">L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.7 Master Comparison</div>
+      <li class="ni"><a href="#master-comparison">All Components Table</a></li>
+    </li>
+    <li class="ng"><div class="nl">§2.8 Decision Framework</div>
+      <li class="ni sub"><a href="#decision-trees">Decision Trees</a></li>
+      <li class="ni sub"><a href="#questions">Questions to Ask</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 2 of 2</div>
+  <h1>Compaction,<br>Gossip &amp;<br>Decision Framework</h1>
+  <div class="hero-meta">
+    <span>🟠 STCS — Write-Heavy</span>
+    <span>🟣 LCS — Read-Heavy</span>
+    <span>🩵 TWCS — Time-Series + TTL</span>
+    <span>🟢 Gossip + Phi Accrual</span>
+    <span>📊 Master Comparison Table</span>
+    <span>⚙️ Decision Framework</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + 4 Mechanisms</span>
+    <span class="part-pill active-part">Part 2: Compaction, Gossip &amp; Decision Framework</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The operational mastery layer. Compaction strategy selection (STCS vs LCS vs TWCS — the choice most engineers get wrong), Gossip protocol internals with Phi Accrual failure detection, a complete master comparison table covering all Cassandra mechanisms, and the definitive decision framework for choosing the right configuration for any workload.</p>
+</section>
+
+<!-- ═══════════════════════════════════ -->
+<!-- §2.5 COMPACTION STRATEGIES        -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr" id="compaction-section">
+  <h2>§2.5 Compaction Strategies</h2>
+</div>
+
+<div class="callout info" style="margin-bottom:20px" id="strat-intro">
+  <div class="callout-title">One-Sentence Definitions</div>
+  <p>Compaction strategies determine <strong>when and how</strong> Cassandra merges SSTables to reclaim space, remove obsolete data, and keep read performance manageable. The wrong choice is the #1 source of mysterious Cassandra performance problems.</p>
+</div>
+
+<table class="strat-intro">
+  <thead><tr><th>Strategy</th><th>Analogy</th><th>Best For</th></tr></thead>
+  <tbody>
+    <tr><td>STCS</td><td>Snowball — small SSTables merge into bigger ones</td><td>Write-heavy, space-tolerant workloads</td></tr>
+    <tr><td>LCS</td><td>Filing cabinet — strict organization, fixed-size drawers</td><td>Read-heavy, predictable latency</td></tr>
+    <tr><td>TWCS</td><td>Daily newspaper archive — group by time, never merge across days</td><td>Time-series with TTL</td></tr>
+  </tbody>
+</table>
+
+<!-- STCS -->
+<div class="cc stcs" id="stcs">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row">
+      <div><div class="cc-label">Strategy 1 · Write-Heavy</div><div class="cc-title">SizeTieredCompactionStrategy (STCS)</div></div>
+      <span class="cc-badge">Snowball Merge</span>
+    </div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="stag what">Philosophy</div>
+    <p>Wait until you have ~4 SSTables of similar size, then merge them. Minimizes write amplification at the cost of space and read performance.</p>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · STCS Snowball Pattern</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>Time 0:  ○ ○ ○ ○        (4 small SSTables, ~50MB each)
+              │
+              ▼ compact!
+Time 1:  ●               (1 larger SSTable, ~200MB)
+
+Time 2:  ● ○ ○ ○ ○       (1 big + 4 new small)
+              │
+              ▼ compact smalls
+Time 3:  ● ●             (2 medium SSTables)
+
+Time 4:  ● ● ○ ○ ○ ○     (2 medium + 4 new small)
+              │
+              ▼
+...eventually...
+
+Time N:  ◉ ◉ ◉ ◉         (4 huge SSTables accumulate)
+              │
+              ▼ BIG compaction!
+Time N+1: ◯              (1 massive SSTable — hours of I/O!)</pre>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Strengths</div>
+      <ul>
+        <li>Minimizes write amplification — data rewritten rarely</li>
+        <li>Good for heavy write loads — compaction doesn't compete with writes much</li>
+        <li>Default strategy — works reasonably well for mixed workloads</li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Weaknesses</div>
+      <ul>
+        <li><strong>Space amplification:</strong> Need 50-100% free disk space for worst-case compaction (when the 4 huge SSTables merge)</li>
+        <li><strong>Unpredictable:</strong> Small compactions are fast (milliseconds), big ones can take hours — impossible to predict latency</li>
+        <li><strong>Read amplification:</strong> Reads must check many SSTables between compaction cycles — sawtooth latency pattern</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- LCS -->
+<div class="cc lcs" id="lcs">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row">
+      <div><div class="cc-label">Strategy 2 · Read-Heavy</div><div class="cc-title">LeveledCompactionStrategy (LCS)</div></div>
+      <span class="cc-badge">Filing Cabinet</span>
+    </div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="stag what">Philosophy</div>
+    <p>Organize SSTables into "levels" with strict size limits and non-overlapping key ranges within each level. Maximum read performance at the cost of write amplification.</p>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · LCS Level Layout</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>Level 0:  [A-Z] [A-Z] [A-Z] [A-Z]     ← Recent flushes, may overlap, max 4
+              │
+              ▼ compact into L1
+Level 1:  [A-D] [E-H] [I-L] [M-P] [Q-T] [U-Z]     ← 10 × 160MB = 1.6GB total
+              │                                        Non-overlapping ranges!
+              ▼ compact into L2
+Level 2:  [A-B][C-D][E-F]...............[Y-Z]        ← 10 × L1 = 16GB total
+              │
+              ▼
+Level 3:  ....                                        ← 10 × L2 = 160GB total
+
+Rules:
+• SSTables WITHIN a level have non-overlapping key ranges
+• Each level is 10× the size of the previous
+• Compaction picks an L(n) SSTable, merges with overlapping L(n+1) SSTables</pre>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Strengths</div>
+      <ul>
+        <li><strong>Read amplification: max ~10 SSTables per read</strong> (one per level) — consistent, predictable</li>
+        <li><strong>Space efficient: ~10% overhead</strong> vs STCS's 50-100%</li>
+        <li>Predictable performance — no sawtooth latency pattern</li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Weaknesses</div>
+      <ul>
+        <li><strong>Write amplification: ~10×</strong> — every row is rewritten once per level traversal</li>
+        <li>Heavy on I/O: constant small compactions running in background</li>
+        <li>Not good for write-heavy workloads — compaction competes with writes for disk bandwidth</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- TWCS -->
+<div class="cc twcs" id="twcs">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row">
+      <div><div class="cc-label">Strategy 3 · Time-Series + TTL</div><div class="cc-title">TimeWindowCompactionStrategy (TWCS)</div></div>
+      <span class="cc-badge">Daily Archive</span>
+    </div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="stag what">Philosophy</div>
+    <p>Group data by time window, compact only within each window, and drop entire files when TTL expires — no tombstone processing needed.</p>
+    <div class="diag">
+      <div class="diag-hdr"><span class="diag-lbl">Diagram · TWCS Time-Window Grouping</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>Day 1 window:  [Morning] [Afternoon] [Evening] → compact → [Day1 ████]
+Day 2 window:  [Morning] [Afternoon] [Evening] → compact → [Day2 ████]
+Day 3 window:  [Morning] [Afternoon] [Evening] → compact → [Day3 ████]
+Day 4 window:  [Morning █] [Afternoon █] [Evening...]  ← in progress
+
+When TTL expires on Day 1:
+  DROP THE ENTIRE FILE — no compaction needed!
+  Zero tombstone overhead. No read penalty.
+
+Queries for "last 24 hours":
+  Only Day4 window SSTables in page cache (hot)
+  Day3 and earlier: cold storage (never read)</pre>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Strengths</div>
+      <ul>
+        <li><strong>Perfect for TTL-based data:</strong> Drop whole files, zero tombstone processing</li>
+        <li>Predictable, time-based compaction — no surprise big compactions</li>
+        <li>Efficient for time-series queries (range scans within a window hit one file)</li>
+        <li><strong>Hot/cold data naturally separated:</strong> Only recent windows in page cache</li>
+      </ul>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">Weaknesses</div>
+      <ul>
+        <li>Updates/deletes across windows create tombstones (the very thing TWCS avoids)</li>
+        <li>Window size must be set correctly: too small = many files, too large = slow deletes</li>
+        <li>Only works well for time-ordered, append-mostly data</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- COMPACTION COMPARISON TABLE -->
+<div id="compaction-compare" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">Compaction Strategy Comparison</h3>
+  <table class="amp-table">
+    <thead><tr><th>Strategy</th><th>Write Amplification</th><th>Read Amplification</th><th>Space Amplification</th><th>Best For</th><th>Worst For</th></tr></thead>
+    <tbody>
+      <tr><td>STCS</td><td class="low">Low (1-2×)</td><td class="high">High (many SSTables)</td><td class="high">High (50-100%)</td><td>Write-heavy</td><td>Read-heavy</td></tr>
+      <tr><td>LCS</td><td class="high">High (10×)</td><td class="low">Low (~10 SSTables)</td><td class="low">Low (10%)</td><td>Read-heavy</td><td>Write-heavy</td></tr>
+      <tr><td>TWCS</td><td class="med">Medium</td><td class="low">Low (per window)</td><td class="low">Low</td><td>Time-series + TTL</td><td>Random updates</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- WALKTHROUGH SCENARIOS -->
+<div id="compaction-walk" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">§2.5D Walkthrough Scenarios</h3>
+
+  <h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin-bottom:10px">Scenario 1: IoT Time-Series, 10K writes/sec, 7-day TTL</h4>
+  <div class="code"><div class="code-hdr"><span class="code-lang">STCS vs TWCS · Time-Series</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>STCS approach:
+  Hour 0:   10 small SSTables (36M rows each)
+  Hour 1:   Compaction merges → 3 medium SSTables
+  Hour 6:   Some huge compactions, 4 large SSTables
+  Day 7:    TTL expires → tombstones everywhere!
+            Must compact to remove tombstones
+            Meanwhile, reads hitting tombstones = SLOW
+
+TWCS approach:
+  Hour 0:   Window-0 has 10 small SSTables
+  Hour 1:   Compaction merges Window-0 → 1 SSTable
+  Hour 24:  Window-0 through Window-23 each have 1 SSTable
+  Day 7:    TTL on Window-0 expires
+            DROP THE ENTIRE FILE — zero compaction needed!
+            Zero tombstone overhead
+
+Winner: TWCS by a mile for time-series + TTL</pre></div>
+
+  <h4 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:22px 0 10px">Scenario 2: User Profiles, 1K writes/sec, Frequent Random Reads</h4>
+  <div class="code"><div class="code-hdr"><span class="code-lang">STCS vs LCS · Random Reads</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>STCS approach:
+  Week 1:  Many SSTables accumulate
+           Read for user_123: Check 20 SSTables
+           Latency: 15-30ms (inconsistent, sawtooth)
+  Week 2:  Big compaction happens
+           Read latency drops to 5ms, then climbs again
+  Pattern: Sawtooth latency — unacceptable for SLOs
+
+LCS approach:
+  Week 1:  Continuous background compaction
+           Max 10 SSTables per read (one per level)
+           Read latency: 3-5ms (consistent!)
+  Week 2:  Same pattern — totally predictable
+  Cost:    Each row written ~10× (write amplification)
+           But read SLO is met reliably
+
+Winner: LCS for predictable read latency</pre></div>
+</div>
+
+<!-- COMPACTION NUANCES -->
+<div id="compaction-nuances" style="margin-top:20px">
+  <div class="nuance">
+    <div class="nuance-title">L6/L7 Nuances — Compaction</div>
+    <p><strong>Question that shows deep understanding:</strong> "When would you use STCS over LCS even for a read-heavy workload?"</p>
+    <p><strong>Answer:</strong> "When data has high temporal locality — like a cache where recent data is read much more frequently than old data. STCS keeps recent data in small, hot SSTables. LCS would constantly rewrite these hot rows as it levels them up, wasting I/O. The trick is recognizing that 'read-heavy' doesn't mean 'uniform reads.'"</p>
+    <p><strong>Non-obvious TWCS insight:</strong> "TWCS isn't just about TTL efficiency — it's about query pattern alignment. If your time-series queries always hit the last 24 hours, only the most recent window's SSTables stay in page cache. Older windows are cold storage. STCS would mix hot and cold data in the same SSTables, defeating your cache."</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- §2.6 GOSSIP PROTOCOL               -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr" id="gossip-section">
+  <h2>§2.6 Gossip Protocol &amp; Failure Detection</h2>
+</div>
+
+<div class="cc gossip" id="gossip">
+  <div class="cc-hdr" onclick="toggleCc(this)">
+    <div class="cc-title-row">
+      <div><div class="cc-label">Mechanism 5</div><div class="cc-title">Gossip Protocol</div></div>
+      <span class="cc-badge">Epidemic Propagation</span>
+    </div>
+    <span class="cc-toggle">▾</span>
+  </div>
+  <div class="cc-body">
+    <div class="stag what">A) What It Is</div>
+    <p>Gossip is Cassandra's decentralized mechanism for nodes to share cluster state — who's alive, who's dead, who's overloaded — by periodically exchanging information with random peers.</p>
+    <div class="iq">Core insight: Instead of a central registry (single point of failure), every node is a "rumor mill." Information spreads exponentially: tell 2 friends, they tell 2 friends. In a 100-node cluster, a piece of information reaches everyone in ~7 rounds.</div>
+
+    <div class="stag how">B) How Gossip Rounds Work</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Gossip · Every Second Per Node</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Every second, each node:
+  1. Pick a random LIVE node
+     → Exchange state: "Here's everything I know about every node"
+     → Merge: adopt any info with a higher version number
+
+  2. Maybe also: Pick a random SEED node
+     → Ensures isolated clusters can reconnect
+
+  3. Maybe also: Pick a random DEAD node
+     → Check if it's come back to life</pre></div>
+
+    <div class="stag how">State Exchanged Per Node</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">JSON · Gossip State Structure</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>{
+  "node": "10.0.0.5:9042",
+  "generation": 1623456789,    // When node last started (wall clock)
+  "heartbeat": 5423,           // Increments every second
+  "applicationState": {
+    "STATUS":  "NORMAL",       // NORMAL | LEAVING | MOVING | BOOTSTRAPPING
+    "LOAD":    "152.3GB",      // How much data this node stores
+    "SCHEMA":  "abc123",       // Schema version hash (detects mismatches!)
+    "DC":      "us-east",      // Data center name
+    "RACK":    "rack1",        // Rack name
+    "TOKENS":  "[...]"         // Token ranges this node owns
+  }
+}</pre></div>
+
+    <div class="stag how" id="phi-accrual">Phi Accrual Failure Detection</div>
+    <div class="callout deep">
+      <div class="callout-title">Why Phi Accrual Is Brilliant</div>
+      <p><strong>Traditional fixed timeout:</strong> "No heartbeat for 10 seconds = dead." But Node A (fast network) could detect failure in 2s, and Node B (slow network, 2s jitter) triggers false positives at 12s.</p>
+      <p style="margin-top:8px"><strong>Phi Accrual adapts per node:</strong> "Based on historical heartbeat arrival times for THIS specific node, how likely is it dead right now?" Each node gets a personalized threshold based on observed network behavior.</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Phi Accrual Math</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>φ = -log10(probability node is alive)
+
+If heartbeats usually arrive every 1s ± 0.1s,
+and it's been 3s since the last heartbeat:
+
+φ = 5  →  99.999%     likely dead
+φ = 8  →  99.999999%  likely dead
+
+Cassandra default: phi_convict_threshold = 8
+
+Node A (fast network, low jitter):  adapted timeout ~2s
+Node B (slow network, high jitter): adapted timeout ~15s
+→ No false positives, but still fast detection when real failure occurs</pre></div>
+
+    <div class="stag how" id="gossip-timeline">9-Second Failure Detection Timeline</div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Timeline · Node D Crashes in 5-Node Cluster</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>t=0s:  Node D crashes (power failure)
+
+t=2s:  C gossips to A: "D's heartbeat hasn't increased"
+       A notes: "D's last heartbeat was 2s ago, φ=3 (probably fine, wait)"
+
+t=5s:  Multiple nodes report D's heartbeat unchanged
+       A calculates: φ=8 for D → marks D as DOWN
+       A gossips to B: "D is DOWN"
+
+t=7s:  All nodes agree: D is DOWN
+       Coordinator stops routing to D
+       Hinted handoff ACTIVATES for D's token ranges
+
+t=100s: Node D reboots, starts gossiping with generation=NEW_TIMESTAMP
+        Nodes see D is back with new generation
+        D enters BOOTSTRAPPING state
+        D streams data from hints and replicas
+        Eventually D is NORMAL again</pre></div>
+
+    <div class="stag limits" id="gossip-failures">D) Failure Modes</div>
+    <div class="failure-box">
+      <div class="failure-title">Network Partition Scenario</div>
+      <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">Split-Brain Timeline</span></div>
+      <pre>Initial: A ←→ B ←→ C ←→ D ←→ E  (all healthy)
+
+Partition: Cable cut between C and D
+           [A, B, C] |  [D, E]
+
+What happens:
+  [A,B,C]: Gossip works normally within partition
+           Eventually marks D,E as DOWN
+  [D,E]:   Gossip works normally within partition
+           Eventually marks A,B,C as DOWN
+
+Both sides continue serving clients!
+→ With RF=3 and data split across partition: some writes may fail (quorum)
+→ With CL=ONE: both sides may accept conflicting writes
+
+Partition heals:
+  A gossips to D → exchange state → detect conflict
+  Both sides wrote to same key during partition!
+  Resolution: Read repair + Last Write Wins (LWW)
+  Winner: whichever side had the later timestamp</pre></div>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">Gotcha 1: Seed Nodes Are Critical</div>
+      <p>Gossip uses "seed" nodes to bootstrap. If all seeds are unreachable, new nodes can't join the cluster. But seeds aren't operationally special — any healthy node can serve as seed. Best practice: <strong>3 seeds per DC in different racks</strong>, and seeds should never all be in the same failure domain.</p>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">Gotcha 2: Schema Disagreements Need Manual Fix</div>
+      <p>Cassandra detects schema mismatches via the SCHEMA version in gossip state. But it won't auto-resolve — you'll see warnings in logs and may see query failures. Requires manual <code>nodetool describecluster</code> + schema alignment.</p>
+    </div>
+    <div class="gotcha">
+      <div class="gotcha-title">Gotcha 3: Clock Skew Corrupts Gossip</div>
+      <p>Generation numbers use wall-clock timestamps. If a node's clock is significantly off, its gossip may be ignored entirely (looks like old data) or may override valid state from other nodes. Monitor NTP across all Cassandra nodes.</p>
+    </div>
+
+    <div class="stag ops">E) Operational Considerations</div>
+    <div class="callout info">
+      <div class="callout-title">Key Commands &amp; Metrics</div>
+      <ul>
+        <li><code>nodetool gossipinfo</code> — raw gossip state for every node</li>
+        <li><code>nodetool status</code> — derived cluster health (U/D per node)</li>
+        <li><code>nodetool describecluster</code> — schema version agreement across nodes</li>
+        <li>Alert on: <code>phi_convict_threshold</code> breaches, schema version mismatches, generation changes (node restarts)</li>
+        <li>Ports required: 7000 (internal gossip), 7001 (TLS gossip) — firewall issues = nodes can't see each other</li>
+      </ul>
+    </div>
+
+    <div class="stag nuances" id="gossip-nuances">F) The L6/L7 Nuances</div>
+    <div class="nuance">
+      <div class="nuance-title">L6/L7 Nuances — Gossip</div>
+      <p><strong>Convergence time is O(log N):</strong> In a 1000-node cluster, full propagation of a state change takes ~10-15 seconds (log₂(1000) ≈ 10 rounds). During this window, different coordinators may have inconsistent views of cluster membership — this is expected and fine for most operations.</p>
+      <p><strong>Gossip storm on mass restart:</strong> If many nodes restart simultaneously (deployment, region recovery), gossip traffic spikes as everyone shares full state with random peers. With 1000 nodes each gossiping state for 1000 nodes, you get ~1M gossip messages per second. Use <code>ring_delay_ms</code> to stagger startup.</p>
+      <p><strong>Generation numbers as a debugging tool:</strong> When a node restarts, its generation increments. You can detect unexpected restarts by monitoring generation changes in <code>nodetool gossipinfo</code>. A node that's restarting repeatedly (crash loop) will show rapidly incrementing generation numbers.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- §2.7 MASTER COMPARISON TABLE        -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr" id="master-comparison">
+  <h2>§2.7 Master Component Comparison Table</h2>
+</div>
+
+<div class="callout info" style="margin-bottom:14px">
+  <div class="callout-title">Complete Reference</div>
+  <p>Every Cassandra mechanism in one table. Use this as the definitive reference for interview answers about which component to use for which workload.</p>
+</div>
+
+<div style="overflow-x:auto">
+<table class="master-table">
+  <thead><tr><th>Component</th><th>Mechanism</th><th>Best For</th><th>Worst For</th><th>Key Trade-off</th><th>Failure Mode</th><th>Real-World User</th></tr></thead>
+  <tbody>
+    <tr><td>Consistent Hashing</td><td>Ring + token ranges</td><td>Even distribution, elastic scaling</td><td>Hot partitions</td><td>Hash quality vs partition cardinality</td><td>Hot partition hammers 3 nodes</td><td>DynamoDB, Riak</td></tr>
+    <tr><td>SimpleStrategy</td><td>Clockwise replica placement</td><td>Dev/test only</td><td>Production</td><td>Simplicity vs rack awareness</td><td>Rack failure = data loss</td><td>Development only</td></tr>
+    <tr><td>NetworkTopologyStrategy</td><td>Rack-aware replica placement</td><td>All production</td><td>N/A — always use this</td><td>Complexity vs resilience</td><td>Snitch misconfiguration</td><td>Netflix, Apple</td></tr>
+    <tr><td>CL=ONE</td><td>Single replica responds</td><td>Logging, non-critical</td><td>Financial data</td><td>Speed vs durability</td><td>Single node crash = lost uncommitted write</td><td>Log aggregation</td></tr>
+    <tr><td>CL=QUORUM</td><td>Majority replicas respond</td><td>Most OLTP apps</td><td>Max speed required</td><td>Consistency vs latency</td><td>2+ node failures = unavailable</td><td>User profiles</td></tr>
+    <tr><td>CL=LOCAL_QUORUM</td><td>Local DC majority</td><td>Multi-DC apps</td><td>Cross-DC consistency needed</td><td>Local speed vs global consistency</td><td>DC-level partition = unavailable</td><td>Instagram DMs</td></tr>
+    <tr><td>CL=EACH_QUORUM</td><td>Quorum in every DC</td><td>Financial/compliance</td><td>Latency-sensitive</td><td>Global consistency vs latency tax</td><td>Any DC partition = unavailable</td><td>Payment systems</td></tr>
+    <tr><td>STCS</td><td>Snowball merge by size</td><td>Write-heavy</td><td>Read-heavy</td><td>Write amp vs read amp + space</td><td>Compaction falls behind → reads degrade</td><td>Event logging</td></tr>
+    <tr><td>LCS</td><td>Leveled organization</td><td>Read-heavy, consistent latency</td><td>Write-heavy</td><td>Read amp vs write amp</td><td>Write storm → can't keep up with leveling</td><td>User lookup</td></tr>
+    <tr><td>TWCS</td><td>Time window grouping</td><td>Time-series + TTL</td><td>Random updates across windows</td><td>Time alignment vs update handling</td><td>Cross-window updates → tombstones</td><td>IoT metrics, logs</td></tr>
+    <tr><td>Gossip Protocol</td><td>Epidemic propagation</td><td>Membership, state sharing</td><td>Fast propagation (&lt;1s)</td><td>Decentralization vs convergence time</td><td>Network partition → split brain</td><td>All Cassandra</td></tr>
+    <tr><td>LSM-Tree / Memtable</td><td>Append-only write path</td><td>Write-heavy, sequential I/O</td><td>Read-heavy with many updates</td><td>Write speed vs read complexity</td><td>Compaction lag → read amplification</td><td>RocksDB, LevelDB</td></tr>
+    <tr><td>Phi Accrual Detector</td><td>Adaptive failure threshold</td><td>Mixed network conditions</td><td>Instant failure detection needed</td><td>False positives vs detection speed</td><td>Clock skew → missed failures</td><td>Akka, Cassandra</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════ -->
+<!-- §2.8 DECISION FRAMEWORK             -->
+<!-- ═══════════════════════════════════ -->
+<div class="sec-hdr" id="decision-section">
+  <h2>§2.8 Decision Framework</h2>
+</div>
+
+<div id="decision-trees">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Compaction Strategy Selection</h3>
+  <div class="dt-wrap">
+    <div class="dt-hdr"><span class="dt-lbl">Decision Tree · Compaction Strategy</span><button class="copy-btn" onclick="copyDt(this)">Copy</button></div>
+    <pre>Is your workload write-heavy (>10:1 write:read ratio)?
+                    │
+      ┌─────────────┴─────────────┐
+      │ YES                       │ NO
+      ▼                           ▼
+Is data time-series with TTL?   Need predictable read latency?
+      │                           │
+  ┌───┴───┐                 ┌─────┴────┐
+  │ YES   │ NO              │ YES      │ NO
+  ▼       ▼                 ▼          ▼
+TWCS    STCS               LCS        STCS
+                                  (default is fine)</pre>
+  </div>
+
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">Replication Strategy &amp; Consistency Level</h3>
+  <div class="dt-wrap">
+    <div class="dt-hdr"><span class="dt-lbl">Decision Tree · Replication + Consistency</span><button class="copy-btn" onclick="copyDt(this)">Copy</button></div>
+    <pre>Multi-region deployment?
+            │
+    ┌───────┴───────────┐
+    │ YES               │ NO
+    ▼                   ▼
+NetworkTopologyStrategy  NetworkTopologyStrategy
++ LOCAL_QUORUM (default) (still use it! Never SimpleStrategy)
++ EACH_QUORUM (critical) + QUORUM for consistency
+
+
+Consistency requirements?
+            │
+    ┌───────┼────────┬──────────┬──────────────┐
+    │       │        │          │              │
+    ▼       ▼        ▼          ▼              ▼
+Fire+    Durable  Balance    Maximum       Use a
+forget   but fast speed +    consistency  different DB
+(analytics)        consistency             │
+    │       │        │          │        Spanner,
+    ▼       ▼        ▼          ▼        CockroachDB
+  CL=ANY  CL=ONE  CL=QUORUM  CL=ALL</pre>
+  </div>
+</div>
+
+<!-- QUESTIONS TO ASK -->
+<div id="questions" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Questions to Ask (or Your Interviewer)</h3>
+  <ul class="cq-list">
+    <li class="cq-item">
+      <div class="cq-q">"Write-to-read ratio?"</div>
+      <div class="cq-why">Determines STCS vs LCS. <strong>&gt;10:1 → STCS. &lt;10:1 → LCS.</strong> The most important compaction question.</div>
+    </li>
+    <li class="cq-item">
+      <div class="cq-q">"TTL on the data?"</div>
+      <div class="cq-why">Any time-series data with natural expiration → <strong>TWCS eliminates tombstone overhead entirely.</strong></div>
+    </li>
+    <li class="cq-item">
+      <div class="cq-q">"Strong consistency or eventual?"</div>
+      <div class="cq-why">Determines consistency level strategy. <strong>If strong: CL(write) + CL(read) &gt; RF.</strong> If eventual: ONE or QUORUM per path.</div>
+    </li>
+    <li class="cq-item">
+      <div class="cq-q">"How many DCs, latency requirements?"</div>
+      <div class="cq-why">Determines LOCAL_QUORUM vs EACH_QUORUM. <strong>Cross-DC adds 80-150ms per operation — avoid paying this tax for every query.</strong></div>
+    </li>
+    <li class="cq-item">
+      <div class="cq-q">"Acceptable data loss window (RPO)?"</div>
+      <div class="cq-why">Determines RF and CL combination. <strong>RPO=0 → synchronous replication, QUORUM or higher.</strong></div>
+    </li>
+    <li class="cq-item">
+      <div class="cq-q">"Hot partition risk in the data model?"</div>
+      <div class="cq-why">Consistent hashing doesn't save you from bad partition key choices. <strong>High-cardinality partition keys are the #1 Cassandra performance problem.</strong></div>
+    </li>
+  </ul>
+</div>
+
+<div class="soundbite" style="margin-top:28px">
+  <div class="soundbite-label">🔑 Sound Bite — Comparing All Variants</div>
+  <p>"I pick compaction strategy based on the write-to-read ratio: STCS for write-heavy, LCS for read-heavy, TWCS for time-series with TTL. For multi-region, I always use NetworkTopologyStrategy with LOCAL_QUORUM to avoid cross-DC latency tax on every operation — only escalating to EACH_QUORUM for operations that truly need global consistency. And I choose partition keys with high cardinality upfront, because consistent hashing can't save you from a hot partition once you're in production."</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Complete Cassandra Internals — Final Lesson</div>
+  <p>Cassandra's architecture is a set of deliberate, composable trade-offs: <strong>Consistent Hashing</strong> (where data lives) → <strong>NetworkTopologyStrategy</strong> (how it survives failures) → <strong>Consistency Level</strong> (how many copies confirm before success) → <strong>LSM-Tree</strong> (how writes hit disk) → <strong>Compaction Strategy</strong> (how SSTables are organized over time) → <strong>Gossip</strong> (how nodes know about each other). Each layer adds one capability while accepting one limitation. The L6/L7 insight: <mark class="gr">you don't configure Cassandra, you compose its primitives for your access patterns.</mark></p>
+  <p style="margin-top:10px"><strong>The final soundbite:</strong> "Cassandra is the right tool when you need write scalability and multi-region availability, and you're willing to pay with schema rigidity and eventual consistency. If you need ACID transactions or ad-hoc queries, reach for Postgres or Spanner instead."</p>
+</div>
+
+</main>
+
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑ Top</button>
+
+<script>
+const prog = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  prog.style.width = (h.scrollTop / (h.scrollHeight - h.clientHeight) * 100) + '%';
+  document.getElementById('btt').classList.toggle('vis', h.scrollTop > 300);
+  updateNav();
+});
+function updateNav() {
+  const all = document.querySelectorAll('[id]');
+  const links = document.querySelectorAll('.ni a');
+  let cur = '';
+  all.forEach(s => { if (s.getBoundingClientRect().top < 130) cur = s.id; });
+  links.forEach(a => { a.parentElement.classList.toggle('active', a.getAttribute('href') === '#' + cur); });
+}
+function toggleCc(h) { h.parentElement.classList.toggle('collapsed'); }
+function copyCode(btn) {
+  const el = btn.closest('.code, .diag');
+  navigator.clipboard.writeText(el.querySelector('pre').innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--cass4)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+function copyDt(btn) {
+  const pre = btn.closest('.dt-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'Copied ✓'; btn.style.color = 'var(--cass4)';
+    setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+  });
+}
+const hbtn = document.getElementById('hbtn'), sb = document.getElementById('sidebar');
+hbtn.addEventListener('click', () => sb.classList.toggle('open'));
+document.addEventListener('click', e => { if (!sb.contains(e.target) && !hbtn.contains(e.target)) sb.classList.remove('open'); });
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { document.querySelectorAll('.ni,.ng').forEach(el => el.classList.remove('hidden')); return; }
+  document.querySelectorAll('.ni').forEach(i => i.classList.toggle('hidden', !i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g => {
+    g.classList.toggle('hidden', ![...g.querySelectorAll('.ni')].some(i => !i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
