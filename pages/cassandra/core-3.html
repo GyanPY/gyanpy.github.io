@@ -1,1 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cassandra Internals (Part 3/3) — Trade-offs, Scale & Industry Patterns</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--no),var(--obs),var(--strong),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--cass4);background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--cass4)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(16,185,129,.05)}
+.ni.active a{color:var(--cass4);border-left-color:var(--cass4);background:rgba(16,185,129,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--cass4);border-color:var(--cass4);transform:translateY(-2px)}
+
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--cass4);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--no) 35%,var(--strong) 60%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.active-part{background:rgba(16,185,129,.1);border-color:var(--cass4);color:var(--cass4)}
+
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+.part-banner{border-radius:12px;padding:22px 26px;margin:0 0 36px;border:1px solid}
+.part-banner.p3{background:linear-gradient(135deg,rgba(255,107,107,.07),rgba(245,166,35,.04));border-color:rgba(255,107,107,.2)}
+.part-banner.p4{background:linear-gradient(135deg,rgba(16,185,129,.07),rgba(59,130,246,.04));border-color:rgba(16,185,129,.2)}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:7px;font-weight:600}
+.part-banner.p3 .part-banner-label{color:var(--no)}
+.part-banner.p4 .part-banner-label{color:var(--cass4)}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--cass4);border-color:var(--cass4)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--cass2)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+mark{background:rgba(59,130,246,.16);color:var(--cass);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.p{background:rgba(139,92,246,.14);color:var(--cass2)}
+
+.dt{width:100%;border-collapse:collapse;font-size:.8rem;margin:13px 0;border-radius:8px;overflow:hidden}
+.dt thead tr{background:linear-gradient(90deg,rgba(255,107,107,.1),rgba(245,166,35,.05))}
+.dt th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.18)}
+.dt td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.81rem}
+.dt tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dt tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dt tbody tr:hover{background:rgba(255,107,107,.03)}
+.dt td:first-child{font-weight:700;color:var(--no);font-family:var(--fc);font-size:.77rem}
+
+.ct{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.ct thead tr{background:linear-gradient(90deg,rgba(59,130,246,.1),rgba(139,92,246,.05))}
+.ct th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass);border-bottom:1px solid rgba(59,130,246,.18)}
+.ct td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.ct tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.ct tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.ct td:first-child{font-weight:600;color:var(--text)}
+.ct td.c1{font-family:var(--fc);font-size:.77rem;color:var(--cass4)}
+.ct td.c2{font-family:var(--fc);font-size:.77rem;color:var(--lean)}
+
+.ft{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.ft thead tr{background:linear-gradient(90deg,rgba(255,107,107,.1),rgba(249,115,22,.05))}
+.ft th{padding:9px 11px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.18)}
+.ft td{padding:8px 11px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.8rem}
+.ft tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.ft tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.ft td:first-child{font-weight:600;color:var(--text)}
+.ft td.br{color:var(--lean)}
+
+.edge-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--cass2);border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:14px}
+.edge-hdr{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none}
+.edge-title{font-family:var(--fh);font-size:.95rem;font-weight:600;color:var(--cass2)}
+.edge-badge{font-family:var(--fc);font-size:.62rem;font-weight:600;padding:2px 8px;border-radius:12px;background:rgba(139,92,246,.12);color:var(--cass2);border:1px solid rgba(139,92,246,.25)}
+.edge-toggle{font-size:.76rem;color:var(--dim);transition:transform .3s}
+.edge-card.collapsed .edge-toggle{transform:rotate(-90deg)}
+.edge-body{overflow:hidden;transition:max-height .4s,opacity .3s;max-height:9999px;opacity:1;margin-top:11px}
+.edge-card.collapsed .edge-body{max-height:0;opacity:0;margin-top:0}
+.edge-body p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.edge-body ul{padding-left:16px;margin:6px 0}
+.edge-body li{font-size:.87rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.edge-body strong{color:var(--text)}
+
+.bound-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.bound-table thead tr{background:linear-gradient(90deg,rgba(245,166,35,.1),rgba(139,92,246,.05))}
+.bound-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--strong);border-bottom:1px solid rgba(245,166,35,.18)}
+.bound-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.bound-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.bound-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.bound-table td:first-child{font-family:var(--fc);font-size:.77rem;color:var(--text);font-weight:600}
+.bound-table td.impact{color:var(--no)}.bound-table td.fix{color:var(--cass4)}
+
+.sc-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px;transition:transform .18s,box-shadow .18s}
+.sc-card:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.38)}
+.sc-card.sa{border-left:4px solid var(--cass4)}.sc-card.sb{border-left:4px solid var(--rose)}
+.sc-card.sa .sc-hdr{background:rgba(16,185,129,.05)}.sc-card.sb .sc-hdr{background:rgba(251,113,133,.05)}
+.sc-hdr{padding:14px 20px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none}
+.sc-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px}
+.sc-card.sa .sc-label{color:var(--cass4)}.sc-card.sb .sc-label{color:var(--rose)}
+.sc-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.sc-toggle{font-size:.78rem;color:var(--dim);transition:transform .3s;flex-shrink:0}
+.sc-card.collapsed .sc-toggle{transform:rotate(-90deg)}
+.sc-body{padding:0 20px 20px;overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.sc-card.collapsed .sc-body{max-height:0;opacity:0;padding-bottom:0}
+.sc-body p{font-size:.9rem;line-height:1.7;color:var(--muted);margin-bottom:10px}
+.sc-body ul{padding-left:18px;margin:8px 0 12px}
+.sc-body li{font-size:.88rem;line-height:1.6;color:var(--muted);margin-bottom:4px}
+.sc-body strong{color:var(--text)}
+
+.bn-ladder{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:16px 0}
+.bn-row{display:flex;align-items:stretch;border-bottom:1px solid var(--border)}
+.bn-row:last-child{border-bottom:none}
+.bn-scale{font-family:var(--fc);font-size:.78rem;font-weight:700;color:var(--cass4);background:rgba(16,185,129,.06);padding:12px 14px;min-width:108px;display:flex;align-items:center;border-right:1px solid var(--border);flex-shrink:0}
+.bn-right{padding:12px 16px;flex:1}
+.bn-bottleneck{font-family:var(--fc);font-size:.75rem;color:var(--no);margin-bottom:3px;font-weight:600}
+.bn-solution{font-size:.84rem;color:var(--muted);line-height:1.5}
+.bn-solution strong{color:var(--cass4)}
+
+.warn-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.warn-table thead tr{background:linear-gradient(90deg,rgba(255,107,107,.1),rgba(245,166,35,.05))}
+.warn-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--no);border-bottom:1px solid rgba(255,107,107,.18)}
+.warn-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45;font-size:.81rem}
+.warn-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.warn-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.warn-table td:first-child{font-weight:600;color:var(--text)}
+.warn-table td.g{color:var(--cass4);font-family:var(--fc);font-size:.77rem}
+.warn-table td.y{color:var(--lean);font-family:var(--fc);font-size:.77rem}
+.warn-table td.r{color:var(--no);font-family:var(--fc);font-size:.77rem;font-weight:700}
+
+.industry-card{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--cass2);border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:12px}
+.industry-title{font-family:var(--fh);font-size:.95rem;font-weight:600;color:var(--cass2);margin-bottom:8px}
+.industry-card p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:5px}
+.industry-card ul{padding-left:16px;margin:4px 0 8px}
+.industry-card li{font-size:.86rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.industry-card strong{color:var(--text)}
+.lesson{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.18);border-radius:5px;padding:7px 11px;margin-top:8px;font-size:.84rem;color:var(--cass4);line-height:1.55}
+
+.oss-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.oss-table thead tr{background:linear-gradient(90deg,rgba(59,130,246,.1),rgba(139,92,246,.05))}
+.oss-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass);border-bottom:1px solid rgba(59,130,246,.18)}
+.oss-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.45}
+.oss-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.oss-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.oss-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc);font-size:.78rem}
+
+.evol-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.evol-table thead tr{background:linear-gradient(90deg,rgba(16,185,129,.1),rgba(59,130,246,.05))}
+.evol-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass4);border-bottom:1px solid rgba(16,185,129,.18)}
+.evol-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.81rem}
+.evol-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.evol-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.evol-table td:first-child{font-weight:600;color:var(--text)}
+
+.soundbite{background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(59,130,246,.06));border:1px solid rgba(16,185,129,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass4);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--cass4);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">Deep Dive: Cassandra Architecture</div>
+    <div class="sb-part">Part 3 of 3 — Trade-offs, Scale &amp; Industry</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">§3 Trade-offs &amp; Nuances</div>
+      <li class="ni sub"><a href="#tradeoffs">Trade-offs Matrix</a></li>
+      <li class="ni sub"><a href="#dist-twist">Distributed Systems Twist</a></li>
+      <li class="ni sub"><a href="#coord-cost">Coordination Cost Table</a></li>
+      <li class="ni sub"><a href="#failure-modes">Failure Modes Deep-Dive</a></li>
+      <li class="ni sub"><a href="#fail-open-closed">Fail-Open vs Fail-Closed</a></li>
+    </li>
+    <li class="ng"><div class="nl">§3.4 Edge Cases</div>
+      <li class="ni sub"><a href="#edge1">Read-Your-Writes Failure</a></li>
+      <li class="ni sub"><a href="#edge2">LWT Performance Cliff</a></li>
+      <li class="ni sub"><a href="#edge3">Tombstone Avalanche</a></li>
+      <li class="ni sub"><a href="#edge4">Clock Skew + LWW Corruption</a></li>
+      <li class="ni sub"><a href="#boundary">Boundary Conditions</a></li>
+    </li>
+    <li class="ng"><div class="nl">§4 Scale &amp; Real-World</div>
+      <li class="ni sub"><a href="#boe-1m">BOE: 1M Users</a></li>
+      <li class="ni sub"><a href="#boe-1b">BOE: 1B Users</a></li>
+      <li class="ni sub"><a href="#bn-ladder">Bottleneck Ladder</a></li>
+      <li class="ni sub"><a href="#warn-signs">Warning Signs Table</a></li>
+    </li>
+    <li class="ng"><div class="nl">§4.3 Industry Deep-Dive</div>
+      <li class="ni sub"><a href="#netflix">Netflix</a></li>
+      <li class="ni sub"><a href="#apple">Apple</a></li>
+      <li class="ni sub"><a href="#discord">Discord</a></li>
+      <li class="ni sub"><a href="#instagram">Instagram</a></li>
+      <li class="ni sub"><a href="#alternatives">OSS Alternatives</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 3 of 3</div>
+  <h1>Trade-offs, Scale<br>&amp; Industry<br>Patterns</h1>
+  <div class="hero-meta">
+    <span>⚖️ Fundamental Trade-offs Matrix</span>
+    <span>🌐 Distributed Systems Twist</span>
+    <span>🔮 4 Edge Cases That Impress</span>
+    <span>📐 BOE: 1M → 1B Users</span>
+    <span>🏭 Netflix / Apple / Discord / Instagram</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + 4 Mechanisms</span>
+    <span class="part-pill">Part 2: Compaction, Gossip &amp; Decision Framework</span>
+    <span class="part-pill active-part">Part 3: Trade-offs, Scale &amp; Industry</span>
+  </div>
+  <p style="margin-top:18px;font-size:.86rem;color:var(--dim);">The L7 differentiator layer. Fundamental trade-off matrix, the distributed systems twist (why single-node intuitions break), failure modes with blast radius, four edge cases that stump L6 candidates (read-your-writes, LWT performance cliff, tombstone avalanche, clock skew corruption), back-of-envelope for 1M → 1B users, and how Netflix / Apple / Discord / Instagram actually use Cassandra in production.</p>
+</section>
+
+<!-- ======= PART 3: TRADE-OFFS ======= -->
+<div class="part-banner p3">
+  <div class="part-banner-label">Part 3 · Trade-offs &amp; Nuances</div>
+  <h2>The L6/L7 Differentiator</h2>
+  <p>L6 knows how Cassandra works. L7 knows <em>why</em> each design choice was made and what you give up. Every Cassandra decision is a deliberate sacrifice — knowing what's being sacrificed and when that's acceptable is the interview differentiator.</p>
+</div>
+
+<div id="tradeoffs">
+  <h3 style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin-bottom:14px">§3.1 Fundamental Trade-offs Matrix</h3>
+  <table class="dt">
+    <thead><tr><th>Trade-off</th><th>Cassandra Optimizes</th><th>What It Sacrifices</th><th>Why Acceptable</th><th>When NOT Acceptable</th></tr></thead>
+    <tbody>
+      <tr><td>Availability vs Consistency</td><td>Availability (AP in CAP)</td><td>Strong consistency</td><td>Most apps tolerate stale reads for seconds</td><td>Financial ledgers, inventory counts</td></tr>
+      <tr><td>Write Speed vs Read Speed</td><td>Write latency (LSM-tree)</td><td>Read latency (multiple SSTables)</td><td>Event ingestion, time-series workloads</td><td>Read-heavy OLTP (use LCS or different DB)</td></tr>
+      <tr><td>Scalability vs Simplicity</td><td>Horizontal scale</td><td>Simple ops (JOINs, transactions)</td><td>Scale is existential at 50K+ writes/sec</td><td>Small datasets that fit on one machine</td></tr>
+      <tr><td>Flexibility vs Performance</td><td>Query performance (denormalized)</td><td>Data modeling flexibility</td><td>You know your queries upfront</td><td>Exploratory analytics, unknown query patterns</td></tr>
+      <tr><td>Latency vs Durability</td><td>Latency (CL=ONE)</td><td>Durability (single replica)</td><td>Logging, metrics, non-critical data</td><td>Any user-facing, business-critical data</td></tr>
+      <tr><td>Local vs Global Consistency</td><td>Local DC latency (LOCAL_QUORUM)</td><td>Cross-DC immediate consistency</td><td>Most reads are regional</td><td>Global transaction requirements</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="sec-hdr" id="dist-twist"><h2>§3.2 The Distributed Systems Twist</h2></div>
+
+<div class="callout fail">
+  <div class="callout-title">Single-Node Intuitions That Break in Distributed Cassandra</div>
+  <ul>
+    <li><strong>New failure mode: Partial writes.</strong> Write succeeds on 2 of 3 replicas; third replica is stale until repair runs.</li>
+    <li><strong>New failure mode: Replica divergence.</strong> Network partition allows conflicting writes on both sides.</li>
+    <li><strong>New failure mode: Coordinator bottleneck.</strong> One coordinator handles all requests for a partition — single coordinator can be the bottleneck even when replicas have capacity.</li>
+  </ul>
+</div>
+<div class="callout extra">
+  <div class="callout-title">The Concrete Example — Why CL=QUORUM Isn't Just About Durability</div>
+  <p>"On a single node, an LSM-tree guarantees once I read a value, I'll never see an older version. But across 3 replicas with CL=ONE, I might read from replica A (version 1), then read from replica B (version 0). <mark>My second read returns older data than my first.</mark> CL=QUORUM gives me not just durability — it gives me <strong>monotonic reads</strong>."</p>
+</div>
+
+<div id="coord-cost" style="margin-top:20px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:12px">Coordination Cost — Single Node vs Distributed</h3>
+  <table class="ct">
+    <thead><tr><th>Operation</th><th>Single-Node</th><th>3-Node Distributed</th><th>Overhead Source</th></tr></thead>
+    <tbody>
+      <tr><td>Write (CL=ONE)</td><td class="c1">1ms</td><td class="c2">2ms</td><td>Network hop to coordinator + 1 replica</td></tr>
+      <tr><td>Write (CL=QUORUM)</td><td class="c1">1ms</td><td class="c2">5ms</td><td>Wait for 2 network round-trips in parallel</td></tr>
+      <tr><td>Read (CL=ONE)</td><td class="c1">2ms</td><td class="c2">4ms</td><td>Network hop + possible routing overhead</td></tr>
+      <tr><td>Read (CL=QUORUM)</td><td class="c1">2ms</td><td class="c2">8ms</td><td>Wait for 2 responses, merge, resolve conflicts</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="sec-hdr" id="failure-modes"><h2>§3.3 Failure Modes Deep-Dive</h2></div>
+
+<table class="ft">
+  <thead><tr><th>Failure</th><th>What Happens</th><th>Detection</th><th>Recovery</th><th>Blast Radius</th><th>Prevention</th></tr></thead>
+  <tbody>
+    <tr><td>Single node crash</td><td>1 replica unavailable</td><td>Gossip: 10-30s; CL=QUORUM still works</td><td>Hinted handoff + repair</td><td class="br">1/RF of reads affected</td><td>RF≥3, monitoring</td></tr>
+    <tr><td>Rack failure</td><td>Multiple nodes down</td><td>QUORUM may fail if 2/3 replicas in same rack</td><td>NetworkTopologyStrategy protects</td><td class="br">Potentially entire keyspace</td><td>Proper snitch config</td></tr>
+    <tr><td>DC failure</td><td>All local replicas gone</td><td>LOCAL_QUORUM fails, QUORUM may fail</td><td>Failover to other DC, repair on recovery</td><td class="br">Regional outage</td><td>Multi-DC replication</td></tr>
+    <tr><td>Network partition</td><td>Split-brain risk</td><td>Nodes can't reach each other</td><td>Manual reconciliation may be needed</td><td class="br">Data inconsistency</td><td>Proper CL selection</td></tr>
+    <tr><td>Compaction backlog</td><td>Read latency increases</td><td>SSTable count rises, CPU/disk maxed</td><td>Reduce write rate or add nodes</td><td class="br">Degraded read performance</td><td>Monitor pending compactions</td></tr>
+    <tr><td>Tombstone accumulation</td><td>Reads slow, may timeout</td><td>Tombstone warnings in logs</td><td>Force compact, reduce TTL churn</td><td class="br">Specific tables affected</td><td>TWCS for TTL data</td></tr>
+  </tbody>
+</table>
+
+<div id="fail-open-closed" style="margin-top:24px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Fail-Open vs. Fail-Closed Analysis</h3>
+  <div class="callout warn">
+    <div class="callout-title">Fail-Open (CL=ONE, RF=3)</div>
+    <p>If 2 replicas are down, still serve reads from the 1 remaining. <strong>Potentially stale data, but system stays available.</strong> Right for logging, analytics, non-critical reads.</p>
+  </div>
+  <div class="callout fail">
+    <div class="callout-title">Fail-Closed (CL=QUORUM)</div>
+    <p>If 2 replicas are down, reject the request. <strong>No stale data risk, but system becomes unavailable.</strong> Right for writes to critical data to prevent split-brain.</p>
+  </div>
+  <div class="callout extra">
+    <div class="callout-title">The L7 Answer</div>
+    <p>"For Cassandra, fail-open (CL=ONE or LOCAL_ONE) is usually the right choice for reads because availability matters more than perfect consistency. For writes to critical data, I'd fail-closed (QUORUM) to prevent split-brain. The exception: logging and metrics can fail-open on writes too (CL=ANY), because a lost log entry is acceptable."</p>
+  </div>
+</div>
+
+<!-- ======= EDGE CASES ======= -->
+<div class="sec-hdr" id="edge-cases"><h2>§3.4 Edge Cases That Impress Interviewers</h2></div>
+<div class="callout deep">
+  <div class="callout-title">Why These Matter</div>
+  <p>These reveal whether you've <strong>operated</strong> Cassandra under production pressure vs just <strong>designed</strong> with it. Mention one proactively and you signal L7 experience.</p>
+</div>
+
+<div class="edge-card" id="edge1">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 1: Read-Your-Writes Failure</span>
+      <span class="edge-badge">Consistency Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> Client writes to coordinator A (replicates to B and C). Next read goes to coordinator D, which queries replica C — which hadn't received the write yet. Client sees their own write missing.</p>
+    <p><strong>Sophisticated answer:</strong></p>
+    <ul>
+      <li><strong>CL=LOCAL_QUORUM for both reads and writes</strong> — guarantees at least one replica overlaps (preferred)</li>
+      <li><strong>Sticky sessions</strong> — route a user's requests to the same coordinator (fragile)</li>
+      <li><strong>Client-side caching</strong> — cache the just-written value with a short TTL</li>
+    </ul>
+    <div class="callout extra">
+      <div class="callout-title">The Formula to Quote</div>
+      <p>Read-your-writes requires: Write CL + Read CL &gt; RF. With RF=3: QUORUM(2) + QUORUM(2) = 4 &gt; 3 ✓. With ONE+ONE: 2 &lt; 3 ✗.</p>
+    </div>
+  </div>
+</div>
+
+<div class="edge-card" id="edge2">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 2: Lightweight Transactions (LWT) Performance Cliff</span>
+      <span class="edge-badge">Performance Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> Someone uses <code>INSERT ... IF NOT EXISTS</code> for uniqueness guarantees on every write. System designed for 100K writes/sec.</p>
+    <p><strong>What happens:</strong> LWT uses Paxos — 4 network round-trips instead of 1. Throughput drops 10-20×. System does 5K writes/sec instead of 100K. No errors, just silent degradation.</p>
+    <p><strong>Sophisticated answer:</strong></p>
+    <ul>
+      <li>LWTs are for <em>rare</em> operations (account creation), not every write</li>
+      <li>For uniqueness at scale: use the partition key itself (same key = conflict via QUORUM)</li>
+      <li>Or: accept eventual consistency with client-side conflict resolution</li>
+    </ul>
+    <div class="callout fail">
+      <div class="callout-title">The Hidden Cost</div>
+      <p>Paxos: PREPARE → PROMISE → PROPOSE → ACCEPT → COMMIT. Each step = network round-trip. In multi-DC: 200-500ms per LWT. This is not a bug — it's the cost of distributed consensus.</p>
+    </div>
+  </div>
+</div>
+
+<div class="edge-card" id="edge3">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 3: Tombstone Avalanche</span>
+      <span class="edge-badge">Operations Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> Application deletes millions of rows. System degrades silently over weeks. Reads eventually timeout. Cassandra logs show: "Reading X live rows and Y tombstone cells."</p>
+    <p><strong>What happens:</strong> Each delete creates a tombstone marker. Reads scan 2M tombstones before finding live data → timeouts.</p>
+    <p><strong>Sophisticated answer:</strong></p>
+    <ul>
+      <li><strong>Long-term fix:</strong> Use TTL for automatic expiration with TWCS — files drop at the filesystem level, zero tombstone processing</li>
+      <li><strong>Alternative:</strong> Add a <code>deleted</code> column and filter at application level instead of row deletion</li>
+      <li><strong>Immediate relief:</strong> <code>nodetool compact</code> on the affected table — treats symptom, not cause</li>
+    </ul>
+    <div class="callout good">
+      <div class="callout-title">Why TWCS Is the Real Solution</div>
+      <p>With TWCS, TTL-expired data is deleted by dropping entire SSTable files — zero tombstone processing, zero compaction overhead. The delete happens at filesystem level, not row level.</p>
+    </div>
+  </div>
+</div>
+
+<div class="edge-card" id="edge4">
+  <div class="edge-hdr" onclick="toggleEdge(this)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="edge-title">Edge Case 4: Clock Skew + Last Write Wins Corruption</span>
+      <span class="edge-badge">Data Integrity Signal</span>
+    </div>
+    <span class="edge-toggle">▾</span>
+  </div>
+  <div class="edge-body">
+    <p><strong>Scenario:</strong> Server A's clock is 1 hour ahead. A writes "X=1" at real t=100 (its clock says t=3700). Server B later writes "X=2" at real t=200 (clock says t=200). LWW keeps "X=1" because 3700 &gt; 200.</p>
+    <p><strong>What happens:</strong> Correct, newer write (X=2) is silently overwritten by stale value. No errors, no warnings — data is just wrong.</p>
+    <p><strong>Sophisticated answer:</strong></p>
+    <ul>
+      <li>Require NTP on all nodes with monitoring for clock drift &gt;1 second</li>
+      <li>At Google scale: TrueTime provides bounded clock uncertainty (±7ms). Cassandra doesn't have this natively — known limitation of LWW conflict resolution</li>
+      <li>For truly critical data: use a CP database (Spanner, CockroachDB) where consensus timestamps solve this problem correctly</li>
+    </ul>
+  </div>
+</div>
+
+<div id="boundary" style="margin-top:20px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:12px">Boundary Conditions</h3>
+  <table class="bound-table">
+    <thead><tr><th>Condition</th><th>Impact</th><th>How to Handle</th></tr></thead>
+    <tbody>
+      <tr><td>RF=1 with CL=ONE</td><td class="impact">Zero fault tolerance — any node failure loses data permanently</td><td class="fix">Never use RF=1 in production</td></tr>
+      <tr><td>RF=N with CL=ALL</td><td class="impact">Zero availability tolerance — any node failure blocks all writes</td><td class="fix">Never use CL=ALL in production</td></tr>
+      <tr><td>Partition with 2B rows</td><td class="impact">Performance cliff — wide partitions are an anti-pattern in Cassandra</td><td class="fix">Keep under 100MB; add bucket dimension to partition key</td></tr>
+      <tr><td>TTL = 1 second</td><td class="impact">Tombstone churn disaster — massive compaction overhead at every second</td><td class="fix">Min recommended TTL is hours; use TWCS for TTL data</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — Key Trade-off</div>
+  <p>"The fundamental trade-off in Cassandra is W + R &gt; RF for consistency vs latency. If I need strong consistency, I pay the quorum tax on every operation. If I need speed, I accept eventual consistency and design for conflict resolution. There's no free lunch — I just get to choose which lunch I'm paying for."</p>
+</div>
+
+<!-- ======= PART 4: SCALE ======= -->
+<div class="part-banner p4" style="margin-top:52px">
+  <div class="part-banner-label">Part 4 · Scale &amp; Real-World Application</div>
+  <h2>Back-of-Envelope Reasoning</h2>
+  <p>Two scenarios with full math. Critical question answered: does this workload even need Cassandra?</p>
+</div>
+
+<div class="sc-card sa" id="boe-1m">
+  <div class="sc-hdr" onclick="toggleSc(this)">
+    <div><div class="sc-label">Scenario A</div><div class="sc-title">1M Users — Does This Need Cassandra?</div></div>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Traffic &amp; Storage Math</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>1M users × 10% DAU = 100K daily active users
+100K × 50 reads/day  = 5M reads/day  = 58 reads/sec avg
+100K × 5 writes/day  = 500K writes/day = 6 writes/sec avg
+
+Peak (10× average): 580 reads/sec, 60 writes/sec
+
+Storage per user: 10KB profile + 1MB content = ~1MB
+Total:   1M × 1MB = 1TB raw
+With RF=3: 3TB
+With 50% compaction overhead: 4.5TB
+
+Nodes needed:
+  Single node: 5-10K reads/sec, 10-20K writes/sec capacity
+  3 nodes minimum for RF=3 (2TB SSD each = 6TB capacity)
+  
+Traffic headroom: ~100× before stress</pre></div>
+    <div class="callout warn">
+      <div class="callout-title">The Honest Conclusion</div>
+      <p>This scale <strong>doesn't need Cassandra</strong>. PostgreSQL or MySQL would handle 1M users trivially with far more flexible querying. Reach for Cassandra when single-machine databases become the bottleneck — usually at &gt;50K writes/sec sustained or &gt;10TB data.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sc-card sb" id="boe-1b">
+  <div class="sc-hdr" onclick="toggleSc(this)">
+    <div><div class="sc-label">Scenario B</div><div class="sc-title">1B Users — 1000× Scale</div></div>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">1000× Scale Math</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Reads:   58 × 1000  = 58K → peak 580K reads/sec
+Writes:  6 × 1000   = 6K  → peak 60K writes/sec
+Storage: 1TB × 1000 = 1PB raw
+         4.5PB with RF=3 + compaction overhead
+
+Nodes needed:
+  580K reads/sec ÷ 10K/node  = 58 nodes (traffic)
+  4.5PB ÷ 2TB/node          = 2250 nodes (storage)
+  → Storage is the constraint: ~2500 nodes
+
+Global: 2500 × 3 DCs = 7500 nodes worldwide</pre></div>
+
+    <h5 style="font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin:14px 0 9px">What Changes at 1B Users</h5>
+    <table class="evol-table">
+      <thead><tr><th>Challenge</th><th>1M Users</th><th>1B Users</th><th>Solution</th></tr></thead>
+      <tbody>
+        <tr><td>Operations</td><td>Manual is fine</td><td>Need automation</td><td>Kubernetes, Instaclustr</td></tr>
+        <tr><td>Monitoring</td><td>Basic metrics</td><td>Sophisticated observability</td><td>Datadog, custom dashboards</td></tr>
+        <tr><td>Deployments</td><td>Rolling restart OK</td><td>Canary required</td><td>Blue-green, gradual rollout</td></tr>
+        <tr><td>Schema changes</td><td>Direct CQL</td><td>Shadow tables + swap</td><td>Careful migration planning</td></tr>
+        <tr><td>Hot partitions</td><td>Rare concern</td><td>Critical problem</td><td>Partition splitting, bucketing</td></tr>
+        <tr><td>Compaction</td><td>Default settings OK</td><td>Fine-tuned per table</td><td>Different strategies per use case</td></tr>
+      </tbody>
+    </table>
+    <div class="callout fail">
+      <div class="callout-title">Non-Linear Effects at 7500 Nodes</div>
+      <ul>
+        <li>Gossip traffic becomes significant at this scale</li>
+        <li>Full cluster repair takes weeks at petabyte scale — use incremental repair only</li>
+        <li>Schema changes require shadow tables — one bad migration corrupts petabytes</li>
+        <li>Failure probability: with 7500 nodes, expect multiple node failures daily</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="sec-hdr" id="bn-ladder"><h2>§4.2 Bottleneck Ladder</h2></div>
+<div class="bn-ladder">
+  <div class="bn-row"><div class="bn-scale">1K users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Nothing</div><div class="bn-solution"><strong>Solution:</strong> 3-node cluster. PostgreSQL is probably fine.</div></div></div>
+  <div class="bn-row"><div class="bn-scale">100K users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Single slow table</div><div class="bn-solution"><strong>Solution:</strong> Schema optimization, secondary indexes</div></div></div>
+  <div class="bn-row"><div class="bn-scale">1M users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Hot partitions</div><div class="bn-solution"><strong>Solution:</strong> Partition key redesign, add time-bucket dimension</div></div></div>
+  <div class="bn-row"><div class="bn-scale">10M users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Coordinator throughput</div><div class="bn-solution"><strong>Solution:</strong> Token-aware client drivers, client-side load balancing</div></div></div>
+  <div class="bn-row"><div class="bn-scale">100M users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Compaction lag</div><div class="bn-solution"><strong>Solution:</strong> More compaction threads, larger nodes, tune per-table strategy</div></div></div>
+  <div class="bn-row"><div class="bn-scale">1B users</div><div class="bn-right"><div class="bn-bottleneck">Bottleneck: Cluster topology &amp; management</div><div class="bn-solution"><strong>Solution:</strong> Multi-cluster architecture, sharding by tenant, full automation</div></div></div>
+</div>
+
+<div id="warn-signs" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:12px">Warning Signs &amp; Alert Thresholds</h3>
+  <table class="warn-table">
+    <thead><tr><th>Metric</th><th>Green 🟢</th><th>Yellow ⚠️</th><th>Red 🔴</th><th>Response</th></tr></thead>
+    <tbody>
+      <tr><td>Pending compactions</td><td class="g">&lt;10</td><td class="y">10-50</td><td class="r">&gt;50</td><td>Add nodes or increase compaction threads</td></tr>
+      <tr><td>SSTables per read</td><td class="g">&lt;10</td><td class="y">10-20</td><td class="r">&gt;20</td><td>Check compaction strategy, force compact</td></tr>
+      <tr><td>P99 read latency</td><td class="g">&lt;10ms</td><td class="y">10-100ms</td><td class="r">&gt;100ms</td><td>Profile queries, check hot partitions, add nodes</td></tr>
+      <tr><td>Tombstone warnings/day</td><td class="g">0</td><td class="y">1-10</td><td class="r">&gt;10</td><td>Review delete patterns, switch to TTL+TWCS</td></tr>
+      <tr><td>Node failures/week</td><td class="g">0</td><td class="y">1-2</td><td class="r">&gt;2</td><td>Investigate hardware/network, review monitoring</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ======= INDUSTRY ======= -->
+<div class="sec-hdr"><h2>§4.3 Industry Deep-Dive</h2></div>
+
+<div class="industry-card" id="netflix">
+  <div class="industry-title">🎬 Netflix — 1000+ Node Clusters, Petabytes</div>
+  <p><strong>Scale:</strong> 1000+ node clusters, petabytes of viewing history, multi-region (US-East, US-West, EU)</p>
+  <p><strong>Key decisions:</strong></p>
+  <ul>
+    <li>LOCAL_QUORUM for most operations (avoids cross-DC latency on every read)</li>
+    <li>TWCS for viewing history — old data drops cleanly, zero tombstone overhead</li>
+    <li>Custom client driver with automatic region failover</li>
+    <li>EVCache (Memcached) in front for the hottest reads</li>
+  </ul>
+  <div class="lesson">💡 Lesson: <strong>Cassandra is the source of truth, but you cache heavily in front of it.</strong> At Netflix scale, even Cassandra needs a caching layer for hottest reads.</div>
+</div>
+
+<div class="industry-card" id="apple">
+  <div class="industry-title">🍎 Apple — 75,000+ Nodes (World's Largest Cassandra Deployment)</div>
+  <p><strong>Scale:</strong> 75,000+ nodes for iCloud, iTunes, Siri. Multiple separate clusters.</p>
+  <p><strong>Key decisions:</strong></p>
+  <ul>
+    <li>Multiple smaller clusters vs one giant cluster — better isolation, simpler operations per cluster</li>
+    <li>Heavy investment in automation — node replacement is fully automated</li>
+    <li>Custom extensions for specific workload patterns</li>
+  </ul>
+  <div class="lesson">💡 Lesson: <strong>At extreme scale, cluster management is the bottleneck, not Cassandra itself.</strong> Apple's engineering investment is mostly in automation and tooling, not Cassandra internals.</div>
+</div>
+
+<div class="industry-card" id="discord">
+  <div class="industry-title">💬 Discord — Messages, Hot Partition Problem Solved</div>
+  <p><strong>Problem:</strong> Large channels (millions of messages) = hot partitions with simple <code>channel_id</code> partition key. Three nodes hammered for popular channels.</p>
+  <p><strong>The solution:</strong></p>
+  <ul>
+    <li>Bucket messages by time window within each channel</li>
+    <li>Partition key = <code>channel_id + bucket_id</code> (bucket = time-based, e.g., day)</li>
+    <li>Recent messages efficient; old buckets become cold storage</li>
+  </ul>
+  <div class="lesson">💡 Lesson: <strong>Partition key design is everything.</strong> Wrong partition key = system doesn't scale regardless of cluster size. Discord's fix was adding one dimension to the partition key.</div>
+</div>
+
+<div class="industry-card" id="instagram">
+  <div class="industry-title">📸 Instagram — Direct Messages, Hybrid Storage Pattern</div>
+  <p><strong>Architecture:</strong> Multi-DC for latency (user's messages stored in nearest DC). Cassandra + Redis hybrid.</p>
+  <p><strong>Key decisions:</strong></p>
+  <ul>
+    <li>LOCAL_QUORUM for low-latency reads (no cross-DC round trips for normal operations)</li>
+    <li>Aggressive TTL on read receipts — let them expire, don't store forever</li>
+    <li>Cassandra for durable storage, Redis for caching hot conversations</li>
+  </ul>
+  <div class="lesson">💡 Lesson: <strong>Hybrid storage (Redis + Cassandra) is the practical production pattern.</strong> No one uses Cassandra alone for high-read workloads at scale.</div>
+</div>
+
+<div id="alternatives" style="margin-top:24px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:12px">Open-Source Alternatives</h3>
+  <table class="oss-table">
+    <thead><tr><th>Solution</th><th>Approach</th><th>Best For</th><th>Limitations</th></tr></thead>
+    <tbody>
+      <tr><td>ScyllaDB</td><td>Cassandra-compatible, C++ (vs Java)</td><td>Higher throughput, lower GC latency</td><td>Less community, fewer managed offerings</td></tr>
+      <tr><td>DynamoDB</td><td>Managed Cassandra-like (AWS)</td><td>Zero ops burden, serverless pricing</td><td>Vendor lock-in, expensive at scale</td></tr>
+      <tr><td>CockroachDB</td><td>Distributed SQL (CP database)</td><td>Transactions, SQL, strong consistency</td><td>Lower write throughput than Cassandra</td></tr>
+      <tr><td>TiKV</td><td>RocksDB-based, Raft consensus</td><td>Strong consistency, Kubernetes-native</td><td>Less mature ecosystem, smaller community</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="soundbite" style="margin-top:28px">
+  <div class="soundbite-label">🔑 Sound Bite — Scaling</div>
+  <p>"Cassandra's superpower is that doubling nodes roughly doubles write capacity — true linear horizontal scaling. But non-linear effects bite you at scale: gossip overhead, repair time, and managing thousands of nodes. At Netflix/Apple scale, the bottleneck shifts from Cassandra internals to cluster management automation."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Complete Cassandra Internals Deep Dive — Master Lesson</div>
+  <p>Cassandra is the right answer for a narrow but important class of problems: <strong>write-heavy, multi-region, known-query-pattern workloads where availability matters more than strong consistency.</strong> Within that class, the design stack is: choose your partition key (determines linear scaling vs hot partitions), choose replication strategy (always NetworkTopologyStrategy), choose consistency level (usually LOCAL_QUORUM), choose compaction strategy (STCS/LCS/TWCS based on read-write ratio), monitor the five warning signs.</p>
+  <p style="margin-top:10px"><strong>The L7 insight: 80% of Cassandra performance is data modeling, 20% is configuration.</strong> Discord's hot partition problem wasn't solved by adding nodes — it was solved by adding a time bucket to the partition key. Get the data model right first; tune configuration second.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';
+  all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleEdge(h){h.parentElement.classList.toggle('collapsed');}
+function toggleSc(h){h.parentElement.classList.toggle('collapsed');}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{
+    g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
 
