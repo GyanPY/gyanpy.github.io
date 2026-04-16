@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cassandra Internals (Part 5) — End-to-End: Discord Messages</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --discord:#5865F2;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--discord),var(--cass2),var(--cass),var(--cass3),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--discord);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--discord);background:rgba(88,101,242,.12);border:1px solid rgba(88,101,242,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--discord)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(88,101,242,.05)}
+.ni.active a{color:var(--discord);border-left-color:var(--discord);background:rgba(88,101,242,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--discord);border-color:var(--discord);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--discord);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--discord) 40%,var(--cass2) 65%,var(--cass));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* PART BANNER */
+.part-banner{background:linear-gradient(135deg,rgba(88,101,242,.1),rgba(139,92,246,.05));border:1px solid rgba(88,101,242,.25);border-radius:12px;padding:22px 26px;margin:0 0 36px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--discord);margin-bottom:7px;font-weight:600}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* COMPARISON TABLE (option eval) */
+.option-table{width:100%;border-collapse:collapse;font-size:.81rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.option-table thead tr{background:linear-gradient(90deg,rgba(88,101,242,.12),rgba(139,92,246,.06))}
+.option-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--discord);border-bottom:1px solid rgba(88,101,242,.2)}
+.option-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.option-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.option-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.option-table td:first-child{font-weight:600;color:var(--text)}
+.option-table td.yes{color:var(--cass4);font-weight:600}
+.option-table td.no2{color:var(--no)}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--discord);border-color:var(--discord)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* TRACE DIAGRAM (big annotated flow boxes) */
+.trace{background:#010409;border:1px solid rgba(88,101,242,.25);border-radius:10px;margin:18px 0;overflow:hidden}
+.trace-hdr{background:rgba(88,101,242,.08);border-bottom:1px solid rgba(88,101,242,.2);padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+.trace-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--discord);font-weight:600}
+.trace pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.deep{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout.disc{background:rgba(88,101,242,.07);border:1px solid rgba(88,101,242,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.deep .callout-title{color:var(--cass2)}
+.callout.disc .callout-title{color:var(--discord)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* L6/L7 INSIGHT BOX */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:14px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* DATA MODEL COMPARISON CARDS */
+.model-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 18px;margin-bottom:14px}
+.model-hdr{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.model-attempt{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700;padding:3px 8px;border-radius:4px}
+.model-attempt.bad{background:rgba(255,107,107,.12);color:var(--no);border:1px solid rgba(255,107,107,.2)}
+.model-attempt.good{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+.model-title{font-family:var(--fh);font-size:.95rem;font-weight:600;color:var(--text)}
+.model-card p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.model-card strong{color:var(--text)}
+
+/* CL COMPARISON */
+.cl-compare{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0}
+.cl-option{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.cl-option.chosen{border-color:var(--cass4);background:rgba(16,185,129,.05)}
+.cl-option.rejected{opacity:.75}
+.cl-name{font-family:var(--fc);font-size:.8rem;font-weight:700;margin-bottom:8px}
+.cl-option.chosen .cl-name{color:var(--cass4)}
+.cl-option.rejected .cl-name{color:var(--no)}
+.cl-row{display:flex;justify-content:space-between;font-size:.8rem;padding:2px 0;border-bottom:1px solid rgba(48,54,61,.3)}
+.cl-row:last-child{border-bottom:none}
+.cl-key{color:var(--dim);font-family:var(--fc);font-size:.74rem}
+.cl-val{color:var(--muted)}
+.cl-option.chosen .cl-val{color:var(--text)}
+.verdict{font-family:var(--fc);font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;margin-top:8px;padding:4px 8px;border-radius:4px;text-align:center}
+.cl-option.chosen .verdict{background:rgba(16,185,129,.15);color:var(--cass4)}
+.cl-option.rejected .verdict{background:rgba(255,107,107,.1);color:var(--no)}
+
+/* STCS vs TWCS comparison */
+.comp-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+.comp-col{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.comp-col-hdr{padding:9px 14px;font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.comp-col.stcs .comp-col-hdr{background:rgba(249,115,22,.08);color:var(--obs);border-bottom:1px solid rgba(249,115,22,.15)}
+.comp-col.twcs .comp-col-hdr{background:rgba(16,185,129,.08);color:var(--cass4);border-bottom:1px solid rgba(16,185,129,.15)}
+.comp-col-body{padding:12px 14px}
+.comp-col-body p{font-size:.85rem;color:var(--muted);line-height:1.6;margin-bottom:6px}
+.comp-col-body strong{color:var(--text)}
+
+/* MARKS */
+mark{background:rgba(88,101,242,.16);color:var(--discord);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(88,101,242,.1),rgba(139,92,246,.06));border:1px solid rgba(88,101,242,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--discord);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--discord);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+/* MOBILE */
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .cl-compare,.comp-2col{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">End-to-End Deep Dive</div>
+    <div class="sb-part">Part 5 — Discord Messages: Full Lifecycle</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni"><a href="#why-cassandra">Why Cassandra?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Data Model</div>
+      <li class="ni sub"><a href="#naive-model">Attempt 1: Naive Model</a></li>
+      <li class="ni sub"><a href="#naive-problem">Why It Fails</a></li>
+      <li class="ni sub"><a href="#bucketed-model">Attempt 2: Bucketed Model</a></li>
+      <li class="ni sub"><a href="#model-insight">L6/L7 Insight</a></li>
+    </li>
+    <li class="ng"><div class="nl">Write Path</div>
+      <li class="ni sub"><a href="#write-step1">Step 1-2: Coordinator &amp; Replicas</a></li>
+      <li class="ni sub"><a href="#write-step3">Step 3-5: Parallel Writes &amp; Quorum</a></li>
+      <li class="ni sub"><a href="#write-step6">Step 6: Async Cross-DC</a></li>
+      <li class="ni sub"><a href="#why-local-quorum">Why LOCAL_QUORUM?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Read Path</div>
+      <li class="ni sub"><a href="#read-trace">Full Read Trace</a></li>
+      <li class="ni sub"><a href="#speculative-retry">Speculative Retry</a></li>
+    </li>
+    <li class="ng"><div class="nl">Compaction</div>
+      <li class="ni sub"><a href="#twcs-discord">TWCS for Messages</a></li>
+      <li class="ni sub"><a href="#stcs-problem">Why Not STCS</a></li>
+    </li>
+    <li class="ng"><div class="nl">Failure Scenarios</div>
+      <li class="ni sub"><a href="#node-crash">Node Crash During Write</a></li>
+      <li class="ni sub"><a href="#hinted-handoff">Hinted Handoff</a></li>
+      <li class="ni sub"><a href="#repair-deep">Repair &amp; Merkle Trees</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 5</div>
+  <h1>End-to-End:<br>Discord Messages</h1>
+  <div class="hero-meta">
+    <span>💬 Real Production System</span>
+    <span>📐 Data Model Evolution</span>
+    <span>⚡ Write Path Traced Step-by-Step</span>
+    <span>📖 Read Path with Bloom Filters</span>
+    <span>🔧 TWCS Compaction</span>
+    <span>🔧 Merkle Tree Repair</span>
+  </div>
+  <p>The principal engineer walkthrough. Not just what Cassandra does, but <em>why</em> Discord made each decision — partition bucketing to solve hot partitions, LOCAL_QUORUM for the latency-durability sweet spot, TWCS for temporal locality, and how the system behaves when nodes crash. Every millisecond accounted for.</p>
+</section>
+
+<!-- WHY CASSANDRA -->
+<div class="part-banner" id="why-cassandra">
+  <div class="part-banner-label">Real-World System 1 · Discord Messages</div>
+  <h2>The Problem Discord Faced</h2>
+  <p>Users send messages in channels (1:1 or groups with 10 to 500K+ members). Messages appear instantly (&lt;100ms). Users scroll back through history (range queries). Messages persist for years. Some channels have millions of messages (gaming communities).</p>
+</div>
+
+<table class="option-table">
+  <thead><tr><th>Option Evaluated</th><th>Why Discord Rejected It</th></tr></thead>
+  <tbody>
+    <tr><td>PostgreSQL</td><td class="no2">Single-master bottleneck, sharding complexity — 100M messages/day would kill it</td></tr>
+    <tr><td>MongoDB</td><td class="no2">Better, but master-slave replication + write scaling issues</td></tr>
+    <tr><td>DynamoDB</td><td class="no2">Cost prohibitive at their scale, less operational control</td></tr>
+    <tr><td>Cassandra</td><td class="yes">✅ Linear write scaling, no master, perfect for append-heavy messaging</td></tr>
+  </tbody>
+</table>
+
+<div class="insight" id="why-insight">
+  <div class="insight-label">L6/L7 Insight — Why Cassandra Was the Right Call</div>
+  <p>"The choice of Cassandra wasn't just about scale — it was about the <strong>access pattern</strong>. Messages are append-only (writes), read in time order (clustering column), and accessed by channel (partition key). This maps perfectly to Cassandra's storage model. A system with lots of updates or cross-channel queries would need a different choice."</p>
+</div>
+
+<!-- DATA MODEL -->
+<div class="sec-hdr" id="data-model"><h2>Data Model Deep-Dive</h2></div>
+
+<div class="model-card" id="naive-model">
+  <div class="model-hdr">
+    <span class="model-attempt bad">Attempt 1</span>
+    <span class="model-title">Naive Model — channel_id as Partition Key</span>
+  </div>
+  <div class="code"><div class="code-hdr"><span class="code-lang">CQL · First Attempt</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Partition Key:  channel_id
+Clustering Key: message_id (snowflake, time-ordered)
+
+channel_id | message_id | author_id | content | timestamp
+-----------+------------+-----------+---------+-----------
+12345      | 1001       | user_a    | "Hello" | 2024-01-01 10:00:00
+12345      | 1002       | user_b    | "Hi!"   | 2024-01-01 10:00:01
+12345      | 1003       | user_a    | "Sup?"  | 2024-01-01 10:00:02</pre></div>
+</div>
+
+<div class="callout fail" id="naive-problem">
+  <div class="callout-title">The Problem: 10GB+ Partitions on Large Servers</div>
+  <p>Large Discord servers (100K+ members) generate millions of messages per channel. One partition could grow to 10GB+. Here's what happens when you read the last 50 messages from a 10GB partition:</p>
+</div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Read Trace · 10GB Partition</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>Read "last 50 messages" from channel 12345:
+
+1. Coordinator hashes "12345" → token 847293
+2. Finds replicas: Node A, Node B, Node C
+3. Sends read to Node A
+4. Node A must:
+   - Check memtable (fast, in RAM)
+   - Check Bloom filters for ALL SSTables (fast)
+   - For "maybe" SSTables, load index (might not fit in RAM for 10GB partition!)
+   - Seek to end of partition across multiple SSTables
+   - Merge results
+
+Problem: Index for 10GB partition = ~100MB
+         Doesn't fit in memory → disk I/O for index
+         Multiple SSTables → multiple seeks
+         Latency: 500ms+ instead of 5ms ❌</pre></div>
+
+<div class="model-card" id="bucketed-model">
+  <div class="model-hdr">
+    <span class="model-attempt good">Attempt 2</span>
+    <span class="model-title">Bucketed Model — (channel_id, bucket) as Partition Key</span>
+  </div>
+  <div class="code"><div class="code-hdr"><span class="code-lang">CQL · Bucketed Model</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Partition Key:  (channel_id, bucket)
+Clustering Key: message_id
+
+Where: bucket = message_id >> 22  (roughly 10-day buckets based on Snowflake ID)
+
+channel_id | bucket  | message_id | content
+-----------+---------+------------+---------
+12345      | 100     | 1001       | "Hello"
+12345      | 100     | 1002       | "Hi!"
+12345      | 101     | 5001       | "Later message" ← newer bucket
+
+Why this works:
+  Partition size: ~100MB instead of 10GB (bounded by time window)
+  Index size: ~1MB (fits in memory — no disk I/O for index)
+  Read latency: <10ms consistently ✓
+
+Query "last 50 messages":
+  1. Start with most recent bucket (known from current time)
+  2. Read from bucket 101 → get 30 messages
+  3. Read from bucket 100 → get remaining 20 messages
+  4. Return combined 50 messages
+
+Trade-off: 2 partition reads instead of 1, but each is fast</pre></div>
+</div>
+
+<div class="insight" id="model-insight">
+  <div class="insight-label">L6/L7 Insight — Bucket Sizing Is Critical</div>
+  <p>"Bucket sizing requires access-pattern-driven analysis. <strong>Too small (1 hour) = many partitions to scan for history.</strong> Too large (1 year) = back to giant partitions. Discord chose ~10 days because most queries hit recent messages, and scrolling back rarely goes beyond a few buckets. This is access-pattern-driven design — not a default setting."</p>
+</div>
+
+<!-- WRITE PATH -->
+<div class="sec-hdr" id="write-path"><h2>Write Path: Sending a Message</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:20px">Tracing exactly what happens when User A sends "Hello" in channel 12345, with per-step latency.</p>
+
+<div class="trace" id="write-step1">
+  <div class="trace-hdr"><span class="trace-title">Steps 1–2 · Client → Coordinator → Replica Identification</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Step 1: Client → Coordinator (any Cassandra node)                   t=0ms
+════════════════════════════════════════════════
+
+  Client (Discord server) sends:
+  INSERT INTO messages (channel_id, bucket, message_id, author, content)
+  VALUES (12345, 101, 6001, 'user_a', 'Hello')
+  WITH CL=LOCAL_QUORUM
+
+  Coordinator: Node X (in us-east datacenter)
+
+Step 2: Coordinator identifies replicas                              t=0.1ms
+═══════════════════════════════════════════════
+
+  murmur3_hash(12345, 101) = token 7482910384
+
+  NetworkTopologyStrategy lookup:
+  - us-east (RF=3): Node A (rack1), Node B (rack2), Node C (rack3)
+  - us-west (RF=3): Node D (rack1), Node E (rack2), Node F (rack3)
+  - eu-west (RF=3): Node G (rack1), Node H (rack2), Node I (rack3)</pre>
+</div>
+
+<div class="trace" id="write-step3">
+  <div class="trace-hdr"><span class="trace-title">Steps 3–5 · Parallel Writes → Quorum Achieved</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Step 3: Coordinator sends to local DC replicas (parallel)           t=0.5ms
+════════════════════════════════════════════════════════
+
+  Coordinator X → Node A: "Write this row"
+  Coordinator X → Node B: "Write this row"
+  Coordinator X → Node C: "Write this row"
+  (Non-blocking sends — all 3 in parallel)
+
+Step 4: Each replica processes the write                            t=1–15ms
+═══════════════════════════════════════════
+
+  On Node A:
+    4a. Append to Commit Log (sequential write to disk)
+        → Durability guarantee: survives node crash
+        → ~0.1ms on SSD
+
+    4b. Write to Memtable (in-memory sorted structure)
+        → Red-Black tree keyed by (partition_key, clustering_key)
+        → ~0.01ms
+
+    4c. Send SUCCESS to Coordinator
+        → Does NOT wait for SSTable flush
+        → Data is durable (commit log) but not yet in SSTable
+
+  Node A: responds SUCCESS at t=2ms
+  Node B: responds SUCCESS at t=2.5ms
+  Node C: responds SLOWLY (disk I/O contention) at t=15ms
+
+Step 5: Coordinator evaluates LOCAL_QUORUM                          t=2.5ms
+══════════════════════════════════════════════
+
+  LOCAL_QUORUM with RF=3: need (3/2)+1 = 2 responses
+
+  Got 2 responses (Node A + Node B) at t=2.5ms
+  → Return SUCCESS to client ✓
+  (Node C's response arrives later but client already has success)
+
+  Total write latency: ~3ms</pre>
+</div>
+
+<div class="trace" id="write-step6">
+  <div class="trace-hdr"><span class="trace-title">Step 6 · Async Cross-DC Replication</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Step 6: Async cross-DC replication (non-blocking)
+
+  Coordinator X sends to us-west and eu-west asynchronously:
+
+  → Node D (us-west):  receives at t=50ms   (cross-country latency)
+  → Node G (eu-west):  receives at t=120ms  (transatlantic latency)
+
+  Each remote DC replica: same commit log + memtable process
+
+  By t=150ms: All 9 replicas globally have the message ✓</pre>
+</div>
+
+<h3 id="why-local-quorum" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:28px 0 16px">Why LOCAL_QUORUM? The Three Options Compared</h3>
+
+<div class="cl-compare">
+  <div class="cl-option rejected">
+    <div class="cl-name">CL = ONE</div>
+    <div class="cl-row"><span class="cl-key">Latency</span><span class="cl-val">~2ms ✓</span></div>
+    <div class="cl-row"><span class="cl-key">Durability</span><span class="cl-val">Only 1 replica</span></div>
+    <div class="cl-row"><span class="cl-key">Risk</span><span class="cl-val">Node crash = msg lost</span></div>
+    <div class="verdict">Rejected</div>
+  </div>
+  <div class="cl-option rejected">
+    <div class="cl-name">CL = QUORUM (global)</div>
+    <div class="cl-row"><span class="cl-key">Latency</span><span class="cl-val">~150ms ✗</span></div>
+    <div class="cl-row"><span class="cl-key">Durability</span><span class="cl-val">5 of 9 globally</span></div>
+    <div class="cl-row"><span class="cl-key">Risk</span><span class="cl-val">Transatlantic wait</span></div>
+    <div class="verdict">Rejected</div>
+  </div>
+  <div class="cl-option chosen">
+    <div class="cl-name">CL = LOCAL_QUORUM ✓</div>
+    <div class="cl-row"><span class="cl-key">Latency</span><span class="cl-val">~3ms ✓</span></div>
+    <div class="cl-row"><span class="cl-key">Durability</span><span class="cl-val">2 of 3 local</span></div>
+    <div class="cl-row"><span class="cl-key">Risk</span><span class="cl-val">DC failure (rare)</span></div>
+    <div class="verdict">Discord's Choice</div>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — LOCAL_QUORUM Is the Sweet Spot</div>
+  <p>"LOCAL_QUORUM is the sweet spot for most multi-region systems. <strong>You're betting that a single node failure is 1000× more likely than a full DC failure</strong>, so you optimize for the common case while async replication handles DC-level durability. If you needed CL=QUORUM globally, the 150ms transatlantic wait would make real-time chat unusable."</p>
+</div>
+
+<!-- READ PATH -->
+<div class="sec-hdr" id="read-path"><h2>Read Path: Loading a Channel</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:20px">User opens channel 12345 and wants to see the last 50 messages. Notice how the query uses <code>CL=LOCAL_ONE</code> — reads can tolerate more staleness than writes.</p>
+
+<div class="trace" id="read-trace">
+  <div class="trace-hdr"><span class="trace-title">Full Read Trace · Steps 1–4 with Per-Step Timing</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Step 1: Client → Coordinator                                        t=0ms
+════════════════════════════════
+
+  SELECT * FROM messages
+  WHERE channel_id = 12345 AND bucket = 101
+  ORDER BY message_id DESC
+  LIMIT 50
+  WITH CL=LOCAL_ONE
+
+  Why LOCAL_ONE?
+  Stale reads (seeing 49 vs 50 messages) are acceptable.
+  Read latency matters more than perfect consistency for chat history.
+
+Step 2: Coordinator routes to fastest replica                       t=0.1ms
+════════════════════════════════════════════
+
+  Dynamic snitch scores each replica by recent latency:
+  - Node A: avg 2ms, healthy        ← picks this
+  - Node B: avg 3ms, healthy
+  - Node C: avg 50ms, under compaction
+
+Step 3: Node A processes the read                                   t=0.1–3ms
+═════════════════════════════════════
+
+  3a. Check Memtable                                                0.01ms
+      Found: 3 recent messages (not yet flushed to SSTable)
+
+  3b. Check Bloom Filters for each SSTable
+
+      SSTable-1 (1GB, from yesterday):
+        "Is partition (12345, 101) possibly here?" → YES (might be there)
+        → 0.001ms
+
+      SSTable-2 (500MB, from 3 days ago, different bucket range):
+        "Is partition (12345, 101) possibly here?" → NO (definitely not)
+        → SKIPPED ENTIRELY ✓  0.001ms saved
+
+      SSTable-3 (2GB, from last week):
+        Bloom filter → YES
+
+  3c. For "YES" SSTables, check partition index
+
+      SSTable-1:
+        Summary (in RAM): partition (12345, bucket 100-110) → index page 47
+        Index lookup → data offset 847293
+        → 0.1ms (all in RAM)
+
+  3d. Read data from SSTables (disk I/O)
+
+      SSTable-1: Seek to offset 847293 → 40 messages for (12345, 101)
+        → 1ms (SSD random read)
+
+      SSTable-3: Seek to offset 129483 → 25 messages for (12345, 101)
+        → 1ms
+
+  3e. Merge results
+      Memtable:  3 messages  (timestamps 1001, 1002, 1003)
+      SSTable-1: 40 messages (timestamps 500–990)
+      SSTable-3: 25 messages (timestamps 100–400)
+
+      Merge by clustering key (message_id DESC):
+      Return top 50: timestamps 1003, 1002, 1001, 990, 989...
+
+      → 0.1ms
+
+  Total Node A processing: ~3ms
+
+Step 4: Return to client                                            t=4ms
+════════════════════════════════
+
+  Coordinator receives 50 messages from Node A
+  Returns to Discord server
+  Total end-to-end latency: ~4ms ✓</pre>
+</div>
+
+<h3 id="speculative-retry" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">Read Path Optimization: Speculative Retry</h3>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Speculative Retry · Handling Slow Nodes</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>Scenario: Node A is under disk compaction (usually responds in 3ms, now slow)
+
+t=0ms:   Send read to Node A
+t=10ms:  No response yet (Node A usually responds in 3ms → timeout exceeded)
+         → Speculatively send same read to Node B
+t=12ms:  Node B responds (fast)
+         → Return Node B's result to client immediately
+t=50ms:  Node A finally responds (ignored—already returned)
+
+Result:  Client sees 12ms latency instead of 50ms  ✓
+Trade-off: Extra network + disk I/O for the speculative read</pre></div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Speculative Retry Tuning</div>
+  <p>"Speculative retry is Cassandra's answer to tail latency. P99 drops dramatically because slow nodes are routed around. The tuning question is the speculation threshold — <strong>too aggressive wastes resources and creates I/O storms; too conservative doesn't help.</strong> The sweet spot: speculate after 2-3× the p50 latency for that table."</p>
+</div>
+
+<!-- COMPACTION -->
+<div class="sec-hdr" id="compaction"><h2>Compaction: Keeping Reads Fast</h2></div>
+
+<div class="trace" id="twcs-discord">
+  <div class="trace-hdr"><span class="trace-title">TWCS for Discord Messages — Why It's Perfect</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Time Window: 1 day
+
+Day 1 accumulation:
+  Hour 0:   [SSTable-1a] 50MB
+  Hour 6:   [SSTable-1a][SSTable-1b] 50MB each
+  Hour 12:  [SSTable-1a][SSTable-1b][SSTable-1c]
+  Hour 24:  [SSTable-1a][SSTable-1b][SSTable-1c][SSTable-1d]
+              ↓ COMPACT within Day 1 window ↓
+            [SSTable-Day1] 200MB ← clean, time-bounded
+
+Day 2: Same pattern → [SSTable-Day2] 200MB
+Day 3: Same pattern → [SSTable-Day3] 200MB
+...
+After 30 days: [Day1][Day2][Day3]...[Day30]
+               30 SSTables total (manageable!)
+
+WHY TWCS IS PERFECT FOR MESSAGES:
+
+  1. Messages are time-ordered (Snowflake IDs)
+     → Each SSTable contains a clean time range
+     → Queries for "recent messages" only hit recent SSTables
+
+  2. Messages are rarely updated
+     → No cross-SSTable version merging needed
+     → Each message exists in exactly one SSTable
+
+  3. Future TTL support is free
+     → If Discord adds 1-year retention, Day1 SSTable drops entirely
+     → Zero tombstone processing — just delete the file!
+
+  4. Predictable compaction pattern
+     → Compaction happens once per day per node
+     → No surprise compaction storms</pre>
+</div>
+
+<h3 id="stcs-problem" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:24px 0 14px">What Would Happen with STCS?</h3>
+
+<div class="comp-2col">
+  <div class="comp-col stcs">
+    <div class="comp-col-hdr">STCS (what Discord tried first)</div>
+    <div class="comp-col-body">
+      <p><strong>How it grows:</strong></p>
+      <p>[50MB]×4 → compact → [200MB]<br>More + [200MB] → compact → [800MB]×4 → <strong>BIG COMPACT → [3.2GB]</strong></p>
+      <p><strong>Problem 1:</strong> Old and new messages mixed in same SSTables → can't drop old data without reading entire 3.2GB SSTable</p>
+      <p><strong>Problem 2:</strong> Huge compaction = read 3.2GB + write 3.2GB simultaneously → disk I/O saturated for minutes → read latency spikes</p>
+    </div>
+  </div>
+  <div class="comp-col twcs">
+    <div class="comp-col-hdr">TWCS (Discord's final choice)</div>
+    <div class="comp-col-body">
+      <p><strong>How it grows:</strong></p>
+      <p>Day 1 messages → [Day1 SSTable 200MB]<br>Day 2 messages → [Day2 SSTable 200MB]<br>Each day: one clean 200MB file</p>
+      <p><strong>Benefit 1:</strong> Temporal locality — recent messages stay in small, recent SSTables that stay in OS page cache</p>
+      <p><strong>Benefit 2:</strong> Compaction is daily, predictable, 200MB — never triggers multi-GB I/O storms</p>
+    </div>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — TWCS Is About More Than TTL</div>
+  <p>"TWCS isn't just about TTL optimization — it's about <strong>temporal locality</strong>. When your access pattern is 'recent data is hot, old data is cold,' TWCS keeps hot data in small, recent SSTables that stay in page cache. STCS mixes hot and cold data, evicting hot messages from cache to make room for cold ones. Discord tried STCS first, hit these problems, and switched to TWCS."</p>
+</div>
+
+<!-- FAILURE SCENARIOS -->
+<div class="sec-hdr" id="failure"><h2>Failure Scenario: Node Crash During Write</h2></div>
+
+<div class="trace" id="node-crash">
+  <div class="trace-hdr"><span class="trace-title">Node B Crashes Mid-Write — Full Timeline</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Initial State:
+  Replicas for channel 12345: Node A (rack1), Node B (rack2), Node C (rack3)
+  All healthy, gossip shows all UP
+
+t=0ms:   User sends "Hello"
+         Coordinator X sends write to A, B, C
+
+t=1ms:   Node B crashes (power failure / kernel panic)
+         - Commit log: partial write (or nothing — depends on timing)
+         - Memtable: LOST (RAM cleared)
+
+t=2ms:   Node A responds SUCCESS
+t=2.5ms: Node C responds SUCCESS
+         Coordinator has LOCAL_QUORUM (2 of 3) ✓
+         → Returns SUCCESS to client
+         Message IS durable (on A and C)
+
+t=5s:    Gossip detects Node B missing heartbeats
+         φ (phi) accrual score: 3... 5... 7...
+
+t=30s:   φ > 8, Node B marked DOWN in gossip
+         All nodes stop routing to B</pre>
+</div>
+
+<div class="trace" id="hinted-handoff">
+  <div class="trace-hdr"><span class="trace-title">Hinted Handoff — Writes While B Is Down</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>New message arrives while B is DOWN:
+  1. Coordinator finds replicas: A, B (DOWN), C
+  2. Sends to A and C only
+  3. LOCAL_QUORUM: needs 2, gets 2 → SUCCESS
+
+But B is missing this write!
+→ HINTED HANDOFF activates:
+
+  Coordinator stores a "hint" locally:
+  {
+    target_node: "Node B",
+    mutation: {channel_id: 12345, bucket: 101, message: "...", ...},
+    timestamp: now(),
+    expires: now() + 3_hours  // max_hint_window_in_ms (default)
+  }
+  
+  Stored in: system.hints table (local to coordinator)
+
+NODE B RECOVERS at t=10min:
+
+  1. B reads its commit log → replays any complete entries
+  2. B starts gossiping → new generation number
+  3. Coordinator sees B is back → replays stored hints to B
+  4. Hints deleted after successful replay
+
+t=15min: B is caught up ✓
+
+What if B was down > 3 hours?
+  - Hints expired and dropped
+  - B is missing some writes
+  - Must run: nodetool repair  → syncs B with A and C via Merkle trees</pre>
+</div>
+
+<div class="sec-hdr" id="repair"><h2>Repair Deep-Dive: How Merkle Trees Work</h2></div>
+
+<div class="trace" id="repair-deep">
+  <div class="trace-hdr"><span class="trace-title">Merkle Tree Repair — Finding What's Missing</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Step 1: Build Merkle Tree for each replica (for a partition range)
+
+Node A's Merkle Tree for range [0-1000]:
+
+                  [Root Hash: abc123]
+                 /                    \
+       [Hash: def]                    [Hash: ghi]
+       /         \                    /         \
+ [Range 0-250] [Range 251-500] [Range 501-750] [Range 751-1000]
+    Hash: x       Hash: y         Hash: z         Hash: w
+
+Node B's Merkle Tree (same structure):
+
+                  [Root Hash: abc999]  ← DIFFERENT!
+                 /                    \
+       [Hash: def]                    [Hash: ghi]
+       /         \                    /         \
+ [Range 0-250] [Range 251-500] [Range 501-750] [Range 751-1000]
+    Hash: x       Hash: y         Hash: zzz        Hash: w
+                                       ↑
+                                   DIFFERENT!
+
+Step 2: Compare trees top-down (O(log N) comparisons)
+
+  Root hashes differ → descend
+  Left subtrees match → SKIP (no differences in ranges 0-500)
+  Right subtrees differ → descend further
+  Range 501-750 hashes differ → stream only those rows
+
+Step 3: Stream differences
+
+  Node A sends its rows for range 501-750 to Node B
+  Node B writes them (or keeps newer version if B has data too)
+
+Result:
+  Full table sync with minimal data transfer
+  For a 100GB table: might only transfer 1GB of differences
+  O(log N) comparison instead of O(N) full table scan</pre>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Merkle Tree Repair Trade-offs</div>
+  <p>"Merkle tree repair is Cassandra's eventual consistency mechanism. The O(log N) comparison is brilliant — for a 100GB table you compare trees in milliseconds, not stream the whole table. The trade-off: <strong>building the Merkle tree itself is expensive</strong> — it scans all SSTables to compute hashes. That's why full repairs are scheduled during low-traffic windows, and incremental repair maintains trees per-SSTable to only repair deltas."</p>
+</div>
+
+<div class="callout disc">
+  <div class="callout-title">The Discord Operational Result</div>
+  <ul>
+    <li>Write latency: ~3ms (LOCAL_QUORUM)</li>
+    <li>Read latency: ~4ms (LOCAL_ONE, dynamic snitch)</li>
+    <li>Node failure: transparent to users (CL handles it)</li>
+    <li>Compaction: predictable daily windows, no latency spikes (TWCS)</li>
+    <li>Recovery: hinted handoff for &lt;3h outages, repair for longer</li>
+  </ul>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Discord Design Principles</div>
+  <p>"Discord's Cassandra design is a masterclass in access-pattern-first thinking: the partition key (channel + bucket) was chosen to bound partition size for the specific query pattern (recent 50 messages). The consistency level (LOCAL_QUORUM for writes, LOCAL_ONE for reads) was calibrated to the durability-latency budget. The compaction strategy (TWCS) aligned with temporal access patterns. Each decision flowed from the next, not from defaults."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 End-to-End Lesson — What Makes a Principal Engineer Answer</div>
+  <p>An L5 engineer would say "use Cassandra for Discord messages." An L6 engineer would add the data model. An L7 engineer traces every millisecond through the system: <strong>how the partition key determines which nodes get the write, why 2 of 3 ACKs at t=2.5ms is sufficient, why Node C's slow response at t=15ms doesn't block the user, why TWCS keeps the most recent SSTable in page cache while old days stay cold on disk, and why Merkle trees make repair O(log N) instead of O(N).</strong></p>
+  <p style="margin-top:10px">That depth of causal reasoning across the full stack — not just knowing the components exist — is the L7 standard.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';
+  all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+function copyTrace(btn){
+  const pre=btn.closest('.trace').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{
+    g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
