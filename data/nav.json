@@ -28,15 +28,15 @@
         "file": "pages/cassandra/core-4.html"
       },
        {
-        "title": "Deep Dive-4",
+        "title": "Case Study-Discord",
         "file": "pages/cassandra/case-study-1.html"
       },
        {
-        "title": "Deep Dive-4",
+        "title": "Case Study-Netflix",
         "file": "pages/cassandra/case-study-2.html"
       },
        {
-        "title": "Deep Dive-4",
+        "title": "Case Study-Uber",
         "file": "pages/cassandra/case-study-3.html"
       }
     ],
