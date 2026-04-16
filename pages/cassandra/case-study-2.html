@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cassandra Internals (Part 6) — End-to-End: Netflix Viewing History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --accent:#58a6ff;--strong:#F5A623;--hire:#00BFA5;--lean:#FFD700;--no:#FF6B6B;
+  --deep:#a78bfa;--obs:#f97316;--rose:#fb7185;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  --netflix:#e50914;--netflix2:#f40612;--netflix3:#b81d24;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--netflix),var(--obs),var(--strong),var(--cass),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--netflix);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--netflix);background:rgba(229,9,20,.1);border:1px solid rgba(229,9,20,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--netflix)}
+#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}
+.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(229,9,20,.05)}
+.ni.active a{color:var(--netflix);border-left-color:var(--netflix);background:rgba(229,9,20,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}
+.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}
+#btt:hover{background:var(--surface2);color:var(--netflix);border-color:var(--netflix);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--netflix);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 10%,var(--netflix) 38%,var(--obs) 62%,var(--cass));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+.sec-hdr h3{font-family:var(--fh);font-size:1.3rem;font-weight:600;color:var(--text)}
+
+/* PART BANNER */
+.part-banner{background:linear-gradient(135deg,rgba(229,9,20,.08),rgba(249,115,22,.04));border:1px solid rgba(229,9,20,.22);border-radius:12px;padding:22px 26px;margin:0 0 36px}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--netflix);margin-bottom:7px;font-weight:600}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* CODE BLOCK */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--cass4);border-color:var(--cass4)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* TRACE DIAGRAM */
+.trace{background:#010409;border:1px solid rgba(229,9,20,.22);border-radius:10px;margin:18px 0;overflow:hidden}
+.trace-hdr{background:rgba(229,9,20,.07);border-bottom:1px solid rgba(229,9,20,.18);padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+.trace-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--netflix);font-weight:600}
+.trace pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.info{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2)}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.extra{background:rgba(245,166,35,.07);border:1px solid rgba(245,166,35,.2)}
+.callout.nf{background:rgba(229,9,20,.07);border:1px solid rgba(229,9,20,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.info .callout-title{color:var(--cass)}.callout.good .callout-title{color:var(--cass4)}
+.callout.warn .callout-title{color:var(--lean)}.callout.fail .callout-title{color:var(--no)}
+.callout.extra .callout-title{color:var(--strong)}.callout.nf .callout-title{color:var(--netflix)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT BOX */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:14px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* MARKS */
+mark{background:rgba(229,9,20,.14);color:var(--netflix);border-radius:3px;padding:1px 4px;font-style:normal}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.b{background:rgba(59,130,246,.14);color:var(--cass)}
+
+/* SCALE CALLOUT */
+.scale-box{background:rgba(229,9,20,.06);border:1px solid rgba(229,9,20,.18);border-radius:10px;padding:18px 20px;margin:16px 0}
+.scale-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--netflix);margin-bottom:12px;font-weight:600}
+.scale-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.35)}
+.scale-row:last-child{border-bottom:none}
+.scale-key{font-size:.86rem;color:var(--muted)}
+.scale-val{font-family:var(--fc);font-size:.82rem;font-weight:700;color:var(--netflix)}
+
+/* QUERY PATTERN CARDS */
+.qp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:16px 0}
+.qp-card{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--netflix);border-radius:0 8px 8px 0;padding:13px 14px}
+.qp-num{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--netflix);margin-bottom:5px;font-weight:700}
+.qp-title{font-family:var(--fh);font-size:.88rem;font-weight:600;color:var(--text);margin-bottom:8px}
+.qp-card p{font-size:.84rem;color:var(--muted);line-height:1.55}
+.qp-card code{font-family:var(--fc);font-size:.78rem;background:rgba(48,54,61,.5);padding:1px 4px;border-radius:3px;color:var(--cass3)}
+
+/* PARTITION SIZING */
+.partition-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:14px 0}
+.partition-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass3);margin-bottom:10px;font-weight:600}
+.partition-math{font-family:var(--fc);font-size:.81rem;color:var(--muted);line-height:1.9}
+.partition-math .line{padding:3px 0}
+.partition-math .result{color:var(--cass4);font-weight:700}
+
+/* MULTI-DC TOPOLOGY */
+.topology-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+.dc-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.dc-hdr{padding:9px 14px;font-family:var(--fc);font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;background:rgba(229,9,20,.07);border-bottom:1px solid rgba(229,9,20,.12);color:var(--netflix)}
+.dc-body{padding:11px 14px}
+.rack-item{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;padding:3px 0;border-bottom:1px solid rgba(48,54,61,.3)}
+.rack-item:last-child{border-bottom:none}
+.rack-name{font-family:var(--fc);color:var(--muted)}
+.rack-nodes{font-family:var(--fc);font-weight:600;color:var(--cass)}
+.dc-total{margin-top:8px;padding-top:6px;border-top:1px solid var(--border);font-family:var(--fc);font-size:.76rem;color:var(--muted)}
+.dc-total strong{color:var(--text)}
+
+/* CONSISTENCY TIERS */
+.cl-tier-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0}
+.cl-tier{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 14px}
+.cl-tier.high{border-left:3px solid var(--cass4)}
+.cl-tier.med{border-left:3px solid var(--lean)}
+.cl-tier.crit{border-left:3px solid var(--netflix)}
+.cl-tier-name{font-family:var(--fc);font-size:.76rem;font-weight:700;margin-bottom:6px}
+.cl-tier.high .cl-tier-name{color:var(--cass4)}
+.cl-tier.med .cl-tier-name{color:var(--lean)}
+.cl-tier.crit .cl-tier-name{color:var(--netflix)}
+.cl-tier-use{font-size:.82rem;color:var(--text);font-weight:600;margin-bottom:6px}
+.cl-tier-why{font-size:.82rem;color:var(--muted);line-height:1.55}
+
+/* EVCACHE DIAGRAM (ascii-art style) */
+.evcache-diag{background:#010409;border:1px solid rgba(59,130,246,.2);border-radius:10px;margin:18px 0;overflow:hidden}
+.evcache-hdr{background:rgba(59,130,246,.06);border-bottom:1px solid rgba(59,130,246,.18);padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.evcache-lbl{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--cass);font-weight:600}
+.evcache-diag pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#79c0ff;white-space:pre}
+
+/* WRITE PATH COMPARE */
+.write-compare{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:14px 0}
+.wc-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);margin-bottom:10px}
+.wc-row{display:flex;gap:12px;align-items:flex-start;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid rgba(48,54,61,.3)}
+.wc-row:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.wc-label{font-family:var(--fc);font-size:.73rem;font-weight:700;flex-shrink:0;min-width:90px;padding-top:2px}
+.wc-row.write .wc-label{color:var(--obs)}
+.wc-row.read .wc-label{color:var(--cass)}
+.wc-row.crit .wc-label{color:var(--netflix)}
+.wc-content{font-size:.85rem;color:var(--muted);line-height:1.55}
+.wc-content strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(229,9,20,.1),rgba(249,115,22,.06));border:1px solid rgba(229,9,20,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--netflix);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--netflix);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl strong{color:var(--text)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}
+  #main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}
+  .qp-grid,.cl-tier-grid,.topology-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">End-to-End: Netflix Viewing History</div>
+    <div class="sb-part">Part 6 — Netflix: 280K Writes/Sec</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni"><a href="#scale-numbers">Scale Numbers</a></li>
+    </li>
+    <li class="ng"><div class="nl">Data Model</div>
+      <li class="ni sub"><a href="#table-design">Table Design</a></li>
+      <li class="ni sub"><a href="#query-patterns">3 Query Patterns</a></li>
+      <li class="ni sub"><a href="#partition-sizing">Partition Sizing</a></li>
+    </li>
+    <li class="ng"><div class="nl">Multi-DC Setup</div>
+      <li class="ni sub"><a href="#topology">Cluster Topology</a></li>
+      <li class="ni sub"><a href="#consistency-strategy">Consistency Strategy</a></li>
+      <li class="ni sub"><a href="#cl-tiers">CL Tiers Explained</a></li>
+    </li>
+    <li class="ng"><div class="nl">EVCache Architecture</div>
+      <li class="ni sub"><a href="#evcache-read">Read Path (Cache)</a></li>
+      <li class="ni sub"><a href="#evcache-write">Write Path</a></li>
+      <li class="ni sub"><a href="#why-not-write-through">Why Not Write-Through?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Lessons</div>
+      <li class="ni"><a href="#discord-netflix-compare">Discord vs Netflix</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 6</div>
+  <h1>End-to-End:<br>Netflix Viewing<br>History</h1>
+  <div class="hero-meta">
+    <span>🎬 200M Members Worldwide</span>
+    <span>⚡ 280K Writes/Sec Sustained</span>
+    <span>📐 Access-Pattern-First Data Model</span>
+    <span>🌍 3-Region Multi-DC Topology</span>
+    <span>🔁 EVCache: 95% Cache Hit Rate</span>
+  </div>
+  <p>The second principal engineer walkthrough. Netflix's viewing history system is the canonical example of high-write Cassandra usage: CL=LOCAL_ONE for event writes, tiered consistency for different operations, and EVCache absorbing 95% of reads so Cassandra only serves cache misses. Every design choice traced back to the specific access pattern.</p>
+</section>
+
+<!-- PART BANNER -->
+<div class="part-banner">
+  <div class="part-banner-label">Real-World System 2 · Netflix Viewing History</div>
+  <h2>The Problem Netflix Faced</h2>
+  <p>Every Netflix member's viewing history is tracked: every play, pause, stop, and rewind. This data powers "Continue Watching," "Because you watched X" recommendations, and ML training pipelines. Retention is forever — the ML team needs years of viewing history.</p>
+</div>
+
+<!-- SCALE NUMBERS -->
+<div class="scale-box" id="scale-numbers">
+  <div class="scale-title">Scale Numbers</div>
+  <div class="scale-row"><span class="scale-key">Members</span><span class="scale-val">200M+ worldwide</span></div>
+  <div class="scale-row"><span class="scale-key">Events per day</span><span class="scale-val">24 billion</span></div>
+  <div class="scale-row"><span class="scale-key">Writes/sec (sustained)</span><span class="scale-val">280K writes/sec</span></div>
+  <div class="scale-row"><span class="scale-key">Writes/sec (peak)</span><span class="scale-val">1.4M writes/sec (prime time)</span></div>
+  <div class="scale-row"><span class="scale-key">Storage per day</span><span class="scale-val">4.8TB (24B × 200 bytes)</span></div>
+  <div class="scale-row"><span class="scale-key">Storage per year</span><span class="scale-val">1.75PB</span></div>
+</div>
+
+<div class="callout extra">
+  <div class="callout-title">How We Derive 24B Events/Day</div>
+  <p>200M members × 2 hours/day average × 1 event/minute = <strong>24B events/day = 280K writes/sec sustained</strong>. Peak is 5× at prime time (Friday 8-10 PM) → 1.4M writes/sec. This is why CL=ONE is the only viable consistency level for write path — any higher CL would require 5× more infrastructure just for peak.</p>
+</div>
+
+<!-- DATA MODEL -->
+<div class="sec-hdr" id="data-model"><h2>Data Model</h2></div>
+
+<div id="table-design">
+  <div class="code"><div class="code-hdr"><span class="code-lang">CQL · viewing_history Table Design</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Table: viewing_history
+
+Partition Key:   member_id
+Clustering Key:  (view_date DESC, timestamp DESC)
+
+member_id | view_date  | timestamp           | title_id | event_type | position
+----------+------------+---------------------+----------+------------+----------
+12345     | 2024-01-15 | 2024-01-15 20:30:15 | tt001    | PLAY       | 0
+12345     | 2024-01-15 | 2024-01-15 20:45:00 | tt001    | PAUSE      | 900
+12345     | 2024-01-15 | 2024-01-15 21:30:00 | tt001    | STOP       | 3600
+12345     | 2024-01-14 | 2024-01-14 19:00:00 | tt002    | PLAY       | 0
+
+Key design decision: member_id as partition key
+→ All of one member's history is co-located on the same 3 nodes
+→ All member queries are single-partition lookups (no scatter-gather)
+→ Even with 10 years of history, one member's partition stays bounded</pre></div>
+</div>
+
+<h3 id="query-patterns" style="font-family:var(--fh);font-size:1.2rem;font-weight:600;color:var(--text);margin:24px 0 14px">Three Query Patterns — All Served by One Table</h3>
+
+<div class="qp-grid">
+  <div class="qp-card">
+    <div class="qp-num">Query 1</div>
+    <div class="qp-title">"Continue Watching"</div>
+    <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">CQL</span></div>
+    <pre style="font-size:.73rem">SELECT * FROM viewing_history
+WHERE member_id = 12345
+LIMIT 10</pre></div>
+    <p style="margin-top:8px">Clustering by <code>(view_date DESC, timestamp DESC)</code> returns most recent first. Single partition, ultra-fast.</p>
+  </div>
+  <div class="qp-card">
+    <div class="qp-num">Query 2</div>
+    <div class="qp-title">"What Did User Watch on Date X?"</div>
+    <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">CQL</span></div>
+    <pre style="font-size:.73rem">SELECT * FROM viewing_history
+WHERE member_id = 12345
+AND view_date = '2024-01-15'</pre></div>
+    <p style="margin-top:8px">Clustering key prefix match — scans only that date slice within the partition. No SSTable cross-partition seeks.</p>
+  </div>
+  <div class="qp-card">
+    <div class="qp-num">Query 3</div>
+    <div class="qp-title">ML Training Batch Job</div>
+    <div class="code" style="margin-top:8px"><div class="code-hdr"><span class="code-lang">CQL</span></div>
+    <pre style="font-size:.73rem">SELECT * FROM viewing_history
+WHERE member_id = 12345
+AND view_date >= '2023-01-01'</pre></div>
+    <p style="margin-top:8px">Range scan on clustering key — sequential read within partition. Sequential I/O on SSD = very fast for even years of history.</p>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Three Queries, One Table</div>
+  <p>"All three query patterns are served by a single table because the partition key (member_id) and clustering key (view_date DESC, timestamp DESC) are chosen to align with the access pattern. <strong>No secondary indexes, no materialized views, no JOINs needed.</strong> This is Cassandra data modeling done right: identify the queries first, then design the table structure to serve them with a single partition scan."</p>
+</div>
+
+<!-- PARTITION SIZING -->
+<div id="partition-sizing" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Partition Sizing — Does a Power User Break This?</h3>
+  <div class="partition-box">
+    <div class="partition-title">Worst-Case Power User Calculation</div>
+    <div class="partition-math">
+      <div class="line">10 years × 365 days × 5 titles/day × 3 events/title = <strong>54,750 rows</strong></div>
+      <div class="line">Row size: ~200 bytes (member_id + dates + title_id + event_type + position)</div>
+      <div class="line">Partition size: 54,750 × 200 bytes = <strong class="result">~11MB ✓</strong></div>
+      <div class="line" style="color:var(--cass4);margin-top:6px">Well under the 100MB guideline — no bucketing needed unlike Discord!</div>
+    </div>
+  </div>
+  <div class="callout good">
+    <div class="callout-title">Why No Bucketing Needed (Unlike Discord)</div>
+    <p>Discord's hot channels generate millions of messages and needed time-bucket partitioning. Netflix's member-centric partition stays bounded naturally — even the heaviest Netflix user generates only ~11MB of history over 10 years. <strong>The access pattern (one member at a time) and write volume (5 events/day) make member_id a safe partition key.</strong> Always calculate before adding complexity.</p>
+  </div>
+</div>
+
+<!-- MULTI-DC SETUP -->
+<div class="sec-hdr" id="multidc"><h2>Multi-DC Setup</h2></div>
+
+<div class="topology-grid" id="topology">
+  <div class="dc-card">
+    <div class="dc-hdr">🇺🇸 US-EAST-1 (Primary)</div>
+    <div class="dc-body">
+      <div class="rack-item"><span class="rack-name">Rack A</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack B</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack C</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="dc-total">RF=3 · <strong>150 nodes</strong></div>
+    </div>
+  </div>
+  <div class="dc-card">
+    <div class="dc-hdr">🇺🇸 US-WEST-2</div>
+    <div class="dc-body">
+      <div class="rack-item"><span class="rack-name">Rack A</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack B</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack C</span><span class="rack-nodes">50 nodes</span></div>
+      <div class="dc-total">RF=3 · <strong>150 nodes</strong></div>
+    </div>
+  </div>
+  <div class="dc-card">
+    <div class="dc-hdr">🇪🇺 EU-WEST-1</div>
+    <div class="dc-body">
+      <div class="rack-item"><span class="rack-name">Rack A</span><span class="rack-nodes">30 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack B</span><span class="rack-nodes">30 nodes</span></div>
+      <div class="rack-item"><span class="rack-name">Rack C</span><span class="rack-nodes">30 nodes</span></div>
+      <div class="dc-total">RF=3 · <strong>90 nodes</strong></div>
+    </div>
+  </div>
+</div>
+
+<div class="callout nf">
+  <div class="callout-title">Total: ~400 Nodes Just for Viewing History</div>
+  <p>This is a single Cassandra cluster for one use case. Netflix runs many clusters — recommendations, billing, user profiles each have their own clusters. This is the "multiple smaller clusters" pattern (Apple uses it too) rather than one monolithic cluster, which provides better failure isolation and simpler per-cluster operations.</p>
+</div>
+
+<!-- CONSISTENCY STRATEGY -->
+<div id="consistency-strategy" style="margin-top:28px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Consistency Strategy — Three Tiers for Different Operations</h3>
+</div>
+
+<div class="cl-tier-grid" id="cl-tiers">
+  <div class="cl-tier high">
+    <div class="cl-tier-name">CL = LOCAL_ONE</div>
+    <div class="cl-tier-use">Writes (viewing events)</div>
+    <div class="cl-tier-why">
+      Losing one PAUSE event is acceptable. 280K writes/sec requires minimal latency. Async replication to other DCs is fine. Events have timestamps — duplicates and out-of-order events are resolvable.
+    </div>
+  </div>
+  <div class="cl-tier med">
+    <div class="cl-tier-name">CL = LOCAL_ONE</div>
+    <div class="cl-tier-use">Reads ("Continue Watching")</div>
+    <div class="cl-tier-why">
+      Must be fast (&lt;50ms). Showing slightly stale data is fine — user just watched this content, expecting it to appear. LOCAL_QUORUM would add 3-5ms unnecessary latency for no user-perceptible benefit.
+    </div>
+  </div>
+  <div class="cl-tier crit">
+    <div class="cl-tier-name">CL = LOCAL_QUORUM</div>
+    <div class="cl-tier-use">Billing-related reads</div>
+    <div class="cl-tier-why">
+      Billing decisions need consistency — you can't charge a user twice or miss a cancellation. Worth the latency trade-off. Only a small fraction of total reads hit this tier.
+    </div>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — CL Tiering Is the Right Pattern</div>
+  <p>"Netflix doesn't use a single consistency level for everything. <strong>They tier by business impact:</strong> viewing events (eventually consistent is fine) use CL=LOCAL_ONE for maximum throughput. User-facing reads (slightly stale is OK) also use LOCAL_ONE. Billing (must be correct) uses LOCAL_QUORUM. This tiered approach is what L7 thinking looks like — not 'use QUORUM for everything' (too slow) or 'use ONE for everything' (too risky for billing)."</p>
+</div>
+
+<!-- EVCACHE ARCHITECTURE -->
+<div class="sec-hdr" id="evcache"><h2>Caching Layer: EVCache (Netflix's Memcached)</h2></div>
+
+<div class="evcache-diag" id="evcache-read">
+  <div class="evcache-hdr"><span class="evcache-lbl">Read Path · Cassandra + EVCache</span><button class="copy-btn" onclick="copyDiag(this)">Copy</button></div>
+  <pre>User Request: "Continue Watching" for member 12345
+                          │
+                          ▼
+              ┌───────────────────────────┐
+              │   EVCache (Memcached)      │
+              │   Key: "cw:member:12345"   │
+              │   TTL: 30 seconds          │
+              └───────────────────────────┘
+                  │                 │
+                  │ CACHE HIT       │ CACHE MISS
+                  │ (95% of reqs)   │ (5% of reqs)
+                  ▼                 ▼
+           Return data       ┌─────────────────────┐
+           in <5ms           │     Cassandra        │
+           ✓                 │   Source of truth    │
+                             │   CL=LOCAL_ONE       │
+                             └─────────────────────┘
+                                      │
+                                      ▼
+                             Read member's recent
+                             viewing history
+                                      │
+                                      ▼
+                             Populate EVCache,
+                             Return to user
+                             Total: ~50ms for miss
+
+Throughput split:
+  EVCache: 95% × total_reads = very high QPS absorbed by Memcached
+  Cassandra: 5% × total_reads = manageable (Cassandra not the bottleneck)</pre>
+</div>
+
+<div id="evcache-write" style="margin-top:24px">
+  <h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:14px">Write Path — Invalidate, Don't Write-Through</h3>
+  <div class="write-compare">
+    <div class="wc-title">Write Strategy Breakdown</div>
+    <div class="wc-row write">
+      <div class="wc-label">Event Write</div>
+      <div class="wc-content">Viewing event → <strong>Cassandra (CL=LOCAL_ONE)</strong> → async invalidate EVCache key for that member</div>
+    </div>
+    <div class="wc-row read">
+      <div class="wc-label">Cache Miss</div>
+      <div class="wc-content">Next read for that member → EVCache miss → fetch from Cassandra → populate cache with 30s TTL</div>
+    </div>
+    <div class="wc-row crit">
+      <div class="wc-label">Cache Hit</div>
+      <div class="wc-content">Subsequent reads within 30s → served from EVCache → &lt;5ms, Cassandra not touched</div>
+    </div>
+  </div>
+
+  <div id="why-not-write-through">
+    <div class="callout warn">
+      <div class="callout-title">Why Not Write-Through Caching?</div>
+      <ul>
+        <li><strong>Volume:</strong> Viewing events are 280K writes/sec — writing to both Cassandra AND EVCache doubles write load</li>
+        <li><strong>Cache unit mismatch:</strong> Cache stores the entire member's profile (aggregated), not individual events — can't meaningfully cache a single PAUSE event</li>
+        <li><strong>Invalidation is simpler:</strong> Just delete the cache key — next read rebuilds the aggregated view from Cassandra</li>
+        <li><strong>Slight staleness acceptable:</strong> 30-second TTL means worst case, user sees history from 30 seconds ago. Acceptable for viewing history.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="trace" style="margin-top:24px">
+  <div class="trace-hdr"><span class="trace-title">Complete Read Path with Timing</span><button class="copy-btn" onclick="copyTrace(this)">Copy</button></div>
+  <pre>Cache HIT path (95% of requests):
+  t=0ms:   Client requests "Continue Watching"
+  t=0.5ms: EVCache lookup: key "cw:member:12345" → HIT
+  t=1ms:   Return cached viewing history
+  Total: <5ms
+
+Cache MISS path (5% of requests):
+  t=0ms:   Client requests "Continue Watching"
+  t=0.5ms: EVCache lookup: key "cw:member:12345" → MISS
+  t=1ms:   Query Cassandra with CL=LOCAL_ONE
+  t=2ms:   Dynamic snitch picks fastest replica
+  t=3ms:   Replica checks memtable (no recent history)
+  t=5ms:   Bloom filter checks identify 2 candidate SSTables
+  t=8ms:   Read from 1 SSTable (member's history, sequential read)
+  t=10ms:  Merge results, return to coordinator
+  t=15ms:  Coordinator receives 10 most recent events
+  t=20ms:  Populate EVCache (async, non-blocking)
+  t=22ms:  Return to client
+  Total: ~25ms (well under 50ms target)</pre>
+</div>
+
+<!-- DISCORD vs NETFLIX COMPARISON -->
+<div class="sec-hdr" id="discord-netflix-compare"><h2>Discord vs. Netflix — Design Decision Contrast</h2></div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Comparison · Key Design Decisions</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>                     Discord Messages        Netflix Viewing History
+                     ─────────────────       ──────────────────────────
+Partition key        (channel_id, bucket)    member_id
+                     ↑ Needed bucketing       ↑ No bucketing needed
+                     (millions of msgs/ch)    (bounded by usage patterns)
+
+Partition size       ~100MB (bounded by       ~11MB even for power users
+                     time bucket design)       Naturally bounded ✓
+
+Write CL             LOCAL_QUORUM             LOCAL_ONE
+                     (msg loss unacceptable)  (event loss acceptable)
+
+Read CL              LOCAL_ONE                LOCAL_ONE (EVCache first)
+                     (slight stale OK)        (cache absorbs 95%)
+
+Compaction           TWCS (time windows)      Default or STCS
+                     (temporal locality)      (random access by member)
+
+Caching              Not mentioned as         EVCache (Memcached) absorbs
+                     primary architecture     95% of reads
+                     component
+
+Write volume         580K msgs/sec            280K events/sec (sustained)
+                     (messaging is spiky)     1.4M/sec peak
+
+Access pattern       Read CHANNEL (recent     Read MEMBER (time range,
+                     50 msgs, time range)     most recent, range scans)</pre></div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Same Database, Different Designs</div>
+  <p>"Discord and Netflix both use Cassandra for high-write event data, but make completely different data modeling choices. <strong>Discord needs bucketing because channels generate unbounded data; Netflix doesn't because member usage is naturally bounded.</strong> Discord uses LOCAL_QUORUM for writes because losing a message is unacceptable; Netflix uses LOCAL_ONE because a lost PAUSE event is fine. Same tool, different trade-offs, both optimal for their specific access patterns."</p>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Netflix Design Principle</div>
+  <p>"Netflix doesn't query Cassandra directly for most reads — EVCache absorbs 95% of traffic. Cassandra is the durable source of truth, but you design the system assuming cache hits. This is the right architectural pattern: Cassandra for durability and scale-out writes, a fast cache for read latency. If you're designing a system and Cassandra seems too slow for your read SLAs, the answer is usually 'add a cache layer,' not 'replace Cassandra.'"</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Netflix Lesson — Cassandra as a Foundation, Not a Monolith</div>
+  <p>Netflix's viewing history system illustrates the mature Cassandra pattern: <strong>Cassandra handles durable writes at massive scale (280K/sec), while EVCache handles read latency (&lt;5ms for 95% of reads).</strong> The data model is member-centric for query alignment. Consistency is tiered by business impact. The cluster is partitioned into separate, purpose-built clusters (not one giant shared cluster).</p>
+  <p style="margin-top:10px">The L7 insight: no single component does everything. Cassandra does writes and durability. EVCache does read throughput and latency. The art is understanding which component owns which responsibility and designing the data flow between them.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';
+  all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+function copyTrace(btn){
+  const pre=btn.closest('.trace').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+function copyDiag(btn){
+  const pre=btn.closest('.evcache-diag').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{
+    g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));
+  });
+});
+</script>
+</body>
+</html>
