@@ -1,129 +1,73 @@
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background-color: #0f172a;
-  color: #e2e8f0;
-}
-
-.container {
-  display: flex;
-  height: 100vh;
-}
-
-/* SIDEBAR */
-.sidebar {
-  width: 280px;
-  background-color: #020617;
-  padding: 20px;
-  overflow-y: auto;
-  border-right: 1px solid #1e293b;
-}
-
-.sidebar h2 {
-  color: #38bdf8;
-  margin-bottom: 10px;
-}
-
-/* SECTION HEADERS (Concepts / Interview) */
-.section-header {
-  margin-top: 15px;
-  font-weight: bold;
-  color: #38bdf8;
-  cursor: default;
-}
-
-/* CATEGORY (Kafka, Cassandra) */
-.category {
-  margin-top: 8px;
-  font-weight: 500;
-  color: #94a3b8;
-  cursor: default;
-}
-
-/* SUBMENU */
-.submenu {
+/* RESET LIST STYLE */
+.sidebar ul {
   list-style: none;
-  padding-left: 15px;
-  margin-top: 5px;
+  padding-left: 0;
+  margin: 0;
 }
 
-/* NAV ITEMS (clickable) */
-.nav-item {
-  margin: 6px 0;
-  cursor: pointer;
-  color: #e2e8f0;
-  transition: color 0.2s ease;
+/* SECTION HEADERS */
+.section-header {
+  margin-top: 18px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
 }
 
-/* HOVER ONLY FOR ITEMS */
-.nav-item:hover {
-  color: #22c55e;
-}
-
-/* ACTIVE ITEM */
-.nav-item.active {
-  color: #22c55e;
-  font-weight: bold;
-}
-
-/* CONTENT AREA */
-.content {
-  flex: 1;
-}
-
-/* IFRAME */
-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
-  background: white;
-}
-
-/* FOLDER HEADER (System Design, Twitter, Rate Limiter) */
+/* FOLDER */
 .folder-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
-  padding: 6px 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
   color: #cbd5f5;
-  transition: background 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-/* hover effect */
+/* Hover */
 .folder-header:hover {
   background-color: #1e293b;
 }
 
-/* nested indentation handled via JS padding-left */
-
-/* submenu animation feel */
-.submenu {
-  list-style: none;
-  padding-left: 0;
-  margin-top: 4px;
+/* Chevron */
+.folder-header::before {
+  content: "▶";
+  font-size: 10px;
+  transition: transform 0.2s ease;
 }
 
-/* file items */
+/* OPEN STATE */
+.folder-header.open::before {
+  transform: rotate(90deg);
+}
+
+/* FILE ITEMS */
 .nav-item {
-  margin: 4px 0;
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 6px;
   cursor: pointer;
   color: #e2e8f0;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
-/* hover */
+/* Hover */
 .nav-item:hover {
+  background-color: #1e293b;
   color: #22c55e;
-  transform: translateX(3px);
 }
 
-/* active file */
+/* Active */
 .nav-item.active {
+  background-color: #1e293b;
   color: #22c55e;
-  font-weight: bold;
+  font-weight: 500;
 }
 
-.folder-header::before {
-  content: "▶ ";
-  font-size: 10px;
-  margin-right: 4px;
-  transition: transform 0.2s;
+/* SUBMENU */
+.submenu {
+  margin-top: 2px;
 }
