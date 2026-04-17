@@ -161,6 +161,14 @@
       }
     ]
   },
+  "Technolgia": {
+    "Load Balancer / API gateway / GLB": [
+      {
+        "title": "Differences",
+        "file": "pages/lb/lb.html"
+      }
+    ],
+  }
   "Interview": {
     "System Design": {
       "Twitter": [
