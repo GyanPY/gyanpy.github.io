@@ -1,11 +1,41 @@
-/* RESET LIST STYLE */
-.sidebar ul {
-  list-style: none;
-  padding-left: 0;
+/* GLOBAL */
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* LAYOUT */
+.container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* SIDEBAR */
+.sidebar {
+  width: 300px;
+  min-width: 300px;
+  background-color: #020617;
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid #1e293b;
+}
+
+/* NAV ROOT */
+#nav {
+  padding: 0;
   margin: 0;
 }
 
-/* SECTION HEADERS */
+#nav li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* SECTION HEADERS (Concepts / Interview) */
 .section-header {
   margin-top: 18px;
   margin-bottom: 6px;
@@ -15,7 +45,7 @@
   letter-spacing: 0.5px;
 }
 
-/* FOLDER */
+/* FOLDER HEADER */
 .folder-header {
   display: flex;
   align-items: center;
@@ -32,16 +62,22 @@
   background-color: #1e293b;
 }
 
-/* Chevron */
+/* Chevron arrow */
 .folder-header::before {
   content: "▶";
   font-size: 10px;
   transition: transform 0.2s ease;
 }
 
-/* OPEN STATE */
+/* Open state */
 .folder-header.open::before {
   transform: rotate(90deg);
+}
+
+/* SUBMENU */
+.submenu {
+  margin-top: 2px;
+  padding-left: 0;
 }
 
 /* FILE ITEMS */
@@ -67,7 +103,16 @@
   font-weight: 500;
 }
 
-/* SUBMENU */
-.submenu {
-  margin-top: 2px;
+/* CONTENT AREA */
+.content {
+  flex: 1;
+  height: 100%;
+  background: #ffffff;
+}
+
+/* IFRAME */
+iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
 }
