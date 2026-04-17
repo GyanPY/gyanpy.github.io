@@ -51,6 +51,12 @@
         "title": "Internals",
         "file": "pages/flink/flink.html"
       }
+    ],
+    "Mongo": [
+      {
+        "title": "Internals",
+        "file": "pages/mongo/mongo.html"
+      }
     ]
   },
   "Interview": {
