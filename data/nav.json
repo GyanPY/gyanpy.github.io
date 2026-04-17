@@ -11,7 +11,7 @@
         "title": "Internals",
         "file": "pages/cassandra/cassandra.html"
       },
-       {
+      {
         "title": "Deep Dive-1",
         "file": "pages/cassandra/core-1.html"
       },
@@ -27,15 +27,15 @@
         "title": "Deep Dive-4",
         "file": "pages/cassandra/core-4.html"
       },
-       {
+      {
         "title": "Case Study-Discord",
         "file": "pages/cassandra/case-study-1.html"
       },
-       {
+      {
         "title": "Case Study-Netflix",
         "file": "pages/cassandra/case-study-2.html"
       },
-       {
+      {
         "title": "Case Study-Uber",
         "file": "pages/cassandra/case-study-3.html"
       }
@@ -72,92 +72,92 @@
     ],
     "MySQL": [
       {
-         "title": "Internals",
-         "file": "pages/MySQL/MySQL.html"
+        "title": "Internals",
+        "file": "pages/MySQL/MySQL.html"
       }
     ],
     "ElasticSearch": [
       {
-         "title": "Internals",
-         "file": "pages/ElasticSearch/ElasticSearch.html"
+        "title": "Internals",
+        "file": "pages/ElasticSearch/ElasticSearch.html"
       }
     ],
     "Dynamo": [
       {
-         "title": "Internals",
-         "file": "pages/Dynamo/Dynamo.html"
+        "title": "Internals",
+        "file": "pages/Dynamo/Dynamo.html"
       }
     ],
     "InFluxDB": [
       {
-         "title": "Internals",
-         "file": "pages/InFluxDB/InFluxDB.html"
+        "title": "Internals",
+        "file": "pages/InFluxDB/InFluxDB.html"
       }
     ],
     "InFluxDB": [
       {
-         "title": "Internals",
-         "file": "pages/InFluxDB/InFluxDB.html"
+        "title": "Internals",
+        "file": "pages/InFluxDB/InFluxDB.html"
       }
     ],
     "Pinot": [
       {
-         "title": "Internals",
-         "file": "pages/Pinot/Pinot.html"
+        "title": "Internals",
+        "file": "pages/Pinot/Pinot.html"
       }
     ],
     "BigQuery": [
       {
-         "title": "Internals",
-         "file": "pages/BigQuery/BigQuery.html"
+        "title": "Internals",
+        "file": "pages/BigQuery/BigQuery.html"
       }
     ],
     "ClickHouse": [
       {
-         "title": "Internals",
-         "file": "pages/ClickHouse/ClickHouse.html"
+        "title": "Internals",
+        "file": "pages/ClickHouse/ClickHouse.html"
       }
     ],
     "Spanner": [
       {
-         "title": "Internals",
-         "file": "pages/Spanner/Spanner.html"
+        "title": "Internals",
+        "file": "pages/Spanner/Spanner.html"
       }
     ],
     "AmazonS3": [
       {
-         "title": "Internals",
-         "file": "pages/AmazonS3/AmazonS3.html"
+        "title": "Internals",
+        "file": "pages/AmazonS3/AmazonS3.html"
       }
     ],
     "Spark": [
       {
-         "title": "Internals",
-         "file": "pages/Spark/Spark.html"
+        "title": "Internals",
+        "file": "pages/Spark/Spark.html"
       }
     ],
     "Zookeeper": [
       {
-         "title": "Internals",
-         "file": "pages/Zookeeper/Zookeeper.html"
+        "title": "Internals",
+        "file": "pages/Zookeeper/Zookeeper.html"
       }
     ],
     "Memcached": [
       {
-         "title": "Internals",
-         "file": "pages/Memcached/Memcached.html"
+        "title": "Internals",
+        "file": "pages/Memcached/Memcached.html"
       }
     ],
     "Datadog": [
       {
-         "title": "Internals",
-         "file": "pages/Datadog/Datadog.html"
+        "title": "Internals",
+        "file": "pages/Datadog/Datadog.html"
       }
     ],
     "Kubernetes": [
       {
-         "title": "Internals",
-         "file": "pages/Kubernetes/Kubernetes.html"
+        "title": "Internals",
+        "file": "pages/Kubernetes/Kubernetes.html"
       }
     ]
   },
@@ -167,7 +167,7 @@
         "title": "Differences",
         "file": "pages/lb/lb.html"
       }
-    ],
+    ]
   },
   "Interview": {
     "System Design": {
@@ -199,7 +199,7 @@
           "file": "pages/interview/system-design/rate-limiter/extra.html"
         }
       ],
-        "Url shortner": [
+      "Url shortner": [
         {
           "title": "1",
           "file": "pages/interview/system-design/url-shortner/1.html"
@@ -216,31 +216,31 @@
           "title": "4",
           "file": "pages/interview/system-design/url-shortner/4.html"
         },
-         {
+        {
           "title": "5",
           "file": "pages/interview/system-design/url-shortner/5.html"
         },
-           {
+        {
           "title": "6",
           "file": "pages/interview/system-design/url-shortner/6.html"
         },
-           {
+        {
           "title": "7",
           "file": "pages/interview/system-design/url-shortner/7.html"
         },
-          {
+        {
           "title": "Deep-Dive-1",
           "file": "pages/interview/system-design/url-shortner/core-1.html"
         },
-           {
+        {
           "title": "Deep-Dive-2",
           "file": "pages/interview/system-design/url-shortner/core-2.html"
         },
-           {
+        {
           "title": "Deep-Dive-3",
           "file": "pages/interview/system-design/url-shortner/core-3.html"
         },
-           {
+        {
           "title": "Deep-Dive-4",
           "file": "pages/interview/system-design/url-shortner/core-4.html"
         }
