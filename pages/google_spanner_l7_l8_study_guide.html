@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Google Spanner — L7/L8 System Design Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--surface3:#21262d;
+--border:#30363d;--border2:#444c56;
+--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+--amber:#F5A623;--teal:#00BFA5;--gold:#FFD700;--coral:#FF6B6B;--blue:#58a6ff;
+--purple:#8b5cf6;--green:#3fb950;--red:#f85149;
+--radius:12px;--radius-sm:6px;
+--sidebar-w:280px;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--text);font-family:'Source Serif 4',Georgia,serif;line-height:1.75;overflow-x:hidden;animation:fadeIn .5s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* PROGRESS BAR */
+#progress-bar{position:fixed;top:0;left:0;height:3px;width:0%;background:linear-gradient(90deg,var(--amber),var(--blue),var(--teal));z-index:9999;transition:width .1s}
+
+/* LAYOUT */
+.layout{display:flex;min-height:100vh}
+main{margin-left:var(--sidebar-w);flex:1;padding:2.5rem 3rem 5rem;max-width:960px}
+@media(max-width:900px){main{margin-left:0;padding:1.5rem 1.2rem 4rem}}
+
+/* SIDEBAR */
+#sidebar{position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;z-index:1000;display:flex;flex-direction:column;transition:transform .3s ease}
+#sidebar-header{padding:1.25rem 1rem .75rem;border-bottom:1px solid var(--border);flex-shrink:0}
+#sidebar-title{font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--amber);line-height:1.3;margin-bottom:.6rem}
+#sidebar-subtitle{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+#sidebar-search{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.4rem .7rem;color:var(--text);font-size:.78rem;font-family:'Source Serif 4',serif;outline:none;margin-top:.6rem}
+#sidebar-search:focus{border-color:var(--blue)}
+#sidebar-nav{padding:.5rem 0 2rem;flex:1}
+.nav-section{margin-bottom:.15rem}
+.nav-group-label{font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);padding:.6rem 1rem .2rem;font-family:'JetBrains Mono',monospace}
+.nav-link{display:block;padding:.32rem 1rem .32rem 1.2rem;font-size:.78rem;color:var(--text2);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nav-link:hover{color:var(--text);background:var(--surface2);border-left-color:var(--border2)}
+.nav-link.active{color:var(--blue);background:rgba(88,166,255,.08);border-left-color:var(--blue)}
+.nav-link.sub{padding-left:1.8rem;font-size:.73rem}
+
+/* HAMBURGER */
+#hamburger{display:none;position:fixed;top:.8rem;left:.8rem;z-index:1100;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.45rem .6rem;cursor:pointer;color:var(--text);font-size:1.1rem}
+@media(max-width:900px){
+  #hamburger{display:flex;align-items:center;justify-content:center}
+  #sidebar{transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999}
+  .sidebar-overlay.open{display:block}
+}
+
+/* BACK TO TOP */
+#back-top{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface2);border:1px solid var(--border);border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:opacity .3s,transform .2s,box-shadow .2s;color:var(--text2);font-size:1.1rem;z-index:500}
+#back-top.visible{opacity:1}
+#back-top:hover{transform:translateY(-3px);box-shadow:0 0 12px rgba(88,166,255,.25);color:var(--blue)}
+
+/* TYPOGRAPHY */
+h1{font-family:'Playfair Display',serif;font-size:2.6rem;font-weight:900;line-height:1.2;color:var(--text);margin-bottom:1rem}
+h2{font-family:'Playfair Display',serif;font-size:1.75rem;font-weight:700;color:var(--text);margin:2.5rem 0 1rem;padding-top:2rem;border-top:1px solid var(--border)}
+h2:first-of-type{border-top:none;padding-top:0}
+h3{font-family:'Playfair Display',serif;font-size:1.25rem;font-weight:600;color:var(--text);margin:2rem 0 .7rem}
+h4{font-size:1rem;font-weight:600;color:var(--text2);margin:1.5rem 0 .5rem;text-transform:uppercase;letter-spacing:.05em;font-family:'JetBrains Mono',monospace;font-size:.85rem}
+p{margin-bottom:1rem}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+ul,ol{padding-left:1.6rem;margin-bottom:1rem}
+li{margin-bottom:.35rem}
+strong{font-weight:600;color:var(--text)}
+em{font-style:italic;color:var(--text2)}
+code{font-family:'JetBrains Mono',monospace;font-size:.82em;background:rgba(110,118,129,.15);border:1px solid var(--border);border-radius:3px;padding:.1em .35em;color:#79c0ff}
+
+/* HERO */
+.hero{padding:2rem 0 1.5rem;border-bottom:1px solid var(--border);margin-bottom:2rem}
+.hero-badge{display:inline-flex;align-items:center;gap:.4rem;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);border-radius:20px;padding:.3rem .8rem;font-size:.75rem;font-family:'JetBrains Mono',monospace;color:var(--amber);margin-bottom:1rem;text-transform:uppercase;letter-spacing:.08em}
+.hero-meta{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:1rem}
+.meta-pill{display:inline-flex;align-items:center;gap:.35rem;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:.25rem .75rem;font-size:.75rem;color:var(--text2);font-family:'JetBrains Mono',monospace}
+
+/* SECTION HEADER */
+.section-header{margin:3rem 0 1.5rem;padding:1.5rem 1.75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);position:relative;overflow:hidden}
+.section-header::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:linear-gradient(180deg,var(--amber),var(--blue))}
+.section-num{font-family:'Playfair Display',serif;font-size:4rem;font-weight:900;color:rgba(245,166,35,.12);position:absolute;top:-.5rem;right:1rem;line-height:1;user-select:none}
+.section-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--amber);font-family:'JetBrains Mono',monospace;margin-bottom:.4rem}
+.section-title{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;color:var(--text);line-height:1.3}
+.section-divider{height:1px;background:linear-gradient(90deg,var(--border),transparent);margin:1.5rem 0}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.5rem;margin-bottom:1.25rem;transition:transform .2s,box-shadow .2s,border-color .2s}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.4);border-color:var(--border2)}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:1.25rem 0}
+
+/* STAT CARDS */
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;text-align:center}
+.stat-val{font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:var(--amber);display:block}
+.stat-label{font-size:.75rem;color:var(--text2);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.06em;margin-top:.25rem}
+
+/* CALLOUTS */
+.callout{border-left:3px solid;padding:.85rem 1.1rem;border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin:1.25rem 0;font-size:.92rem}
+.callout-fire{border-color:var(--coral);background:rgba(255,107,107,.08);color:#ffbdbd}
+.callout-bolt{border-color:var(--amber);background:rgba(245,166,35,.08);color:#ffd89a}
+.callout-ruler{border-color:var(--purple);background:rgba(139,92,246,.08);color:#c4b5fd}
+.callout-info{border-color:var(--blue);background:rgba(88,166,255,.08);color:#a5c8ff}
+.callout-teal{border-color:var(--teal);background:rgba(0,191,165,.08);color:#7fffd4}
+.callout strong{font-weight:600}
+.callout-label{font-family:'JetBrains Mono',monospace;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem;opacity:.8}
+
+/* TABLES */
+.table-wrap{overflow-x:auto;margin:1.25rem 0;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.875rem}
+thead tr{background:linear-gradient(135deg,var(--surface2),var(--surface3))}
+th{padding:.75rem 1rem;text-align:left;font-family:'JetBrains Mono',monospace;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:.65rem 1rem;border-bottom:1px solid rgba(48,54,61,.6);vertical-align:top;line-height:1.6}
+tr:last-child td{border-bottom:none}
+tr:nth-child(even) td{background:rgba(28,33,40,.4)}
+tr:hover td{background:rgba(88,166,255,.04)}
+
+/* DIAGRAMS */
+.diagram-wrap{position:relative;margin:1.5rem 0;border-radius:var(--radius);border:1px solid var(--border);overflow:hidden}
+.diagram-label{position:absolute;top:.5rem;left:.75rem;background:var(--blue);color:#000;font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:.2rem .5rem;border-radius:3px;z-index:2}
+.diagram-wrap pre{background:#010409;margin:0;padding:2.5rem 1.25rem 1.25rem;overflow-x:auto;border:none}
+.diagram-wrap pre code{background:none;border:none;padding:0;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:.8rem;line-height:1.7;white-space:pre}
+
+/* CODE BLOCKS */
+.code-wrap{position:relative;margin:1.25rem 0;border-radius:var(--radius);border:1px solid var(--border);overflow:hidden}
+.code-header{display:flex;align-items:center;justify-content:space-between;background:var(--surface3);padding:.5rem 1rem;border-bottom:1px solid var(--border)}
+.code-lang{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
+.copy-btn{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:.25rem .6rem;color:var(--text2);font-family:'JetBrains Mono',monospace;font-size:.7rem;cursor:pointer;transition:all .15s}
+.copy-btn:hover{background:var(--surface3);color:var(--text);border-color:var(--border2)}
+.code-wrap pre{background:#0d1117;margin:0;padding:1.25rem;overflow-x:auto}
+.code-wrap pre code{background:none;border:none;padding:0;color:#e6edf3;font-family:'JetBrains Mono',monospace;font-size:.82rem;line-height:1.7;white-space:pre}
+
+/* FAILURE CARDS */
+.failure-card{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1.5rem;overflow:hidden}
+.failure-header{background:var(--surface2);padding:.75rem 1.25rem;font-family:'Playfair Display',serif;font-size:1rem;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.6rem}
+.failure-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+@media(max-width:680px){.failure-grid{grid-template-columns:1fr}}
+.failure-cell{padding:.85rem 1.1rem;font-size:.875rem;border-right:1px solid var(--border);border-bottom:1px solid var(--border);line-height:1.7}
+.failure-cell:nth-child(2n){border-right:none}
+.failure-cell:nth-last-child(-n+2){border-bottom:none}
+@media(max-width:680px){.failure-cell{border-right:none}.failure-cell:last-child{border-bottom:none}}
+.failure-label{font-family:'JetBrains Mono',monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:.4rem}
+
+/* PILLS */
+.pill{display:inline-block;padding:.2rem .65rem;border-radius:20px;font-size:.75rem;font-family:'JetBrains Mono',monospace;font-weight:500}
+.pill-green{background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)}
+.pill-red{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)}
+.pill-amber{background:rgba(245,166,35,.15);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+.pill-blue{background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.3)}
+.pill-teal{background:rgba(0,191,165,.15);color:var(--teal);border:1px solid rgba(0,191,165,.3)}
+.pill-purple{background:rgba(139,92,246,.15);color:var(--purple);border:1px solid rgba(139,92,246,.3)}
+
+/* INTERVIEW SECTION CARDS */
+.interview-card{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1.25rem;overflow:hidden}
+.interview-card-header{padding:.75rem 1.25rem;font-size:.875rem;font-weight:600;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:.82rem;text-transform:uppercase;letter-spacing:.05em}
+.ih-problem{background:rgba(139,92,246,.15);color:#c4b5fd}
+.ih-strong{background:rgba(0,191,165,.12);color:var(--teal)}
+.ih-good{background:rgba(63,185,80,.12);color:var(--green)}
+.ih-miss{background:rgba(248,81,73,.12);color:var(--red)}
+.ih-followup{background:rgba(245,166,35,.12);color:var(--amber)}
+.ih-l8{background:rgba(88,166,255,.12);color:var(--blue)}
+.interview-card-body{padding:1.1rem 1.25rem;font-size:.9rem;line-height:1.75}
+
+/* QA ACCORDION */
+.qa-block{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:.75rem;overflow:hidden}
+.qa-q{background:var(--surface2);padding:.85rem 1.25rem;cursor:pointer;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;user-select:none;transition:background .15s}
+.qa-q:hover{background:var(--surface3)}
+.qa-q-text{font-size:.9rem;font-weight:600;color:var(--text);flex:1;line-height:1.5}
+.qa-q-num{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;border-radius:50%;background:var(--blue);color:#000;font-family:'JetBrains Mono',monospace;font-size:.73rem;font-weight:600;flex-shrink:0;margin-top:.05rem}
+.qa-arrow{color:var(--text3);font-size:.8rem;transition:transform .25s;flex-shrink:0;margin-top:.15rem}
+.qa-block.open .qa-arrow{transform:rotate(180deg)}
+.qa-a{padding:0 1.25rem;max-height:0;overflow:hidden;transition:max-height .35s ease,padding .2s;font-size:.875rem;line-height:1.8;color:var(--text2)}
+.qa-block.open .qa-a{max-height:2000px;padding:.9rem 1.25rem 1.1rem}
+
+/* APM CARDS */
+.apm-card{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:1rem;overflow:hidden}
+.apm-card-header{background:var(--surface2);padding:.6rem 1rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--teal);border-bottom:1px solid var(--border);letter-spacing:.03em}
+.apm-card-body{padding:.85rem 1rem;font-size:.875rem;line-height:1.7;color:var(--text2)}
+.apm-card-body strong{color:var(--text)}
+
+/* BLOCKQUOTE */
+blockquote{position:relative;border-left:3px solid var(--amber);padding:.85rem 1.1rem .85rem 2rem;margin:1.25rem 0;background:rgba(245,166,35,.05);border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-style:italic;color:var(--text2)}
+blockquote::before{content:'\201C';position:absolute;left:.35rem;top:.1rem;font-family:'Playfair Display',serif;font-size:2.5rem;color:rgba(245,166,35,.3);line-height:1}
+
+/* TAKEAWAY */
+.takeaway{background:rgba(0,191,165,.07);border:1px solid rgba(0,191,165,.25);border-radius:var(--radius);padding:1rem 1.25rem;margin:2rem 0 1rem;display:flex;gap:.75rem;align-items:flex-start}
+.takeaway-icon{font-size:1.1rem;flex-shrink:0;margin-top:.1rem}
+.takeaway-text{font-size:.9rem;color:#7fffd4;line-height:1.7}
+.takeaway-text strong{color:#a0ffee;font-weight:600}
+
+/* SCALE TABLE */
+.scale-table th:first-child{width:100px}
+
+/* SEARCH HIGHLIGHT */
+mark{background:rgba(245,166,35,.25);color:var(--amber);border-radius:2px;padding:0 1px}
+
+/* SECTION HIDDEN BY SEARCH */
+.section-hidden{display:none}
+
+/* TOC PROGRESS INDICATOR */
+.pillar-indicator{display:flex;gap:.2rem;margin:.75rem 1rem .25rem;flex-wrap:wrap}
+.pillar-dot{width:8px;height:8px;border-radius:50%;background:var(--border);flex-shrink:0;cursor:pointer;transition:background .2s}
+.pillar-dot.done{background:var(--teal)}
+.pillar-dot.active{background:var(--amber)}
+
+/* HORIZONTAL RULE */
+hr{border:none;border-top:1px solid var(--border);margin:2.5rem 0}
+
+/* RESPONSIVE ADJUSTMENTS */
+@media(max-width:600px){
+  h1{font-size:1.9rem}
+  h2{font-size:1.4rem}
+  main{padding:1rem .9rem 4rem}
+  .failure-grid{grid-template-columns:1fr}
+  .card-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- PROGRESS BAR -->
+<div id="progress-bar"></div>
+
+<!-- HAMBURGER -->
+<button id="hamburger" aria-label="Open navigation">☰</button>
+<div class="sidebar-overlay" id="overlay"></div>
+
+<!-- SIDEBAR -->
+<aside id="sidebar" aria-label="Navigation">
+  <div id="sidebar-header">
+    <div id="sidebar-title">Google Spanner<br>L7/L8 Deep Dive</div>
+    <div id="sidebar-subtitle">Senior Staff / Principal Interview Guide</div>
+    <input type="search" id="sidebar-search" placeholder="🔍  Search sections…" aria-label="Search sections">
+    <div class="pillar-indicator" id="pillar-dots"></div>
+  </div>
+  <nav id="sidebar-nav" aria-label="Section navigation">
+    <div class="nav-group-label">Overview</div>
+    <a class="nav-link" href="#overview">Introduction</a>
+    <a class="nav-link sub" href="#what-is-spanner">What is Spanner?</a>
+
+    <div class="nav-group-label">Pillar 1</div>
+    <a class="nav-link" href="#p1">Core Concepts &amp; Mental Models</a>
+    <a class="nav-link sub" href="#p1-before">World Before Spanner</a>
+    <a class="nav-link sub" href="#p1-abstraction">Core Abstraction</a>
+    <a class="nav-link sub" href="#p1-guarantees">Guarantees &amp; Non-Guarantees</a>
+    <a class="nav-link sub" href="#p1-invariants">Invariants</a>
+    <a class="nav-link sub" href="#p1-diagram">Mental Model Diagram</a>
+
+    <div class="nav-group-label">Pillar 2</div>
+    <a class="nav-link" href="#p2">Architecture Deep Dive</a>
+    <a class="nav-link sub" href="#p2-components">Internal Components</a>
+    <a class="nav-link sub" href="#p2-write">Write Path</a>
+    <a class="nav-link sub" href="#p2-read">Read Path</a>
+    <a class="nav-link sub" href="#p2-disk">On-Disk Layout</a>
+    <a class="nav-link sub" href="#p2-backpressure">Back-Pressure</a>
+    <a class="nav-link sub" href="#p2-diagram">Architecture Diagram</a>
+
+    <div class="nav-group-label">Pillar 3</div>
+    <a class="nav-link" href="#p3">Trade-offs &amp; Design Decisions</a>
+    <a class="nav-link sub" href="#p3-cap">CAP Theorem</a>
+    <a class="nav-link sub" href="#p3-pacelc">PACELC Analysis</a>
+    <a class="nav-link sub" href="#p3-consistency">Consistency Models</a>
+    <a class="nav-link sub" href="#p3-knobs">Latency vs Throughput</a>
+    <a class="nav-link sub" href="#p3-tradeoffs">Trade-off Summary</a>
+
+    <div class="nav-group-label">Pillar 4</div>
+    <a class="nav-link" href="#p4">Failure Modes &amp; Resilience</a>
+    <a class="nav-link sub" href="#p4-f1">Leader Crash</a>
+    <a class="nav-link sub" href="#p4-f2">Minority Failures</a>
+    <a class="nav-link sub" href="#p4-f3">Network Partition</a>
+    <a class="nav-link sub" href="#p4-f4">Even Split</a>
+    <a class="nav-link sub" href="#p4-f5">Split-Brain</a>
+    <a class="nav-link sub" href="#p4-f6">Slow Node</a>
+    <a class="nav-link sub" href="#p4-f7">Disk Corruption</a>
+    <a class="nav-link sub" href="#p4-f8">Clock Skew</a>
+    <a class="nav-link sub" href="#p4-f9">Thundering Herd</a>
+    <a class="nav-link sub" href="#p4-f10">Cascading Failures</a>
+
+    <div class="nav-group-label">Pillar 5</div>
+    <a class="nav-link" href="#p5">Scaling Strategies</a>
+    <a class="nav-link sub" href="#p5-vertical">Vertical Scaling</a>
+    <a class="nav-link sub" href="#p5-horizontal">Horizontal Scaling</a>
+    <a class="nav-link sub" href="#p5-replication">Replication Strategies</a>
+    <a class="nav-link sub" href="#p5-sharding">Sharding &amp; Key Design</a>
+    <a class="nav-link sub" href="#p5-crossregion">Cross-Region</a>
+    <a class="nav-link sub" href="#p5-readwrite">Read vs Write Scaling</a>
+
+    <div class="nav-group-label">Pillar 6</div>
+    <a class="nav-link" href="#p6">Real-World Engineering</a>
+    <a class="nav-link sub" href="#p6-shines">Where Spanner Shines</a>
+    <a class="nav-link sub" href="#p6-examples">Production Examples</a>
+    <a class="nav-link sub" href="#p6-antipatterns">Anti-Patterns</a>
+    <a class="nav-link sub" href="#p6-matrix">Decision Matrix</a>
+    <a class="nav-link sub" href="#p6-mistakes">Operational Mistakes</a>
+
+    <div class="nav-group-label">Pillar 7</div>
+    <a class="nav-link" href="#p7">Google Scale &amp; Beyond</a>
+    <a class="nav-link sub" href="#p7-scale">Scale Tiers</a>
+    <a class="nav-link sub" href="#p7-google">Google's Advantages</a>
+    <a class="nav-link sub" href="#p7-multitenancy">Multi-Tenancy</a>
+    <a class="nav-link sub" href="#p7-residency">Data Residency</a>
+    <a class="nav-link sub" href="#p7-cost">Cost Efficiency</a>
+
+    <div class="nav-group-label">Pillar 8</div>
+    <a class="nav-link" href="#p8">Interview Simulation</a>
+    <a class="nav-link sub" href="#p8-problem">The Problem</a>
+    <a class="nav-link sub" href="#p8-answer">Strong Answer (L7/L8)</a>
+    <a class="nav-link sub" href="#p8-critique">Interviewer Critique</a>
+    <a class="nav-link sub" href="#p8-rapidfire">10 Rapid-Fire Questions</a>
+
+    <div class="nav-group-label">Bonus</div>
+    <a class="nav-link" href="#apm">APM &amp; Monitoring</a>
+    <a class="nav-link sub" href="#apm-metrics">Core Metrics</a>
+    <a class="nav-link sub" href="#apm-dashboard">Dashboard Config</a>
+    <a class="nav-link sub" href="#apm-alerts">Day 1 Alerts</a>
+    <a class="nav-link" href="#e2e">End-to-End Simulation</a>
+    <a class="nav-link sub" href="#e2e-before">Before State</a>
+    <a class="nav-link sub" href="#e2e-migration">Migration</a>
+    <a class="nav-link sub" href="#e2e-challenges">Challenges &amp; Trade-offs</a>
+  </nav>
+</aside>
+
+<!-- MAIN CONTENT -->
+<main>
+
+<!-- HERO -->
+<section id="overview">
+  <div class="hero">
+    <div class="hero-badge">⚡ Senior Staff Engineer Interview Guide</div>
+    <h1>Google Spanner</h1>
+    <p style="font-size:1.15rem;color:var(--text2);max-width:700px;line-height:1.8">A comprehensive L7/L8 system design deep dive — covering all 8 pillars from first principles to hyperscaler-scale engineering decisions, complete with APM monitoring walkthrough, end-to-end simulation, and full interview simulation.</p>
+    <div class="hero-meta">
+      <span class="meta-pill">📐 8 Pillars</span>
+      <span class="meta-pill">🎯 L7/L8 Target</span>
+      <span class="meta-pill">⏱ TrueTime Innovation</span>
+      <span class="meta-pill">🌍 Global Distribution</span>
+      <span class="meta-pill">🔥 10 Failure Scenarios</span>
+      <span class="meta-pill">💬 10 Rapid-Fire Q&amp;As</span>
+    </div>
+  </div>
+
+  <div class="card-grid" style="margin-top:1.75rem">
+    <div class="stat-card"><span class="stat-val">8</span><div class="stat-label">Pillars Covered</div></div>
+    <div class="stat-card"><span class="stat-val">L7/L8</span><div class="stat-label">Target Level</div></div>
+    <div class="stat-card"><span class="stat-val">TrueTime</span><div class="stat-label">Core Innovation</div></div>
+    <div class="stat-card"><span class="stat-val">Ext. Consistent</span><div class="stat-label">Strongest Guarantee</div></div>
+  </div>
+
+  <h2 id="what-is-spanner">What is Google Spanner?</h2>
+  <p>Google Spanner is a globally distributed, externally consistent relational database that combines the familiar SQL interface and ACID transactions of a traditional relational database with the horizontal scalability and global distribution of a NoSQL system. It was publicly described in a 2012 OSDI paper and made available as Google Cloud Spanner in 2017.</p>
+  <p>The defining innovation is <strong>TrueTime</strong> — a globally synchronized clock API backed by GPS receivers and atomic clocks deployed in every Google datacenter worldwide. TrueTime is what allows Spanner to assign globally meaningful commit timestamps to transactions, enabling external consistency (a stronger guarantee than serializability) across millions of nodes spanning multiple continents, without requiring any inter-region synchronous coordination for reads.</p>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> Spanner is the only system in production that simultaneously provides ACID transactions, SQL, horizontal sharding, and external consistency at planetary scale — and TrueTime is the secret that makes all of this possible.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 1 -->
+<section id="p1">
+  <div class="section-header">
+    <div class="section-num">1</div>
+    <div class="section-label">Pillar 1</div>
+    <div class="section-title">Core Concepts &amp; Mental Models</div>
+  </div>
+  <p>Starting from first principles: what problem Spanner was built to solve, and why its abstractions are uniquely powerful at scale.</p>
+
+  <h2 id="p1-before">The World Before Spanner</h2>
+  <p>Before Spanner, Google's engineers faced a painful choice. On one side sat traditional relational databases (MySQL, Oracle, PostgreSQL) — expressive, ACID-compliant, with rich SQL semantics. But these were fundamentally single-node or primary/replica systems. They could not be sharded globally without enormous application-level complexity. When Google's ad systems, YouTube, and Gmail needed to run across multiple datacenters on multiple continents, teams built custom sharding layers, manually managed cross-shard transactions, and implemented their own conflict resolution for multi-region writes. This was error-prone and extremely expensive to operate.</p>
+  <p>On the other side sat NoSQL distributed stores — Google's own Bigtable, or external systems like Cassandra and DynamoDB. These scaled beautifully but traded away ACID semantics. Multi-row transactions required application-level compensating logic. Developers who needed "read what you just wrote" guarantees had to implement read-after-write consistency themselves with sticky routing or version vectors. As systems grew in complexity, the absence of strong consistency became a fundamental engineering bottleneck — bugs in financial and advertising ledgers were expensive to find and fix.</p>
+  <p>The F1 system (Google's database backing AdWords) was the clearest example of this pain. F1 was built on top of a custom sharded MySQL deployment. The engineering team spent enormous resources building a sharding layer that could run multi-row transactions — and this was one team's problem. Every team at Google with a relational workload was solving the same problem independently.</p>
+  <p>Spanner was built to end this bifurcation once and for all: a system with the full transactional consistency of a relational database, and the global distribution and scalability of a sharded NoSQL system, without forcing application engineers to choose between the two.</p>
+
+  <h2 id="p1-abstraction">Core Abstraction</h2>
+  <p>Spanner provides a globally sharded, strongly consistent, SQL-queryable relational database. The abstraction it presents to application engineers is deliberately familiar: tables with schemas, rows with primary keys, secondary indexes, and SQL queries. But beneath this familiar surface, the database is spread across machines in multiple zones and potentially multiple geographic regions, with each shard (called a split) independently replicated via Paxos.</p>
+  <p>The abstraction is powerful for three reasons. First, it hides all sharding complexity from the application. Developers do not manage splits, routing tables, or replica sets — Spanner handles all of this automatically, including re-splitting when data grows. Second, it provides a consistent snapshot of the entire database at any logical moment in time — you can read data from any region and be guaranteed to see all committed transactions that preceded your read, as if the database had a single global snapshot. Third, it exposes this globally consistent snapshot through standard SQL, meaning engineers can use the query language they already know without learning a new API.</p>
+
+  <h2 id="p1-guarantees">Fundamental Guarantees (and Non-Guarantees)</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Guarantee</th><th>What it means in practice</th><th>Provided?</th></tr></thead>
+      <tbody>
+        <tr><td><strong>External consistency</strong></td><td>If transaction T2 starts after T1 commits (wall-clock real time), T2 observes all effects of T1. Stronger than serializability — applies across the planet.</td><td><span class="pill pill-green">✓ Yes</span></td></tr>
+        <tr><td><strong>ACID transactions</strong></td><td>Multi-row, multi-table, multi-shard transactions are atomic, consistent, isolated, and durable.</td><td><span class="pill pill-green">✓ Yes</span></td></tr>
+        <tr><td><strong>SQL (ANSI 2011+)</strong></td><td>Full SQL with joins, aggregations, subqueries, window functions, DML.</td><td><span class="pill pill-green">✓ Yes</span></td></tr>
+        <tr><td><strong>Horizontal scalability</strong></td><td>Tables automatically split and re-balance as data grows; no manual resharding.</td><td><span class="pill pill-green">✓ Yes</span></td></tr>
+        <tr><td><strong>Bounded staleness reads</strong></td><td>Stale reads (e.g., as-of 15 seconds ago) execute without acquiring locks and without cross-region round-trips.</td><td><span class="pill pill-green">✓ Yes</span></td></tr>
+        <tr><td><strong>Arbitrary query latency</strong></td><td>Spanner does not offer predictable single-digit ms latency for all workloads — large scans or cross-region transactions have inherent latency floors set by speed-of-light.</td><td><span class="pill pill-red">✗ No</span></td></tr>
+        <tr><td><strong>Key-value simplicity</strong></td><td>Spanner is not a key-value store optimized for point reads. For ultra-low latency key-value workloads, Bigtable or Firestore remain better choices.</td><td><span class="pill pill-red">✗ No</span></td></tr>
+        <tr><td><strong>Free cross-region writes</strong></td><td>Every write requires synchronous Paxos consensus within the region group. Cross-region writes require cross-region Paxos rounds — minimum ~100ms in a multi-region config.</td><td><span class="pill pill-red">✗ No</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p1-invariants">Invariants That Must Always Hold</h2>
+  <ul>
+    <li><strong>Monotonic commit timestamps:</strong> No two committed transactions in the system can have the same timestamp. Timestamps are assigned in a globally monotonically increasing order.</li>
+    <li><strong>TrueTime uncertainty respected:</strong> A transaction's commit is never externalized until the absolute earliest possible true time (now.earliest) has passed its assigned timestamp — meaning the system waits out the clock uncertainty window before confirming commit to the client.</li>
+    <li><strong>Paxos quorum before acknowledge:</strong> A write is never acknowledged to the client until a quorum of Paxos replicas in the serving region group has durably written the commit record to disk.</li>
+    <li><strong>Schema as first-class citizen:</strong> Schema mutations are themselves transactional and versioned — no dirty schema state is ever observable to concurrent queries.</li>
+  </ul>
+
+  <div class="callout callout-fire">
+    <div class="callout-label">🔥 Common Interview Mistake</div>
+    <strong>Candidates conflate "external consistency" with "linearizability" or "serializability."</strong> External consistency is strictly stronger than serializability — it provides real-time ordering guarantees across geographically distributed nodes, which serializability alone does not guarantee for distributed systems. Be precise about this distinction at L7+.
+  </div>
+
+  <h2 id="p1-diagram">Mental Model: Conceptual Diagram</h2>
+  <div class="diagram-wrap">
+    <span class="diagram-label">DIAGRAM</span>
+    <pre><code>                ┌─────────────────────────────────────────────────────────┐
+                │                     CLIENT APPLICATION                   │
+                │           (uses standard SQL + JDBC/ODBC/client libs)    │
+                └──────────────────────────┬──────────────────────────────┘
+                                           │
+                ┌──────────────────────────▼──────────────────────────────┐
+                │                   SPANNER FRONTEND                       │
+                │     (authentication, routing, query parsing, load bal.)   │
+                └──────────┬──────────────────────────────┬───────────────┘
+                           │                              │
+        ┌──────────────────▼────────┐      ┌─────────────▼─────────────────┐
+        │        ZONE A (us-east1)  │      │        ZONE B (us-central1)    │
+        │  ┌────────────────────┐   │      │  ┌──────────────────────────┐  │
+        │  │   SPANSERVER       │   │      │  │       SPANSERVER          │  │
+        │  │  ┌─────────────┐   │   │      │  │  ┌──────────────────┐    │  │
+        │  │  │  Tablet 1   │   │   │      │  │  │   Tablet 1 copy   │   │  │
+        │  │  │  (key range)│◄──┼───┼──────┼──┼─►│   (Paxos follower)│   │  │
+        │  │  └─────────────┘   │   │      │  │  └──────────────────┘    │  │
+        │  │  ┌─────────────┐   │   │      │  │  ┌──────────────────┐    │  │
+        │  │  │  Tablet 2   │   │   │      │  │  │   Tablet 2 copy   │   │  │
+        │  │  │  (key range)│   │   │      │  │  │   (Paxos follower)│   │  │
+        │  │  └─────────────┘   │   │      │  │  └──────────────────┘    │  │
+        │  │  [TrueTime API]    │   │      │  │  [TrueTime API]          │  │
+        │  └────────────────────┘   │      │  └──────────────────────────┘  │
+        └───────────────────────────┘      └────────────────────────────────┘
+
+        ┌──────────────────────────────────────────────────────────────────────┐
+        │                        ZONE C (europe-west1)                          │
+        │  ┌──────────────────────────────────────────────────────────────┐    │
+        │  │  SPANSERVER (third Paxos replica — quorum participant)        │    │
+        │  │  [TrueTime API — GPS + Atomic clock in this datacenter]       │    │
+        │  └──────────────────────────────────────────────────────────────┘    │
+        └──────────────────────────────────────────────────────────────────────┘
+
+        ┌──────────────────────────────────────────────────────────────────────┐
+        │                   PLACEMENT DRIVER (global singleton)                 │
+        │   Monitors split sizes, re-balances key ranges, assigns Paxos         │
+        │   leader leases, handles zone health reporting                         │
+        └──────────────────────────────────────────────────────────────────────┘</code></pre>
+  </div>
+
+  <div class="callout callout-bolt">
+    <div class="callout-label">⚡ L7/L8 Differentiator</div>
+    Most candidates describe Spanner as "a globally distributed database with strong consistency." An L8 candidate explains that the critical innovation is the <strong>separation of concerns</strong> between the commit timestamp assignment (handled by TrueTime) and the distributed commit protocol (handled by Paxos + 2PC). These are orthogonal mechanisms — TrueTime solves the ordering problem; Paxos solves the durability problem. Understanding this separation shows depth.
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> Spanner's core abstraction — externally consistent global transactions over SQL-queryable sharded tables — is only possible because TrueTime decouples global time ordering from distributed coordination, allowing reads to be served without synchronization and writes to be committed with minimal cross-node round trips.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 2 -->
+<section id="p2">
+  <div class="section-header">
+    <div class="section-num">2</div>
+    <div class="section-label">Pillar 2</div>
+    <div class="section-title">Architecture Deep Dive</div>
+  </div>
+  <p>All internal components, the full write and read data flows, on-disk layout, back-pressure, and a complete architecture diagram.</p>
+
+  <h2 id="p2-components">Internal Components and Responsibilities</h2>
+
+  <h3>Universe Master</h3>
+  <p>A singleton process (per Spanner universe/deployment) that stores global metadata — the universe's zone configuration, the list of active zones, and global operational metadata. The Universe Master is consulted during bootstrapping and administrative operations. It is not in the critical path for reads or writes and is therefore not a latency bottleneck.</p>
+
+  <h3>Placement Driver</h3>
+  <p>The Placement Driver is the global brain responsible for data placement and re-balancing. It periodically talks to spanservers to detect splits that have grown beyond the configured size threshold (default ~256 MB) and orchestrates their migration to less-loaded spanservers. It also manages the assignment of Paxos leader leases — deciding which zone in a replica group should currently be the leader for each tablet. When a zone reports elevated load or a spanserver fails, the Placement Driver re-assigns leadership and redistributes tablets. Think of it as the equivalent of HBase's HMaster or Bigtable's master, but with significantly more sophisticated placement awareness.</p>
+
+  <h3>Spanserver</h3>
+  <p>Each spanserver (a physical or virtual machine in a zone) hosts hundreds to thousands of tablets. A tablet is the unit of replication and sharding in Spanner — it maps a contiguous range of (table, primary-key) pairs to a set of key-value entries. Each tablet is independently replicated via Paxos across a set of replicas spanning multiple zones. The spanserver running the current Paxos leader for a tablet is the one that accepts writes for that tablet's key range.</p>
+  <p>Within a spanserver, the key components are: the Paxos state machine (one per tablet), the lock table (a per-tablet in-memory data structure for managing two-phase locking during read-write transactions), the transaction manager (for coordinating two-phase commits across shards), and the local Colossus storage layer.</p>
+
+  <h3>TrueTime API</h3>
+  <p>TrueTime is a globally synchronized time API exposed to all software running on Google infrastructure. Unlike a normal clock API that returns a single timestamp (e.g., CLOCK_REALTIME), TrueTime returns an interval: <code>TTinterval = [earliest, latest]</code>, where the true current time is guaranteed to lie somewhere within this interval. The interval width (ε, pronounced epsilon) reflects the clock uncertainty — typically 1–7 milliseconds in Google's datacenters, but bounded and known at runtime. This interval is bounded because every Google datacenter has GPS receivers and atomic clocks. Time masters distribute time to time slaves (individual servers) using a combination of GPS signals, atomic clock readings, and Marzullo's algorithm to compute the tightest possible uncertainty bound. Each server re-syncs its local clock to a time master every 30 seconds, and the clock drift between syncs is bounded and modeled explicitly.</p>
+
+  <h3>Colossus (Local Storage)</h3>
+  <p>Spanner does not maintain its own storage layer — it stores data on Google's Colossus distributed file system (the successor to GFS). Each tablet's data is stored as a set of SSTable files on Colossus, using a format very similar to LevelDB/RocksDB SSTables. This means durability at the storage layer is provided by Colossus's own replication (typically 3-way within a zone), and Spanner's Paxos replication adds a second layer of durability across zones. This two-layer durability model is important — even if an entire zone's Colossus file system is corrupted, the data survives in the other Paxos replicas.</p>
+
+  <h2 id="p2-write">Full Write Path — Step by Step</h2>
+  <div class="diagram-wrap">
+    <span class="diagram-label">WRITE PATH</span>
+    <pre><code>CLIENT                    COORDINATOR SPANSERVER            PARTICIPANT SPANSERVERS
+  │                              │                                    │
+  │──1. SQL write (BEGIN TX)─────►│                                    │
+  │                              │ 2. Parse SQL, identify affected     │
+  │                              │    key ranges → determine which     │
+  │                              │    spanservers own those splits     │
+  │                              │                                    │
+  │                              │──3. Acquire read locks (2PL) ──────►│
+  │                              │    (for read-write TX, all reads    │
+  │                              │     acquire shared locks)          │
+  │                              │                                    │
+  │──4. COMMIT ──────────────────►│                                    │
+  │                              │ 5. Coordinator gets TrueTime:      │
+  │                              │    s = TT.now().latest             │
+  │                              │    (assign s as candidate commit   │
+  │                              │     timestamp)                     │
+  │                              │                                    │
+  │                              │──6. 2PC PREPARE ───────────────────►│
+  │                              │◄──7. PREPARE ACK ──────────────────│
+  │                              │                                    │
+  │                              │ 8. Wait until TT.now().earliest > s │
+  │                              │    (commit-wait: ensures no future  │
+  │                              │     transaction can get t ≤ s)     │
+  │                              │                                    │
+  │                              │──9. 2PC COMMIT (log to Paxos)──────►│
+  │                              │◄─10. Paxos quorum ACK─────────────│
+  │                              │                                    │
+  │◄─11. COMMIT ACK ─────────────│                                    │
+  │
+  Total typical latency for single-region:  5–20 ms
+  Total typical latency for multi-region:  100–300 ms (speed-of-light floor)</code></pre>
+  </div>
+
+  <div class="callout callout-bolt">
+    <div class="callout-label">⚡ L7/L8 Differentiator</div>
+    <strong>Step 8 — "commit-wait" — is the single most important algorithmic detail in Spanner.</strong> It is what guarantees external consistency. The system deliberately delays the commit acknowledgment until TrueTime's earliest bound has surpassed the commit timestamp. This means no concurrent or future transaction can receive a timestamp ≤ s. Without this wait, a fast transaction could commit at time s=100 while the clock uncertainty means true time might only be 98, potentially allowing a later transaction to be assigned s=99 — violating the ordering guarantee. Most candidates skip this detail entirely.
+  </div>
+
+  <h2 id="p2-read">Full Read Path — Step by Step</h2>
+
+  <h3>Strong Read (Snapshot Isolation at Current Time)</h3>
+  <div class="diagram-wrap">
+    <span class="diagram-label">STRONG READ</span>
+    <pre><code>CLIENT                    SPANSERVER (any replica)
+  │                              │
+  │──1. SQL SELECT ──────────────►│
+  │                              │ 2. Determine read timestamp t:
+  │                              │    t = TT.now().latest
+  │                              │    (ensures we read past all
+  │                              │     committed transactions)
+  │                              │
+  │                              │ 3. Wait until replica's safe_time ≥ t
+  │                              │    safe_time = max committed ts on
+  │                              │    this replica (advances as Paxos
+  │                              │    log is applied)
+  │                              │
+  │                              │ 4. Serve data from SSTable at ts t
+  │                              │    (no locks needed — MVCC snapshot)
+  │◄─5. Result rows ─────────────│</code></pre>
+  </div>
+
+  <h3>Stale Read (Bounded Staleness — Fastest Read Mode)</h3>
+  <div class="diagram-wrap">
+    <span class="diagram-label">STALE READ</span>
+    <pre><code>CLIENT                    ANY REPLICA (including followers)
+  │                              │
+  │──1. SQL SELECT @15s ago ─────►│
+  │                              │ 2. Compute t = now() - 15s
+  │                              │    Check: replica.safe_time ≥ t?
+  │                              │    (nearly always true — minimal wait)
+  │                              │
+  │                              │ 3. Serve from local SSTable snapshot
+  │                              │    at timestamp t
+  │◄─4. Result rows ─────────────│
+  Note: No cross-region round-trip! Any replica can serve this
+  read locally. This is why bounded-staleness reads are so
+  powerful for global read-heavy workloads.</code></pre>
+  </div>
+
+  <h2 id="p2-disk">On-Disk and In-Memory Data Layout</h2>
+  <p>Each tablet's data is stored as a sorted set of SSTables in Colossus. The key space within an SSTable is ordered by <code>(table_name, primary_key_bytes, column_family, column_qualifier, timestamp)</code> in reverse timestamp order — meaning the most recent version of a key is encountered first during a scan. This is the standard MVCC layout, identical to what you see in HBase or Bigtable.</p>
+  <p>In memory, each spanserver maintains a Memtable (write buffer) per tablet that absorbs incoming writes before they are flushed to Colossus as a new SSTable. Reads must consult both the in-memory Memtable and the on-disk SSTables, merging the results. Bloom filters are maintained per SSTable to allow fast "key not present" checks without disk seeks.</p>
+  <p>The Paxos log (write-ahead log) is also stored on Colossus. Every accepted Paxos command (a committed mutation batch) is appended to this log. Followers replay this log to catch up after restarts. Log entries older than the oldest outstanding snapshot are garbage-collected in a background compaction process.</p>
+
+  <h2 id="p2-backpressure">Back-Pressure and Flow Control</h2>
+  <p>Spanner implements back-pressure at multiple layers. At the transaction manager layer, if the lock table for a tablet becomes saturated (too many concurrent read-write transactions competing for the same key ranges), new transactions are queued or rejected with a resource exhaustion error. At the Paxos layer, if the leader's log write rate exceeds the throughput Colossus can absorb (measured in MB/s), writes are throttled using token-bucket rate limiting. At the spanserver level, if a machine's CPU or memory reaches a configured high-watermark, the Placement Driver is notified and begins migrating tablets to other spanservers before the machine reaches saturation — this is proactive back-pressure via placement re-balancing.</p>
+
+  <h2 id="p2-diagram">Architecture Diagram</h2>
+  <div class="diagram-wrap">
+    <span class="diagram-label">ARCHITECTURE</span>
+    <pre><code>┌──────────────────────────────────────────────────────────────────────────────┐
+│                          GOOGLE CLOUD SPANNER                                 │
+│                                                                               │
+│  ┌─────────────┐    ┌─────────────────────────────────────────────────────┐  │
+│  │  Universe   │    │               PLACEMENT DRIVER                       │  │
+│  │  Master     │◄───┤  (re-balance splits, assign Paxos leader leases,     │  │
+│  │  (metadata) │    │   monitor zone health, orchestrate tablet migration)  │  │
+│  └─────────────┘    └──────────────────┬────────────────────────────────┘  │
+│                                        │ lease assignments + split orders    │
+│  ┌─────────────────────────────────────▼──────────────────────────────────┐ │
+│  │                         ZONE: us-east1-b                                │ │
+│  │  ┌──────────────────────────────────────────────────────────────────┐  │ │
+│  │  │                       SPANSERVER (machine)                        │  │ │
+│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │  │ │
+│  │  │  │  Tablet A   │  │  Tablet B   │  │    Tablet C              │  │  │ │
+│  │  │  │ [Paxos Ldr] │  │ [Paxos Ldr] │  │ [Paxos Ldr]             │  │  │ │
+│  │  │  │ LockTable   │  │ LockTable   │  │ LockTable               │  │  │ │
+│  │  │  │ TxnMgr      │  │ TxnMgr      │  │ TxnMgr                  │  │  │ │
+│  │  │  │ Memtable    │  │ Memtable    │  │ Memtable                │  │  │ │
+│  │  │  └──────┬──────┘  └──────┬──────┘  └────────────┬────────────┘  │  │ │
+│  │  │         └────────────────┼───────────────────────┘               │  │ │
+│  │  │                          ▼                                        │  │ │
+│  │  │              ┌───────────────────────┐                            │  │ │
+│  │  │              │  COLOSSUS (local DFS) │ ◄── SSTables + Paxos log  │  │ │
+│  │  │              └───────────────────────┘                            │  │ │
+│  │  │         ┌──────────────────────────┐                              │  │ │
+│  │  │         │  TrueTime API            │                              │  │ │
+│  │  │         │  [GPS + Atomic Clock]    │                              │  │ │
+│  │  │         │  Returns: [now.earliest, │                              │  │ │
+│  │  │         │           now.latest]    │                              │  │ │
+│  │  │         └──────────────────────────┘                              │  │ │
+│  │  └──────────────────────────────────────────────────────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+│                               Paxos replication (3–5 replicas)                │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │  ZONE: us-central1-b (follower replicas)                                 │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │  ZONE: us-west1-b (follower replicas, can be promoted to leader)         │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘</code></pre>
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The critical path for a write is: parse → lock acquisition → TrueTime call → 2PC prepare → Paxos log quorum → commit-wait → 2PC commit → ACK. Every step except the Paxos log write is primarily CPU-bound; the Paxos write is I/O-bound and network-bound. Commit-wait introduces a deliberate additional delay of ~2ε (twice the clock uncertainty) that cannot be optimized away — it is fundamental to the external consistency guarantee.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 3 -->
+<section id="p3">
+  <div class="section-header">
+    <div class="section-num">3</div>
+    <div class="section-label">Pillar 3</div>
+    <div class="section-title">Trade-offs &amp; Design Decisions</div>
+  </div>
+  <p>CAP theorem positioning, PACELC analysis, consistency models, and every major trade-off with its default and how to change it.</p>
+
+  <h2 id="p3-cap">CAP Theorem Positioning</h2>
+  <p>Spanner is often described as "CA" (consistent + available, sacrificing partition tolerance), but this is an oversimplification that falls apart under scrutiny. The more accurate characterization is that Spanner prioritizes Consistency + Partition Tolerance (CP), but achieves remarkably high availability by making partitions extremely rare through its infrastructure choices (dedicated fiber between Google datacenters, multiple redundant network paths, GPS + atomic clocks). In the presence of a partition, Spanner refuses writes (to maintain consistency) rather than accepting writes that could conflict (which would violate external consistency). A 2013 paper by the Spanner team explicitly states: "We believe it is better to have a consistent but unavailable system than an available but inconsistent one."</p>
+  <p>The nuance that L8 candidates explain: Spanner does not violate the CAP theorem — it operates in a regime where partitions are sufficiently rare that the theoretical availability sacrifice is practically invisible. In real-world operation, Cloud Spanner has achieved 99.999% multi-regional availability, which is empirically "high availability" even though it theoretically sacrifices A in CAP.</p>
+
+  <h2 id="p3-pacelc">PACELC Analysis</h2>
+  <p>PACELC asks: when there is a Partition (P), choose between Availability (A) and Consistency (C); and Else (E, no partition), choose between Latency (L) and Consistency (C).</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Scenario</th><th>Spanner's Choice</th><th>Implication</th></tr></thead>
+      <tbody>
+        <tr><td>Partition present</td><td><span class="pill pill-blue">PC (prefer Consistency)</span></td><td>Writes and strong reads block until quorum is restored. The minority partition cannot accept writes.</td></tr>
+        <tr><td>No partition, same region</td><td><span class="pill pill-green">LC (low latency, consistent)</span></td><td>Within a region, 2PC + Paxos is fast (5–20ms). No latency-vs-consistency trade-off within a region.</td></tr>
+        <tr><td>No partition, multi-region</td><td><span class="pill pill-amber">EC (elevated latency for consistency)</span></td><td>Cross-region writes require Paxos rounds across regions — 50–150ms additional latency due to speed of light. This is the most important PACELC knob.</td></tr>
+        <tr><td>No partition, stale reads</td><td><span class="pill pill-teal">LL (low latency, eventual-ish)</span></td><td>Bounded staleness reads serve from local replicas without cross-region coordination — typically &lt;5ms local reads.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-bolt">
+    <div class="callout-label">⚡ L7/L8 Differentiator</div>
+    The PACELC insight that separates senior from staff candidates is understanding that <strong>Spanner's multi-region write latency floor is fundamentally physical, not architectural.</strong> The 100–150ms cross-region write latency between US East and Europe is bounded by the speed of light (~70ms one-way), not by any implementation inefficiency. No amount of engineering can push multi-region synchronous commits below this floor — only reducing geographic distance (picking closer regions) or accepting some form of asynchrony can help.
+  </div>
+
+  <h2 id="p3-consistency">Consistency Models Offered</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Mode</th><th>Guarantee</th><th>When to Use</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Strong read</strong></td><td>External consistency — reads the latest committed state as of now</td><td>Financial transactions, inventory management, any write-after-read pattern</td><td>Must wait for safe_time to advance to now — requires Paxos leader contact</td></tr>
+        <tr><td><strong>Bounded staleness</strong></td><td>Reads data within a bounded time window (e.g., at most 15s stale)</td><td>Analytics, reporting dashboards, recommendation engines</td><td>Nearly free — served from any local replica without coordination</td></tr>
+        <tr><td><strong>Exact staleness</strong></td><td>Reads data exactly as of a specified timestamp</td><td>Point-in-time reporting, audit queries, A/B comparisons at a specific moment</td><td>Free if timestamp is in the past beyond the maximum clock uncertainty</td></tr>
+        <tr><td><strong>Min read timestamp</strong></td><td>Reads data at or after a given timestamp</td><td>Read-your-writes: pass the commit timestamp of a recent write to ensure the read sees it</td><td>May wait for a lagging replica to catch up to the specified timestamp</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p3-knobs">Latency vs Throughput Knobs</h2>
+  <p>For write throughput, the primary knob is split granularity. Spanner automatically splits tablets at 256 MB, but hot-spot writes to a narrow key range (e.g., a monotonically increasing user_id) will always funnel through a single split's Paxos leader. This is the #1 write throughput bottleneck in practice. The solution is using UUID-based or hash-prefixed keys so writes spread across multiple splits. At extremes, a single-node bottleneck from a hot split can cap throughput at approximately 2,000 writes/second per split regardless of cluster size.</p>
+  <p>For read throughput, the primary knob is replica count. Adding read-only replicas to a region increases read throughput linearly for bounded-staleness workloads, because these reads are served from local replicas without contacting the leader. Strong reads always go to the leader, so adding followers does not help strong-read throughput — that scales with the number of leaders (i.e., the number of independently keyed splits).</p>
+
+  <h2 id="p3-tradeoffs">Trade-off Summary Table</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Trade-off</th><th>Default</th><th>Why</th><th>How to Change</th></tr></thead>
+      <tbody>
+        <tr><td>Durability vs performance</td><td>Sync Paxos to quorum (high durability)</td><td>Google's workloads (financial, ads) cannot tolerate data loss</td><td>Cannot disable — fundamental to Spanner's guarantees</td></tr>
+        <tr><td>Multi-region consistency vs latency</td><td>Synchronous (high consistency, higher latency)</td><td>Default ensures external consistency globally</td><td>Use bounded-staleness reads for latency-critical read paths; architect writes to a single primary region</td></tr>
+        <tr><td>Strong vs stale reads</td><td>Strong reads (for programmatic SQL APIs)</td><td>Most OLTP workloads require fresh data</td><td>Explicitly request bounded-staleness via API: <code>TimestampBound.ofMaxStaleness(15, SECONDS)</code></td></tr>
+        <tr><td>Automatic vs manual split</td><td>Automatic at 256 MB</td><td>Removes operational burden from application teams</td><td>Request pre-splitting via key hints at table creation for known hot key ranges</td></tr>
+        <tr><td>Commit-wait latency</td><td>~2–14ms additional delay per commit</td><td>Fundamental to external consistency; cannot be traded away</td><td>Not configurable. Reduce TrueTime ε by ensuring GPS clocks are healthy in your region.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-fire">
+    <div class="callout-label">🔥 Common Interview Mistake</div>
+    Candidates often say "Spanner sacrifices latency for consistency" as if this is a simple dial. In reality, Spanner <strong>separates write latency</strong> (irreducibly includes commit-wait + Paxos) from <strong>read latency</strong> (can be near-zero with stale reads). An architecture that uses stale reads for analytics and strong reads only for writes can achieve the best of both worlds for many real workloads.
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> Spanner's fundamental trade-off is that it achieves external consistency at the cost of committing writes at real-time pace — the commit-wait mechanism means every write pays a ~2ε latency tax that cannot be eliminated, but this tax buys you the strongest consistency guarantee available in any production distributed database system.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 4 -->
+<section id="p4">
+  <div class="section-header">
+    <div class="section-num">4</div>
+    <div class="section-label">Pillar 4</div>
+    <div class="section-title">Failure Modes &amp; Resilience</div>
+  </div>
+  <p>Every failure scenario analyzed across detection, automatic recovery, data loss risk, and manual intervention requirements.</p>
+
+  <div id="p4-f1" class="failure-card">
+    <div class="failure-header">⚡ Scenario 1: Single node crash (Paxos leader)</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Paxos heartbeats from the leader stop being received by followers. The Paxos protocol's lease expiration mechanism kicks in — if a follower has not received a heartbeat from the leader within the lease timeout (typically 10 seconds), it considers the leader dead. The Placement Driver also monitors zone health and detects the leader's absence.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>Followers initiate a new Paxos election. The follower with the most up-to-date log (highest Paxos round number) wins and becomes the new leader. This process typically completes in 2–10 seconds. During the election window, writes to that tablet's key range are unavailable. Once a new leader is elected, it resumes accepting writes from the point of the last committed Paxos entry.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero data loss. Because Paxos requires a quorum of replicas to acknowledge a commit before the client is notified, any transaction that was acknowledged to the client is guaranteed to be present on at least one surviving replica. Uncommitted in-flight transactions are rolled back automatically.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>None required for recovery. The Placement Driver will eventually assign a new spanserver to the failed machine's tablets and rebuild the replica from the Paxos log on the surviving replicas. Engineering intervention is only needed if the crash reveals a persistent hardware failure requiring physical replacement.</div>
+    </div>
+  </div>
+
+  <div id="p4-f2" class="failure-card">
+    <div class="failure-header">⚡ Scenario 2: Simultaneous minority node failures (e.g., 2 of 5 replicas fail)</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Same as single-node — each failed replica's Paxos heartbeats cease. The cluster continues operating with the remaining 3 of 5 nodes (quorum = 3). The Placement Driver detects the reduced replica count and begins scheduling replacement replicas.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>The surviving 3 replicas continue to form a valid Paxos quorum. Writes and reads continue uninterrupted. In parallel, the Placement Driver provisions new replicas and initiates data bootstrapping — copying SSTable snapshots from a surviving replica to the new replica, then replaying the Paxos log to catch up.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero. Quorum is maintained throughout. The system continues to commit transactions with the 3 surviving replicas.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Monitor that replacement replicas are being provisioned and that bootstrapping completes within the expected time window. If the datacenter failure is large enough to simultaneously take out 2 zones, ensure the region configuration provides 5 replicas across 5+ zones.</div>
+    </div>
+  </div>
+
+  <div id="p4-f3" class="failure-card">
+    <div class="failure-header">⚡ Scenario 3: Network partition — one side has quorum</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>The majority partition's leader sees a subset of followers stop acknowledging Paxos messages. The minority partition's nodes see the leader become unreachable — they begin an election but cannot form quorum. The Placement Driver detects the partition via zone health checks.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>The majority partition continues operating normally — it still forms a quorum and can commit transactions. The minority partition becomes read-only (stale reads from cached data) and cannot accept writes. When the partition heals, the minority nodes receive the Paxos log entries they missed and replay them.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero on the majority side. The minority side will temporarily serve stale reads but will sync upon healing. No write is lost — writes only succeed on the majority side with quorum.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Typically none. However, if the partition is prolonged, engineers may need to check that applications are not routing write traffic to the minority partition. Monitoring should alert on elevated failed transaction rates.</div>
+    </div>
+  </div>
+
+  <div id="p4-f4" class="failure-card">
+    <div class="failure-header">⚡ Scenario 4: Even split — no quorum possible (e.g., 2-vs-2 with no tiebreaker)</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Both sides attempt Paxos elections and neither can reach quorum. All writes to affected tablets fail with unavailability errors. TrueTime continues operating on both sides (clocks don't care about network partitions), but without quorum, no transaction can commit.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>The system remains unavailable for writes until the partition heals. This is the unavailability scenario that Spanner's deployment guidelines explicitly aim to prevent by requiring an odd number of replicas (3 or 5) spread across availability zones such that no partition can create an even split.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero — no writes can commit without quorum. The trade-off is availability: writes are unavailable until quorum is restored.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Emergency recovery requires re-establishing network connectivity. If this is a genuine split that cannot be repaired, a human operator can force a quorum override (a dangerous emergency procedure that risks splitting the state) — this is a last resort and should require two-person authorization.</div>
+    </div>
+  </div>
+
+  <div id="p4-f5" class="failure-card">
+    <div class="failure-header">⚡ Scenario 5: Split-brain — two Paxos leaders believe they are authoritative</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>In correctly implemented Paxos, this scenario is structurally impossible. A Paxos leader can only commit a value if it receives acknowledgment from a quorum of replicas — if two leaders are active simultaneously, they cannot both reach quorum on the same cluster because the quorum sets must overlap. Spanner detects double-leadership attempts as conflicting ballot numbers and rejects the lower-ballot leader's proposals.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>The Paxos protocol automatically resolves this: the higher-ballot leader's proposals will be accepted, and the lower-ballot leader will fail to reach quorum on its proposals, causing it to step down and become a follower.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero, by the Paxos safety guarantee. Paxos ensures at most one value is chosen per slot in the log, regardless of the number of leaders attempting to write.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>None typically required. Engineering should investigate why the split-brain was attempted — it may indicate clock misconfiguration (a leader that incorrectly believes its lease has not expired) which should trigger a TrueTime health check.</div>
+    </div>
+  </div>
+
+  <div id="p4-f6" class="failure-card">
+    <div class="failure-header">⚡ Scenario 6: Slow/degraded node (not dead, but lagging)</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>The Paxos leader tracks the replication lag of each follower. If a follower's acknowledged log position falls behind the leader by more than a configurable threshold (in bytes or time), it is flagged as lagging. The Placement Driver also monitors spanserver load metrics (CPU, memory, disk I/O) and detects degraded machines.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>If the lagging follower is one of multiple followers (quorum still achievable without it), writes continue normally. The leader continues sending Paxos log entries to the lagging follower, which processes them as fast as its degraded resources allow. If the degradation is severe, the Placement Driver may migrate the tablet to a healthier spanserver.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero for committed transactions. However, if the degraded node is the last replica in a region and clients attempt bounded-staleness reads from it, they may receive significantly stale data — though this is within the stated staleness bound.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Investigate the cause of the degradation (disk full, network saturation, noisy neighbor process). If the node is persistently degraded, engage infrastructure support to replace or resize it. Monitor the Placement Driver logs for tablet migration events.</div>
+    </div>
+  </div>
+
+  <div id="p4-f7" class="failure-card">
+    <div class="failure-header">⚡ Scenario 7: Disk corruption or partial write</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Colossus checksums all block writes and reads. A corrupted block is detected at read time via CRC mismatch. Colossus also runs background scrubbing jobs that periodically re-read all blocks and verify checksums, detecting silent corruption. Spanner's SSTable reader also validates checksums at the application layer.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>Colossus automatically reconstructs the corrupted block from its 3-way replica copies within the zone. If corruption is widespread enough to affect all Colossus replicas in a zone, Spanner falls back to the Paxos replicas in other zones — the entire tablet's state can be rebuilt from a clean replica's SSTables plus the Paxos log.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Near-zero. The combination of Colossus 3-way replication within a zone and Paxos replication across zones provides multiple independent recovery paths. True data loss would require simultaneous corruption in all replicas, which is designed to be astronomically unlikely.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Alert on unusual Colossus CRC error rates. In the event of widespread corruption, engage the storage integrity runbook. Monitor that tablet re-bootstrapping from healthy replicas completes successfully.</div>
+    </div>
+  </div>
+
+  <div id="p4-f8" class="failure-card">
+    <div class="failure-header">⚡ Scenario 8: Clock skew between nodes</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Time masters continuously monitor the divergence between GPS time, atomic clock time, and reported local clock time from each server. If a server's local clock drifts beyond the expected uncertainty bound (ε), the time master increases that server's reported ε value rather than trusting the drifted reading. Servers also sanity-check their own clock readings — if the oscillator's rate of change appears physically implausible, a local alarm is raised.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>TrueTime's uncertainty interval [now.earliest, now.latest] automatically expands to account for the increased drift. Commit-wait durations increase proportionally — the system pays higher latency but maintains its safety guarantee. If a server's clock becomes completely unreliable, it is taken out of the time master pool and GPS/atomic fallbacks are used exclusively.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero — expanded ε means longer commit waits and potentially longer read safe-time waits, but never incorrect ordering. The system is designed to be correct under any finite ε, with performance degrading gracefully as ε grows.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Alert on ε growing beyond a threshold (e.g., &gt;10ms). This suggests GPS hardware failure or oscillator drift. Engage datacenter operations to inspect and replace GPS receivers. In the interim, Spanner continues operating correctly at reduced performance.</div>
+    </div>
+  </div>
+
+  <div id="p4-f9" class="failure-card">
+    <div class="failure-header">⚡ Scenario 9: Thundering herd after recovery</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>After a zone comes back online following a failure, all clients that had been buffering retries attempt to reconnect simultaneously. Load balancers observe a sudden spike in connection attempts and RPC rates. Spanservers observe their lock tables filling rapidly.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>Spanner client libraries implement exponential backoff with jitter for retries, which naturally spreads reconnection attempts. Rate limiting at the Spanner frontend rejects excess traffic with RESOURCE_EXHAUSTED errors, giving clients a signal to back off further. The Placement Driver observes the load spike and begins migrating tablets to distribute the load.</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero. Thundering herd is an availability/performance concern, not a data integrity concern.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Implement circuit breakers in application code that trip during recovery. Staged traffic restoration (start at 10% of recovered zone's traffic, ramp to 100% over minutes) prevents thundering herd at the application layer. Monitor per-zone QPS ramp-up during recovery runbooks.</div>
+    </div>
+  </div>
+
+  <div id="p4-f10" class="failure-card">
+    <div class="failure-header">⚡ Scenario 10: Cascading failures</div>
+    <div class="failure-grid">
+      <div class="failure-cell"><div class="failure-label">Detection</div>Cascading failures in Spanner typically originate from hot-spot splits — one overloaded tablet causes its spanserver's CPU to spike, which causes Paxos heartbeat delays to all other tablets on that spanserver, which causes unnecessary Paxos leader elections for healthy tablets, which increases coordination traffic, which further increases CPU load. This is detected via correlated metric spikes across multiple tablets on the same spanserver.</div>
+      <div class="failure-cell"><div class="failure-label">Automatic Recovery</div>The Placement Driver responds to load spikes by migrating tablets off overloaded spanservers. Admission control at the transaction manager rejects new transactions when the lock table is saturated (returning ABORTED). Spanner's automatic split mechanism will eventually split the hot tablet into smaller pieces, distributing the write load — but this takes time (seconds to minutes).</div>
+      <div class="failure-cell"><div class="failure-label">Data Loss Risk</div>Zero. Cascading failures cause availability degradation (transactions fail with ABORTED or UNAVAILABLE), not data loss.</div>
+      <div class="failure-cell"><div class="failure-label">Manual Action</div>Pre-empt cascading failures by load testing with realistic traffic patterns. Use key design best practices (UUID or hash-prefixed keys) to prevent hot splits. Implement application-level circuit breakers. In active cascades, reducing traffic artificially (load shedding at the application layer) is often the fastest recovery path.</div>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> Spanner's failure resilience is fundamentally grounded in two independent mechanisms: Paxos (which provides correctness and availability guarantees at the replication layer) and TrueTime (which provides correctness guarantees at the time ordering layer). Neither mechanism alone is sufficient — they are complementary and independently correct under different failure scenarios.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 5 -->
+<section id="p5">
+  <div class="section-header">
+    <div class="section-num">5</div>
+    <div class="section-label">Pillar 5</div>
+    <div class="section-title">Scaling Strategies</div>
+  </div>
+  <p>Vertical and horizontal scaling, replication strategies, sharding, cross-region deployment, and what breaks at each scale tier.</p>
+
+  <h2 id="p5-vertical">Vertical Scaling</h2>
+  <p>Vertical scaling of individual spanservers has limited leverage in Spanner because of its shared-nothing architecture. A larger machine can host more tablets and handle more concurrent transactions on those tablets, but the fundamental constraints — Paxos round-trip time, TrueTime commit-wait, and Colossus I/O throughput — are not improved by adding CPUs to a single machine. The practical limit of vertical scaling is at approximately 32–64 cores and 256–512 GB RAM per spanserver, beyond which horizontal scaling of the Paxos replica group is far more effective. What breaks first with aggressive vertical scaling is the lock table — a very large machine hosting many tablets can become a coordination bottleneck if a hot workload hits many of its tablets simultaneously.</p>
+
+  <h2 id="p5-horizontal">Horizontal Scaling</h2>
+  <p>Horizontal scaling in Spanner works at two levels. At the split level, as individual tables grow, Spanner automatically splits them into more and more tablets. Each tablet is an independently parallelizable unit — its Paxos writes don't contend with other tablets' Paxos writes. This means write throughput scales roughly linearly with the number of active splits, as long as writes are distributed uniformly across the key space. At the spanserver level, the Placement Driver distributes tablets across available spanservers. Adding spanserver capacity (more machines in a zone) allows the Placement Driver to spread tablets more thinly, reducing the per-machine load and allowing more concurrent transactions.</p>
+  <p>The architectural change when scaling horizontally is primarily in the Placement Driver's workload — more tablets mean more metadata to track, more re-balance decisions, and more leader lease renewals. At very large scale (hundreds of thousands of tablets), the Placement Driver itself needs to be sharded or distributed — this is one of the areas where Cloud Spanner's managed service differs from a hypothetical self-hosted Spanner deployment.</p>
+
+  <div class="callout callout-ruler">
+    <div class="callout-label">📐 Back-of-Envelope</div>
+    A single Spanner split can handle approximately <strong>1,000–2,000 write transactions/second</strong> and approximately <strong>2,000–4,000 read QPS</strong> (strong reads). For a table with 100 evenly-distributed splits, you get 100–200K write TPS and 200–400K read QPS. For 1B users with 100 active QPS each (a high estimate), you need ~100B QPS total capacity — requiring approximately 50 million splits across hundreds of thousands of spanservers. This is the scale at which Google internally operates Spanner across their entire infrastructure.
+  </div>
+
+  <h2 id="p5-replication">Replication Strategies</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Strategy</th><th>How it works in Spanner</th><th>Pros</th><th>Cons</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Synchronous Paxos (default)</strong></td><td>Leader waits for quorum of replicas to acknowledge before committing. All replicas always have a consistent view of committed state.</td><td>External consistency, zero data loss, simple reasoning about state</td><td>Write latency includes quorum round-trip; cross-region quorum is slow</td></tr>
+        <tr><td><strong>Read-only replicas (non-voting)</strong></td><td>Additional replicas that receive Paxos log entries but do not participate in voting. Used to serve stale reads locally in a region without adding to quorum size.</td><td>Cheap read scaling in a region; no impact on write latency</td><td>Cannot be promoted to leader; only serve stale reads; lagging by design</td></tr>
+        <tr><td><strong>Witness replicas</strong></td><td>Voting replicas that store Paxos log but not full data. Used to achieve quorum in a geographic region without full data storage cost.</td><td>Lower storage cost for achieving quorum in a third region</td><td>Cannot serve reads; adds quorum complexity</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p5-sharding">Sharding and Key Selection</h2>
+  <p>Spanner shards tables by primary key into splits. The choice of primary key is therefore the single most important schema decision for performance and scalability. The classic mistake is using a monotonically increasing key (auto-increment integer, timestamp, etc.) — these cause all writes to funnel into the "tail" split (the one containing the largest keys), creating a write hotspot that defeats Spanner's horizontal scalability regardless of how large the cluster is.</p>
+  <p>The recommended pattern for high-write workloads is to use a UUID (randomly generated 128-bit identifier) as the primary key, or to use a hash of a natural key as a key prefix. Both approaches uniformly distribute writes across all splits. The trade-off is that range scans over UUIDs are inefficient (you cannot scan users by creation date without a secondary index), so the design must account for access patterns.</p>
+  <p>For workloads that need range queries on a high-write table, the Interleaved Table pattern is powerful: child table rows are stored physically co-located with their parent rows by interleaving their key prefixes. This allows efficient parent-child joins and range scans without cross-split coordination, while still achieving write distribution by ensuring the parent key is not monotonically increasing.</p>
+
+  <div class="callout callout-fire">
+    <div class="callout-label">🔥 Common Interview Mistake</div>
+    Candidates often describe "sharding" as something the application does in Spanner. In reality, <strong>Spanner shards automatically</strong> — the application's only responsibility is choosing a primary key that prevents all new writes from landing in a single shard. The system handles split creation, rebalancing, and routing transparently. Confusing application-level sharding (like in MongoDB or Cassandra) with Spanner's automatic splitting is a common signal of insufficient depth.
+  </div>
+
+  <h2 id="p5-crossregion">Cross-Region Replication</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Configuration</th><th>Description</th><th>Write Latency</th><th>Read Availability</th><th>Best For</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Single-region (3 zones)</strong></td><td>All 3 Paxos replicas in one region</td><td>5–20ms</td><td>Survives single zone failure</td><td>Low latency, single-region compliance</td></tr>
+        <tr><td><strong>Multi-region (Nam6, Eur6)</strong></td><td>Replicas spread across 2–3 geographic regions</td><td>50–100ms</td><td>Survives regional failure</td><td>High availability, global read serving</td></tr>
+        <tr><td><strong>Active-active (custom)</strong></td><td>Quorum leader in one region, reads from local replicas globally</td><td>100–300ms (cross-region writes)</td><td>Survives multi-region failure</td><td>Global user bases, regulatory compliance</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Spanner does not offer true active-active writes in the sense that any region can independently accept writes — all writes must go through the current Paxos leader region. The "active-active" terminology in Spanner refers to read availability being active in multiple regions simultaneously (via stale reads from followers), while writes remain funneled through the leader. This is a fundamental consequence of external consistency — you cannot have two independent write leaders without a coordination protocol that reintroduces the same round-trip latency you were trying to avoid.</p>
+
+  <h2 id="p5-readwrite">Read vs Write Scaling Independence</h2>
+  <p>In Spanner, read and write scaling are partially independent. Read capacity can be increased by adding read-only replicas — more followers in a region means more machines to serve bounded-staleness queries, scaling read QPS linearly. Write capacity requires adding splits (via horizontal data growth or pre-splitting), which requires adding spanservers to host those splits. The two scaling levers are distinct: a read-heavy, write-light workload can be scaled cost-effectively by adding many read-only replicas; a write-heavy workload requires ensuring the key space is well-distributed and that enough spanservers exist to host the required number of splits in parallel.</p>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The master scaling insight for Spanner is that write scalability is entirely determined by key distribution — a perfect UUID key on a 5-machine cluster will outperform a monotonic key on a 5,000-machine cluster because only key distribution determines how many splits can absorb parallel writes. This makes primary key design the single highest-leverage architectural decision in any Spanner deployment.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 6 -->
+<section id="p6">
+  <div class="section-header">
+    <div class="section-num">6</div>
+    <div class="section-label">Pillar 6</div>
+    <div class="section-title">Real-World Engineering Decisions</div>
+  </div>
+  <p>Where Spanner shines, where it fails, real production examples, and Day 1 monitoring setup.</p>
+
+  <h2 id="p6-shines">Where Spanner Shines</h2>
+  <ul>
+    <li><strong>Global financial systems:</strong> Any system requiring multi-region ACID transactions — interbank transfers, global payment ledgers, cross-currency FX settlement. The external consistency guarantee means you never need to write application-level reconciliation logic for a distributed write that spans geographic regions. The alternative (sharded MySQL, Cassandra with application-level transactions) requires enormous compensating code.</li>
+    <li><strong>Globally consistent inventory/reservation systems:</strong> Airline seat reservations, hotel booking systems, ride-share driver assignment. These require "read then conditionally write" patterns that are trivially expressed as read-write transactions in Spanner and are an implementation nightmare in eventually consistent systems.</li>
+    <li><strong>Global configuration stores:</strong> When thousands of services across multiple regions need to read the same consistent view of configuration data, Spanner's bounded-staleness reads provide fast local reads with a meaningful consistency guarantee. The configuration is always within N seconds of truth, with no application-level synchronization required.</li>
+    <li><strong>Multi-tenant SaaS platforms needing data isolation:</strong> Spanner's schema supports row-level security, and different tenants' data can be segregated by key prefix — providing natural shard isolation between tenants within a single logical database, without the operational overhead of provisioning and managing separate database instances per tenant.</li>
+  </ul>
+
+  <h2 id="p6-examples">Real-World Production Examples</h2>
+
+  <h3>1. Google AdWords / F1 (2012–present)</h3>
+  <p>The F1 paper (2013) describes how Google replaced the AdWords database — a sharded MySQL system with 5 custom sharding layers — with Spanner. The fundamental driver was transactional correctness. The AdWords data model has complex multi-table relationships between advertisers, campaigns, ad groups, ads, and billing. The sharded MySQL approach required application-level distributed transactions using a custom saga pattern that was responsible for multiple production incidents involving inconsistent billing data. Spanner's multi-row ACID transactions eliminated the entire class of inconsistency bugs. The migration took 2+ years because of schema redesign requirements (monotonic MySQL auto-increment IDs had to be replaced with UUID-based keys to avoid hot splits), but the result was a dramatically simpler application stack with fewer lines of code.</p>
+
+  <h3>2. Google Cloud's Spanner for Banking Customers (DBS Bank, Citigroup)</h3>
+  <p>Multiple Tier-1 global banks have migrated core banking ledgers to Cloud Spanner. The specific requirement driving the migration was regulatory: many jurisdictions require that transaction records cannot be modified after settlement (immutability) and that the sequence of transactions must be provably ordered (total order guarantee). Spanner's external consistency provides the total order guarantee out of the box — every committed transaction has a globally unique timestamp, and this timestamp provides a provably correct total ordering of all transactions globally. Building this guarantee on traditional sharded databases required complex custom audit log infrastructure that was expensive to maintain and certify.</p>
+
+  <h3>3. Snap Inc. — Global Social Graph</h3>
+  <p>Snap migrated their user relationship (friend graph) storage to Cloud Spanner to solve a specific problem: friend-of-friend queries that needed to span global regions with consistent results. With their previous Cassandra-based system, a user in the US who added a friend showed inconsistent friend-of-friend suggestions to users in Asia for several seconds or even minutes due to eventual consistency propagation delays. This was visible to end users and drove support tickets. Spanner's strong reads eliminated this class of user-visible inconsistency, and the bounded-staleness read mode allowed profile queries to be served fast from local replicas while write visibility remained consistent globally.</p>
+
+  <h2 id="p6-antipatterns">When NOT to Use Spanner</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Anti-pattern</th><th>Why Spanner is Wrong Here</th><th>Better Alternative</th></tr></thead>
+      <tbody>
+        <tr><td>Ultra-low latency key-value (&lt;1ms P99)</td><td>Spanner's minimum commit-wait (~5ms for strong reads/writes in single-region) makes sub-millisecond SLAs structurally impossible</td><td>Bigtable, Firestore, Redis, Memcached</td></tr>
+        <tr><td>Purely append-only time series</td><td>Monotonically increasing timestamp keys create hot split syndrome; no benefit from SQL expressiveness in pure TSDB workloads</td><td>BigQuery, InfluxDB, Cloud Bigtable with time-bucketed keys</td></tr>
+        <tr><td>Tiny teams with simple relational needs</td><td>Spanner's pricing ($0.90/node-hour + storage) is expensive for low-QPS workloads that could be served by a single Cloud SQL instance</td><td>Cloud SQL (PostgreSQL/MySQL), AlloyDB</td></tr>
+        <tr><td>Offline/edge computing</td><td>Spanner requires network connectivity to the regional API endpoint; no embedded or offline mode exists</td><td>SQLite, DuckDB, embedded RocksDB</td></tr>
+        <tr><td>Unstructured document storage</td><td>Spanner's schema-on-write model with strict typing is unnecessarily rigid for JSON document stores</td><td>Firestore, MongoDB, Cloud Bigtable with JSON blob values</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p6-matrix">Decision Matrix: Spanner vs Alternatives</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dimension</th><th>Spanner</th><th>CockroachDB</th><th>YugabyteDB</th><th>Aurora Global</th></tr></thead>
+      <tbody>
+        <tr><td>Consistency</td><td><span class="pill pill-amber">External consistency (strongest)</span></td><td><span class="pill pill-green">Serializable (strong)</span></td><td><span class="pill pill-green">Serializable (strong)</span></td><td><span class="pill pill-blue">Read-your-writes in primary; eventual in secondaries</span></td></tr>
+        <tr><td>Multi-region writes</td><td>100–300ms (synchronous Paxos)</td><td>200–400ms (Raft-based)</td><td>150–350ms (Raft-based)</td><td>Not supported — primary region only</td></tr>
+        <tr><td>P99 single-region read</td><td>5–15ms</td><td>5–20ms</td><td>5–20ms</td><td>1–5ms</td></tr>
+        <tr><td>Ops overhead</td><td>Zero (fully managed)</td><td>Medium (semi-managed)</td><td>Medium</td><td>Low (managed)</td></tr>
+        <tr><td>Cost at 1TB, 100K TPS</td><td>High (~$5K+/month)</td><td>Medium (~$2–3K/month)</td><td>Medium</td><td>Medium</td></tr>
+        <tr><td>SQL compatibility</td><td>ANSI SQL 2011</td><td>PostgreSQL-compatible</td><td>PostgreSQL-compatible</td><td>MySQL/PostgreSQL</td></tr>
+        <tr><td>Auto-sharding</td><td>Fully automatic</td><td>Automatic</td><td>Automatic</td><td>No (single primary)</td></tr>
+        <tr><td>Clock mechanism</td><td>TrueTime (GPS+atomic)</td><td>HLC (hybrid logical)</td><td>HLC</td><td>N/A</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p6-mistakes">Common Operational Mistakes in Production</h2>
+  <ul>
+    <li><strong>Monotonic primary keys:</strong> The #1 operational mistake. Using auto-increment integers or sequential timestamps as primary keys creates a hot-spot split that no amount of scaling can fix without a schema migration.</li>
+    <li><strong>Overusing strong reads when stale is sufficient:</strong> Teams routinely use strong reads for dashboard queries that don't need real-time data, paying 10–30ms when 2ms stale reads would suffice and reduce load on the leader by 90%.</li>
+    <li><strong>Long-running transactions:</strong> Spanner holds locks for the entire duration of a read-write transaction. A transaction that reads a large dataset and then writes based on it holds shared locks for the read duration, blocking other writers. This causes latency spikes and timeouts under concurrent load.</li>
+    <li><strong>Ignoring interleaved tables:</strong> Teams new to Spanner often create flat normalized schemas without using interleaving, then discover that parent-child joins require cross-split coordination even for small result sets.</li>
+    <li><strong>Not accounting for commit-wait in P99 SLAs:</strong> Teams who benchmark Spanner writes expect ~5ms latency and are confused when P99 is consistently 15–25ms. The commit-wait overhead (~2ε) adds to every write and is non-negotiable.</li>
+  </ul>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The decision to use Spanner almost always reduces to one question: does your workload require multi-row ACID transactions with strong consistency across geographic regions? If yes, Spanner is the correct answer and its cost and latency trade-offs are worth it. If no — if you need only single-row transactions, or can tolerate eventual consistency — alternatives will deliver lower latency at lower cost.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 7 -->
+<section id="p7">
+  <div class="section-header">
+    <div class="section-num">7</div>
+    <div class="section-label">Pillar 7</div>
+    <div class="section-title">Google Scale &amp; Beyond</div>
+  </div>
+  <p>What breaks at 1M → 100M → 1B users, how Google solves it differently, and innovations needed to go further.</p>
+
+  <h2 id="p7-scale">What Breaks at Each Scale Tier</h2>
+  <div class="table-wrap">
+    <table class="scale-table">
+      <thead><tr><th>Scale</th><th>Bottleneck</th><th>Architectural Response</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill pill-blue">1M users</span></td><td>Single-region Paxos leader for each popular table; hot splits on sequential keys</td><td>UUID keys; increase split count via table size growth; add read replicas for bounded-staleness reads</td></tr>
+        <tr><td><span class="pill pill-teal">10M users</span></td><td>Cross-region write latency visible to global users; single Placement Driver coordination load</td><td>Move to multi-region config; architect writes to home-region pattern; use multi-region instance configs</td></tr>
+        <tr><td><span class="pill pill-amber">100M users</span></td><td>Schema management complexity at thousands of tables; large schema changes (ALTER TABLE adding columns) lock tables for extended periods; operational toil scales with table count</td><td>Schema change orchestration (Spanner's online schema changes — non-blocking via in-flight protocol); automated schema governance tools; table grouping into namespaces</td></tr>
+        <tr><td><span class="pill pill-amber">1B users</span></td><td>Placement Driver metadata load (tracking millions of splits); cross-region Paxos leader election storms during regional failures; TrueTime uncertainty amplification if any region's GPS fails</td><td>Sharded Placement Driver; hierarchical region groups; multi-GPS-source TrueTime with fallback to atomic clocks; regional isolation of leader election storms via region-scoped Paxos</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="p7-google">How Google Solves These Differently</h2>
+  <p>Google's internal Spanner deployment has several advantages that Cloud Spanner customers cannot replicate. First, Google's private fiber network between datacenters has dramatically lower and more predictable latency than public internet routing — a cross-continental Paxos round-trip on Google's private network is ~45ms vs ~90ms on public internet, directly halving the minimum multi-region write latency. Second, Google's GPS + atomic clock infrastructure is pervasive and maintained by a dedicated team, keeping TrueTime ε consistently at 1–3ms rather than the 7ms that is the worst-case bound. Third, Google's internal Spanner instances have custom Colossus parameters tuned for Spanner's specific I/O pattern — most Cloud customers use Colossus defaults that are tuned for general-purpose storage.</p>
+  <p>At the software level, Google's internal Spanner supports several features that are either unavailable or experimental in Cloud Spanner: fine-grained Placement Driver policies that colocate frequently joined tables in the same zone for reduced cross-split latency; workload-aware leader election (the leader is always placed in the zone closest to the majority of write traffic, not just the first healthy zone); and custom Paxos lease durations that are tuned per-table based on observed failure rates.</p>
+
+  <h2 id="p7-multitenancy">Multi-Tenancy and Noisy Neighbor Isolation</h2>
+  <p>Cloud Spanner's resource model allocates "processing units" (PU) to each Spanner instance. A 1,000 PU instance receives guaranteed CPU, memory, and I/O capacity. Multiple tenants sharing the same underlying physical infrastructure are isolated at the PU level — one tenant's heavy query cannot starve another tenant's resources. However, this isolation is not perfect at the storage layer — Colossus is a shared distributed file system, and extremely I/O-heavy tenants can cause latency spikes for neighbors. Google has addressed this with Colossus quotas per Spanner instance that limit the aggregate I/O rate, allowing the storage layer to enforce isolation.</p>
+  <p>For enterprise customers with strict isolation requirements, Spanner offers dedicated instances that provision exclusive physical hardware. This eliminates noisy neighbor risk entirely but increases cost proportionally to the dedicated capacity.</p>
+
+  <h2 id="p7-residency">Regulatory Data Residency</h2>
+  <p>For workloads with data residency requirements (GDPR requiring EU data to stay in the EU, China requiring Chinese user data to remain in China), Spanner provides several mechanisms. First, named schema regions allow tables to be restricted to specific geographic regions — a table marked <code>eu-only</code> will have its Paxos replicas exclusively placed in EU zones, and Spanner enforces that no data from this table is ever transmitted to non-EU zones, including for Paxos log replication. Second, Cloud Spanner supports CMEK (Customer-Managed Encryption Keys) where the customer controls the encryption keys via Cloud KMS — this provides cryptographic data isolation even from Google's own infrastructure team. Third, VPC-SC (Virtual Private Cloud Service Controls) creates a security perimeter around the Spanner API, ensuring that data cannot be exfiltrated via API calls that originate from outside the approved organizational boundary.</p>
+
+  <div class="callout callout-bolt">
+    <div class="callout-label">⚡ L7/L8 Differentiator</div>
+    An L8 candidate would note that data residency compliance in a globally consistent database creates a <strong>fundamental tension</strong>: if EU user data must stay in the EU, but a transaction involves both EU and US data, you cannot have external consistency across the transaction without violating data residency. The solution is schema-level data partitioning that prevents cross-residency joins entirely — not through database enforcement alone, but through application architecture that routes transactions to the correct regional boundary. This is a nuanced constraint that requires architectural thinking, not just configuration.
+  </div>
+
+  <h2 id="p7-cost">Cost Efficiency at Scale</h2>
+  <p>Optimizations that are only worth implementing past certain scale thresholds:</p>
+  <ul>
+    <li><strong>Past 1TB storage:</strong> Enable compression on columns storing repetitive string data (addresses, product descriptions). Spanner's native column compression can reduce storage costs by 30–60% for text-heavy workloads. Below 1TB, the operational complexity of compression configuration outweighs the savings.</li>
+    <li><strong>Past 10K TPS:</strong> Invest in query plan caching and parameterized queries. At low QPS, the query compilation overhead is negligible. Past 10K TPS, unparameterized queries can consume 5–10% of CPU on query plan compilation, which is recoverable by binding parameters.</li>
+    <li><strong>Past 100K TPS:</strong> Implement request coalescing in the application layer — aggregate multiple single-row mutations into batch DML operations. Each Spanner transaction has a fixed overhead (~2ms coordination), so batching 100 single-row writes into one transaction reduces overhead by 100x for that batch.</li>
+    <li><strong>Past 1M TPS:</strong> Architect the data model to use interleaved tables aggressively, co-locating child rows with parent rows to minimize cross-split transactions. At 1M TPS, the network round-trip overhead for cross-split 2PC becomes measurable (adds ~1–2ms per cross-split transaction) and accumulates to significant infrastructure cost.</li>
+  </ul>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The Google-scale differentiation in Spanner is not primarily algorithmic — the algorithms are the same at 1K TPS and 1B TPS. The differentiation comes from infrastructure investments (private fiber, GPS clocks, custom hardware), operational tooling (automated placement, workload-aware leader election), and schema architecture decisions made when building the system that become irreversible once data is at scale.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ PILLAR 8 -->
+<section id="p8">
+  <div class="section-header">
+    <div class="section-num">8</div>
+    <div class="section-label">Pillar 8</div>
+    <div class="section-title">Interview Simulation</div>
+  </div>
+  <p>A complete Staff-level design problem with strong candidate answer, L8 critique, and 10 rapid-fire questions with model answers.</p>
+
+  <h2 id="p8-problem">Step 1: The Design Problem</h2>
+  <div class="interview-card">
+    <div class="interview-card-header ih-problem">🎯 Design Problem — Ambiguous &amp; Open-Ended</div>
+    <div class="interview-card-body">
+      <p>You are joining a new team at a global fintech company that processes cross-border payments for 50 million users across 30 countries. The existing system is a collection of regional MySQL databases (one per continent) with a custom application-layer synchronization service that tries to keep them consistent. This system has produced 3 production incidents in the past year involving inconsistent account balances — specifically, users were charged twice for a single transaction, or a transfer showed "pending" on both sides simultaneously.</p>
+      <p>Your VP of Engineering has asked you to design a new payments database that: (1) eliminates the balance inconsistency bugs; (2) reduces cross-border transfer settlement time from 2–5 minutes to under 10 seconds; (3) supports compliance with EU GDPR (EU user data must stay in EU), US FinCEN reporting requirements, and Singapore MAS regulations; (4) scales from 50M to 500M users over 3 years; (5) provides an audit trail of every financial operation that cannot be modified after the fact.</p>
+      <blockquote>How would you design this system?</blockquote>
+    </div>
+  </div>
+
+  <h2 id="p8-answer">Step 2: Strong Candidate Answer (L7/L8 Quality)</h2>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-strong">❓ Clarifying Questions to Ask First</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>What is the expected transaction volume — both average and P99 peak? (e.g., end-of-month payroll runs might 10x peak)</li>
+        <li>Are cross-border transfers always two-party (sender + receiver), or are there multi-party settlement chains involved?</li>
+        <li>What is the acceptable latency for the user-facing "transfer confirmed" moment — is 5 seconds acceptable for cross-continental transfers, or does the user need sub-second acknowledgment with eventual settlement?</li>
+        <li>Are there existing systems (fraud detection, KYC) that need to be integrated synchronously into the transaction path, or can they be asynchronous consumers of a transaction feed?</li>
+        <li>What does "cannot be modified after the fact" mean operationally — do we need cryptographic immutability (blockchain-style), or is append-only with access controls sufficient for regulatory purposes?</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-strong">📋 Stated Assumptions</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>Peak transaction rate: 50,000 TPS (10x of the stated average, budget for growth to 500K TPS)</li>
+        <li>Average transaction latency target: P50 &lt; 500ms, P99 &lt; 3s for cross-border</li>
+        <li>Fraud detection is an asynchronous consumer — does not block the commit path</li>
+        <li>Append-only with row-level immutability (no DELETE, no UPDATE to settled rows) is sufficient for regulatory compliance</li>
+        <li>The system will be built on Google Cloud Spanner</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-strong">🏗 High-Level Design</div>
+    <div class="interview-card-body">
+      <p>The core of the design is a Cloud Spanner multi-region instance in the <code>nam-eur-asia1</code> config (5 replicas across North America, Europe, and Asia). This single Spanner instance serves as the global source of truth for all account balances and transaction records. The elimination of the regional MySQL shards and the custom synchronization service is itself the primary bug fix — the inconsistency bugs exist because of the synchronization layer, not despite it.</p>
+      <p>For data residency compliance, I will use Spanner's named schema regions feature to create three regional table groups: <code>EU_ACCOUNTS</code> (replicas constrained to EU zones), <code>US_ACCOUNTS</code> (replicas constrained to US zones), and <code>APAC_ACCOUNTS</code> (replicas constrained to Asia-Pacific zones). Cross-region transactions (a US user sending money to an EU user) are handled by a thin orchestration layer that issues two single-region writes (debit US account, credit EU account) wrapped in a Spanner two-region transaction. This preserves data residency at the row level while still allowing atomic cross-regional transfers.</p>
+      <p>For immutability, I will design the schema to never allow UPDATE or DELETE on settled transaction rows — these are enforced via Spanner's row-level access control and application-layer validation. New correction records (for chargebacks, reversals) are appended as new rows with references to the original transaction, never modifying it.</p>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-strong">🔬 Schema Design</div>
+    <div class="interview-card-body">
+      <div class="code-wrap">
+        <div class="code-header"><span class="code-lang">SQL — Schema</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>CREATE TABLE Accounts (
+  region_code  STRING(2) NOT NULL,  -- 'US', 'EU', 'SG' — drives placement
+  account_id   BYTES(16) NOT NULL,  -- UUID (NOT auto-increment — prevents hot split)
+  user_id      BYTES(16) NOT NULL,
+  balance_cents INT64 NOT NULL,
+  currency     STRING(3) NOT NULL,
+  created_at   TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = true),
+) PRIMARY KEY (region_code, account_id)  -- region_code prefix = placement key
+
+CREATE TABLE Transactions (
+  transaction_id  BYTES(16) NOT NULL,  -- UUID
+  from_account_id BYTES(16) NOT NULL,
+  to_account_id   BYTES(16) NOT NULL,
+  amount_cents    INT64 NOT NULL,
+  status          STRING(16) NOT NULL,  -- PENDING, SETTLED, FAILED
+  committed_at    TIMESTAMP OPTIONS (allow_commit_timestamp = true),
+) PRIMARY KEY (transaction_id)
+
+-- Immutability: application layer + IAM prevents UPDATE/DELETE on SETTLED rows
+-- Idempotency: transaction_id is UUID generated by client; duplicate submissions
+--              are caught by PRIMARY KEY violation on insert</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-strong">⚡ Deep Dive: Cross-Border Transfer Flow</div>
+    <div class="interview-card-body">
+      <div class="diagram-wrap" style="margin:0">
+        <span class="diagram-label">TRANSFER FLOW</span>
+        <pre><code>1. Client submits transfer request with idempotency_key = UUID
+2. Application layer:
+   a. BEGIN TRANSACTION (read-write)
+   b. READ sender's account balance (strong read — acquires shared lock)
+   c. Validate: balance >= transfer_amount
+   d. INSERT into Transactions (status=PENDING, committed_at pending)
+   e. UPDATE sender balance: balance -= amount
+   f. UPDATE receiver balance: balance += amount
+   g. UPDATE Transactions (status=SETTLED, committed_at=PENDING_COMMIT_TIMESTAMP)
+   h. COMMIT
+3. Spanner: 2PC across splits containing sender row, receiver row, transaction row
+4. TrueTime: assign commit timestamp, execute commit-wait (~2-10ms)
+5. Client receives SETTLED confirmation
+
+Typical latency breakdown:
+  - Application → Spanner round-trip: 5ms
+  - Paxos quorum within region: 3ms
+  - Commit-wait (2ε): 8ms
+  - Total P50: ~16ms for single-region
+  - For cross-region (US sender → EU receiver): +80ms (cross-region Paxos) = ~96ms
+  - Total P50 cross-border: ~100ms — well within the 10s target</code></pre>
+      </div>
+
+      <div class="callout callout-ruler" style="margin-top:1rem">
+        <div class="callout-label">📐 Back-of-Envelope</div>
+        At 500K TPS peak (3-year growth target), with average 3 row writes per transaction: <strong>1.5M row writes/second.</strong> At 2KB per row, that is 3 GB/s write throughput into Spanner. A multi-region nam-eur-asia1 instance at 30,000 processing units (the largest available) can handle approximately 300K TPS with even key distribution. We will need horizontal key distribution (UUID account_ids) and potentially multiple Spanner instances partitioned by account region to handle the full 500K TPS growth scenario.
+      </div>
+    </div>
+  </div>
+
+  <h2 id="p8-critique">Step 3: Interviewer Critique</h2>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-good">✅ What the Candidate Did Well</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>Correctly identified that the root cause of the existing bugs was the synchronization layer, not the database technology. This shows architectural diagnosis skill.</li>
+        <li>UUID primary keys with region_code prefix — demonstrates awareness of hot split problem and its solution.</li>
+        <li>Idempotency via client-generated UUID transaction_ids — production-critical detail that many candidates miss.</li>
+        <li>Named schema regions for GDPR/data residency — shows awareness of Spanner's compliance features beyond the basic API.</li>
+        <li>Back-of-envelope latency calculation with TrueTime commit-wait accounted for — not just "Spanner is fast."</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-miss">❌ What Was Missed or Glossed Over</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>No discussion of the failure mode when a cross-region 2PC prepare succeeds on one side but times out on the other. What happens to a PENDING transaction? How does the application retry without double-charging? (Answer: the idempotency key handles this, but the retry logic and timeout handling were not described.)</li>
+        <li>No discussion of how the audit trail is made cryptographically verifiable, not just append-only. For FinCEN compliance specifically, regulators may require hash-chained records or signed transaction logs. Append-only is not always sufficient.</li>
+        <li>Scaling to 500K TPS was mentioned but the specific plan for multiple Spanner instances (and how cross-instance transactions are handled — hint: they require application-level sagas) was not detailed.</li>
+        <li>Fraud detection was marked as asynchronous but the mechanism for making it so (Spanner Change Streams feeding a Pub/Sub topic to a fraud detection service) was not described.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-followup">⚠️ Follow-Up Questions That Would Expose Weaknesses</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>If the EU Spanner region group goes down for 90 seconds during a regulatory stress test, what happens to in-flight transactions involving EU accounts, and how does your system recover without double-charges or lost credits?</li>
+        <li>Your schema has both sender and receiver balance updates in a single transaction. What is the deadlock risk when two concurrent transactions are transferring in opposite directions between the same two accounts? How does Spanner handle this, and does your application need to add any deadlock avoidance logic?</li>
+        <li>Three years from now, you have 500M users and the EU_ACCOUNTS region is a hot spot. How do you partition EU accounts across multiple Spanner instances without downtime?</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="interview-card">
+    <div class="interview-card-header ih-l8">🏆 What an L8 Answer Would Add</div>
+    <div class="interview-card-body">
+      <ul>
+        <li>An L8 candidate would propose a saga pattern with explicit compensating transactions for the cross-instance scaling case — acknowledging that at 500K+ TPS you cannot fit all accounts in one Spanner instance and cross-instance transactions are not atomic. The L8 candidate would design the account partitioning strategy (by region + account UUID range), the saga coordinator (a separate service that tracks the two-phase saga state), and the dead-letter queue for failed saga steps.</li>
+        <li>An L8 candidate would discuss Spanner's Change Streams (a feature released in 2022 that streams all committed data changes from Spanner to downstream consumers via the change_stream API) — specifying exactly how the fraud detection pipeline, audit log, and regulatory reporting would consume Change Streams, the latency characteristics of the stream (typically &lt;1s from commit to stream availability), and the replay semantics for re-processing historical data.</li>
+        <li>An L8 candidate would explicitly address the CAP theorem implications of the data residency constraint — that by confining EU account replicas to EU zones, you have deliberately sacrificed the ability to maintain external consistency between EU and US accounts during a trans-Atlantic network partition, and designed the system to accept this as a deliberate trade-off in favor of regulatory compliance over cross-regional consistency.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="p8-rapidfire">Step 4: 10 Rapid-Fire Staff-Level Questions</h2>
+  <div id="qa-container"></div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The difference between an L7 and L8 answer in a Spanner design interview is not knowing more Spanner facts — it is the ability to identify and explicitly articulate the places where Spanner's guarantees break down (cross-instance transactions, cross-residency-boundary consistency, commit-wait latency floors) and propose architectures that remain correct under those failure modes.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ APM & MONITORING -->
+<section id="apm">
+  <div class="section-header">
+    <div class="section-num">+</div>
+    <div class="section-label">Bonus</div>
+    <div class="section-title">APM &amp; Monitoring: Cloud Spanner Observability</div>
+  </div>
+  <p>A complete walkthrough of the Cloud Spanner monitoring dashboard — configuration, metric interpretation, chart setup, and operational insights.</p>
+
+  <h2>Where to Find the Spanner Monitoring Dashboard</h2>
+  <p>Cloud Spanner's monitoring is accessed through two paths. The native Spanner Console dashboard is at <code>console.cloud.google.com → Spanner → [your instance] → Monitoring</code>. This provides a pre-built overview of the most important metrics. For more advanced querying and custom dashboards, Cloud Monitoring (formerly Stackdriver) at <code>console.cloud.google.com/monitoring</code> provides full access to all Spanner metrics via the Metrics Explorer and Dashboard Builder.</p>
+
+  <h2 id="apm-metrics">Core Metrics and How to Interpret Them</h2>
+
+  <div class="apm-card">
+    <div class="apm-card-header">spanner.googleapis.com/instance/cpu/utilization — CPU Utilization</div>
+    <div class="apm-card-body">
+      <p>This metric reports the percentage of provisioned processing units consumed by active queries and transactions. There are two sub-metrics: <code>utilization_by_priority</code> (broken down by HIGH, MEDIUM, LOW priority operations) and the aggregate utilization. The recommended operating range is below 65% for sustained workloads (leaving headroom for burst traffic and background compactions). If CPU utilization exceeds 90%, Spanner will begin throttling new transactions with RESOURCE_EXHAUSTED errors.</p>
+      <p><strong>Interpretation signals:</strong> Sustained CPU above 65% → add processing units (scale instance). CPU spike correlated with a specific hour → likely a batch job or cron hitting the database; consider scheduling it during off-peak hours or using LOW priority operations. CPU elevated but QPS is flat → long-running queries or table scans consuming disproportionate compute; check the query stats panel for expensive query plans.</p>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">spanner.googleapis.com/api/request_latencies — Request Latency</div>
+    <div class="apm-card-body">
+      <p>This metric reports the end-to-end latency of Spanner API calls as observed by the Spanner service (not including client-side network latency to the Spanner API endpoint). The metric is broken down by method (Read, ExecuteSql, Commit, BeginTransaction) and percentile distribution (P50, P95, P99, P99.9). For OLTP workloads, typical P50 Commit latency is 5–15ms single-region and 100–200ms multi-region. P99 Commit latency should be below 100ms single-region for healthy systems.</p>
+      <p><strong>Interpretation signals:</strong> P99 latency rising while P50 remains stable → tail latency problem, often caused by lock contention on a hot row or a slow Colossus I/O event. Both P50 and P99 rising together → general resource pressure; check CPU and storage I/O metrics. Latency spike on ExecuteSql but not Commit → expensive query execution plan; use the query stats panel to identify the query.</p>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">spanner.googleapis.com/api/request_count (filtered to ABORTED) — Transaction Abort Rate</div>
+    <div class="apm-card-body">
+      <p>Spanner uses optimistic concurrency for read-write transactions — if two transactions conflict on the same rows, one will be aborted and must be retried by the application. The abort rate is the percentage of Commit operations that return ABORTED status. A healthy OLTP system should maintain an abort rate below 1–2%. Abort rates above 5% indicate significant lock contention.</p>
+      <p><strong>Interpretation signals:</strong> High abort rate on a specific table → that table has a hot row being written by many concurrent transactions (e.g., a global counter or a monotonically increasing sequence table). Solution: use Spanner's <code>bit_reversed_positive</code> sequence type instead of <code>MAX(id)+1</code> queries. Abort rate correlating with specific transaction types → review those transaction's lock acquisition patterns; ensure transactions lock rows in a consistent order to reduce deadlock probability.</p>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">spanner.googleapis.com/instance/storage/utilization — Storage Utilization</div>
+    <div class="apm-card-body">
+      <p>This metric reports the fraction of provisioned storage consumed by data, indexes, and internal Spanner metadata. Each processing unit comes with 2TB of storage in Cloud Spanner. Storage utilization above 75% should trigger a scale-out plan. Above 90%, Spanner may begin throttling write operations.</p>
+      <p><strong>Interpretation signals:</strong> Storage growing faster than expected → check for secondary index proliferation (each secondary index stores a copy of indexed columns plus the primary key), or large BLOB columns that should be stored in Cloud Storage and referenced by URL instead. Storage not shrinking after data deletes → Spanner uses MVCC; old versions are garbage collected on a background schedule (typically within 24 hours for the default version retention period).</p>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">spanner.googleapis.com/lock_stat/total/lock_wait_time — Lock Wait Time</div>
+    <div class="apm-card-body">
+      <p>This metric reports the cumulative time all transactions spent waiting to acquire locks. This is the single best indicator of lock contention in the system. In a healthy system with no hot rows, lock wait time should be near zero. Rising lock wait time is a leading indicator of abort rate increases and latency spikes.</p>
+      <p><strong>Interpretation signals:</strong> Lock wait time correlated with a specific table → use the Lock Stats panel (<code>console → Spanner instance → Lock Stats</code>) to identify which specific row key and column has the most contention. Armed with that information, redesign the write pattern to reduce concurrent writes to that row (batch updates, time-bucketed counters, etc.).</p>
+    </div>
+  </div>
+
+  <h2 id="apm-dashboard">How to Configure the Monitoring Dashboard</h2>
+  <p>To build a custom Spanner observability dashboard in Cloud Monitoring: Navigate to <code>Monitoring → Dashboards → Create Dashboard</code>. Add charts using the following procedure for each metric:</p>
+
+  <div class="apm-card">
+    <div class="apm-card-header">Chart: CPU Utilization by Priority</div>
+    <div class="apm-card-body">
+      <ul>
+        <li>Click "Add Chart" → "Metrics Explorer"</li>
+        <li>Resource type: <code>spanner_instance</code></li>
+        <li>Metric: <code>spanner.googleapis.com/instance/cpu/utilization_by_priority</code></li>
+        <li>Group by: <code>priority</code> label, aggregation: <code>mean</code></li>
+        <li>Add threshold line at 65% (orange warning) and 90% (red critical)</li>
+        <li>Set time range: Last 24 hours, auto-refresh every 60 seconds</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">Chart: Request Latency Heatmap</div>
+    <div class="apm-card-body">
+      <ul>
+        <li>Add Chart → Metrics Explorer</li>
+        <li>Metric: <code>spanner.googleapis.com/api/request_latencies</code></li>
+        <li>Filter by: <code>method = "Commit"</code></li>
+        <li>Visualization: Heatmap (shows the full distribution shape, not just averages)</li>
+        <li>Percentile lines: add P50, P99, P99.9 as separate lines</li>
+        <li>Alert policy: trigger if P99 &gt; 200ms for more than 5 minutes</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="apm-card">
+    <div class="apm-card-header">Chart: Transaction Abort Rate</div>
+    <div class="apm-card-body">
+      <ul>
+        <li>Add Chart → Metrics Explorer</li>
+        <li>Metric: <code>spanner.googleapis.com/api/request_count</code></li>
+        <li>Filter by: <code>status = "ABORTED"</code>, method = "Commit"</li>
+        <li>Create a second query for total Commits (no status filter)</li>
+        <li>Use "Ratio" visualization mode: ABORTED count / total Commit count</li>
+        <li>Alert threshold: ratio &gt; 0.05 (5% abort rate) for 2+ minutes</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Query Stats and Lock Stats Panels</h3>
+  <p>Beyond metrics, Spanner provides two critical observability panels that most teams underutilize. The Query Stats panel (<code>Spanner Instance → Query Insights → Top Queries</code>) shows the top SQL queries by CPU consumption, latency, and execution count over a configurable time window. This is the primary tool for identifying slow queries and missing indexes. Each query entry shows the query shape (parameterized form), average latency, P99 latency, CPU cost, number of rows scanned, and a link to the full query execution plan. The execution plan shows how Spanner will execute the query — including which indexes are used, estimated row counts, and join strategies — allowing engineers to diagnose query plan regressions after schema changes.</p>
+  <p>The Lock Stats panel shows which specific row keys are experiencing the most lock contention. This is invaluable for diagnosing hot-row problems — it directly tells you the table name, the specific primary key value, and the column name that is being locked most frequently, along with cumulative lock wait time. Finding a single row responsible for 80% of lock wait time is a common finding that drives significant performance improvements.</p>
+
+  <h3>Spanner Change Streams for Event-Driven Observability</h3>
+  <p>Beyond performance monitoring, Spanner Change Streams (introduced in 2022) provide a low-latency feed of all committed data changes from a Spanner database. Change Streams are configured at the table or column level and deliver change records within approximately 1 second of commit. This enables event-driven observability patterns: connecting Change Streams to a Dataflow pipeline that writes to BigQuery creates a continuously updated analytical replica of the Spanner data for OLAP queries, audit trails, and compliance reporting — all without impacting the Spanner OLTP workload. For the payments system example, Change Streams feeding a fraud detection pipeline provide real-time transaction anomaly detection with &lt;2 second latency from transaction commit to fraud signal.</p>
+
+  <h2 id="apm-alerts">Day 1 Alerting Setup</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Alert</th><th>Metric</th><th>Threshold</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>High CPU</td><td>cpu/utilization</td><td>&gt;65% for 10min</td><td>Scale processing units</td></tr>
+        <tr><td>Critical CPU</td><td>cpu/utilization</td><td>&gt;85% for 2min</td><td>Page on-call immediately</td></tr>
+        <tr><td>P99 latency spike</td><td>api/request_latencies, Commit, P99</td><td>&gt;200ms for 5min</td><td>Check lock stats, abort rate</td></tr>
+        <tr><td>High abort rate</td><td>api/request_count, ABORTED / total</td><td>&gt;5% for 2min</td><td>Check lock stats for hot rows</td></tr>
+        <tr><td>Storage near capacity</td><td>storage/utilization</td><td>&gt;75%</td><td>Plan storage scaling; audit indexes</td></tr>
+        <tr><td>Replication lag</td><td>replication/max_replication_delay</td><td>&gt;30s for 5min</td><td>Check zone health; escalate to GCP support</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The three most actionable Spanner observability tools in production are: CPU utilization (tells you when to scale), Lock Stats (tells you which row to fix when contention spikes), and Query Insights (tells you which SQL to optimize). All three are available out of the box in the Cloud Console with no instrumentation required — the entire observability value comes from knowing how to interpret and act on the metrics, not from setting them up.</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ E2E SIMULATION -->
+<section id="e2e">
+  <div class="section-header">
+    <div class="section-num">∞</div>
+    <div class="section-label">Bonus</div>
+    <div class="section-title">End-to-End Real-World Simulation: InstaPay</div>
+  </div>
+  <p>A complete simulation of a global payments system, how Spanner helps, specific challenges, and trade-offs at L7/L8 depth.</p>
+
+  <h2>Scenario: InstaPay — Cross-Border Payments at Scale</h2>
+  <p>InstaPay is a payments platform operating in 40 countries. In 2024, it processes 120,000 transactions per second at peak (holiday season), totaling $8 trillion in annual transaction value. Its users expect real-time balance updates visible everywhere in the world within 500ms of a transaction settling. Regulators in the EU, Singapore, and India require that data never leave their respective jurisdictions. The engineering team of 200 spans 8 offices globally.</p>
+
+  <h2 id="e2e-before">The Before State (2019): Regional Sharded MySQL</h2>
+  <p>InstaPay's original architecture had 6 regional MySQL primary/replica clusters (US-East, US-West, EU-West, EU-Central, APAC-Singapore, APAC-India). A cross-regional transfer (US user sends to EU user) required the following 8-step process: (1) US service debits US MySQL; (2) writes a "pending outbound" record to a Kafka topic; (3) EU Kafka consumer reads the topic; (4) EU service credits EU MySQL; (5) EU service writes a "completed inbound" record to Kafka; (6) US consumer marks the transfer as settled; (7) if steps 3–6 fail, a reconciliation job runs at 2 AM to detect and resolve inconsistencies. Steps 3–6 took 2–5 minutes on average. The reconciliation job found ~200 inconsistent transactions per day — not all of them bugs, but every one required manual inspection.</p>
+
+  <h2 id="e2e-migration">The Migration: Moving to Cloud Spanner (2021–2023)</h2>
+  <p>The migration to Spanner took 22 months and proceeded in three phases. Phase 1 (months 1–8) was schema redesign. Every MySQL table with an auto-increment integer primary key was redesigned with a UUID primary key. The Accounts table was given a <code>currency_region</code> prefix key to drive Spanner's named schema region placement. Secondary indexes were added for all query patterns that relied on MySQL's implicit sequential scan optimization (which no longer applied with UUID primary keys). This phase was entirely offline schema work with no production impact.</p>
+  <p>Phase 2 (months 9–16) was dual-write migration. New transactions were written to both MySQL and Spanner simultaneously, with MySQL as the source of truth. A continuous validation pipeline compared MySQL and Spanner state and alerted on divergences. This de-risked the migration by proving Spanner's correctness against the known-good MySQL baseline at production traffic levels. During this phase, the team discovered that 12% of their transactions had subtle timing dependencies that broke under Spanner's external consistency model — specifically, application code that assumed MySQL's last-insert-id was always ascending and used it for ordering events. These were fixed in the application layer before Phase 3.</p>
+  <p>Phase 3 (months 17–22) was traffic cutover. Read traffic was migrated first (switching to Spanner for balance queries), then write traffic (switching Commits to Spanner), with MySQL as a read-only fallback for 60 days post-migration. After the fallback period expired, MySQL clusters were decommissioned.</p>
+
+  <h2>The Architecture After Migration</h2>
+  <div class="diagram-wrap">
+    <span class="diagram-label">INSTAPAY POST-MIGRATION</span>
+    <pre><code>                          INSTAPAY POST-MIGRATION (2023)
+
+USER (anywhere)
+    │
+    ▼
+GLOBAL LOAD BALANCER (Anycast — routes to nearest regional API cluster)
+    │
+    ▼
+REGIONAL API CLUSTER (US / EU / APAC — stateless, horizontally scaled)
+    │
+    │── Reads (account balance, tx history) ────────────────────────────────►
+    │   [bounded-staleness, 15s max] → nearest Spanner follower replica (fast)
+    │
+    │── Writes (initiate transfer) ──────────────────────────────────────────►
+    │   [read-write transaction] → Spanner Paxos leader (in or near home region)
+    │
+    ▼
+CLOUD SPANNER INSTANCE (multi-region: nam6 + eur6 + asia1)
+    │
+    ├── Accounts table (named schema regions: US, EU, SG, IN)
+    │   Each region's rows replicated only within their regulatory boundary
+    │
+    ├── Transactions table (global — all regions, fully replicated)
+    │   Immutable after SETTLED status; append-only via app-layer validation
+    │
+    └── Change Streams ──────────────────────────────────────────────────────►
+                        Dataflow pipeline → Pub/Sub → downstream consumers:
+                        [Fraud Detection] [Audit Log → BigQuery] [Notifications]</code></pre>
+  </div>
+
+  <h2 id="e2e-challenges">Specific Challenges and Trade-offs Encountered</h2>
+
+  <h3>Challenge 1: Cross-Residency Transfer Atomicity</h3>
+  <p>The requirement that EU data stays in EU and US data stays in US creates a fundamental tension: a transfer from a US account to an EU account requires updating two rows in different regulatory boundaries. Spanner's named schema regions prevent these two rows from being in the same Paxos replica group, which means a single atomic Spanner transaction cannot span them — Spanner refuses to perform a transaction that would violate named schema region constraints.</p>
+  <p><strong>Solution and trade-off:</strong> InstaPay implemented a saga pattern for cross-boundary transfers. The transfer is modeled as two idempotent operations: (1) debit the US account and create a PENDING_SETTLEMENT record in a global Transactions table; (2) credit the EU account and mark the transaction as SETTLED. The saga coordinator (a separate stateful service backed by a separate Spanner table) tracks which step each transaction is in and retries failed steps. The trade-off is that cross-boundary transfers are no longer a single atomic operation — there is a brief window (milliseconds to seconds, depending on retry timing) where the debit has settled but the credit has not. This is an accepted trade-off, because it is contractually disclosed in InstaPay's user agreement and is analogous to how traditional interbank SWIFT transfers work. The important invariant is that the saga never loses money — every debit eventually produces a credit, or the debit is reversed by a compensating transaction.</p>
+
+  <h3>Challenge 2: 120,000 TPS Peak Throughput</h3>
+  <p>At 120K TPS, with an average of 3 Spanner mutations per transaction (debit account row + credit account row + insert transaction row), InstaPay needs 360K mutations per second. Each mutation lands in a specific Spanner split. With UUID account IDs, writes are uniformly distributed across all splits. At Cloud Spanner's documented throughput of approximately 1,000–2,000 mutations/second per split (per the Spanner capacity planning documentation), InstaPay needs 180–360 active splits to handle the peak load. Spanner's auto-splitting handles this automatically as the Accounts table grows to contain 50M account rows — each split handles approximately 256 MB of data, meaning a 50M × 2KB account table has approximately 400 splits, which is comfortably above the minimum needed.</p>
+
+  <h3>Challenge 3: Read-Heavy Workload from Account Balance Queries</h3>
+  <p>99% of InstaPay's user-facing requests are read requests: "show me my balance" and "show me my last 20 transactions." These do not require strong consistency — a user whose balance updates within 500ms of a transaction settling is perfectly happy. InstaPay routes all balance and transaction history queries to Spanner using <code>TimestampBound.ofMaxStaleness(500, MILLISECONDS)</code>. This means these reads are served from local Spanner follower replicas in each region with zero coordination overhead. At 120K write TPS, there are approximately 10x as many read QPS (1.2M reads/second). These stale reads are served from regional follower replicas at &lt;5ms P99 latency, at essentially no additional cost (follower replicas are included in the multi-region Spanner instance price), and without consuming any CPU on the Paxos leader.</p>
+
+  <h3>Challenge 4: Audit Immutability for FinCEN</h3>
+  <p>FinCEN regulations require that transaction records cannot be modified after settlement. Spanner does not natively enforce immutability at the row level — a privileged user with the right IAM permissions can issue DML UPDATE statements against any row. The solution was a two-layer approach: (1) application-level validation that rejects UPDATE/DELETE DML on any Transactions row with <code>status=SETTLED</code> (enforced in the data access layer, not the database); (2) Spanner Change Streams feeding a Cloud Logging sink with WRITE_ONCE semantics — every committed Spanner mutation is written to a cryptographically-signed, immutable audit log in Cloud Logging. Even if a database admin bypassed the application layer and modified a transaction row directly via the Spanner console, the Change Stream would detect the modification and write it to the immutable audit log, creating a forensic trail. Regulators accepted this architecture as equivalent to database-level immutability for FinCEN purposes.</p>
+
+  <div class="callout callout-bolt">
+    <div class="callout-label">⚡ L7/L8 Differentiator</div>
+    The saga pattern for cross-residency transfers is the nuance that separates a strong answer from a great answer in this scenario. Most candidates propose "use named schema regions" for data residency and stop there, not recognizing that <strong>named schema regions prevent cross-boundary atomic transactions.</strong> An L8 candidate immediately identifies this constraint and proposes the saga pattern as the resolution, explains its consistency model (eventual, not atomic), and articulates why this is an acceptable trade-off for this specific regulatory context. This level of reasoning about where guarantees break down and how to design around the breakage is what Staff and Principal engineering interviews are testing for.
+  </div>
+
+  <div class="takeaway">
+    <span class="takeaway-icon">🔑</span>
+    <div class="takeaway-text"><strong>Key Takeaway:</strong> The InstaPay simulation demonstrates that Spanner does not eliminate all distributed systems complexity — it eliminates the most painful category (multi-region ACID transactions without a synchronization layer), but introduces its own constraints (cross-residency atomicity limitation, commit-wait latency floor, cost at scale) that require careful architectural responses. The value of Spanner is that its remaining constraints are well-understood, documented, and addressable through known patterns — unlike the ad hoc complexity of a custom synchronization layer whose failure modes are discovered in production incidents.</div>
+  </div>
+</section>
+
+<!-- BACK TO TOP -->
+<button id="back-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+// ── QA DATA ──────────────────────────────────────────────────────────────────
+const qaData=[
+  {q:"Why does Spanner use commit-wait, and what would break if you removed it?",a:"Commit-wait ensures that by the time a transaction's commit is externalized to the client, the assigned commit timestamp is guaranteed to be in the past by all clocks everywhere on the planet (within TrueTime's uncertainty bound). If you removed commit-wait, it would be possible for a transaction with timestamp T to be acknowledged while the true current time is still slightly less than T — allowing a subsequent transaction to be assigned a timestamp less than T, violating external consistency. The consequence would be that a transaction started after T could not see the effects of the transaction at T, breaking the 'real-time ordering' guarantee. Without commit-wait, Spanner degrades to providing only serializability (not external consistency), which is still strong but loses the inter-database, inter-system ordering guarantees that many compliance use cases depend on."},
+  {q:"A table's write throughput has hit a ceiling even though the cluster has plenty of CPU and memory headroom. What is likely happening and how do you diagnose and fix it?",a:"The most likely cause is a hot-split problem. Writes are concentrating on a single Spanner split because the primary key is monotonically increasing (auto-increment integer, sequential timestamp, etc.), causing all new inserts to land in the 'tail' split. The Placement Driver cannot rebalance this because the hot split is structurally determined by the key ordering — the largest keys are always in the last split, and no amount of hardware helps. Diagnosis: check the Lock Stats panel for high lock wait time on a specific key range; check the CPU utilization per-split in the Spanner Monitoring tab. Fix: perform a schema migration to change the primary key to a UUID or hash-prefixed key. This requires backfilling existing data, which is a significant but unavoidable migration for poorly designed schemas. Short-term mitigation: manually pre-create splits using SPLIT AT KEY if the Spanner admin API supports it for the specific version, or add a random prefix byte to the key to spread writes across multiple splits."},
+  {q:"Explain exactly what TrueTime's TTinterval represents and how it is implemented.",a:"TTinterval = [earliest, latest] is a closed interval guaranteed to contain the true current time at the moment of the call. The width of the interval (latest - earliest = 2ε) represents the clock uncertainty — the uncertainty is not just network delay but the bounded drift of the local hardware clock between GPS time-master sync intervals. Implementation: Each Google datacenter has multiple GPS receivers and atomic clocks (cesium or rubidium) acting as time masters. Each individual server (time slave) polls its local time masters every 30 seconds using a modified Marzullo's algorithm to compute the tightest consistent interval across available sources. Between syncs, the server's local oscillator drifts at a bounded rate (modeled conservatively as 200 microseconds per second). The interval widens between syncs and narrows after each sync. The current ε is typically 1–4ms but can reach 7ms under GPS signal degradation or when a datacenter's atomic clocks are being serviced. Software on Google's infrastructure can call TT.now() to get the current TTinterval and TT.after(t) (which returns true if the earliest bound has already passed time t) — these are the two primitives Spanner uses for its consistency protocol."},
+  {q:"What is the difference between read-only transactions, strong reads, and bounded-staleness reads in Spanner? When should you use each?",a:"A read-only transaction provides a consistent snapshot across multiple reads — all reads within the same read-only transaction see the same point-in-time snapshot of the database, even if individual reads happen milliseconds apart. Within a read-only transaction, you can use either strong reads (snapshot at the current time, requires safe_time to be at current time) or bounded-staleness reads (snapshot within a bounded time window). A single strong read (outside a transaction) is equivalent to a single-operation read-only transaction at current time. The key distinction: use read-only transactions when you need multiple reads to be mutually consistent (e.g., computing a balance across multiple accounts that must all be seen at the same moment). Use bounded-staleness reads when latency matters more than immediate freshness — they are served from local replicas without leader contact. Use strong reads when reading before writing: the typical 'read-modify-write' pattern must use a read-write transaction (not a read-only transaction) to ensure the read acquires a lock that prevents concurrent modifications."},
+  {q:"How does Spanner handle schema changes like adding a column to a table with 1 billion rows?",a:"Spanner uses an online, non-blocking schema change protocol. When you issue ALTER TABLE ADD COLUMN, Spanner does not block all reads and writes while adding the column (unlike traditional RDBMS). Instead, Spanner records the schema change in the distributed schema metadata and assigns it a future timestamp. Concurrent transactions continue to read and write the table without interruption. Spanner then lazily backfills the new column's default value for existing rows during subsequent compactions — rows that have not been rewritten yet simply return the default value for the new column until they are compacted. The schema is versioned, and each spanserver knows which schema version applies to which timestamp range. New writes automatically include the new column. The schema change is considered complete when all spanservers have adopted the new schema version — typically minutes to hours depending on cluster size, not weeks. The key L8 insight: this non-blocking approach works because Spanner's schema is co-versioned with the data via timestamps. It would not work in a traditional database where schema and data are stored separately."},
+  {q:"You need to implement a globally unique, strictly monotonically increasing sequence (like a transaction number) in Spanner. Why is this hard, and what is the best approach?",a:"Strict global monotonicity in a sharded system requires a single point of coordination, which creates a bottleneck. Naively using MAX(sequence_number) + 1 in a transaction requires scanning/locking the sequence table on every insert and will serialize all transactions through a single row lock — catastrophically limiting throughput. The correct approach for most use cases is Spanner's built-in BIT_REVERSED_POSITIVE sequence type (introduced in 2022), which generates unique, approximately increasing integers without the hot-split problem by XOR-reversing the bit representation of sequential values, spreading writes across the key space. If strict ordering is truly required (not just uniqueness), the L8 answer is to use the transaction's commit_timestamp from PENDING_COMMIT_TIMESTAMP() as the ordering key — this provides a total order (since TrueTime guarantees distinct timestamps for all commits) and is indexed efficiently without coordination overhead. The trade-off is that commit timestamps are not dense integers, so external systems that expect gap-free sequences will need adaptation."},
+  {q:"How would you implement multi-tenancy in Spanner for a SaaS application serving 10,000 enterprise customers?",a:"Spanner's recommended multi-tenancy pattern is tenant-prefixed primary keys. Every table's primary key starts with tenant_id (a UUID), so all data for a given tenant is physically colocated in contiguous Spanner splits. This provides natural tenant isolation at the storage and locking levels — tenant A's transactions never contend with tenant B's transactions because they operate on different splits with independent Paxos logs. For per-tenant query isolation (preventing one tenant's expensive query from consuming all CPU), Spanner's request priority feature (HIGH/MEDIUM/LOW) can be used to mark bulk analytics queries as LOW priority, preventing them from starving OLTP queries. For tenants with strict data residency requirements, named schema regions can be used to pin specific tenants' data to specific geographic regions. For the very largest tenants (those whose data exceeds a significant fraction of total capacity), a dedicated Spanner instance per tenant is the cleanest isolation boundary, at the cost of per-instance management overhead and minimum billing unit costs."},
+  {q:"What is a Spanner interleaved table and when does it provide a significant performance benefit?",a:"An interleaved table is a child table whose rows are physically stored interspersed within the rows of a parent table, ordered by the shared key prefix. For example, if Accounts (account_id) is the parent and Transactions (account_id, transaction_id) is the interleaved child, all transactions for account ID 'abc' are stored on the same Spanner split as the account row for 'abc'. The performance benefit materializes in two scenarios: first, for lookups that read both a parent row and all its children (e.g., 'fetch account + last 100 transactions') — the data is on the same split, eliminating cross-split coordination and reducing I/O to a sequential scan within the split. Second, for transactions that write to both parent and child — the transaction only needs to lock and commit to a single split, eliminating the two-phase commit coordination overhead. The trade-off: interleaving couples the parent and child split lifecycle — when the parent split re-balances, the child rows move with it. If child rows are much more numerous than parent rows (1M transactions per account), the split may become unbalanced. Best applied when child rows are bounded per parent and access patterns are parent-centric."},
+  {q:"How does Spanner's Change Streams feature work, and what are its limitations?",a:"Change Streams is a Spanner feature that provides a continuous, ordered feed of all data changes committed to a Spanner database (or a subset of tables/columns). When enabled, Spanner maintains an internal change log alongside the Paxos log. Consumers query the Change Stream API using a token-based pagination protocol, receiving change records with timestamps guaranteed to be in commit-timestamp order. Records are available approximately 1 second after commit. Change Streams provide at-least-once delivery semantics — consumers must be idempotent because the same change record may be delivered multiple times after a consumer restart. Limitations that L7+ candidates should know: Change Streams have a maximum retention period of 7 days (configurable, default 24 hours) — consumers that fall more than 7 days behind cannot catch up and must reinitialize. Change Streams incur additional Spanner storage and CPU cost proportional to the write throughput (approximately 10–15% overhead at high write rates). The Change Stream API does not expose uncommitted writes or aborted transactions — only successfully committed changes appear."},
+  {q:"If your Spanner P99 commit latency suddenly doubles from 20ms to 40ms, walk me through your systematic diagnostic process.",a:"Step 1: Check if this is a regional or global phenomenon — query the request_latencies metric filtered by region label. If only one region is affected, the problem is local to that region's Paxos leader infrastructure. Step 2: Check CPU utilization. If CPU is above 80%, the latency increase is likely CPU saturation causing queuing — scale up processing units. Step 3: Check transaction abort rate — if abort rate increased simultaneously with latency, lock contention is the root cause. Navigate to Lock Stats to identify the hot rows. Step 4: Check TrueTime's commit-wait contribution — if ε (clock uncertainty) has increased (visible in TrueTime-related debug metrics or inferred from the P99-P50 latency gap widening), GPS clock health in the affected region should be investigated. Step 5: Check for long-running queries in the Query Stats panel — a new query that performs a large scan can hold Paxos log entries in memory, delaying newer commits from flushing. Step 6: Check Colossus I/O latency — if the Spanner storage I/O metrics show elevated disk latency (e.g., due to compaction storms or storage node failures), write-ahead log flushing will be delayed, increasing commit latency. Each of these is a distinct causal chain with a specific fix, and a disciplined elimination process separates an experienced operator from a novice."}
+];
+
+// Build QA accordion
+const cont=document.getElementById('qa-container');
+qaData.forEach((item,i)=>{
+  const div=document.createElement('div');
+  div.className='qa-block';
+  div.innerHTML=`<div class="qa-q" role="button" aria-expanded="false" tabindex="0">
+    <span class="qa-q-num">${i+1}</span>
+    <span class="qa-q-text">${item.q}</span>
+    <span class="qa-arrow">▼</span>
+  </div>
+  <div class="qa-a" role="region">${item.a}</div>`;
+  const btn=div.querySelector('.qa-q');
+  btn.addEventListener('click',()=>{
+    div.classList.toggle('open');
+    btn.setAttribute('aria-expanded',div.classList.contains('open'));
+  });
+  btn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();btn.click();}});
+  cont.appendChild(div);
+});
+
+// ── PROGRESS BAR ─────────────────────────────────────────────────────────────
+const bar=document.getElementById('progress-bar');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement,b=document.body;
+  const st=h.scrollTop||b.scrollTop;
+  const sh=h.scrollHeight-h.clientHeight;
+  bar.style.width=(st/sh*100)+'%';
+  document.getElementById('back-top').classList.toggle('visible',st>400);
+  updateActiveNav();
+});
+
+// ── ACTIVE NAV ────────────────────────────────────────────────────────────────
+const sections=[...document.querySelectorAll('section[id],h2[id],h3[id],[id^="p"][id$="-"]')];
+const allAnchors=[...document.querySelectorAll('[id]')];
+const navLinks=[...document.querySelectorAll('.nav-link')];
+function updateActiveNav(){
+  const scrollY=window.scrollY+120;
+  let cur='';
+  allAnchors.forEach(el=>{if(el.getBoundingClientRect().top+window.scrollY-160<=scrollY)cur=el.id;});
+  navLinks.forEach(l=>{
+    const href=l.getAttribute('href').replace('#','');
+    l.classList.toggle('active',href===cur);
+  });
+}
+
+// ── HAMBURGER ────────────────────────────────────────────────────────────────
+const ham=document.getElementById('hamburger');
+const sb=document.getElementById('sidebar');
+const ov=document.getElementById('overlay');
+ham.addEventListener('click',()=>{sb.classList.toggle('open');ov.classList.toggle('open');});
+ov.addEventListener('click',()=>{sb.classList.remove('open');ov.classList.remove('open');});
+sb.querySelectorAll('.nav-link').forEach(l=>l.addEventListener('click',()=>{
+  if(window.innerWidth<=900){sb.classList.remove('open');ov.classList.remove('open');}
+}));
+
+// ── COPY BUTTON ───────────────────────────────────────────────────────────────
+function copyCode(btn){
+  const code=btn.closest('.code-wrap').querySelector('code');
+  navigator.clipboard.writeText(code.textContent).then(()=>{
+    btn.textContent='Copied ✓';btn.style.color='var(--teal)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+
+// ── SIDEBAR SEARCH ────────────────────────────────────────────────────────────
+document.getElementById('sidebar-search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  document.querySelectorAll('.nav-group-label, .nav-link').forEach(el=>{
+    if(!q){el.style.display='';return;}
+    if(el.classList.contains('nav-group-label')){el.style.display='';return;}
+    const match=el.textContent.toLowerCase().includes(q);
+    el.style.display=match?'':'none';
+  });
+  // Also highlight in main content
+  if(q.length<3)return;
+  // Simple highlight: remove previous, add new
+  document.querySelectorAll('main p, main li, main td, main .apm-card-body').forEach(el=>{
+    if(el.children.length>5)return; // Skip complex elements
+    const orig=el.dataset.orig||el.innerHTML;
+    if(!el.dataset.orig)el.dataset.orig=el.innerHTML;
+    if(!q){el.innerHTML=orig;return;}
+    const re=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+    el.innerHTML=orig.replace(re,'<mark>$1</mark>');
+  });
+});
+
+// ── PILLAR DOTS ───────────────────────────────────────────────────────────────
+const dotContainer=document.getElementById('pillar-dots');
+const pillarIds=['p1','p2','p3','p4','p5','p6','p7','p8','apm','e2e'];
+pillarIds.forEach(id=>{
+  const d=document.createElement('span');
+  d.className='pillar-dot';
+  d.title='Jump to section';
+  d.addEventListener('click',()=>document.getElementById(id)?.scrollIntoView({behavior:'smooth'}));
+  dotContainer.appendChild(d);
+});
+function updateDots(){
+  const sy=window.scrollY+200;
+  pillarIds.forEach((id,i)=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    const top=el.getBoundingClientRect().top+window.scrollY;
+    const d=dotContainer.children[i];
+    d.classList.toggle('done',top<sy-100);
+    d.classList.toggle('active',Math.abs(top-sy)<300);
+  });
+}
+window.addEventListener('scroll',updateDots);
+updateDots();
+</script>
+</body>
+</html>
