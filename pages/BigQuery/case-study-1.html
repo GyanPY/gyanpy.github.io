@@ -1,1 +1,789 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Case Studies (Part 1) — Spotify Analytics: End-to-End Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;
+  --bq:#4285F4;--bq3:#8AB4F8;
+  /* Spotify green */
+  --sp:#1DB954;--sp2:#1AA34A;--sp3:#57E08A;
+  /* Phase colors */
+  --ph1:#6366F1;--ph2:#0EA5E9;--ph3:#8B5CF6;--ph4:#10B981;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--sp),var(--ph1),var(--ph2),var(--ph3),var(--ph4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--sp3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--sp3);background:rgba(29,185,84,.1);border:1px solid rgba(29,185,84,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--sp)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(29,185,84,.05)}
+.ni.active a{color:var(--sp3);border-left-color:var(--sp3);background:rgba(29,185,84,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--sp3);border-color:var(--sp3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--sp3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--sp3) 35%,var(--ph1) 62%,var(--ph4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(29,185,84,.1);border-color:var(--sp3);color:var(--sp3)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* SPOTIFY SCALE BOX */
+.scale-box{background:rgba(29,185,84,.06);border:1px solid rgba(29,185,84,.18);border-radius:8px;padding:16px 18px;margin:14px 0}
+.scale-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--sp);margin-bottom:12px;font-weight:600}
+.scale-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(29,185,84,.08)}
+.scale-row:last-child{border-bottom:none}
+.scale-key{font-family:var(--fc);font-size:.79rem;color:var(--muted)}
+.scale-val{font-family:var(--fc);font-size:.86rem;color:var(--sp);font-weight:700}
+
+/* MEDALLION ARCHITECTURE */
+.medallion{display:flex;flex-direction:column;gap:3px;margin:18px 0}
+.med-layer{border-radius:8px;padding:14px 18px;border:1px solid transparent}
+.med-bronze{background:rgba(249,115,22,.06);border-color:rgba(249,115,22,.2)}
+.med-silver{background:rgba(148,163,184,.06);border-color:rgba(148,163,184,.2)}
+.med-gold{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.25)}
+.med-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin-bottom:6px}
+.med-bronze .med-label{color:var(--obs)}
+.med-silver .med-label{color:var(--muted)}
+.med-gold .med-label{color:var(--strong)}
+.med-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:6px}
+.med-detail{font-size:.85rem;color:var(--muted);line-height:1.6}
+.med-detail strong{color:var(--text)}
+.med-arrow{text-align:center;color:var(--dim);font-family:var(--fc);font-size:.9rem;padding:2px 0}
+
+/* PHASE CARDS */
+.phase-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:22px;overflow:hidden}
+.phase-hdr{padding:13px 20px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.phase-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px;flex-shrink:0}
+.phase-title{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--text)}
+.phase-time{font-family:var(--fc);font-size:.7rem;color:var(--dim);margin-left:auto;flex-shrink:0;padding-right:8px}
+.phase-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;flex-shrink:0}
+.phase-card.collapsed .phase-toggle{transform:rotate(-90deg)}
+.phase-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.phase-card.collapsed .phase-body{max-height:0;opacity:0}
+.phase-inner{padding:0 20px 18px}
+/* phase accent colors */
+.ph1c .phase-hdr{border-bottom:1px solid rgba(99,102,241,.15);background:rgba(99,102,241,.05)}
+.ph1c .phase-num{background:rgba(99,102,241,.12);color:var(--ph1);border:1px solid rgba(99,102,241,.2)}
+.ph2c .phase-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.05)}
+.ph2c .phase-num{background:rgba(14,165,233,.12);color:var(--ph2);border:1px solid rgba(14,165,233,.2)}
+.ph3c .phase-hdr{border-bottom:1px solid rgba(139,92,246,.15);background:rgba(139,92,246,.05)}
+.ph3c .phase-num{background:rgba(139,92,246,.12);color:var(--ph3);border:1px solid rgba(139,92,246,.2)}
+.ph4c .phase-hdr{border-bottom:1px solid rgba(16,185,129,.15);background:rgba(16,185,129,.05)}
+.ph4c .phase-num{background:rgba(16,185,129,.12);color:var(--ph4);border:1px solid rgba(16,185,129,.2)}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:14px 0;overflow:hidden}
+.diag.sp{border:1px solid rgba(29,185,84,.2)}.diag.sp .diag-hdr{background:rgba(29,185,84,.06);border-bottom:1px solid rgba(29,185,84,.18)}.diag.sp .diag-title{color:var(--sp3)}
+.diag.ph1{border:1px solid rgba(99,102,241,.2)}.diag.ph1 .diag-hdr{background:rgba(99,102,241,.06);border-bottom:1px solid rgba(99,102,241,.18)}.diag.ph1 .diag-title{color:var(--ph1)}
+.diag.ph2{border:1px solid rgba(14,165,233,.2)}.diag.ph2 .diag-hdr{background:rgba(14,165,233,.06);border-bottom:1px solid rgba(14,165,233,.18)}.diag.ph2 .diag-title{color:var(--ph2)}
+.diag.ph3{border:1px solid rgba(139,92,246,.2)}.diag.ph3 .diag-hdr{background:rgba(139,92,246,.06);border-bottom:1px solid rgba(139,92,246,.18)}.diag.ph3 .diag-title{color:var(--ph3)}
+.diag.ph4{border:1px solid rgba(16,185,129,.2)}.diag.ph4 .diag-hdr{background:rgba(16,185,129,.06);border-bottom:1px solid rgba(16,185,129,.18)}.diag.ph4 .diag-title{color:var(--ph4)}
+.diag.fail{border:1px solid rgba(239,68,68,.2)}.diag.fail .diag-hdr{background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.18)}.diag.fail .diag-title{color:var(--no)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--sp3);border-color:var(--sp3)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* OPTIMIZATION COMPARISON */
+.optim-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.oc-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 15px}
+.oc-card.bad{border-left:3px solid var(--no)}
+.oc-card.good{border-left:3px solid var(--cass4)}
+.oc-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:8px}
+.oc-card.bad .oc-label{color:var(--no)}.oc-card.good .oc-label{color:var(--cass4)}
+.oc-card p,.oc-card ul{font-size:.84rem;color:var(--muted);line-height:1.6;margin-bottom:5px}
+.oc-card ul{padding-left:14px}.oc-card li{margin-bottom:3px}.oc-card strong{color:var(--text)}
+
+/* L5/L6/L7 THINKING */
+.level-ladder{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.ll-item{border-radius:8px;padding:12px 16px;border-left:3px solid var(--border)}
+.ll-item.l5{background:rgba(107,114,128,.06);border-left-color:rgba(107,114,128,.5)}
+.ll-item.l6{background:rgba(14,165,233,.06);border-left-color:var(--ph2)}
+.ll-item.l7{background:rgba(29,185,84,.06);border-left-color:var(--sp)}
+.ll-label{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin-bottom:6px}
+.ll-item.l5 .ll-label{color:var(--muted)}
+.ll-item.l6 .ll-label{color:var(--ph2)}
+.ll-item.l7 .ll-label{color:var(--sp)}
+.ll-item p{font-size:.87rem;color:var(--muted);line-height:1.65}
+.ll-item strong{color:var(--text)}
+
+/* PROBLEM CARDS (failure scenarios) */
+.prob-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:18px;overflow:hidden}
+.prob-hdr{padding:12px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid rgba(239,68,68,.1);background:rgba(239,68,68,.04)}
+.prob-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:2px 9px;border-radius:10px;background:rgba(239,68,68,.12);color:var(--no);border:1px solid rgba(239,68,68,.2)}
+.prob-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.prob-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.prob-card.collapsed .prob-toggle{transform:rotate(-90deg)}
+.prob-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.prob-card.collapsed .prob-body{max-height:0;opacity:0}
+.prob-inner{padding:0 18px 16px}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.sp{background:rgba(29,185,84,.07);border:1px solid rgba(29,185,84,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.sp .callout-title{color:var(--sp)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(29,185,84,.08),rgba(66,133,244,.04));border:1px solid rgba(29,185,84,.22);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--sp);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--sp3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+mark{background:rgba(29,185,84,.14);color:var(--sp);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.b{background:rgba(66,133,244,.14);color:var(--bq3)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.optim-compare{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">BigQuery Case Studies · L6/L7 Series</div>
+    <div class="sb-title">Spotify Analytics Platform</div>
+    <div class="sb-part">Case Study 1 — End-to-End Deep Dive</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Context</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#why-bq">Why BigQuery Exists</a></li>
+      <li class="ni sub"><a href="#spotify-scale">Spotify at Scale</a></li>
+    </li>
+    <li class="ng"><div class="nl">Data Architecture</div>
+      <li class="ni sub"><a href="#medallion">Bronze / Silver / Gold Layers</a></li>
+      <li class="ni sub"><a href="#query">The Target Query</a></li>
+    </li>
+    <li class="ng"><div class="nl">Query Execution (Phase by Phase)</div>
+      <li class="ni sub"><a href="#phase1">Phase 1: Query Planning</a></li>
+      <li class="ni sub"><a href="#phase2">Phase 2: Data Scanning</a></li>
+      <li class="ni sub"><a href="#phase3">Phase 3: Aggregation Tree</a></li>
+      <li class="ni sub"><a href="#phase4">Phase 4: Result Delivery</a></li>
+    </li>
+    <li class="ng"><div class="nl">L6/L7 Nuances</div>
+      <li class="ni sub"><a href="#partition-choice">Why Date, Not Country?</a></li>
+      <li class="ni sub"><a href="#no-date-filter">Queries Without Date Filter</a></li>
+    </li>
+    <li class="ng"><div class="nl">Failure Modes at Scale</div>
+      <li class="ni sub"><a href="#prob1">Problem 1: Hot Partitions</a></li>
+      <li class="ni sub"><a href="#prob2">Problem 2: Expensive Ad-Hoc</a></li>
+      <li class="ni sub"><a href="#prob3">Problem 3: Shuffle Explosion</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">BigQuery Case Studies · L6/L7 Series · Case Study 1</div>
+  <h1>Spotify Analytics<br>Platform:<br>End-to-End</h1>
+  <div class="hero-meta">
+    <span>🎵 500M users · 5B streams/day · 2.7 PB total</span>
+    <span>📐 Bronze/Silver/Gold medallion architecture</span>
+    <span>🔍 Full query trace — 4 phases with timing</span>
+    <span>💰 $13,500 → $1.30: 10,000x optimization</span>
+    <span>⚠️ 3 failure modes: hot partitions, ad-hoc costs, shuffle explosion</span>
+    <span>🎯 L5 vs L6 vs L7 partition design thinking</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill ap">Case Study 1: Spotify</span>
+    <span class="part-pill">Case Study 2: Coming Next</span>
+  </div>
+  <p style="margin-top:14px">The internals series explained how BigQuery works. This case study series shows those internals operating on real production-scale systems. Spotify is the perfect first case: it has the write volume (5B events/day) to stress ingestion, the query diversity (trending, skip rates, cohort analysis) to stress schema design, and the scale (2.7 PB) to make the 10,000x optimization difference between an unoptimized and optimized query visible in dollars.</p>
+</section>
+
+<!-- WHY BQ EXISTS -->
+<div class="sec-hdr" id="why-bq"><h2>Why BigQuery Was Built — The Original Problem</h2></div>
+
+<div class="callout sp">
+  <div class="callout-title">Google's Problem (circa 2006) → The Insight That Became BigQuery</div>
+  <ul>
+    <li>Billions of web pages to analyze. Thousands of engineers wanting ad-hoc SQL.</li>
+    <li>MapReduce was powerful but slow — minutes to hours per query.</li>
+    <li>Couldn't give everyone their own Hadoop cluster. Infrastructure cost would be prohibitive.</li>
+  </ul>
+  <p style="margin-top:10px"><strong>The Insight:</strong> What if data is stored once and shared (no copying to your cluster), compute is dynamically allocated (use 10,000 CPUs for 5 seconds, pay for 5 seconds), the storage format itself is optimized for analytics (columnar), and execution is so parallel that even petabyte queries return in seconds? That's Dremel — which became BigQuery.</p>
+</div>
+
+<!-- SPOTIFY SCALE -->
+<div class="sec-hdr" id="spotify-scale"><h2>Spotify at Scale</h2></div>
+
+<div class="scale-box">
+  <div class="scale-title">Scale Numbers</div>
+  <div class="scale-row"><span class="scale-key">Active users</span><span class="scale-val">500M+</span></div>
+  <div class="scale-row"><span class="scale-key">Tracks in catalog</span><span class="scale-val">100M+</span></div>
+  <div class="scale-row"><span class="scale-key">Streams per day</span><span class="scale-val">5 billion</span></div>
+  <div class="scale-row"><span class="scale-key">Events per stream (play/skip/search/playlist)</span><span class="scale-val">Multiple per session</span></div>
+  <div class="scale-row"><span class="scale-key">Raw event row size</span><span class="scale-val">~500 bytes</span></div>
+  <div class="scale-row"><span class="scale-key">Daily raw data</span><span class="scale-val">5B × 500B = 2.5 TB/day</span></div>
+  <div class="scale-row"><span class="scale-key">3-year total storage</span><span class="scale-val">~2.7 PB</span></div>
+</div>
+
+<div class="callout sp">
+  <div class="callout-title">Questions Spotify Needs to Answer</div>
+  <ul>
+    <li>"Which songs are trending in Brazil <strong>this hour</strong>?" (real-time, country-specific)</li>
+    <li>"What's the skip rate for songs after 30 seconds vs 60 seconds?" (behavioral analysis)</li>
+    <li>"How does user engagement change after a price increase?" (cohort analysis, historical)</li>
+    <li>"Which podcast episodes drive subscription conversions?" (cross-event join)</li>
+  </ul>
+  <p style="margin-top:8px">These four questions have completely different access patterns — and a single table schema must serve all of them efficiently. That's the schema design challenge.</p>
+</div>
+
+<!-- MEDALLION ARCHITECTURE -->
+<div class="sec-hdr" id="medallion"><h2>Data Architecture: Bronze / Silver / Gold</h2></div>
+
+<div class="medallion">
+  <div class="med-layer med-bronze">
+    <div class="med-label">Bronze Layer — Raw Events</div>
+    <div class="med-title">stream_events — the source of truth</div>
+    <div class="med-detail">
+      <strong>Partition:</strong> event_date &nbsp;·&nbsp; <strong>Cluster:</strong> (country, user_id) &nbsp;·&nbsp; <strong>TTL:</strong> 1,095 days<br>
+      5B rows/day × 365 × 3 = ~5.5 trillion rows &nbsp;·&nbsp; ~500B/row = ~2.7 PB<br>
+      Columns: event_id, timestamp, user_id, track_id, action_type, duration_ms, skip_position_ms, device_type, country, playlist_context, shuffle_mode, offline_mode
+    </div>
+  </div>
+  <div class="med-arrow">▼</div>
+  <div class="med-layer med-silver">
+    <div class="med-label">Silver Layer — Aggregated</div>
+    <div class="med-title">daily_track_metrics — pre-aggregated by track</div>
+    <div class="med-detail">
+      <strong>Partition:</strong> date &nbsp;·&nbsp; <strong>Cluster:</strong> (track_id, country)<br>
+      100M tracks × 365 × 3 = ~110B rows (100x smaller than raw)<br>
+      Pre-aggregated: plays, skips, completion_rate, unique_listeners — 100x faster to query for track-level analysis
+    </div>
+  </div>
+  <div class="med-arrow">▼</div>
+  <div class="med-layer med-gold">
+    <div class="med-label">Gold Layer — Serving</div>
+    <div class="med-title">Materialized Views — dashboard-ready</div>
+    <div class="med-detail">
+      <strong>hourly_trending_by_country</strong> — refreshed every 15 min &nbsp;·&nbsp; sub-second for dashboard queries<br>
+      <strong>artist_performance_summary</strong> — refreshed daily<br>
+      <strong>engagement_metrics_by_cohort</strong> — refreshed daily, powers A/B analysis
+    </div>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Why Three Layers?</div>
+  <p>"Each layer serves a different query pattern at the appropriate cost. The Bronze layer is the immutable source of truth — never queried directly without partition + date filters. The Silver layer serves track-level analysis at 100x lower cost. The Gold layer serves dashboard SLAs at sub-second latency. <strong>Routing queries to the appropriate layer is the primary optimization strategy</strong> — the schema design is secondary to the layer architecture."</p>
+</div>
+
+<!-- THE QUERY -->
+<div class="sec-hdr" id="query"><h2>The Target Query — Full Trace</h2></div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — Skip Rate for Top 100 Songs in Brazil (Last 7 Days)</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>SELECT
+  t.track_name,
+  EXTRACT(HOUR FROM s.timestamp)                                     AS hour_of_day,
+  COUNT(*)                                                           AS total_plays,
+  COUNTIF(s.skip_position_ms < s.duration_ms * 0.5)                 AS skips_before_halfway,
+  COUNTIF(s.skip_position_ms < s.duration_ms * 0.5) / COUNT(*)      AS skip_rate
+FROM stream_events s
+JOIN tracks t ON s.track_id = t.track_id
+WHERE s.event_date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) AND CURRENT_DATE()
+  AND s.country = 'BR'
+  AND s.action_type = 'play'
+GROUP BY t.track_name, hour_of_day
+QUALIFY RANK() OVER (ORDER BY COUNT(*) DESC) <= 100
+ORDER BY total_plays DESC, hour_of_day</pre></div>
+
+<!-- PHASE 1: PLANNING -->
+<div class="sec-hdr" id="phases"><h2>Query Execution: Phase by Phase</h2></div>
+
+<div class="phase-card ph1c" id="phase1-card">
+  <div class="phase-hdr" onclick="togglePhase(this)">
+    <span class="phase-num">Phase 1</span>
+    <span class="phase-title">Query Planning — The Optimizer Runs</span>
+    <span class="phase-time">Milliseconds</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body"><div class="phase-inner" id="phase1">
+    <div class="diag ph1">
+      <div class="diag-hdr"><span class="diag-title">Query Coordinator — Optimization Steps</span></div>
+      <pre>Query Coordinator receives SQL
+
+1. Parse SQL → AST (Abstract Syntax Tree)
+2. Semantic analysis: resolve table names, column types
+
+3. Query Optimization:
+
+   Predicate pushdown:
+   → WHERE filters pushed to storage layer (executed during scan, not after)
+
+   Partition pruning:
+   → event_date BETWEEN 7 days ago and today
+   → Only 7 of 1,095 partitions needed
+   → 0.64% of data accessed
+
+   Cluster pruning:
+   → country = 'BR' → skip blocks where BR not in [country_min, country_max]
+   → Brazil is ~3% of global users
+
+   Column pruning:
+   → Query needs: timestamp, track_id, duration_ms, skip_position_ms, country, action_type
+   → 6 of 12 columns → columnar format reads only these 6
+
+   Join strategy:
+   → tracks table: 100M rows × 100 bytes = 10 GB
+   → 10 GB < broadcast threshold → broadcast join!
+   → Each leaf worker gets a full copy of tracks → no shuffle needed for join
+
+   Aggregation cardinality estimate:
+   → ~100 tracks × 24 hours = 2,400 groups (tiny!)
+   → In-memory hash aggregation, no disk spill
+
+4. Generate execution plan → distribute to Dremel tree</pre>
+    </div>
+    <div class="callout sp">
+      <div class="callout-title">Why Broadcast Join Matters Here</div>
+      <p>A standard join between stream_events (2.7 PB) and tracks (10 GB) would require shuffling billions of stream rows by track_id — a massive network operation. Broadcast join sends the small table (tracks, 10 GB) to every worker node. Each worker can join locally without any shuffle. At 2,000 workers, you send 10 GB × 2,000 = 20 TB total — but this is orders of magnitude cheaper than shuffling the stream_events table.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- PHASE 2: SCANNING -->
+<div class="phase-card ph2c" id="phase2-card">
+  <div class="phase-hdr" onclick="togglePhase(this)">
+    <span class="phase-num">Phase 2</span>
+    <span class="phase-title">Data Scanning — Storage Layer Reads</span>
+    <span class="phase-time">Seconds 1–3</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body"><div class="phase-inner" id="phase2">
+    <div class="optim-compare">
+      <div class="oc-card bad">
+        <div class="oc-label">Without Optimization</div>
+        <ul>
+          <li>Full table scan: <strong>2.7 PB</strong></li>
+          <li>At 500 MB/s per slot: 5.4M slot-seconds</li>
+          <li>With 2,000 slots: <strong>2,700 seconds = 45 minutes</strong></li>
+          <li>Cost: <strong>$13,500 per query</strong></li>
+        </ul>
+      </div>
+      <div class="oc-card good">
+        <div class="oc-label">With Full Optimization</div>
+        <ul>
+          <li>Partition pruning: 2.7 PB × 0.64% = <strong>17.3 TB</strong></li>
+          <li>Cluster pruning (BR ~3%): 17.3 TB × 3% = <strong>520 GB</strong></li>
+          <li>Column pruning (6/12 cols): 520 GB × 50% = <strong>260 GB</strong></li>
+          <li>With 2,000 slots: <strong>0.26 seconds for scan phase</strong></li>
+          <li>Cost: <strong>$1.30 per query</strong></li>
+        </ul>
+      </div>
+    </div>
+    <div class="diag ph2">
+      <div class="diag-hdr"><span class="diag-title">Block-Level Scan — Colossus Storage → Leaf Workers</span></div>
+      <pre>Colossus Storage:
+
+Partition: 2024-01-15              Partition: 2024-01-16             ...×5 more
+┌─────────────────────────┐        ┌─────────────────────────┐
+│ Block 1: country AR-AU  │        │ Block 1: country AR-AU  │
+│ Block 2: country AU-BE  │─SKIP─  │ Block 2: country AU-BE  │─SKIP─ (cluster pruning:
+│ Block 3: country BE-BR ✓│        │ Block 3: country BE-BR ✓│        min/max excludes
+│ Block 4: country BR-CA ✓│        │ Block 4: country BR-CA ✓│        non-BR blocks)
+│ Block 5: country CA-CN  │─SKIP─  │ Block 5: country CA-CN  │─SKIP─
+│ ...                     │        │ ...                     │
+└─────────────────────────┘        └─────────────────────────┘
+         │                                  │
+         └──────────┬───────────────────────┘
+                    ▼
+         Dremel Leaf Workers (2,000 slots)
+
+┌─────────┐  ┌─────────┐  ┌─────────┐         ┌─────────┐
+│ Slot 1  │  │ Slot 2  │  │ Slot 3  │   ...   │Slot 2000│
+│ Read    │  │ Read    │  │ Read    │         │ Read    │
+│ Block 3 │  │ Block 4 │  │ Block 3 │         │ Block N │
+│ Day 15  │  │ Day 15  │  │ Day 16  │         │ Day 21  │
+│         │  │         │  │         │         │         │
+│ Filter: │  │ Filter: │  │ Filter: │         │ Filter: │
+│ BR only │  │ BR only │  │ BR only │         │ BR only │
+│         │  │         │  │         │         │         │
+│ Join:   │  │ Join:   │  │ Join:   │         │ Join:   │
+│ local   │  │ local   │  │ local   │         │ local   │
+│ tracks  │  │ tracks  │  │ tracks  │         │ tracks  │
+│ (broad- │  │ cast)   │  │         │         │         │
+│         │  │         │  │         │         │         │
+│ Local   │  │ Local   │  │ Local   │         │ Local   │
+│ pre-agg │  │ pre-agg │  │ pre-agg │         │ pre-agg │
+└────┬────┘  └────┬────┘  └────┬────┘         └────┬────┘
+     │            │            │                   │
+     └────────────┴────────────┴───────────────────┘
+                    ▼
+     Partial aggregates per leaf:
+     {(track_A, 14h): {plays: 50, skips: 12}, ...} ← only 2,400 groups!</pre>
+    </div>
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — The 10,000x Improvement Is Compounding</div>
+      <p>"The optimization is three multiplicative steps: <strong>partition pruning (157x reduction)</strong> × <strong>cluster pruning (33x reduction)</strong> × <strong>column pruning (2x reduction)</strong> = ~10,000x total. Each step is independently useful, but together they're what allows a 2.7 PB table to be queried in 5 seconds for $1.30 instead of 45 minutes for $13,500. No single optimization gets you there — all three working together do."</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- PHASE 3: AGGREGATION TREE -->
+<div class="phase-card ph3c" id="phase3-card">
+  <div class="phase-hdr" onclick="togglePhase(this)">
+    <span class="phase-num">Phase 3</span>
+    <span class="phase-title">Aggregation Tree — Dremel's Tree Structure</span>
+    <span class="phase-time">Seconds 3–5</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body"><div class="phase-inner" id="phase3">
+    <div class="diag ph3">
+      <div class="diag-hdr"><span class="diag-title">Tree Aggregation — Why Shuffle Is Trivial Here</span></div>
+      <pre>                    ROOT (Final Result)
+                    ┌─────────────────────┐
+                    │ Merges all mixers   │
+                    │ Applies QUALIFY     │
+                    │ (Top 100 tracks)    │
+                    │ Applies ORDER BY    │
+                    │ → 2,400 rows final  │
+                    └──────────┬──────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+            ▼                  ▼                  ▼
+       ┌─────────┐        ┌─────────┐        ┌─────────┐
+       │ Mixer 1 │        │ Mixer 2 │  ...   │ Mixer 20│
+       │ Merges  │        │ Merges  │        │ Merges  │
+       │ 100     │        │ 100     │        │ 100     │
+       │ leaves  │        │ leaves  │        │ leaves  │
+       │ Input:  │        │ Input:  │        │ Input:  │
+       │ 12 MB   │        │ 12 MB   │        │ 12 MB   │
+       │ Output: │        │ Output: │        │ Output: │
+       │ 120 KB  │        │ 120 KB  │        │ 120 KB  │
+       └────┬────┘        └────┬────┘        └────┬────┘
+            │                  │                  │
+       ┌────┴────┐        ┌────┴────┐        ┌────┴────┐
+       │ 100     │        │ 100     │        │ 100     │
+       │ leaf    │        │ leaf    │        │ leaf    │
+       │ slots   │        │ slots   │        │ slots   │
+       └─────────┘        └─────────┘        └─────────┘
+
+Data flow — aggregation is associative!
+
+Each leaf outputs: {(track_id, hour): {plays, skips}} = ~2,400 groups × 50 bytes = 120 KB
+Each mixer receives: 100 × 120 KB = 12 MB → merges → still 2,400 groups = 120 KB
+Root receives: 20 × 120 KB = 2.4 MB → merges → applies QUALIFY top-100 → 2,400 rows
+
+Total shuffle volume: ~2.4 MB (trivial — because GROUP BY cardinality was tiny!)
+This is why cardinality estimate at planning time matters so much.</pre>
+    </div>
+    <div class="callout sp">
+      <div class="callout-title">Why This Query Has Tiny Shuffle — And When It Wouldn't</div>
+      <ul>
+        <li><strong>This query:</strong> GROUP BY (track_name, hour_of_day) → ~100 tracks × 24 hours = 2,400 groups. Shuffle = 2.4 MB. Trivial.</li>
+        <li><strong>Dangerous version:</strong> GROUP BY user_id → 500M unique users × 50 bytes = 25 GB shuffle per leaf × 2,000 leaves = 50 TB network traffic. Would likely OOM or timeout.</li>
+        <li><strong>The lesson:</strong> The GROUP BY cardinality determines shuffle volume. Always know how many groups your aggregation will produce before writing the query.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<!-- PHASE 4: DELIVERY -->
+<div class="phase-card ph4c" id="phase4-card">
+  <div class="phase-hdr" onclick="togglePhase(this)">
+    <span class="phase-num">Phase 4</span>
+    <span class="phase-title">Result Delivery — Final Result to Client</span>
+    <span class="phase-time">Milliseconds</span>
+    <span class="phase-toggle">▾</span>
+  </div>
+  <div class="phase-body"><div class="phase-inner" id="phase4">
+    <div class="diag ph4">
+      <div class="diag-hdr"><span class="diag-title">Result Materialization</span></div>
+      <pre>Root → Query Coordinator → Client
+
+Result size: 2,400 rows × ~50 bytes = 120 KB
+Format: streamed as Arrow/JSON/CSV based on client type
+
+Total end-to-end:
+  Phase 1 (planning):    ~100ms
+  Phase 2 (scan):        ~2.5s
+  Phase 3 (aggregation): ~2s
+  Phase 4 (delivery):    ~50ms
+  ─────────────────────────────
+  Total:                 ~5 seconds
+  Cost:                  $1.30
+
+Vs unoptimized:
+  Total:                 45 minutes
+  Cost:                  $13,500</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- L6/L7 PARTITION NUANCES -->
+<div class="sec-hdr" id="l67-nuances"><h2>L6/L7 Nuances — The Partition Design Discussion</h2></div>
+
+<div class="level-ladder" id="partition-choice">
+  <div class="ll-item l5">
+    <div class="ll-label">L5 Answer — "Partition by date"</div>
+    <p>Correct but generic. Shows knowledge of the feature. Doesn't explain why not country, or why date ordering matters, or what the trade-off analysis looks like.</p>
+  </div>
+  <div class="ll-item l6">
+    <div class="ll-label">L6 Answer — "Partition by date because most queries are time-bounded"</div>
+    <p>"Most analytics queries filter by time range — 'last 7 days', 'this month', 'Q3'. Date partitioning eliminates 99% of data for typical queries. Country is secondary, handled by clustering since it has bounded cardinality and is almost always queried with a date filter."</p>
+  </div>
+  <div class="ll-item l7">
+    <div class="ll-label">L7 Answer — Trade-off analysis with explicit cardinality reasoning</div>
+    <p><strong>Option A — Partition by country (200 countries):</strong> Great for country-only queries. Terrible for time-range queries (must scan all 200 partitions). Limited by BigQuery's 4,000 partition limit at daily granularity anyway. And "Brazil this week" requires scanning 200 partitions to find one country's 7 days.<br><br>
+    <strong>Option B — Partition by date (1,095 days):</strong> Date pruning is more dramatic (7/1095 = 0.64% vs 1/200 = 0.5%). Time filtering is the primary dimension in 90% of analytics queries. Country is secondary — handle with clustering.<br><br>
+    <strong>Clustering order: (country, user_id) not (user_id, country).</strong> Country is lower cardinality and more frequently queried alone. user_id is high cardinality, queried only in user-specific analysis which always has a date + country filter first. Leftmost clustering column must match the most common standalone filter.</p>
+  </div>
+</div>
+
+<div class="callout sp" id="no-date-filter">
+  <div class="callout-title">What If Queries Don't Filter by Date? (The Follow-Up)</div>
+  <p>The strong answer: "For queries spanning all time — like 'total plays ever for Artist X' — we route to the Silver layer (daily_track_metrics), not Bronze. The Silver layer is 100x smaller and pre-aggregated. I'd enable <code>require_partition_filter = TRUE</code> on the Bronze table to enforce this routing. For common historical aggregations that don't fit the Silver schema, I'd maintain specific materialized views: artist_lifetime_stats, track_lifetime_stats (refreshed daily). The full-table-scan cost gets amortized across batch jobs rather than paid per interactive query."</p>
+</div>
+
+<!-- FAILURE MODES -->
+<div class="sec-hdr" id="failure-modes"><h2>What Breaks at Spotify Scale</h2></div>
+
+<div class="prob-card" id="prob1-card">
+  <div class="prob-hdr" onclick="toggleProb(this)">
+    <span class="prob-num">Problem 1</span>
+    <span class="prob-title">Hot Partitions — Taylor Swift Drops an Album at Midnight</span>
+    <span class="prob-toggle">▾</span>
+  </div>
+  <div class="prob-body"><div class="prob-inner" id="prob1">
+    <div class="diag fail">
+      <div class="diag-hdr"><span class="diag-title">The Hot Partition Problem</span></div>
+      <pre>Normal operation: 5B streams/day = ~58K streams/second
+Album drop (midnight):  500K streams/second for first hour (10x spike)
+
+All writes target today's partition
+→ Streaming insert latency: 100ms → 10s
+→ Some inserts fail with quota exceeded errors
+→ Dashboard queries on "last hour" slow down
+→ Replication lag increases</pre>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Four Solutions (Strongest: Bigtable Buffer)</div>
+      <ul>
+        <li><strong>Solution 1 — Pre-sharding:</strong> Add random shard suffix to partition key: <code>PARTITION BY (event_date, shard_id)</code> where <code>shard_id = FARM_FINGERPRINT(event_id) % 10</code>. Spreads writes across 10 sub-partitions.</li>
+        <li><strong>Solution 2 — Streaming batch tuning:</strong> Use <code>insertAll</code> with larger batches to reduce insert overhead per row.</li>
+        <li><strong>Solution 3 — Separate hot path:</strong> Stream high-volume events to a separate <code>hot_events</code> table → merge daily into <code>stream_events</code> via batch job.</li>
+        <li><strong>Solution 4 — Bigtable buffer (strongest):</strong> Write to Bigtable first (handles any write volume with no backpressure). Batch copy to BigQuery every 5 minutes. Bigtable absorbs the spike; BigQuery sees a smooth write rate.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="prob-card" id="prob2-card">
+  <div class="prob-hdr" onclick="toggleProb(this)">
+    <span class="prob-num">Problem 2</span>
+    <span class="prob-title">Expensive Ad-Hoc Queries — $13,500 for One Bad Query</span>
+    <span class="prob-toggle">▾</span>
+  </div>
+  <div class="prob-body"><div class="prob-inner" id="prob2">
+    <div class="code"><div class="code-hdr"><span class="code-lang">The Expensive Query</span></div>
+    <pre>-- A data scientist writes:
+SELECT * FROM stream_events WHERE user_id = 'some-user'
+
+-- Without a date filter:
+-- Scans 2.7 PB looking for one user across 3 years
+-- Cost: $13,500
+-- Time: 45 minutes
+-- Consumes 2,000 slots that could serve 100 other queries</pre></div>
+    <div class="callout good">
+      <div class="callout-title">Four Layers of Defense</div>
+      <ul>
+        <li><strong>Layer 1 — Schema enforcement:</strong> <code>require_partition_filter = TRUE</code> on all tables &gt;1 TB. Query fails immediately if no date filter — prevents the $13,500 scan before it starts.</li>
+        <li><strong>Layer 2 — Query governance proxy:</strong> Route all queries through a service that estimates cost before execution. Require approval for queries &gt;$100. Auto-cancel queries running &gt;10 minutes.</li>
+        <li><strong>Layer 3 — Visibility and accountability:</strong> Weekly "expensive queries" report by team. Slack notification when a query exceeds $50. Creates social accountability without access restriction.</li>
+        <li><strong>Layer 4 — Better alternative for user lookups:</strong> Maintain a user_event_index table partitioned by <code>user_id_prefix</code> (first 2 chars of user_id). Much smaller, designed for user-specific queries. Routes away from the raw event table.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="prob-card" id="prob3-card">
+  <div class="prob-hdr" onclick="toggleProb(this)">
+    <span class="prob-num">Problem 3</span>
+    <span class="prob-title">Shuffle Explosion — Artist Collaboration Self-Join</span>
+    <span class="prob-toggle">▾</span>
+  </div>
+  <div class="prob-body"><div class="prob-inner" id="prob3">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — The Query That Breaks</span></div>
+    <pre>-- "Find pairs of artists whose songs are frequently played in the same session"
+SELECT
+  s1.artist_id AS artist_1,
+  s2.artist_id AS artist_2,
+  COUNT(DISTINCT s1.session_id) AS shared_sessions
+FROM stream_events s1
+JOIN stream_events s2
+  ON s1.session_id = s2.session_id
+  AND s1.artist_id < s2.artist_id   -- avoid duplicate pairs
+WHERE s1.event_date = CURRENT_DATE()
+GROUP BY 1, 2
+ORDER BY shared_sessions DESC
+LIMIT 1000
+
+-- What happens:
+-- Self-join on 5B rows
+-- Shuffle: all rows with same session_id must go to same worker
+-- 5B rows × 50 bytes = 250 TB shuffle
+-- At 1 GB/s shuffle throughput: 250,000 seconds = 69 HOURS
+-- Query will timeout or fail</pre></div>
+    <div class="callout good">
+      <div class="callout-title">Four Solutions — Pre-aggregate to Avoid the Shuffle</div>
+      <ul>
+        <li><strong>Solution 1 — Pre-aggregate sessions (strongest):</strong> First create a session → [artists] mapping table, then cross-join arrays. Reduces shuffle from 250 TB to ~10 GB.</li>
+        <li><strong>Solution 2 — Sampling:</strong> Add <code>AND RAND() &lt; 0.01</code> for 1% sample. For analytics, approximate answers are often sufficient. Reduces data 100x.</li>
+        <li><strong>Solution 3 — Approximate functions:</strong> Use <code>APPROX_COUNT_DISTINCT(session_id)</code> instead of exact count. ~1% error, avoids massive hash set.</li>
+        <li><strong>Solution 4 — Incremental materialization:</strong> Maintain an <code>artist_collaboration_daily</code> table updated each day. Never recompute full history on the fly.</li>
+      </ul>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — The Pre-Aggregation Fix</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Step 1: Pre-aggregate sessions → artist arrays (small!)
+CREATE TEMP TABLE session_artists AS
+SELECT
+  session_id,
+  ARRAY_AGG(DISTINCT artist_id) AS artists
+FROM stream_events
+WHERE event_date = CURRENT_DATE()
+GROUP BY session_id;   -- shuffle volume: ~session_count × 50 bytes = manageable
+
+-- Step 2: Cross-join arrays (no stream_events scan needed)
+SELECT
+  a1 AS artist_1,
+  a2 AS artist_2,
+  COUNT(*) AS shared_sessions
+FROM session_artists,
+UNNEST(artists) AS a1,
+UNNEST(artists) AS a2
+WHERE a1 < a2
+GROUP BY 1, 2
+ORDER BY shared_sessions DESC
+LIMIT 1000
+
+-- Shuffle reduction: 250 TB → ~10 GB (25x reduction)</pre></div>
+  </div></div>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Spotify Case Study Sound Bite</div>
+  <p>"Three optimizations multiplied together turn a $13,500, 45-minute query into a $1.30, 5-second query: partition pruning eliminates 99.4% of data by date, cluster pruning eliminates 97% of the remainder by country, and column pruning halves the I/O by reading only needed columns. None of these alone gets you there — but composed, they're a 10,000x improvement. This is why the schema IS the performance strategy."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Case Study Key Lesson</div>
+  <p>The Spotify example demonstrates that <strong>BigQuery optimization is not about tuning queries after the fact — it's about designing the system so that the common query path is always efficient</strong>. The Bronze/Silver/Gold layer architecture routes each query type to the appropriate pre-optimized structure. The partition + clustering choices ensure that the most frequent filter (date, then country) prunes the most data. The materialized views pre-compute the aggregations that dashboards repeat.</p>
+  <p>The three failure modes (hot partitions, expensive ad-hoc queries, shuffle explosion) all have the same root cause: a query or write pattern that bypasses the designed optimization path. The hot partition problem bypasses write sharding. The expensive ad-hoc query bypasses the partition filter enforcement. The self-join shuffle explosion bypasses the need to pre-aggregate before joining. <strong>Every failure mode is a system design problem, not a BigQuery limitation.</strong></p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function togglePhase(h){h.parentElement.classList.toggle('collapsed')}
+function toggleProb(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
