@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer & API Gateway Internals (Part 5) — Decision Framework & Interview Mastery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;--l7:#845EC2;--lb3:#0081CF;
+  --gw:#F59E0B;--p4l:#60A5FA;
+  /* Part 5 accent: deep emerald — the "mastery" finish */
+  --p5:#059669;--p5l:#34D399;--p5b:#065F46;
+  /* Q&A colors */
+  --q1:#6366F1;--q2:#0EA5E9;--q3:#8B5CF6;--q4:#F59E0B;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--p5),var(--q1),var(--q2),var(--q3),var(--q4),var(--p5l));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--p5l);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--p5l);background:rgba(5,150,105,.1);border:1px solid rgba(5,150,105,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--p5l)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(5,150,105,.05)}
+.ni.active a{color:var(--p5l);border-left-color:var(--p5l);background:rgba(5,150,105,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--p5l);border-color:var(--p5l);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--p5l);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.6rem;font-weight:900;line-height:1.08;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--p5l) 35%,var(--q1) 58%,var(--q4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(5,150,105,.1);border-color:var(--p5l);color:var(--p5l)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* DECISION TREE — interactive multi-branch */
+.dtree-wrap{background:#010409;border:1px solid rgba(5,150,105,.22);border-radius:12px;overflow:hidden;margin:14px 0}
+.dtree-top{background:rgba(5,150,105,.07);border-bottom:1px solid rgba(5,150,105,.18);padding:11px 18px;display:flex;align-items:center;justify-content:space-between}
+.dtree-top-title{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p5l);font-weight:600}
+.dtree-wrap pre{padding:18px 22px;overflow-x:auto;font-family:var(--fc);font-size:.75rem;line-height:1.95;color:#c9d1d9;white-space:pre}
+
+/* Q1 specific branch colors */
+.branch{border-left:3px solid var(--border);border-radius:0 8px 8px 0;margin:10px 0;padding:12px 14px;background:var(--surface2)}
+.branch.ext{border-left-color:var(--q4)}
+.branch.int{border-left-color:var(--q2)}
+.branch.perf{border-left-color:var(--l4)}
+.branch-title{font-family:var(--fc);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:6px}
+.branch.ext .branch-title{color:var(--q4)}
+.branch.int .branch-title{color:var(--q2)}
+.branch.perf .branch-title{color:var(--l4)}
+.branch p{font-size:.87rem;color:var(--muted);line-height:1.6;margin-bottom:4px}
+.branch strong{color:var(--text)}
+
+/* SUB-BRANCH for Q2 (service count) */
+.sub-branch-group{margin-left:18px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.sub-branch{border-left:2px solid var(--border);padding:8px 12px;border-radius:0 6px 6px 0;background:rgba(22,27,34,.6)}
+.sub-branch.s-small{border-left-color:var(--cass4)}
+.sub-branch.s-med{border-left-color:var(--q2)}
+.sub-branch.s-large{border-left-color:var(--q1)}
+.sub-branch-label{font-family:var(--fc);font-size:.66rem;font-weight:700;margin-bottom:4px}
+.sub-branch.s-small .sub-branch-label{color:var(--cass4)}
+.sub-branch.s-med .sub-branch-label{color:var(--q2)}
+.sub-branch.s-large .sub-branch-label{color:var(--q1)}
+.sub-branch p{font-size:.84rem;color:var(--muted);line-height:1.55}
+.sub-branch strong{color:var(--text)}
+
+/* SUB-BRANCH for Q3 (latency) */
+.lat-group{margin-left:18px;margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.lat-branch{border-left:2px solid var(--border);padding:8px 12px;border-radius:0 6px 6px 0;background:rgba(22,27,34,.6)}
+.lat-branch.l-relax{border-left-color:var(--cass4)}
+.lat-branch.l-tight{border-left-color:var(--lean)}
+.lat-branch.l-ultra{border-left-color:var(--l4)}
+.lat-label{font-family:var(--fc);font-size:.66rem;font-weight:700;margin-bottom:4px}
+.lat-branch.l-relax .lat-label{color:var(--cass4)}
+.lat-branch.l-tight .lat-label{color:var(--lean)}
+.lat-branch.l-ultra .lat-label{color:var(--l4)}
+.lat-branch p{font-size:.84rem;color:var(--muted);line-height:1.55}
+.lat-branch strong{color:var(--text)}
+
+/* Q&A CARDS */
+.qa-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:24px;overflow:hidden}
+.qa-hdr{padding:14px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.qa-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px}
+.qa-q{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--text);font-style:italic}
+.qa-toggle{color:var(--dim);font-size:.78rem;transition:transform .3s;flex-shrink:0;margin-left:auto}
+.qa-card.collapsed .qa-toggle{transform:rotate(-90deg)}
+.qa-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.qa-card.collapsed .qa-body{max-height:0;opacity:0}
+.qa-inner{padding:0 20px 18px}
+/* Q color accents */
+.q1c .qa-hdr{border-bottom:1px solid rgba(99,102,241,.15);background:rgba(99,102,241,.05)}
+.q1c .qa-num{background:rgba(99,102,241,.12);color:var(--q1);border:1px solid rgba(99,102,241,.2)}
+.q2c .qa-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.05)}
+.q2c .qa-num{background:rgba(14,165,233,.12);color:var(--q2);border:1px solid rgba(14,165,233,.2)}
+.q3c .qa-hdr{border-bottom:1px solid rgba(139,92,246,.15);background:rgba(139,92,246,.05)}
+.q3c .qa-num{background:rgba(139,92,246,.12);color:var(--q3);border:1px solid rgba(139,92,246,.2)}
+.q4c .qa-hdr{border-bottom:1px solid rgba(245,158,11,.15);background:rgba(245,158,11,.05)}
+.q4c .qa-num{background:rgba(245,158,11,.12);color:var(--q4);border:1px solid rgba(245,158,11,.2)}
+
+/* AUTH OPTIONS */
+.auth-options{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.auth-option{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.auth-option.recommended{border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.04)}
+.auth-option.perf{border-color:rgba(0,201,167,.3);background:rgba(0,201,167,.04)}
+.auth-opt-hdr{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.auth-opt-num{font-family:var(--fc);font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:10px}
+.auth-option.recommended .auth-opt-num{background:rgba(16,185,129,.15);color:var(--cass4);border:1px solid rgba(16,185,129,.25)}
+.auth-option.perf .auth-opt-num{background:rgba(0,201,167,.12);color:var(--l4);border:1px solid rgba(0,201,167,.2)}
+.auth-opt-num.basic{background:rgba(107,114,128,.12);color:var(--muted);border:1px solid rgba(107,114,128,.2)}
+.auth-opt-title{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text)}
+.auth-diagram{font-family:var(--fc);font-size:.75rem;color:#c9d1d9;background:#010409;border-radius:6px;padding:10px 12px;margin:8px 0;overflow-x:auto;white-space:pre;line-height:1.7}
+.auth-pros-cons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.auth-pros,.auth-cons{border-radius:6px;padding:8px 10px}
+.auth-pros{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15)}
+.auth-cons{background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.15)}
+.auth-pros-label{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--cass4);margin-bottom:5px;font-weight:600}
+.auth-cons-label{font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--no);margin-bottom:5px;font-weight:600}
+.auth-pros li,.auth-cons li{font-size:.81rem;color:var(--muted);line-height:1.5;margin-bottom:2px;list-style:none;padding-left:8px}
+.auth-pros li::before{content:'✓ ';color:var(--cass4)}
+.auth-cons li::before{content:'✗ ';color:var(--no)}
+
+/* VISUAL SUMMARY CARDS */
+.vsummary{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.vs-row{background:var(--surface);border:1px solid var(--border);border-radius:9px;overflow:hidden;display:grid;grid-template-columns:180px 1fr}
+.vs-label{padding:14px 16px;display:flex;flex-direction:column;justify-content:center;border-right:1px solid var(--border)}
+.vs-label-title{font-family:var(--fh);font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:4px}
+.vs-label-tag{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.vs-arch{padding:12px 16px;display:flex;align-items:center;gap:0;flex-wrap:wrap}
+.vs-box{font-family:var(--fc);font-size:.72rem;padding:5px 11px;border-radius:5px;white-space:nowrap}
+.vs-arr{font-family:var(--fc);font-size:.9rem;color:var(--dim);margin:0 4px}
+.vs-row.r1 .vs-label{background:rgba(107,114,128,.06)}
+.vs-row.r1 .vs-label-tag{color:var(--muted)}
+.vs-row.r2 .vs-label{background:rgba(14,165,233,.06)}
+.vs-row.r2 .vs-label-tag{color:var(--q2)}
+.vs-row.r3 .vs-label{background:rgba(245,158,11,.06)}
+.vs-row.r3 .vs-label-tag{color:var(--q4)}
+.vs-row.r4 .vs-label{background:rgba(0,201,167,.06)}
+.vs-row.r4 .vs-label-tag{color:var(--l4)}
+.box-users{background:rgba(107,114,128,.12);border:1px solid rgba(107,114,128,.2);color:var(--muted)}
+.box-l4{background:rgba(0,201,167,.1);border:1px solid rgba(0,201,167,.25);color:var(--l4);font-weight:700}
+.box-l7{background:rgba(132,94,194,.1);border:1px solid rgba(132,94,194,.25);color:var(--l7);font-weight:700}
+.box-gw{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.25);color:var(--gw);font-weight:700}
+.box-gwf{background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.35);color:var(--q4);font-weight:700}
+.box-waf{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:var(--no);font-weight:700}
+.box-api{background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.25);color:var(--p4l);font-weight:700}
+.box-svc{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);color:var(--cass4)}
+.box-web{background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.2);color:var(--q2)}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--p5l);border-color:var(--p5l)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.info{background:rgba(5,150,105,.07);border:1px solid rgba(5,150,105,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.info .callout-title{color:var(--p5l)}
+.callout.warn .callout-title{color:var(--lean)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* ULTIMATE TEMPLATE */
+.template{background:linear-gradient(135deg,rgba(5,150,105,.09),rgba(99,102,241,.05));border:1px solid rgba(5,150,105,.25);border-radius:12px;padding:20px 24px;margin:20px 0;position:relative}
+.template::before{content:'🏆';position:absolute;right:18px;top:16px;font-size:1.5rem;opacity:.35}
+.template-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p5l);margin-bottom:12px;font-weight:600}
+.template p{font-size:.92rem;line-height:1.75;color:var(--text);margin-bottom:10px;font-style:italic}
+.template p.sub{color:var(--muted);font-style:normal;font-size:.88rem}
+.template .fill-in{color:var(--p5l);font-style:normal;background:rgba(5,150,105,.12);border-radius:3px;padding:1px 5px}
+
+/* MARKS */
+mark{background:rgba(5,150,105,.14);color:var(--p5l);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p5l);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SERIES COMPLETE */
+.series-final{background:linear-gradient(135deg,rgba(0,201,167,.06),rgba(5,150,105,.08),rgba(99,102,241,.05));border:1px solid rgba(5,150,105,.2);border-radius:12px;padding:24px 28px;margin:28px 0;text-align:center}
+.series-final h3{font-family:var(--fh);font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:10px}
+.series-final p{font-size:.88rem;color:var(--muted);line-height:1.65;max-width:580px;margin:0 auto 18px}
+.sf-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:8px}
+.sf-pill{font-family:var(--fc);font-size:.67rem;padding:4px 12px;border-radius:20px}
+.sfp1{background:rgba(0,201,167,.1);border:1px solid rgba(0,201,167,.3);color:var(--l4)}
+.sfp2{background:rgba(132,94,194,.1);border:1px solid rgba(132,94,194,.3);color:var(--l7)}
+.sfp3{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--gw)}
+.sfp4{background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);color:var(--p4l)}
+.sfp5{background:rgba(5,150,105,.15);border:1px solid rgba(5,150,105,.35);color:var(--p5l);font-weight:700}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.auth-pros-cons{grid-template-columns:1fr}
+  .vs-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer & API Gateway · L6/L7 Series</div>
+    <div class="sb-title">Decision Framework & Interview Mastery</div>
+    <div class="sb-part">Part 5 — The Complete Cheat Sheet</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Decision Framework</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#q1-tree">Q1: Who Are Your Consumers?</a></li>
+      <li class="ni sub"><a href="#q2-tree">Q2: How Many Microservices?</a></li>
+      <li class="ni sub"><a href="#q3-tree">Q3: What's Your Latency Budget?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Interview Q&A</div>
+      <li class="ni sub"><a href="#qa1">Q1: Always Use API Gateway?</a></li>
+      <li class="ni sub"><a href="#qa2">Q2: Gateway vs L7 LB Difference?</a></li>
+      <li class="ni sub"><a href="#qa3">Q3: Isn't LB + Gateway Redundant?</a></li>
+      <li class="ni sub"><a href="#qa4">Q4: Where Should Auth Live?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Reference</div>
+      <li class="ni sub"><a href="#visual-summary">Visual Summary — Four Patterns</a></li>
+      <li class="ni sub"><a href="#template">The Ultimate Answer Template</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+      <li class="ni"><a href="#series-final">Series Complete</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer & API Gateway Internals · L6/L7 Series · Part 5</div>
+  <h1>Decision Framework<br>& Interview<br>Mastery</h1>
+  <div class="hero-meta">
+    <span>🌳 Complete 3-question decision tree</span>
+    <span>❓ Four hardest interview questions answered</span>
+    <span>🔐 Auth placement deep-dive — 3 options compared</span>
+    <span>📊 Visual summary — four canonical patterns</span>
+    <span>🏆 The ultimate answer template</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: L4 vs L7</span>
+    <span class="part-pill">Part 2: When L7</span>
+    <span class="part-pill">Part 3: API Gateway</span>
+    <span class="part-pill">Part 4: Five Architectures</span>
+    <span class="part-pill ap">Part 5: Decision Framework</span>
+  </div>
+  <p style="margin-top:14px">Parts 1–4 gave you the concepts and the examples. Part 5 is the distilled decision engine — a three-question framework that produces the right architecture for any system, four interview Q&As for the hardest questions you'll face, a deep-dive on where auth should live, and the one answer template that works for every system design interview.</p>
+</section>
+
+<!-- DECISION FRAMEWORK -->
+<div class="sec-hdr"><h2>The Complete Decision Framework</h2></div>
+
+<!-- QUESTION 1 -->
+<h3 id="q1-tree" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:24px 0 14px">Question 1: Who Are Your API Consumers?</h3>
+
+<div class="branch ext">
+  <div class="branch-title">External Developers (Stripe / Twilio model)</div>
+  <p><strong>→ L7 LB + Full API Gateway + Developer Portal</strong></p>
+  <p>API keys, per-plan rate limits, usage billing, documentation. This is <mark class="g">non-negotiable</mark> — you cannot build a developer platform without it.</p>
+</div>
+
+<div class="branch perf">
+  <div class="branch-title">Performance-Critical Internal System</div>
+  <p><strong>→ Skip to Question 3 (Latency Budget)</strong></p>
+  <p>When <mark>P99 &lt; 10ms</mark> is the constraint, the decision is driven by latency, not features. Gateway overhead is evaluated against the budget.</p>
+</div>
+
+<div class="branch int">
+  <div class="branch-title">Internal Services Only</div>
+  <p><strong>→ Continue to Question 2 (Service Count)</strong></p>
+  <p>No external developers means no developer portal required. Service count determines whether cross-cutting concern centralization is worth the complexity.</p>
+</div>
+
+<!-- QUESTION 2 -->
+<h3 id="q2-tree" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">Question 2: How Many Microservices? <span style="font-size:.75rem;color:var(--dim);font-family:var(--fc)">(internal services branch)</span></h3>
+
+<div class="sub-branch-group">
+  <div class="sub-branch s-small">
+    <div class="sub-branch-label">1–3 Services (small team)</div>
+    <p><strong>→ L7 Load Balancer only.</strong> Simple, low overhead. Put auth in each service — for 3 services this is manageable and avoids the gateway as an extra point of failure. The code duplication cost is low; the gateway complexity cost is high.</p>
+  </div>
+  <div class="sub-branch s-med">
+    <div class="sub-branch-label">4–10 Services (medium team)</div>
+    <p><strong>→ L7 LB + Lightweight API Gateway (or service mesh).</strong> Cross-cutting concerns (auth, logging, rate limiting) start being painful to duplicate. A lightweight gateway (Envoy, Traefik) centralizes these without the full product overhead of Kong or Apigee.</p>
+  </div>
+  <div class="sub-branch s-large">
+    <div class="sub-branch-label">10+ Services (large org)</div>
+    <p><strong>→ L7 LB + Full API Gateway.</strong> At this scale, cross-cutting concerns <em>must</em> be centralized. An auth library update touching 50 PRs simultaneously is a security and operational disaster. Service mesh (Istio) may also be needed for east-west traffic between services.</p>
+  </div>
+</div>
+
+<!-- QUESTION 3 -->
+<h3 id="q3-tree" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">Question 3: What's Your Latency Budget? <span style="font-size:.75rem;color:var(--dim);font-family:var(--fc)">(performance-critical branch)</span></h3>
+
+<div class="lat-group">
+  <div class="lat-branch l-relax">
+    <div class="lat-label">Relaxed — P99 &gt; 100ms is acceptable</div>
+    <p><strong>→ L7 LB + API Gateway.</strong> Gateway overhead (5–10ms) is under 10% of budget. Acceptable trade-off for the operational leverage of an off-the-shelf gateway.</p>
+  </div>
+  <div class="lat-branch l-tight">
+    <div class="lat-label">Tight — P99 target: 10–50ms</div>
+    <p><strong>→ L4 LB + Lightweight Gateway (Envoy, custom).</strong> L4 eliminates HTTP parsing overhead at the LB. Choose a fast gateway implementation that minimizes middleware chain. Disable gateway features you don't need.</p>
+  </div>
+  <div class="lat-branch l-ultra">
+    <div class="lat-label">Ultra-tight — P99 &lt; 10ms</div>
+    <p><strong>→ L4 LB + Custom API Layer.</strong> Build gateway features (auth, rate limiting, routing, metrics) as in-process middleware. Zero extra network hops. ~0.6ms overhead versus ~5–10ms for an external gateway. This is the KV store pattern.</p>
+  </div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Three Questions, Every System</div>
+  <p>"These three questions cascade: Who consumes it? → How many services? → How tight is latency? <strong>The answers produce the architecture, not the other way around.</strong> An interviewer can't stump you with a novel system if you can extract the answers to these three questions from the requirements. The architecture follows deterministically."</p>
+</div>
+
+<!-- Q&A SECTION -->
+<div class="sec-hdr"><h2>Common Interview Questions — Strong Hire Answers</h2></div>
+
+<!-- QA1 -->
+<div class="qa-card q1c" id="qa1-card">
+  <div class="qa-hdr" onclick="toggleQA(this)">
+    <span class="qa-num">Q1</span>
+    <span class="qa-q">"Should I always include an API Gateway?"</span>
+    <span class="qa-toggle">▾</span>
+  </div>
+  <div class="qa-body"><div class="qa-inner" id="qa1">
+    <div class="callout info">
+      <div class="callout-title">The Strong Hire Opening</div>
+      <p>"No, it depends on system requirements. Let me walk through my decision framework."</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Complete Answer</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>YES to API Gateway when:
+  ✓ External developers consuming your API
+    → They need API keys, rate limits, docs — non-negotiable
+  ✓ 5+ microservices with shared cross-cutting concerns
+    → Centralize auth/logging/rate-limiting or duplicate it everywhere
+  ✓ Complex auth requirements (OAuth, JWT validation across services)
+    → One gateway handles it; 10 services each doing it = 10x failure surface
+  ✓ API monetization needed (usage tracking, billing)
+    → Only gateways have this built in
+
+NO to API Gateway when:
+  ✗ Simple app with one backend — gateway adds latency, solves nothing
+  ✗ Performance-critical system where 5-10ms overhead is unacceptable
+    → Our KV store: P99 = 20ms, gateway would eat 25-50% of that budget
+  ✗ Internal-only services with simple auth
+    → Small team can maintain auth in each service without coordination cost
+  ✗ Small team (1-3 services) — maintenance overhead exceeds duplication cost
+
+For our KV store: Deliberately NO gateway.
+  P99 target: 20ms. Gateway adds 5-10ms. Math says no.
+  Instead: auth and rate limiting built into the API layer directly.</pre></div>
+  </div></div>
+</div>
+
+<!-- QA2 -->
+<div class="qa-card q2c" id="qa2-card">
+  <div class="qa-hdr" onclick="toggleQA(this)">
+    <span class="qa-num">Q2</span>
+    <span class="qa-q">"What's the difference between API Gateway and L7 Load Balancer?"</span>
+    <span class="qa-toggle">▾</span>
+  </div>
+  <div class="qa-body"><div class="qa-inner" id="qa2">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Crisp Distinction</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>L7 Load Balancer (NGINX, AWS ALB):
+  Primary job: Distribute traffic across servers
+  Focus:       Infrastructure — where does the packet go?
+  Features:    URL-based routing, SSL termination, health checks
+  Auth:        None (or basic SSL client certs)
+  Rate limit:  Simple (per IP, per connection)
+  Analytics:   Basic infrastructure metrics
+  Latency:     ~1-5ms added
+
+API Gateway (Kong, Apigee, AWS API Gateway):
+  Primary job: Manage API lifecycle
+  Focus:       Business logic — what is this API call doing?
+  Features:    Everything L7 LB does PLUS:
+  Auth:        Rich — JWT, OAuth 2.0, API keys, SAML
+  Rate limit:  Complex — per user, per plan, per endpoint
+  Analytics:   API-specific: which users, which endpoints, error rates
+  Developer portal: Self-service keys, docs, usage dashboards
+  Latency:     ~5-20ms added
+
+The Analogy:
+  L7 LB is a traffic cop directing cars.
+  API Gateway is a hotel concierge who checks IDs,
+  enforces guest limits, logs visits, and provides information.
+
+In Practice:
+  Many systems use BOTH:
+  L7 LB at the edge for traffic distribution and scale
+  API Gateway behind it for smart API management</pre></div>
+  </div></div>
+</div>
+
+<!-- QA3 -->
+<div class="qa-card q3c" id="qa3-card">
+  <div class="qa-hdr" onclick="toggleQA(this)">
+    <span class="qa-num">Q3</span>
+    <span class="qa-q">"You drew both a Load Balancer and API Gateway. Isn't that redundant?"</span>
+    <span class="qa-toggle">▾</span>
+  </div>
+  <div class="qa-body"><div class="qa-inner" id="qa3">
+    <div class="insight">
+      <div class="insight-label">This Is a Trap Question — The Interviewer Wants Depth</div>
+      <p>"Great question! They serve different purposes — they're complementary, not redundant. Here's the exact reasoning."</p>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">The Scale Argument</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>Load Balancer's job:
+  - Make the API Gateway itself highly available
+  - Distribute traffic across multiple Gateway instances
+  - Handle connection pooling at scale
+  - DDoS protection before requests reach application logic
+
+API Gateway's job:
+  - Authenticate each request
+  - Enforce per-user rate limits
+  - Route to the correct microservice
+  - Transform requests/responses
+  - Log and meter for billing
+
+The Scale Picture:
+  1M requests/sec arrive
+        │
+        ▼
+  [L4/L7 Load Balancer] → Splits across 10 Gateway instances
+        │
+        ▼
+  [GW-1] [GW-2] [GW-3] ... [GW-10]   ← Each handles 100K req/sec
+        │
+        ▼
+  [Microservices]
+
+Without the Load Balancer: A single Gateway instance would be overwhelmed
+  at 1M req/sec — it would become the bottleneck.
+
+Without the Gateway: The Load Balancer handles traffic distribution
+  but can't authenticate, rate-limit, or route intelligently.
+
+They work together: LB handles scale, Gateway handles smarts.
+Neither can do the other's job.</pre></div>
+  </div></div>
+</div>
+
+<!-- QA4: AUTH PLACEMENT -->
+<div class="qa-card q4c" id="qa4-card">
+  <div class="qa-hdr" onclick="toggleQA(this)">
+    <span class="qa-num">Q4</span>
+    <span class="qa-q">"In my design, where exactly should auth live?"</span>
+    <span class="qa-toggle">▾</span>
+  </div>
+  <div class="qa-body"><div class="qa-inner" id="qa4">
+    <p style="font-size:.9rem;color:var(--muted);line-height:1.65;margin-bottom:14px">Auth placement is one of the most nuanced decisions in distributed systems design. There are three valid options — each correct in different contexts.</p>
+
+    <div class="auth-options">
+      <div class="auth-option recommended">
+        <div class="auth-opt-hdr">
+          <span class="auth-opt-num">Option 1</span>
+          <span class="auth-opt-title">Auth in API Gateway — Recommended for Microservices</span>
+        </div>
+        <div class="auth-diagram">Client → L7 LB → Gateway (validates JWT) → Service (trusts Gateway)
+                                      │
+                         JWT valid? → forward with user context header
+                         JWT invalid? → 401 Unauthorized (never reaches service)</div>
+        <div class="auth-pros-cons">
+          <ul class="auth-pros"><div class="auth-pros-label">Pros</div>
+            <li>Single place to update auth logic</li>
+            <li>Services don't need auth code at all</li>
+            <li>Consistent security policy across all services</li>
+            <li>Auth library update = 1 PR, not 50</li>
+          </ul>
+          <ul class="auth-cons"><div class="auth-cons-label">Cons</div>
+            <li>Gateway is a critical path — if it fails, nothing authenticates</li>
+            <li>Services must trust the gateway completely (internal network assumption)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="auth-option">
+        <div class="auth-opt-hdr">
+          <span class="auth-opt-num basic">Option 2</span>
+          <span class="auth-opt-title">Auth in Each Service — Small Teams</span>
+        </div>
+        <div class="auth-diagram">Client → L7 LB → Service A (validates JWT)
+                → Service B (validates JWT)
+                → Service C (validates JWT)</div>
+        <div class="auth-pros-cons">
+          <ul class="auth-pros"><div class="auth-pros-label">Pros</div>
+            <li>No single point of failure for auth</li>
+            <li>Services are fully self-contained</li>
+            <li>Simpler architecture (fewer components)</li>
+          </ul>
+          <ul class="auth-cons"><div class="auth-cons-label">Cons</div>
+            <li>Duplicate auth code in each service</li>
+            <li>Hard to maintain consistency across services</li>
+            <li>Security update requires deploying every service</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="auth-option perf">
+        <div class="auth-opt-hdr">
+          <span class="auth-opt-num">Option 3</span>
+          <span class="auth-opt-title">Auth in Custom API Layer — Performance-Critical</span>
+        </div>
+        <div class="auth-diagram">Client → L4 LB → API Layer (validates JWT, custom-optimized) → Storage
+                              │
+                    ~0.1ms JWT validation (in-process, no network hop)
+                    vs ~1-2ms for gateway auth (network call + parsing)</div>
+        <div class="auth-pros-cons">
+          <ul class="auth-pros"><div class="auth-pros-label">Pros</div>
+            <li>Lowest possible latency (~0.1ms in-process)</li>
+            <li>Full control over implementation</li>
+            <li>Optimized for specific use case</li>
+          </ul>
+          <ul class="auth-cons"><div class="auth-cons-label">Cons</div>
+            <li>More code to write and maintain</li>
+            <li>Requires expertise in auth protocols</li>
+            <li>Update cycle is tied to app deployments</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout good">
+      <div class="callout-title">The Recommendation Matrix</div>
+      <ul>
+        <li><strong>Most microservices:</strong> Option 1 (Gateway handles auth). Services stay clean, auth is centralized.</li>
+        <li><strong>Small team, 1-3 services:</strong> Option 2 (in each service). Simplicity beats premature abstraction.</li>
+        <li><strong>Performance-critical (P99 &lt; 10ms):</strong> Option 3 (custom API layer). KV store, trading systems, real-time infrastructure.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<!-- VISUAL SUMMARY -->
+<div class="sec-hdr" id="visual-summary"><h2>Visual Summary — Four Canonical Patterns</h2></div>
+
+<div class="vsummary">
+  <div class="vs-row r1">
+    <div class="vs-label">
+      <div class="vs-label-title">Simple Web App</div>
+      <div class="vs-label-tag">L7 LB only</div>
+    </div>
+    <div class="vs-arch">
+      <span class="vs-box box-users">Users</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-l7">L7 LB</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-web">Web Server (2-3 copies)</span>
+    </div>
+  </div>
+
+  <div class="vs-row r2">
+    <div class="vs-label">
+      <div class="vs-label-title">Microservices (Internal)</div>
+      <div class="vs-label-tag">L7 LB + Gateway</div>
+    </div>
+    <div class="vs-arch">
+      <span class="vs-box box-users">Users</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-l7">L7 LB</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-gw">API Gateway</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-svc">Services (5–50)</span>
+    </div>
+  </div>
+
+  <div class="vs-row r3">
+    <div class="vs-label">
+      <div class="vs-label-title">Public Dev API</div>
+      <div class="vs-label-tag">L7 + WAF + Full GW</div>
+    </div>
+    <div class="vs-arch">
+      <span class="vs-box box-users">External Devs</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-l7">L7 LB</span>
+      <span class="vs-arr">+</span>
+      <span class="vs-box box-waf">WAF</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-gwf">Full API GW + Portal</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-svc">Services</span>
+    </div>
+  </div>
+
+  <div class="vs-row r4">
+    <div class="vs-label">
+      <div class="vs-label-title">High-Perf System</div>
+      <div class="vs-label-tag">L4 + Custom Layer</div>
+    </div>
+    <div class="vs-arch">
+      <span class="vs-box box-users">Clients (SDK)</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-l4">L4 LB (fast!)</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-api">Custom API Layer (GW built-in)</span>
+      <span class="vs-arr">──►</span>
+      <span class="vs-box box-svc">Storage</span>
+    </div>
+  </div>
+</div>
+
+<!-- ULTIMATE TEMPLATE -->
+<div class="sec-hdr" id="template"><h2>The Ultimate Interview Answer Template</h2></div>
+
+<div class="template">
+  <div class="template-label">🏆 The Universal Structure — Works for Any System</div>
+  <p>"The choice between Load Balancer, API Gateway, or both depends on the specific requirements. For <span class="fill-in">[system name]</span>, I'm using <span class="fill-in">[your architecture choice]</span> because:"</p>
+  <p class="sub"><strong>Traffic pattern:</strong> <span class="fill-in">[e.g. "300K QPS with long-lived gRPC connections — L4 handles this natively without connection overhead"]</span></p>
+  <p class="sub"><strong>Auth requirements:</strong> <span class="fill-in">[e.g. "Internal service only, JWT validation built into the API layer — no gateway needed" OR "External developers need API keys and per-plan rate limits — gateway is required"]</span></p>
+  <p class="sub"><strong>Latency constraints:</strong> <span class="fill-in">[e.g. "P99 target is 20ms — a gateway adds 5-10ms (25-50% of budget) which is unacceptable"]</span></p>
+  <p class="sub"><strong>Team/scale context:</strong> <span class="fill-in">[e.g. "10 microservices — cross-cutting concerns must be centralized or we duplicate auth in each service"]</span></p>
+  <p class="sub"><strong>Key trade-off:</strong> <span class="fill-in">[e.g. "Latency vs features — I'm trading off operational convenience for the 10ms we can't afford to lose" OR "Simplicity vs control — a separate gateway is simpler to operate but less optimized for our workload"]</span></p>
+  <p class="sub"><strong>Flexibility statement:</strong> <span class="fill-in">[e.g. "If we added external developers, I'd add an API Gateway immediately — that's the trigger. Right now that's not the case."]</span></p>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">What the Template Does for You</div>
+  <p>This template forces you to justify every choice with a concrete system property (not "I like L4" but "L4 because gRPC connections and 20ms P99"). It demonstrates that you've thought through the trade-offs, not just picked a default. And the flexibility statement shows the interviewer you know the decision would change under different constraints — which is the L7 signal.</p>
+</div>
+
+<!-- KEY LESSON -->
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Definitive Insight — Across Five Parts</div>
+  <p>Load Balancers and API Gateways are not competing choices. They're tools on a spectrum, each adding capability at a cost. L4 is the cheapest (0.1ms, minimal CPU), L7 adds HTTP intelligence (1–5ms), API Gateway adds API lifecycle management (5–20ms), Custom API Layer gives you the gateway pattern at near-zero overhead cost.</p>
+  <p>The question is always: <strong>which problems do I have at which layer, and what's the cheapest component that solves each one?</strong> External developers? You need gateway features that only an API Gateway provides. P99 of 10ms? You can't afford a gateway's overhead. 50 microservices? You can't afford to duplicate auth across all of them.</p>
+  <p><strong>The principal engineer signal is deriving the answer from the requirements rather than memorizing a lookup table.</strong> When you can sit in front of any system design problem and extract three properties — who consumes it, how many services, what's the latency budget — and derive the correct architecture from those properties alone, you've internalized the framework. That's what these five parts were building toward.</p>
+</div>
+
+<!-- SERIES FINAL -->
+<div class="series-final" id="series-final">
+  <h3>🎓 Load Balancer & API Gateway Series — Complete</h3>
+  <p>Five parts covering L4 vs L7 first principles, six L7 use cases, API Gateway decision framework, five real system architectures, and the complete interview mastery guide. The decision tree lives in your head now, not on a reference card.</p>
+  <div class="sf-pills">
+    <span class="sf-pill sfp1">Part 1 · L4 vs L7 — First Principles</span>
+    <span class="sf-pill sfp2">Part 2 · When & Why L7 — Six Scenarios</span>
+    <span class="sf-pill sfp3">Part 3 · API Gateway — When & When Not</span>
+    <span class="sf-pill sfp4">Part 4 · Five Architectures — Interview Guide</span>
+    <span class="sf-pill sfp5">Part 5 · Decision Framework & Interview Mastery</span>
+  </div>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleQA(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
