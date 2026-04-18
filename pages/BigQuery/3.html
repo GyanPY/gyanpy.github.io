@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Internals (Part 3) — Trade-offs, Scale & L6/L7 Differentiators</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;
+  /* BigQuery series accent — Google blue + Data gold */
+  --bq:#4285F4;--bq2:#1A73E8;--bq3:#8AB4F8;
+  --gold:#F5A623;--gold2:#FDD663;
+  /* Variant colors */
+  --v1:#EF4444;--v2:#F59E0B;--v3:#10B981;
+  /* Edge case colors */
+  --ec:#8B5CF6;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--v1),var(--v2),var(--v3),var(--bq),var(--ec));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--bq3);background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--bq3)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(66,133,244,.05)}
+.ni.active a{color:var(--bq3);border-left-color:var(--bq3);background:rgba(66,133,244,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--bq3);border-color:var(--bq3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--v1) 28%,var(--v2) 52%,var(--v3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(66,133,244,.1);border-color:var(--bq3);color:var(--bq3)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* 3-VARIANT COMPARISON TIMELINE */
+.variant-tabs{display:flex;gap:8px;margin-bottom:0;flex-wrap:wrap}
+.vtab{font-family:var(--fc);font-size:.71rem;font-weight:700;padding:6px 14px;border-radius:8px 8px 0 0;cursor:pointer;border:1px solid var(--border);border-bottom:none;transition:all .18s;user-select:none}
+.vtab.v1t{color:var(--v1);background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.2)}
+.vtab.v2t{color:var(--v2);background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2)}
+.vtab.v3t{color:var(--v3);background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.2)}
+.vtab.active.v1t{background:rgba(239,68,68,.14);border-bottom-color:transparent}
+.vtab.active.v2t{background:rgba(245,158,11,.14);border-bottom-color:transparent}
+.vtab.active.v3t{background:rgba(16,185,129,.14);border-bottom-color:transparent}
+.variant-body{background:#010409;border-radius:0 8px 8px 8px;border:1px solid var(--border);overflow:hidden;margin-bottom:14px}
+.vbody{display:none;padding:18px 20px;font-family:var(--fc);font-size:.76rem;line-height:1.85;color:#c9d1d9;white-space:pre;overflow-x:auto}
+.vbody.active{display:block}
+.v1b{border-top:2px solid var(--v1)}.v2b{border-top:2px solid var(--v2)}.v3b{border-top:2px solid var(--v3)}
+
+/* VARIANT SUMMARY STATS */
+.variant-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:12px 0}
+.vs-cell{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 10px;text-align:center}
+.vs-label{font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);margin-bottom:5px}
+.vs-v1{font-family:var(--fc);font-size:.78rem;color:var(--v1);font-weight:700;margin-bottom:2px}
+.vs-v2{font-family:var(--fc);font-size:.78rem;color:var(--v2);font-weight:700;margin-bottom:2px}
+.vs-v3{font-family:var(--fc);font-size:.78rem;color:var(--v3);font-weight:700}
+
+/* TABLES */
+.data-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.data-table thead tr{background:linear-gradient(90deg,rgba(66,133,244,.12),rgba(139,92,246,.06))}
+.data-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.09em;color:var(--bq3);border-bottom:1px solid rgba(66,133,244,.2)}
+.data-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.8rem}
+.data-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.data-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.data-table td:first-child{font-weight:600;color:var(--text)}
+.data-table td.good{color:var(--cass4);font-family:var(--fc);font-size:.78rem}
+.data-table td.bad{color:var(--no);font-family:var(--fc);font-size:.78rem}
+.data-table td.mid{color:var(--lean);font-family:var(--fc);font-size:.78rem}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--bq3);border-color:var(--bq3)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM */
+.diag{background:#010409;border-radius:10px;margin:14px 0;overflow:hidden}
+.diag.bq{border:1px solid rgba(66,133,244,.2)}.diag.bq .diag-hdr{background:rgba(66,133,244,.06);border-bottom:1px solid rgba(66,133,244,.18)}.diag.bq .diag-title{color:var(--bq3)}
+.diag.warn{border:1px solid rgba(249,115,22,.2)}.diag.warn .diag-hdr{background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.18)}.diag.warn .diag-title{color:var(--obs)}
+.diag.fail{border:1px solid rgba(239,68,68,.2)}.diag.fail .diag-hdr{background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.18)}.diag.fail .diag-title{color:var(--no)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* EDGE CASE CARDS */
+.ec-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+.ec-hdr{padding:12px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.ec-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:2px 9px;border-radius:10px;background:rgba(139,92,246,.12);color:var(--ec);border:1px solid rgba(139,92,246,.2)}
+.ec-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.ec-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.ec-card.collapsed .ec-toggle{transform:rotate(-90deg)}
+.ec-hdr{border-bottom:1px solid rgba(139,92,246,.1);background:rgba(139,92,246,.04)}
+.ec-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.ec-card.collapsed .ec-body{max-height:0;opacity:0}
+.ec-inner{padding:0 18px 16px}
+.ec-row{display:grid;grid-template-columns:120px 1fr;gap:8px 12px;margin:10px 0;font-size:.86rem}
+.ec-key{font-family:var(--fc);font-size:.72rem;color:var(--dim);padding-top:2px}
+.ec-val{color:var(--muted);line-height:1.6}
+.ec-val strong{color:var(--text)}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.bq{background:rgba(66,133,244,.07);border:1px solid rgba(66,133,244,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.bq .callout-title{color:var(--bq3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* BOE COMPARISON */
+.boe-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.boe-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.boe-hdr{padding:9px 14px;font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border)}
+.boe-card.startup .boe-hdr{background:rgba(16,185,129,.06);color:var(--cass4)}
+.boe-card.hyper .boe-hdr{background:rgba(66,133,244,.06);color:var(--bq3)}
+.boe-body{padding:12px 14px}
+.boe-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(48,54,61,.25);font-size:.82rem}
+.boe-row:last-child{border-bottom:none}
+.boe-key{color:var(--muted);font-family:var(--fc);font-size:.75rem}
+.boe-val{font-family:var(--fc);font-size:.8rem;font-weight:700}
+.boe-card.startup .boe-val{color:var(--cass4)}
+.boe-card.hyper .boe-val{color:var(--bq3)}
+
+/* BOTTLENECK TIMELINE */
+.btl-row{display:flex;align-items:flex-start;gap:14px;padding:10px 0;border-bottom:1px solid rgba(48,54,61,.25)}
+.btl-row:last-child{border-bottom:none}
+.btl-scale{font-family:var(--fc);font-size:.8rem;font-weight:700;color:var(--bq3);min-width:80px;flex-shrink:0;padding-top:2px}
+.btl-bottle{flex:1;font-size:.86rem;color:var(--muted);line-height:1.55}
+.btl-bottle strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(66,133,244,.1),rgba(139,92,246,.05));border:1px solid rgba(66,133,244,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--bq3);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* FAIL OPEN/CLOSED */
+.failmode{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.fm-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.fm-card.open{border-left:3px solid var(--lean)}
+.fm-card.closed{border-left:3px solid var(--bq3)}
+.fm-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:7px}
+.fm-card.open .fm-label{color:var(--lean)}.fm-card.closed .fm-label{color:var(--bq3)}
+.fm-card p{font-size:.84rem;color:var(--muted);line-height:1.6;margin-bottom:4px}
+.fm-card strong{color:var(--text)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--bq3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+mark{background:rgba(66,133,244,.14);color:var(--bq3);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.variant-stats{grid-template-columns:repeat(3,1fr)}
+  .boe-grid,.failmode{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">BigQuery Internals · L6/L7 Series</div>
+    <div class="sb-title">Trade-offs, Scale & L6/L7 Differentiators</div>
+    <div class="sb-part">Part 3 — The Nuance Layer</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Walkthrough</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#variants">3-Variant Query Comparison</a></li>
+      <li class="ni sub"><a href="#variant-summary">Cost & Speed Summary</a></li>
+    </li>
+    <li class="ng"><div class="nl">Trade-offs</div>
+      <li class="ni sub"><a href="#tradeoffs">Fundamental Trade-offs Matrix</a></li>
+      <li class="ni sub"><a href="#distributed">Distributed Systems Twist</a></li>
+      <li class="ni sub"><a href="#failure-modes">Failure Modes Deep-Dive</a></li>
+      <li class="ni sub"><a href="#fail-open">Fail-Open vs Fail-Closed</a></li>
+    </li>
+    <li class="ng"><div class="nl">Edge Cases</div>
+      <li class="ni sub"><a href="#ec1">EC1: Time Travel Consistency</a></li>
+      <li class="ni sub"><a href="#ec2">EC2: Partition Expiry vs Clustering</a></li>
+      <li class="ni sub"><a href="#ec3">EC3: Slot Contention by Query Type</a></li>
+      <li class="ni sub"><a href="#ec4">EC4: Clustering Column Order</a></li>
+      <li class="ni sub"><a href="#ec5">EC5: Approximate vs Exact Functions</a></li>
+      <li class="ni sub"><a href="#ec6">EC6: Streaming Buffer vs MVs</a></li>
+      <li class="ni sub"><a href="#ec7">EC7: Cross-Region Replication Lag</a></li>
+    </li>
+    <li class="ng"><div class="nl">Scale</div>
+      <li class="ni sub"><a href="#boe-startup">BOE: 1M DAU Startup</a></li>
+      <li class="ni sub"><a href="#boe-hyper">BOE: 1B DAU Hyper-Scale</a></li>
+      <li class="ni sub"><a href="#bottleneck">Bottleneck Timeline</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">BigQuery Internals · L6/L7 Series · Part 3</div>
+  <h1>Trade-offs, Scale<br>& L6/L7<br>Differentiators</h1>
+  <div class="hero-meta">
+    <span>📊 3-Variant query: $25 → $0.04 (99.8% reduction)</span>
+    <span>⚖️ Fundamental trade-offs matrix</span>
+    <span>🔀 Distributed systems failure modes</span>
+    <span>🧩 7 edge cases most candidates miss</span>
+    <span>📐 BOE: 1M DAU vs 1B DAU</span>
+    <span>📈 Bottleneck evolution by scale</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Architecture & Internals</span>
+    <span class="part-pill">Part 2: Query Execution</span>
+    <span class="part-pill ap">Part 3: Trade-offs & Scale</span>
+  </div>
+  <p style="margin-top:14px">Parts 1 and 2 explained how BigQuery works. Part 3 is the L6/L7 differentiator — the material that separates candidates who've read the docs from those who've operated at scale. Three query variants showing the $25 → $0.04 journey. The distributed failure modes BigQuery hides from you. Seven edge cases most interviewers have seen candidates miss. And the back-of-envelope reasoning that shows your cost intuition is calibrated.</p>
+</section>
+
+<!-- 3-VARIANT WALKTHROUGH -->
+<div class="sec-hdr" id="variants"><h2>Detailed Walkthrough: Three Query Variants</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:16px">
+<strong>Scenario:</strong> 5 TB table <code>user_events</code>, partitioned by date (30 days), clustered by country.<br>
+<strong>Query:</strong> <code>SELECT country, COUNT(*) FROM user_events WHERE date = '2024-01-15' AND country = 'US' GROUP BY country</code>
+</p>
+
+<div class="variant-tabs">
+  <div class="vtab v1t active" onclick="switchVariant(0)">Variant 1 — No Optimization</div>
+  <div class="vtab v2t" onclick="switchVariant(1)">Variant 2 — Partition Only</div>
+  <div class="vtab v3t" onclick="switchVariant(2)">Variant 3 — Partition + Cluster</div>
+</div>
+<div class="variant-body">
+  <div class="vbody v1b active">
+t=0s:   Query submitted
+        └── Query planner: Must scan all 5 TB
+            No partition filter detected → full table scan
+
+t=0.5s: Execution starts
+        └── 5,000 slots assigned (massive parallelism needed)
+        └── Each slot reads ~1 GB from Colossus
+
+t=30s:  Scan complete
+        └── 5 TB scanned (ALL 30 days, ALL countries)
+        └── 50 billion rows processed
+        └── Filter applied POST-scan:
+            1/30 days × 5% US = ~83M rows match
+            49.917B rows read and discarded
+
+t=35s:  Aggregation complete
+        └── Result: {US: 83,000,000}
+
+t=35s:  Query complete
+        └── Cost: 5 TB × $5/TB = $25.00
+        └── Time: 35 seconds
+        └── Slots: 5,000 used
+        └── Pruning: NONE — full scan</div>
+  <div class="vbody v2b">
+t=0s:   Query submitted
+        └── Query planner: Partition pruning detected!
+        └── date = '2024-01-15' matches partition key
+        └── Only partition '2024-01-15' needed
+        └── 5 TB ÷ 30 days = 167 GB to scan
+
+t=0.5s: Execution starts
+        └── 167 slots assigned (fewer needed)
+        └── Each slot reads ~1 GB
+
+t=5s:   Scan complete
+        └── 167 GB scanned (1 day only!)
+        └── 1.67 billion rows processed
+        └── Filter: country = 'US' applied post-scan
+        └── 5% match = 83M rows
+
+t=7s:   Aggregation complete
+        └── Result: {US: 83,000,000}
+
+t=7s:   Query complete
+        └── Cost: 167 GB × $5/TB = $0.84
+        └── Time: 7 seconds
+        └── Slots: 167 used
+        └── Pruning: Partition (date column)</div>
+  <div class="vbody v3b">
+t=0s:   Query submitted
+        └── Query planner: Partition + cluster pruning!
+        └── date = '2024-01-15' → partition '2024-01-15' = 167 GB
+        └── country = 'US' → only blocks where US rows exist
+        └── Block metadata: min/max country per block
+        └── ~5% of blocks contain US rows = 8.4 GB
+
+t=0.2s: Execution starts (nearly instant — minimal data)
+        └── Only 9 slots assigned
+        └── Each slot reads ~1 GB
+
+t=2s:   Scan complete
+        └── 8.4 GB scanned (only US blocks!)
+        └── 83 million rows processed
+        └── ALL rows already match — no post-scan filter needed
+
+t=2.5s: Aggregation complete
+        └── Result: {US: 83,000,000}
+
+t=2.5s: Query complete
+        └── Cost: 8.4 GB × $5/TB = $0.04
+        └── Time: 2.5 seconds
+        └── Slots: 9 used
+        └── Pruning: Partition + Block-level clustering</div>
+</div>
+
+<div id="variant-summary">
+<div class="variant-stats">
+  <div class="vs-cell"><div class="vs-label">Data Scanned</div><div class="vs-v1">5 TB</div><div class="vs-v2">167 GB</div><div class="vs-v3">8.4 GB</div></div>
+  <div class="vs-cell"><div class="vs-label">Rows Processed</div><div class="vs-v1">50B</div><div class="vs-v2">1.67B</div><div class="vs-v3">83M</div></div>
+  <div class="vs-cell"><div class="vs-label">Slots Used</div><div class="vs-v1">5,000</div><div class="vs-v2">167</div><div class="vs-v3">9</div></div>
+  <div class="vs-cell"><div class="vs-label">Query Time</div><div class="vs-v1">35s</div><div class="vs-v2">7s</div><div class="vs-v3">2.5s</div></div>
+  <div class="vs-cell"><div class="vs-label">Cost</div><div class="vs-v1">$25.00</div><div class="vs-v2">$0.84</div><div class="vs-v3">$0.04</div></div>
+</div>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — The $25 → $0.04 Journey</div>
+  <p>"The difference between an unoptimized and optimized BigQuery query isn't incremental — it's orders of magnitude. Partitioning alone gives you 30x improvement by eliminating entire date ranges. Clustering adds another 10–20x by skipping blocks within the partition. A $25 query becomes 4 cents with proper table design. This is why I always ask about data access patterns before defining the schema — the schema IS the optimization strategy."</p>
+</div>
+
+<!-- TRADE-OFFS MATRIX -->
+<div class="sec-hdr" id="tradeoffs"><h2>Fundamental Trade-offs Matrix</h2></div>
+
+<table class="data-table">
+  <thead><tr><th>Trade-off</th><th>Optimizes</th><th>Sacrifices</th><th>Why Acceptable</th><th>When NOT Acceptable</th></tr></thead>
+  <tbody>
+    <tr><td>Columnar vs Row</td><td class="good">Analytical scan speed</td><td class="bad">Point lookup latency</td><td>Analytics workloads are 95%+ of BigQuery usage</td><td>OLTP requirements (use Spanner)</td></tr>
+    <tr><td>Separated Storage/Compute</td><td class="good">Independent scaling, cost</td><td class="mid">Co-location benefits</td><td>Network is fast enough; flexibility trumps locality</td><td>Sub-10ms latency requirements</td></tr>
+    <tr><td>Strong Consistency</td><td class="good">Data correctness</td><td class="bad">Write throughput</td><td>Analytics requires correct data</td><td>Extremely high write throughput (use Bigtable)</td></tr>
+    <tr><td>Serverless</td><td class="good">Operational simplicity</td><td class="mid">Fine-grained control</td><td>Most teams can't tune better than Google</td><td>Need custom memory/CPU ratios</td></tr>
+    <tr><td>Slots over Memory</td><td class="good">Predictable resource units</td><td class="mid">Memory-intensive ops</td><td>Simplifies capacity planning</td><td>Very large single-row operations</td></tr>
+    <tr><td>Colossus Shuffle</td><td class="good">Fault tolerance</td><td class="mid">Shuffle latency</td><td>Recovery without recompute saves time overall</td><td>Ultra-low-latency requirements</td></tr>
+  </tbody>
+</table>
+
+<!-- DISTRIBUTED SYSTEMS TWIST -->
+<div class="sec-hdr" id="distributed"><h2>The Distributed Systems Twist</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:16px">BigQuery hides enormous distributed systems complexity behind a simple SQL interface. Understanding what's happening under the hood — and what can go wrong — is the L7 signal.</p>
+
+<table class="data-table">
+  <thead><tr><th>Aspect</th><th>Single Node Behavior</th><th>BigQuery Distributed Behavior</th></tr></thead>
+  <tbody>
+    <tr><td>Scan throughput</td><td>~500 MB/s/core</td><td class="good">~500 MB/s × 10,000 cores = 5 TB/s peak</td></tr>
+    <tr><td>Memory for aggregation</td><td class="bad">Limited by node RAM</td><td class="good">Each node has portion; shuffle combines</td></tr>
+    <tr><td>Failure impact</td><td class="bad">Query fails entirely</td><td class="good">Failed worker's work reassigned transparently</td></tr>
+    <tr><td>I/O pattern</td><td>Local disk sequential</td><td>Network reads from Colossus (remote)</td></tr>
+  </tbody>
+</table>
+
+<div class="diag warn">
+  <div class="diag-hdr"><span class="diag-title">New Failure Modes That Don't Exist on Single Nodes</span></div>
+  <pre>Straggler Workers — One slow worker delays the entire query
+
+  Single node: N/A (only one worker)
+  Distributed: Query waits for the slowest of 5,000 workers
+  BigQuery solution: Speculative execution
+    → If worker is >2x slower than median, launch duplicate task
+    → Use whichever finishes first
+    → Cost: extra work; benefit: P99 latency improvement
+
+Shuffle Skew — Uneven data distribution across reduce workers
+
+  Single node: N/A (no shuffle phase)
+  Distributed: One worker gets 90% of data if key space is skewed
+    e.g. COUNT(*) GROUP BY status where 'ACTIVE' = 80% of rows
+  BigQuery solution: Adaptive skew handling + dynamic repartitioning
+    → Detect hot keys during shuffle planning
+    → Split hot key across multiple workers
+
+Coordinator Overload — Mixer receives too much aggregated data
+
+  Single node: N/A
+  Distributed: Root mixer merges results from all workers
+    → If query returns millions of rows, mixer becomes bottleneck
+  BigQuery solution: Multi-level mixer tree
+    → Intermediate mixers pre-aggregate before root
+    → Similar to map-reduce tree aggregation</pre>
+</div>
+
+<div class="diag bq">
+  <div class="diag-hdr"><span class="diag-title">Concrete Example: GROUP BY user_id at Scale</span></div>
+  <pre>Query: SELECT user_id, COUNT(*) FROM events GROUP BY user_id
+
+Single node (1 TB table):
+  Scan all data
+  Build hash table: user_id → count
+  If hash table fits in RAM: fast (~30s)
+  If not: spill to disk, much slower
+
+Distributed (1 PB table, 10,000 workers):
+  Step 1: 10,000 workers scan 100 GB each → build local hash tables
+  Step 2: Shuffle — partial counts must move to the worker "owning" each user_id
+          Shuffle volume: potentially terabytes of data transferred
+  Step 3: Reduce — each worker merges partial counts for its user_ids
+  
+  Failure modes:
+    → Skew: If user_id=bot_account has 50% of events → one worker overwhelmed
+    → Memory: Each worker's local hash table must fit in memory
+    → Network: Shuffle volume can exceed scan volume
+
+  BigQuery mitigations:
+    → APPROX_COUNT_DISTINCT for non-exact needs (10x faster, ~1% error)
+    → Pre-aggregation in WHERE clause to reduce shuffle input
+    → Adaptive skew handling for hot keys</pre>
+</div>
+
+<!-- FAILURE MODES -->
+<div class="sec-hdr" id="failure-modes"><h2>Failure Modes Deep-Dive</h2></div>
+
+<table class="data-table">
+  <thead><tr><th>Failure</th><th>What Happens</th><th>Symptoms</th><th>Recovery</th><th>Prevention</th></tr></thead>
+  <tbody>
+    <tr><td>Slot Exhaustion</td><td>Queries queue waiting for slots</td><td class="bad">PENDING status, long wait times</td><td>Add Flex Slots or wait for queue drain</td><td>Monitor slot utilization, right-size reservations</td></tr>
+    <tr><td>Worker Failure</td><td>Worker crashes mid-execution</td><td class="good">Transparent (internal retry)</td><td>Work reassigned to new worker automatically</td><td>N/A — BigQuery handles transparently</td></tr>
+    <tr><td>Shuffle Overflow</td><td>Shuffle data exceeds available space</td><td class="bad">Query fails with shuffle error</td><td>Reduce data volume (add filters, pre-aggregate)</td><td>Use APPROX functions, pre-aggregate with MVs</td></tr>
+    <tr><td>Slot Timeout</td><td>Query exceeds 6-hour slot time limit</td><td class="bad">Query fails with timeout error</td><td>Break into smaller queries</td><td>Better design, materialized views for heavy aggs</td></tr>
+    <tr><td>OOM in Worker</td><td>Single large operation exceeds worker memory</td><td class="bad">Query fails with memory error</td><td>Rewrite to process smaller chunks</td><td>Avoid ARRAY_AGG on large groups</td></tr>
+    <tr><td>Hot Partition</td><td>One partition receives all streaming writes</td><td class="bad">Streaming insert failures, backpressure</td><td>Add partition key variation / sharding</td><td>Use timestamp with sub-second granularity</td></tr>
+  </tbody>
+</table>
+
+<!-- FAIL OPEN / CLOSED -->
+<div class="sec-hdr" id="fail-open"><h2>Fail-Open vs Fail-Closed Analysis</h2></div>
+
+<div class="failmode">
+  <div class="fm-card open">
+    <div class="fm-label">Slot Allocation — Fail-Open</div>
+    <p><strong>Behavior:</strong> Allow queries to run with fewer slots → slower but eventually completes.</p>
+    <p><strong>BigQuery's actual choice for on-demand:</strong> Queue + run slower. Never reject a valid query due to slot shortage — degrade gracefully.</p>
+    <p><strong>Exception:</strong> When quota is exceeded on reserved slots → fail-closed (reject to protect existing workloads).</p>
+  </div>
+  <div class="fm-card closed">
+    <div class="fm-label">Data Consistency — Fail-Closed</div>
+    <p><strong>Behavior:</strong> Block until data is consistent → correct but may error if consistency cannot be achieved.</p>
+    <p><strong>BigQuery's actual choice:</strong> Returns error rather than stale data. Strong consistency is non-negotiable for analytics correctness.</p>
+    <p><strong>Implication:</strong> You cannot accidentally read dirty data in BigQuery — the system would rather fail than lie.</p>
+  </div>
+</div>
+
+<!-- 7 EDGE CASES -->
+<div class="sec-hdr" id="edge-cases"><h2>Edge Cases That Impress Interviewers</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:16px">These are the seven cases most candidates have not thought through. Each has a scenario, what actually happens, why it matters, and the sophisticated answer.</p>
+
+<div class="ec-card" id="ec1-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 1</span>
+    <span class="ec-title">Time Travel Consistency Window</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec1">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">You query data, someone deletes rows, you re-run the same query.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">Results differ — BigQuery reads current state by default. Reproducibility broken.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Analytics reproducibility.</strong> ML training on shifting data produces non-deterministic models. Audits require point-in-time snapshots.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Use <code>FOR SYSTEM_TIME AS OF</code> for historical snapshots. BigQuery maintains 7 days of history by default.</span>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Query the table as it was exactly 1 hour ago
+SELECT * FROM my_table
+FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR);
+
+-- Pin a reproducible query to a specific timestamp
+SELECT * FROM my_table
+FOR SYSTEM_TIME AS OF '2024-01-15 10:00:00 UTC';
+
+-- Use in ML training pipelines for reproducibility
+CREATE OR REPLACE TABLE training_snapshot AS
+SELECT * FROM events
+FOR SYSTEM_TIME AS OF @training_cutoff_timestamp;</pre></div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec2-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 2</span>
+    <span class="ec-title">Partition Expiration vs Clustering Re-clustering Conflict</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec2">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">Set 90-day partition expiration on a table where time-travel queries are critical.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">Data deleted after 90 days → time travel queries fail for data older than 90 days. GDPR compliance (right to delete) conflicts with auditability requirements.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Regulatory conflict</strong> — GDPR mandates deletion, financial audits mandate retention. Both cannot be satisfied with the same table.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val"><strong>Separate tables by compliance tier.</strong> GDPR-scoped data: 90-day expiry, no audit. Audit-required data: separate table with long retention, no GDPR fields. Pseudonymization bridges both.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec3-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 3</span>
+    <span class="ec-title">Slot Contention Between Query Types</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec3">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">Dashboard queries (fast, frequent, interactive) compete with ETL queries (slow, heavy batch) in the same slot reservation.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">ETL consumes all slots. Dashboards queue. User-facing latency degrades from 5s to 5 minutes. ETL operator doesn't notice. User-facing teams blame "BigQuery."</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Operational SLA conflict</strong> — different query classes have different latency requirements and should not share resources without isolation.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Use BigQuery <strong>Reservations</strong> to assign dedicated slot pools. Dashboard queries → high-priority reservation with guaranteed slots. ETL → lower-priority reservation with idle-slot sharing. Monitor per-reservation slot utilization separately.</span>
+    </div>
+    <div class="callout bq">
+      <div class="callout-title">The Reservation Architecture</div>
+      <ul>
+        <li><strong>Interactive reservation:</strong> 500 dedicated slots for dashboards. Priority: HIGH. Never shares with ETL.</li>
+        <li><strong>ETL reservation:</strong> 1,000 slots with idle sharing enabled. Borrows from interactive pool when dashboards idle.</li>
+        <li><strong>ML reservation:</strong> 2,000 slots for training jobs. Priority: LOW. Gets whatever is leftover.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec4-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 4</span>
+    <span class="ec-title">Clustering Column Order Matters — Prefix Rule</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec4">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">Table clustered by <code>(country, city, user_id)</code>. Query filters only on <code>user_id</code>.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">Clustering doesn't help at all. BigQuery can only prune blocks using a prefix of the clustering columns. Filtering on <code>user_id</code> alone (without <code>country</code> and <code>city</code>) = full scan within the partition. Expensive query despite "optimized" table.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Wasted optimization effort</strong> — teams spend time clustering tables based on data structure, not query patterns. Result: full cost, false confidence.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Clustering column order must match the most common query filter patterns. <strong>Most frequently filtered column goes first</strong>. If queries filter on (country) 90% of the time and (user_id) 10% → <code>CLUSTER BY (country, user_id)</code>. Analyze query history before defining clustering.</span>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — Effective vs Ineffective Clustering</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Table clustered by (country, city, user_id)
+
+-- ✓ EFFECTIVE: prefix match, clustering works
+SELECT * FROM events WHERE country = 'US';
+SELECT * FROM events WHERE country = 'US' AND city = 'NYC';
+SELECT * FROM events WHERE country = 'US' AND city = 'NYC' AND user_id = '123';
+
+-- ✗ INEFFECTIVE: not a prefix, clustering doesn't prune
+SELECT * FROM events WHERE city = 'NYC';           -- skips country
+SELECT * FROM events WHERE user_id = '123';        -- skips country + city
+SELECT * FROM events WHERE country = 'US' AND user_id = '123';  -- skips city</pre></div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec5-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 5</span>
+    <span class="ec-title">Approximate vs Exact Functions at 100B Rows</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec5">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val"><code>COUNT(DISTINCT user_id)</code> on a 100 billion row table.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">Exact distinct count requires building a global hash set of every unique user_id, then shuffling it across workers. Massive memory and network usage. Query may OOM or be extremely slow.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Correctness vs practicality</strong> — business stakeholders often don't need the exact 5th significant digit. Approximate functions unlock 10x performance at ~1% error.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Use <code>APPROX_COUNT_DISTINCT</code> (HyperLogLog++ algorithm) for ~1% error at 10x performance. Know when exact matters: billing, legal compliance, deduplication for critical systems. Know when approximate is fine: dashboards, trend analysis, A/B reporting.</span>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — Exact vs Approximate</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Exact: correct to the last digit, but very expensive at scale
+-- May fail with OOM on 100B row tables
+SELECT COUNT(DISTINCT user_id) FROM huge_events_table;
+
+-- Approximate: ~1% error, 10x faster, almost never fails
+-- Uses HyperLogLog++ — probabilistic cardinality estimation
+SELECT APPROX_COUNT_DISTINCT(user_id) FROM huge_events_table;
+
+-- Other approximate functions available:
+SELECT APPROX_QUANTILES(latency_ms, 100) FROM requests;  -- percentiles
+SELECT APPROX_TOP_COUNT(country, 10) FROM events;        -- top-N
+SELECT APPROX_TOP_SUM(revenue, country, 5) FROM sales;   -- weighted top-N</pre></div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec6-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 6</span>
+    <span class="ec-title">Streaming Buffer vs Materialized Views — The 5-Minute Blind Spot</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec6">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">Materialized view built on a table receiving streaming inserts. Dashboard reads from the materialized view for "real-time" data.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">Materialized views only see <strong>committed (batch-flushed) data</strong>, not the streaming buffer. Streaming data sits in the buffer for 5–10 minutes before batch commit. Dashboard shows data that's 5–10 minutes stale despite "streaming" architecture.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Streaming architecture illusion</strong> — teams spend significant engineering effort on real-time streaming only to discover the downstream query layer introduces a fixed delay they cannot reduce.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Understand the streaming buffer lifecycle. For real-time needs: query the <strong>base table directly</strong> (sees streaming buffer, slightly more expensive). For historical/aggregated data: use materialized views (faster, cheaper, but 5–10 min stale). Architect dashboards to explicitly distinguish real-time vs aggregated panels.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec7-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 7</span>
+    <span class="ec-title">Cross-Region Replication Lag</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec7">
+    <div class="ec-row">
+      <span class="ec-key">Scenario</span>
+      <span class="ec-val">Multi-region dataset (e.g., US multi-region). Write in us-east4, read immediately in us-central1.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">What happens</span>
+      <span class="ec-val">BigQuery is strongly consistent <strong>within a single region</strong>. Cross-region replication is async with observable lag. A read in a different region immediately after a write may not see the write yet.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val"><strong>Correctness assumption violation</strong> — teams assume strong consistency globally because BigQuery is "consistent," not realizing consistency is a within-region guarantee.</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-key">Sophisticated answer</span>
+      <span class="ec-val">Use <strong>single-region datasets</strong> for consistency-critical workloads. Multi-region datasets serve disaster recovery and geo-distributed reads — accept replication lag as the trade-off. Never depend on cross-region read-after-write consistency for critical workflows.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — The Schema IS the Optimization</div>
+  <p>"The most important trade-off in BigQuery is between query flexibility and cost efficiency. The schema you choose — partitioning columns, clustering order — encodes your assumptions about how data will be queried. Get it right and queries are 100x cheaper. Get it wrong and you pay for full table scans every time. This is why I always start data warehouse design by analyzing query patterns, not data structure."</p>
+</div>
+
+<!-- SCALE BOE -->
+<div class="sec-hdr" id="boe"><h2>Back-of-Envelope Reasoning</h2></div>
+
+<div class="boe-grid">
+  <div class="boe-card startup" id="boe-startup">
+    <div class="boe-hdr">🌱 Scenario A — 1M DAU Startup Analytics</div>
+    <div class="boe-body">
+      <div class="boe-row"><span class="boe-key">Events/day</span><span class="boe-val">20M (20 events × 1M users)</span></div>
+      <div class="boe-row"><span class="boe-key">Daily storage</span><span class="boe-val">10 GB/day (500B avg event)</span></div>
+      <div class="boe-row"><span class="boe-key">Monthly storage</span><span class="boe-val">300 GB</span></div>
+      <div class="boe-row"><span class="boe-key">Annual storage</span><span class="boe-val">3.6 TB</span></div>
+      <div class="boe-row"><span class="boe-key">Storage cost</span><span class="boe-val">~$72/month (before compression)</span></div>
+      <div class="boe-row"><span class="boe-key">Queries/day</span><span class="boe-val">5,000 (50 analysts × 100/day)</span></div>
+      <div class="boe-row"><span class="boe-key">Avg scan/query</span><span class="boe-val">10 GB (with partition pruning)</span></div>
+      <div class="boe-row"><span class="boe-key">Daily scan vol</span><span class="boe-val">50 TB</span></div>
+      <div class="boe-row"><span class="boe-key">Compute cost</span><span class="boe-val">~$7,500/month (on-demand)</span></div>
+    </div>
+  </div>
+  <div class="boe-card hyper" id="boe-hyper">
+    <div class="boe-hdr">🚀 Scenario B — 1B DAU Hyper-Scale</div>
+    <div class="boe-body">
+      <div class="boe-row"><span class="boe-key">Events/day</span><span class="boe-val">50B (50 events × 1B users)</span></div>
+      <div class="boe-row"><span class="boe-key">Daily storage</span><span class="boe-val">25 TB/day</span></div>
+      <div class="boe-row"><span class="boe-key">Annual storage</span><span class="boe-val">9 PB</span></div>
+      <div class="boe-row"><span class="boe-key">Storage cost</span><span class="boe-val">~$100,000/month (tiered)</span></div>
+      <div class="boe-row"><span class="boe-key">Queries/day</span><span class="boe-val">100,000 (analysts + pipelines)</span></div>
+      <div class="boe-row"><span class="boe-key">Daily scan vol</span><span class="boe-val">10 PB</span></div>
+      <div class="boe-row"><span class="boe-key">On-demand cost</span><span class="boe-val">$1.5M/month ← UNACCEPTABLE</span></div>
+      <div class="boe-row"><span class="boe-key">Reserved slots</span><span class="boe-val">10,000 slots × $20 = $200K/month</span></div>
+      <div class="boe-row"><span class="boe-key">Savings</span><span class="boe-val">$1.3M/month by switching to reserved!</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">What Changes at 1000x Scale (1B vs 1M DAU)</div>
+  <ul>
+    <li><strong>Slot management is now a product:</strong> Reserved slots, workload management (reservations by team), autoscaling for burst periods — this is a full-time job.</li>
+    <li><strong>Data organization is make-or-break:</strong> Without partitioning at 9PB, queries take hours and cost millions. Schema decisions made at startup scale are rearchitected at this scale.</li>
+    <li><strong>Materialized views are essential:</strong> Pre-compute common aggregations. 90%+ cost reduction for dashboard queries. Incremental refresh maintains freshness.</li>
+    <li><strong>Multi-region required:</strong> Single region = unacceptable disaster recovery risk at this business scale. Cost doubles but provides geo-redundancy.</li>
+    <li><strong>Full table scans are impossible:</strong> 9 PB scan = $45,000 per query. Must enforce partition filters via IAM policies.</li>
+  </ul>
+</div>
+
+<!-- BOTTLENECK TIMELINE -->
+<div class="sec-hdr" id="bottleneck"><h2>Bottleneck Evolution Timeline</h2></div>
+
+<div class="boe-card startup" style="margin-bottom:16px">
+  <div class="boe-hdr">Bottleneck by Scale — What Breaks and When</div>
+  <div class="boe-body" style="padding:0">
+    <div class="btl-row" style="padding:10px 14px"><span class="btl-scale">100 GB</span><span class="btl-bottle">Bottleneck: <strong>Learning curve</strong>. Solution: Training, best practices documentation, cost policies.</span></div>
+    <div class="btl-row" style="padding:10px 14px"><span class="btl-scale">10 TB</span><span class="btl-bottle">Bottleneck: <strong>Query cost</strong>. Solution: Partition all tables by date. Enforce <code>WHERE date ≥ X</code> filter policies.</span></div>
+    <div class="btl-row" style="padding:10px 14px"><span class="btl-scale">100 TB</span><span class="btl-bottle">Bottleneck: <strong>Query performance</strong>. Solution: Add clustering columns. Build materialized views for top-20 slowest queries.</span></div>
+    <div class="btl-row" style="padding:10px 14px"><span class="btl-scale">1 PB</span><span class="btl-bottle">Bottleneck: <strong>Slot contention</strong>. Solution: Reserved slots, workload management reservations, per-team quotas.</span></div>
+    <div class="btl-row" style="padding:10px 14px"><span class="btl-scale">10 PB</span><span class="btl-bottle">Bottleneck: <strong>Shuffle volume</strong>. Solution: Pre-aggregation in pipelines, denormalization to avoid cross-table joins, APPROX functions.</span></div>
+    <div class="btl-row" style="padding:10px 14px;border-bottom:none"><span class="btl-scale">100 PB+</span><span class="btl-bottle">Bottleneck: <strong>Everything simultaneously</strong>. Solution: Multi-layered data architecture: raw → curated → serving layers. Each layer optimized for its consumers.</span></div>
+  </div>
+</div>
+
+<table class="data-table">
+  <thead><tr><th>Bottleneck</th><th>Warning Signs</th><th>Key Metric</th><th>Threshold</th><th>Response</th></tr></thead>
+  <tbody>
+    <tr><td>Slot exhaustion</td><td>Queries pending, long waits</td><td>Slot utilization</td><td class="bad">&gt;80% sustained</td><td>Add flex slots, optimize heavy queries</td></tr>
+    <tr><td>Shuffle overflow</td><td>Queries failing with shuffle error</td><td>Shuffle bytes written</td><td class="bad">&gt;1 TB per query</td><td>Pre-aggregate, filter earlier in pipeline</td></tr>
+    <tr><td>Cost explosion</td><td>Monthly bill spiking</td><td>$ per useful query</td><td class="bad">&gt;2x baseline</td><td>Audit queries, enforce partition filters</td></tr>
+    <tr><td>Scan inefficiency</td><td>Large TB scanned, slow results</td><td>Bytes scanned / rows returned</td><td class="bad">&gt;1 MB/row</td><td>Review partition + cluster usage</td></tr>
+    <tr><td>Streaming backpressure</td><td>Insert latency &gt;10s</td><td>Streaming insert latency</td><td class="bad">&gt;5 seconds</td><td>Batch larger, add row key sharding</td></tr>
+  </tbody>
+</table>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The L6/L7 Insight</div>
+  <p>The L6/L7 differentiator in BigQuery interviews is not knowing the architecture — it's demonstrating <strong>cost intuition calibrated to real numbers</strong> ($25 → $0.04), failure mode awareness (shuffle skew, straggler speculative execution, streaming buffer blind spot), and schema design philosophy (the schema encodes your query pattern assumptions).</p>
+  <p>When asked about any BigQuery design decision, the L7 signal is layering the answer: first what the feature is, then what it costs to use (latency, money, complexity), then what breaks when you use it incorrectly (edge cases 1–7), then how the trade-off changes at different scales (1M vs 1B DAU). <strong>That layered reasoning — from feature to cost to failure to scale — is what Principal Engineers demonstrate.</strong></p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function switchVariant(i){
+  document.querySelectorAll('.vtab').forEach((t,j)=>t.classList.toggle('active',i===j));
+  document.querySelectorAll('.vbody').forEach((b,j)=>b.classList.toggle('active',i===j));
+}
+function toggleEC(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
