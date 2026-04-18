@@ -122,6 +122,18 @@
         {
         "title": "Deep Dive-4",
         "file": "pages/BigQuery/4.html"
+      },
+       {
+        "title": "Case Study-Spotify",
+        "file": "pages/BigQuery/case-study-1.html"
+      },
+       {
+        "title": "Case Study-Stripe",
+        "file": "pages/BigQuery/case-study-2.html"
+      },
+       {
+        "title": "Case Study-Youtube",
+        "file": "pages/BigQuery/case-study-3.html"
       }
     ],
     "ClickHouse": [
