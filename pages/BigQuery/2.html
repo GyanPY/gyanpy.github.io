@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Internals · Part 2 — Variants Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --strong-hire: #F5A623;
+    --hire: #00BFA5;
+    --lean-hire: #FFD700;
+    --no-hire: #FF6B6B;
+    --code-bg: #010409;
+    --sidebar-w: 290px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 300;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.6s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: linear-gradient(90deg, var(--strong-hire), var(--hire), var(--accent));
+    width: 0%; z-index: 9999; transition: width 0.1s linear;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed; top: 0; left: 0; width: var(--sidebar-w);
+    height: 100vh; background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .sidebar-header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--strong-hire), var(--hire), transparent);
+  }
+
+  .sidebar-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--strong-hire);
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 3px; padding: 2px 7px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px; font-weight: 700;
+    color: var(--text); margin-bottom: 3px;
+  }
+
+  .sidebar-subtitle {
+    font-size: 11px; color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  #sidebar-search {
+    margin: 12px 14px;
+    padding: 8px 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    width: calc(100% - 28px);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #sidebar-search:focus { border-color: var(--accent); }
+  #sidebar-search::placeholder { color: var(--text-muted); }
+
+  nav ul { list-style: none; padding: 6px 0 16px; }
+
+  nav li a {
+    display: block; padding: 6px 20px;
+    color: var(--text-muted); text-decoration: none;
+    font-size: 12.5px; font-family: 'Source Serif 4', serif;
+    transition: all 0.15s; border-left: 2px solid transparent;
+    line-height: 1.4;
+  }
+
+  nav li a:hover { color: var(--text); background: rgba(88,166,255,0.06); border-left-color: var(--accent); }
+  nav li a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,0.08); }
+
+  nav li.nav-sub a { padding-left: 34px; font-size: 11.5px; }
+  nav li.nav-sub2 a { padding-left: 46px; font-size: 11px; color: rgba(139,148,158,0.7); }
+
+  .nav-section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--strong-hire);
+    padding: 14px 20px 4px; display: block;
+    opacity: 0.8;
+  }
+
+  /* HAMBURGER */
+  #hamburger {
+    display: none; position: fixed; top: 12px; left: 12px;
+    z-index: 200; background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+    cursor: pointer; color: var(--text); font-size: 16px;
+    align-items: center; justify-content: center;
+  }
+
+  /* MAIN */
+  main {
+    margin-left: var(--sidebar-w);
+    max-width: 920px;
+    padding: 56px 64px 140px;
+  }
+
+  /* HERO */
+  .hero {
+    margin-bottom: 64px;
+    padding: 44px 0 40px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  .hero::before {
+    content: '2';
+    position: absolute; top: 16px; right: -10px;
+    font-family: 'Playfair Display', serif;
+    font-size: 200px; font-weight: 900;
+    color: rgba(245,166,35,0.04);
+    line-height: 1; pointer-events: none; user-select: none;
+  }
+
+  .hero-eyebrow {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .hero-badge-part {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--strong-hire);
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 3px; padding: 3px 10px;
+  }
+
+  .hero-badge-type {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 46px; font-weight: 900;
+    line-height: 1.1; color: var(--text);
+    margin-bottom: 10px;
+  }
+
+  .hero h1 span { color: var(--strong-hire); }
+
+  .hero-sub {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px; font-weight: 400;
+    color: var(--text-muted); margin-bottom: 18px;
+    font-style: italic;
+  }
+
+  .hero p {
+    font-size: 15px; color: var(--text-muted);
+    max-width: 560px; line-height: 1.7;
+  }
+
+  .hero-toc {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px;
+  }
+
+  .hero-toc-pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 4px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 100px; color: var(--text-muted);
+    text-decoration: none; transition: all 0.15s;
+  }
+
+  .hero-toc-pill:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* SECTION HEADERS */
+  .section-divider {
+    margin: 72px 0 40px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+
+  .section-divider::before {
+    content: '';
+    position: absolute; top: -1px; left: 0;
+    width: 80px; height: 2px;
+    background: var(--strong-hire);
+  }
+
+  .section-num-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--strong-hire);
+    margin-bottom: 6px;
+  }
+
+  .section-divider h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 34px; font-weight: 900;
+    line-height: 1.2; margin-bottom: 6px;
+  }
+
+  .section-divider .section-desc {
+    color: var(--text-muted); font-size: 14px;
+    font-style: italic;
+  }
+
+  /* CONTENT */
+  .content-block { margin-bottom: 52px; }
+
+  h3.variant-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px; font-weight: 700;
+    margin-bottom: 6px; color: var(--text);
+  }
+
+  h4.sub-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px; font-weight: 700;
+    margin: 28px 0 12px; color: var(--text);
+  }
+
+  h5.mini-title {
+    font-family: 'Source Serif 4', serif;
+    font-size: 13px; font-weight: 600;
+    margin: 22px 0 10px;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  p { margin-bottom: 14px; }
+
+  /* VARIANT HEADER CARD */
+  .variant-card {
+    display: flex; align-items: flex-start; gap: 18px;
+    margin: 0 0 24px;
+    padding: 22px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-left: 4px solid var(--strong-hire);
+    transition: box-shadow 0.2s;
+  }
+
+  .variant-card:hover { box-shadow: 0 4px 20px rgba(245,166,35,0.08); }
+
+  .variant-letter {
+    font-family: 'Playfair Display', serif;
+    font-size: 40px; font-weight: 900;
+    color: var(--strong-hire); line-height: 1;
+    flex-shrink: 0; opacity: 0.85;
+  }
+
+  .variant-card-body h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px; font-weight: 700;
+    margin: 0 0 6px;
+  }
+
+  .variant-card-body .one-liner {
+    font-size: 13.5px; color: var(--text-muted);
+    font-style: italic; margin: 0;
+    line-height: 1.6;
+  }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px; margin: 18px 0;
+  }
+
+  .callout.amber { border-left-color: var(--strong-hire); }
+  .callout.green { border-left-color: var(--hire); }
+  .callout.red { border-left-color: var(--no-hire); }
+  .callout.yellow { border-left-color: var(--lean-hire); }
+
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 18px 0; border-radius: 8px; border: 1px solid var(--border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+  thead tr { background: linear-gradient(90deg, #1c2128, #161b22); }
+
+  th {
+    padding: 11px 16px; text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    vertical-align: top; line-height: 1.55;
+  }
+
+  tbody tr:nth-child(even) { background: rgba(22,27,34,0.4); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+
+  td:first-child { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--strong-hire); }
+
+  /* DIAGRAM BLOCKS */
+  .diagram-wrap {
+    position: relative; margin: 18px 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+
+  .diagram-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px;
+    background: rgba(22,27,34,0.8);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diagram-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(88,166,255,0.1);
+    padding: 2px 8px; border-radius: 3px;
+  }
+
+  .copy-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 3px 10px;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-muted);
+    cursor: pointer; transition: all 0.15s;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--hire); color: var(--hire); }
+
+  pre {
+    padding: 18px 20px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.7;
+    color: #c9d1d9; white-space: pre;
+  }
+
+  /* STEP LIST */
+  .step-list { margin: 14px 0; }
+
+  .step-item {
+    display: flex; gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(48,54,61,0.35);
+  }
+
+  .step-item:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    background: rgba(88,166,255,0.1);
+    border-radius: 50%;
+    width: 26px; height: 26px; min-width: 26px;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 2px;
+  }
+
+  .step-content { flex: 1; }
+  .step-content strong { display: block; font-size: 14px; color: var(--text); margin-bottom: 3px; font-family: 'Source Serif 4', serif; font-weight: 600; }
+  .step-content span { font-size: 13px; color: var(--text-muted); }
+
+  /* NUMBERS CARD */
+  .numbers-card {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px; line-height: 2.1;
+    color: #c9d1d9;
+  }
+
+  .num-label { color: var(--text-muted); }
+  .num-val { color: var(--strong-hire); font-weight: 500; }
+  .num-val.green { color: var(--hire); }
+  .num-val.red { color: var(--no-hire); }
+
+  /* DECISION TREE */
+  .decision-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    margin: 18px 0;
+  }
+
+  .decision-header {
+    padding: 12px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--lean-hire);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .decision-body pre {
+    background: transparent;
+    color: #c9d1d9; padding: 16px 20px;
+    font-size: 12px; line-height: 1.8;
+  }
+
+  /* CONCEPT GRID */
+  .concept-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px; margin: 18px 0;
+  }
+
+  .concept-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .concept-card:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 8px 24px rgba(88,166,255,0.07); }
+
+  .concept-card .cc-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 700;
+    color: rgba(88,166,255,0.15); line-height: 1; margin-bottom: 10px;
+  }
+
+  .concept-card h5 {
+    font-family: 'Playfair Display', serif;
+    font-size: 14px; font-weight: 700;
+    color: var(--text); margin: 0 0 7px; letter-spacing: 0;
+  }
+
+  .concept-card p { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+
+  /* SMELL GRID */
+  .smell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+
+  .smell-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+
+  .smell-card.good { border-top: 2px solid var(--hire); }
+  .smell-card.bad { border-top: 2px solid var(--no-hire); }
+
+  .smell-card h5 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+
+  .smell-card.good h5 { color: var(--hire); }
+  .smell-card.bad h5 { color: var(--no-hire); }
+
+  .smell-card ul { list-style: none; padding: 0; }
+  .smell-card ul li { font-size: 12.5px; padding: 4px 0 4px 20px; color: var(--text-muted); position: relative; }
+  .smell-card.good ul li::before { content: '✅'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+  .smell-card.bad ul li::before { content: '❌'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+
+  /* COMPARISON METRIC CARDS */
+  .metric-row {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px; margin: 16px 0;
+  }
+
+  .metric-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+    text-align: center;
+  }
+
+  .metric-card .m-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px; font-weight: 700;
+    color: var(--strong-hire); display: block;
+    margin-bottom: 4px;
+  }
+
+  .metric-card .m-label {
+    font-size: 11px; color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  /* BREAK-EVEN CARD */
+  .breakeven-card {
+    background: linear-gradient(135deg, rgba(245,166,35,0.06), rgba(0,191,165,0.04));
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: 10px; padding: 20px 24px; margin: 18px 0;
+  }
+
+  .breakeven-card .be-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--strong-hire);
+    margin-bottom: 12px;
+  }
+
+  .breakeven-card .be-math {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; color: #c9d1d9; line-height: 2;
+  }
+
+  .be-result { color: var(--hire); font-weight: 700; }
+
+  /* PARTITION EXAMPLE CARD */
+  .savings-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin: 18px 0;
+  }
+
+  .savings-card .sc-header {
+    padding: 10px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+
+  .savings-card .sc-body { display: grid; grid-template-columns: 1fr 1fr; }
+
+  .sc-col { padding: 18px; }
+  .sc-col:first-child { border-right: 1px solid var(--border); }
+
+  .sc-col .sc-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+
+  .sc-col:first-child .sc-label { color: var(--no-hire); }
+  .sc-col:last-child .sc-label { color: var(--hire); }
+
+  .sc-col .sc-stat { font-size: 13px; color: var(--text-muted); margin-bottom: 5px; }
+  .sc-col .sc-stat span { color: var(--text); font-weight: 600; }
+
+  /* JOIN TYPE TABLE */
+  .join-table td:nth-child(3) { color: var(--lean-hire); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+  /* COMPREHENSIVE TABLE */
+  .comp-table td { font-family: inherit; font-size: 12.5px; color: var(--text-muted); }
+  .comp-table td:first-child { color: var(--strong-hire); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+  .comp-table td:nth-child(5) { color: var(--no-hire); font-size: 12px; }
+
+  /* SOUNDBITE */
+  .soundbite {
+    background: linear-gradient(135deg, rgba(88,166,255,0.07), rgba(0,191,165,0.04));
+    border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 10px; padding: 20px 26px;
+    margin: 24px 0; position: relative;
+  }
+
+  .soundbite::before { content: '🔑'; position: absolute; top: -12px; left: 20px; font-size: 20px; }
+
+  .soundbite p { font-style: italic; color: var(--text); font-size: 14.5px; line-height: 1.8; margin: 0; }
+
+  /* BACK TO TOP */
+  #back-to-top {
+    position: fixed; bottom: 32px; right: 32px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-muted);
+    font-size: 18px; transition: all 0.2s;
+    opacity: 0; pointer-events: none; z-index: 50;
+  }
+
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--strong-hire); color: var(--strong-hire); transform: translateY(-2px); }
+
+  mark {
+    background: rgba(245,166,35,0.12);
+    color: var(--strong-hire); padding: 1px 3px; border-radius: 3px;
+  }
+
+  /* PART LABEL IN NAV */
+  .nav-part-label {
+    padding: 12px 20px 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: rgba(245,166,35,0.6);
+    display: block;
+  }
+
+  /* EDITION CARDS */
+  .edition-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+
+  .edition-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .edition-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+  .edition-card:nth-child(1) { border-top: 2px solid var(--accent); }
+  .edition-card:nth-child(2) { border-top: 2px solid var(--hire); }
+  .edition-card:nth-child(3) { border-top: 2px solid var(--strong-hire); }
+
+  .edition-card .e-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+
+  .edition-card:nth-child(1) .e-name { color: var(--accent); }
+  .edition-card:nth-child(2) .e-name { color: var(--hire); }
+  .edition-card:nth-child(3) .e-name { color: var(--strong-hire); }
+
+  .edition-card .e-price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; font-weight: 700; color: var(--text);
+    margin-bottom: 10px;
+  }
+
+  .edition-card ul { list-style: none; padding: 0; }
+  .edition-card ul li { font-size: 11.5px; color: var(--text-muted); padding: 3px 0; }
+  .edition-card ul li::before { content: '· '; color: var(--text-muted); }
+
+  /* OVERLAY */
+  #sidebar-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 99;
+  }
+  #sidebar-overlay.visible { display: block; }
+
+  /* RESPONSIVE */
+  @media (max-width: 960px) {
+    #sidebar { transform: translateX(-100%); }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    main { margin-left: 0; padding: 56px 24px 100px; }
+    .hero h1 { font-size: 32px; }
+    .smell-grid, .edition-grid { grid-template-columns: 1fr; }
+    .savings-card .sc-body { grid-template-columns: 1fr; }
+    .sc-col:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<div id="sidebar-overlay"></div>
+<button id="hamburger" aria-label="Open navigation">☰</button>
+
+<aside id="sidebar" aria-label="Navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-badge">Part 2 · Variants</div>
+    <div class="sidebar-title">BigQuery Internals</div>
+    <div class="sidebar-subtitle">L6 / L7 Mastery Guide</div>
+  </div>
+  <input id="sidebar-search" type="search" placeholder="Search sections…" aria-label="Search">
+  <nav>
+    <ul id="nav-list">
+      <li><span class="nav-part-label">2.3 — Slot Allocation</span></li>
+      <li><a href="#slot-models">Slot Allocation Models</a></li>
+      <li class="nav-sub"><a href="#on-demand">A) On-Demand Slots</a></li>
+      <li class="nav-sub"><a href="#reserved-slots">B) Reserved Slots</a></li>
+      <li class="nav-sub"><a href="#flex-slots">C) Flex Slots</a></li>
+      <li class="nav-sub"><a href="#slot-decision">Decision Framework</a></li>
+
+      <li><span class="nav-part-label">2.4 — Data Organization</span></li>
+      <li><a href="#data-org">Data Organization Strategies</a></li>
+      <li class="nav-sub"><a href="#partitioning">A) Partitioning</a></li>
+      <li class="nav-sub"><a href="#clustering">B) Clustering</a></li>
+      <li class="nav-sub"><a href="#partition-cluster-decision">C) Partition + Cluster Decision</a></li>
+
+      <li><span class="nav-part-label">2.5 — Query Optimization</span></li>
+      <li><a href="#query-opt">Query Optimization Techniques</a></li>
+      <li class="nav-sub"><a href="#query-plan">A) Query Plan Stages</a></li>
+      <li class="nav-sub"><a href="#join-strategies">B) Join Strategies</a></li>
+      <li class="nav-sub"><a href="#materialized-views">C) Materialized Views</a></li>
+
+      <li><span class="nav-part-label">2.6 — Comprehensive Comparison</span></li>
+      <li><a href="#comprehensive">Comprehensive Variant Comparison</a></li>
+      <li class="nav-sub"><a href="#comp-storage">Storage Formats</a></li>
+      <li class="nav-sub"><a href="#comp-execution">Execution Models</a></li>
+      <li class="nav-sub"><a href="#comp-slots">Slot Models</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<main>
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <div class="hero-eyebrow">
+      <span class="hero-badge-part">Part 2</span>
+      <span class="hero-badge-type">Sections 2.3 – 2.6</span>
+    </div>
+    <h1>The <span>Variants</span></h1>
+    <div class="hero-sub">In-Depth Exploration</div>
+    <p>Slot allocation models, data organization strategies (partitioning + clustering), query optimization techniques, and a comprehensive cross-variant comparison reference.</p>
+    <div class="hero-toc">
+      <a class="hero-toc-pill" href="#slot-models">2.3 Slot Allocation</a>
+      <a class="hero-toc-pill" href="#data-org">2.4 Data Organization</a>
+      <a class="hero-toc-pill" href="#query-opt">2.5 Query Optimization</a>
+      <a class="hero-toc-pill" href="#comprehensive">2.6 Comparison Tables</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.3 ═══════════════════════════════════ -->
+  <div class="section-divider" id="slot-models">
+    <div class="section-num-label">2.3</div>
+    <h2>Variant: Slot Allocation Models</h2>
+    <div class="section-desc">How BigQuery assigns and prices computational resources</div>
+  </div>
+
+  <!-- A) On-Demand -->
+  <div class="content-block" id="on-demand">
+    <div class="variant-card">
+      <div class="variant-letter">A</div>
+      <div class="variant-card-body">
+        <h4>On-Demand Slots</h4>
+        <p class="one-liner">Shared pool of slots available to all BigQuery users, billed per-query based on bytes scanned.</p>
+      </div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-content"><strong>Submit query</strong><span>You send a SQL query to BigQuery</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-content"><strong>Slot estimation</strong><span>BigQuery estimates required slots based on data size and query complexity</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-content"><strong>Pool allocation</strong><span>Slots allocated from shared regional pool — your query competes with other tenants</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-content"><strong>Billing</strong><span><mark>$5 per TB scanned</mark> — not slot-time. You pay for data read, not compute duration.</span></div>
+      </div>
+    </div>
+
+    <div class="smell-grid">
+      <div class="smell-card good">
+        <h5>✅ WHEN IT SHINES</h5>
+        <ul>
+          <li>Sporadic / unpredictable query patterns</li>
+          <li>Small-to-medium data sizes (&lt;10 TB queries)</li>
+          <li>Teams just starting with BigQuery</li>
+          <li>Cost-conscious with low query volume</li>
+        </ul>
+      </div>
+      <div class="smell-card bad">
+        <h5>❌ WHEN IT STRUGGLES</h5>
+        <ul>
+          <li>Consistent high-volume workloads (reserved is cheaper)</li>
+          <li>Latency-sensitive queries (may wait for slots)</li>
+          <li>Large concurrent workloads (slot contention)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- B) Reserved Slots -->
+  <div class="content-block" id="reserved-slots">
+    <div class="variant-card">
+      <div class="variant-letter">B</div>
+      <div class="variant-card-body">
+        <h4>Reserved Slots (Editions: Standard, Enterprise, Enterprise Plus)</h4>
+        <p class="one-liner">Dedicated slot capacity purchased by commitment (per-second billing), guaranteeing resources for your queries.</p>
+      </div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-content"><strong>Purchase commitment</strong><span>Buy a slot commitment — minimum 100 slots</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-content"><strong>Dedicated allocation</strong><span>Slots are dedicated to your organization, not shared</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-content"><strong>Capacity billing</strong><span>No per-query billing — you pay for capacity regardless of usage</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-content"><strong>Reservation allocation</strong><span>Assign slots to specific projects or reservations for workload isolation</span></div>
+      </div>
+    </div>
+
+    <h5>Slot Commitment Math — Break-Even Analysis</h5>
+    <div class="breakeven-card">
+      <div class="be-title">⚖️ Break-Even Calculation</div>
+      <div class="be-math">
+        1,000 reserved slots for 1 month<br>
+        Cost: ~$20/slot/month = <span style="color:var(--no-hire);">$20,000/month</span><br><br>
+        Break-even vs on-demand:<br>
+        $20,000 ÷ $5 per TB = <span class="be-result">4,000 TB scanned</span><br><br>
+        If you scan &gt; 4,000 TB/month → <span style="color:var(--hire);">Reserved is cheaper</span><br>
+        If you scan &lt; 4,000 TB/month → <span style="color:var(--accent);">On-demand is cheaper</span>
+      </div>
+    </div>
+
+    <h5>Editions Comparison</h5>
+    <div class="edition-grid">
+      <div class="edition-card">
+        <div class="e-name">Standard</div>
+        <div class="e-price">Lowest</div>
+        <ul>
+          <li>Yes — slots included</li>
+          <li>Basic workload management</li>
+          <li>BigQuery ML</li>
+          <li>Standard security</li>
+        </ul>
+      </div>
+      <div class="edition-card">
+        <div class="e-name">Enterprise</div>
+        <div class="e-price">Medium</div>
+        <ul>
+          <li>Yes — slots included</li>
+          <li>Advanced (priorities)</li>
+          <li>Full ML suite</li>
+          <li>CMEK encryption</li>
+        </ul>
+      </div>
+      <div class="edition-card">
+        <div class="e-name">Enterprise Plus</div>
+        <div class="e-price">Highest</div>
+        <ul>
+          <li>Yes + autoscaling</li>
+          <li>Advanced + autoscaling</li>
+          <li>Full ML suite</li>
+          <li>VPC-SC + CMEK</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Edition</th><th>Slots</th><th>Workload Mgmt</th><th>ML</th><th>Security</th><th>Price</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Standard</td><td>Yes</td><td>Basic</td><td>BigQuery ML</td><td>Standard</td><td>Lowest</td></tr>
+          <tr><td>Enterprise</td><td>Yes</td><td>Advanced (priorities)</td><td>Full ML</td><td>CMEK</td><td>Medium</td></tr>
+          <tr><td>Enterprise Plus</td><td>Yes</td><td>Advanced + autoscaling</td><td>Full ML</td><td>VPC-SC, CMEK</td><td>Highest</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- C) Flex Slots -->
+  <div class="content-block" id="flex-slots">
+    <div class="variant-card">
+      <div class="variant-letter">C</div>
+      <div class="variant-card-body">
+        <h4>Flex Slots</h4>
+        <p class="one-liner">Short-term slot commitments (minimum 60 seconds) for burst capacity — purchased and cancelled on-demand.</p>
+      </div>
+    </div>
+
+    <h5>Use Case — Black Friday Example</h5>
+    <div class="numbers-card">
+      <span class="num-label">Normal capacity:          </span><span class="num-val">500 reserved slots</span><br>
+      <span class="num-label">Black Friday addition:    </span><span class="num-val">2,000 flex slots purchased</span><br>
+      <span class="num-label">Duration:                 </span><span class="num-val">7 days</span><br>
+      <span class="num-label">Cost:                     </span><span class="num-val">7 days × 2,000 slots × $0.04/slot-hour × 24h = $13,440</span><br>
+      <span class="num-label">After event:              </span><span class="num-val green">Cancel — no ongoing cost</span>
+    </div>
+  </div>
+
+  <!-- Decision Framework -->
+  <div class="content-block" id="slot-decision">
+    <h4 class="sub-title">Decision Framework</h4>
+    <div class="decision-wrap">
+      <div class="decision-header">⚡ Slot Model Selection Tree</div>
+      <div class="decision-body">
+        <pre>Q1: Is your query volume predictable?
+├── If NO  → Use On-Demand
+│   └── Q2: Are you spending > $10K/month on-demand?
+│       ├── If YES → Consider Reserved (calculate break-even)
+│       └── If NO  → Stay on On-Demand
+└── If YES → Consider Reserved
+    └── Q3: Do you have burst periods?
+        ├── If YES → Reserved + Flex Slots
+        └── If NO  → Reserved only</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.4 ═══════════════════════════════════ -->
+  <div class="section-divider" id="data-org">
+    <div class="section-num-label">2.4</div>
+    <h2>Variant: Data Organization Strategies</h2>
+    <div class="section-desc">Partitioning and clustering for dramatic query cost reduction</div>
+  </div>
+
+  <!-- A) Partitioning -->
+  <div class="content-block" id="partitioning">
+    <div class="variant-card">
+      <div class="variant-letter">A</div>
+      <div class="variant-card-body">
+        <h4>Partitioning</h4>
+        <p class="one-liner">Physically divide a table into segments based on a column value (usually timestamp), so queries can skip entire partitions.</p>
+      </div>
+    </div>
+
+    <h5>Partitioning Types</h5>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Type</th><th>Column Type</th><th>Granularity</th><th>Max Partitions</th><th>Use Case</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Ingestion Time</td><td>_PARTITIONTIME</td><td>Day/Hour/Month</td><td>4,000</td><td>Event data without timestamp column</td></tr>
+          <tr><td>Timestamp/Date</td><td>DATE, TIMESTAMP, DATETIME</td><td>Day/Hour/Month/Year</td><td>4,000</td><td>Time-series data</td></tr>
+          <tr><td>Integer Range</td><td>INTEGER</td><td>Custom ranges</td><td>4,000</td><td>ID-based partitioning</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h5>Concrete Example — Cost Impact</h5>
+    <div class="savings-card">
+      <div class="sc-header">Table: web_events — 10 years of data, 365 TB total</div>
+      <div class="sc-body">
+        <div class="sc-col">
+          <div class="sc-label">❌ Without Partitioning</div>
+          <div class="sc-stat">Query: <code style="font-size:11px;color:var(--accent);">WHERE date = '2024-01-15'</code></div>
+          <div class="sc-stat">Scans: <span>365 TB (entire table)</span></div>
+          <div class="sc-stat">Cost: <span style="color:var(--no-hire);">$1,825</span></div>
+        </div>
+        <div class="sc-col">
+          <div class="sc-label">✅ With Daily Partitioning</div>
+          <div class="sc-stat">Query: <code style="font-size:11px;color:var(--accent);">WHERE date = '2024-01-15'</code></div>
+          <div class="sc-stat">Scans: <span>100 GB (one partition)</span></div>
+          <div class="sc-stat">Cost: <span style="color:var(--hire);">$0.50 · Savings: 99.97%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">DIAGRAM</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>Unpartitioned Table:
+┌────────────────────────────────────────────────────────┐
+│                    web_events (365 TB)                  │
+│  Mixed data from all dates, must scan everything       │
+└────────────────────────────────────────────────────────┘
+
+Partitioned Table (by date):
+┌──────────────────────────────────────────────────────────────────────┐
+│ 2024-01-01 │ 2024-01-02 │ 2024-01-03 │ ... │ 2024-12-31 │ 2025-... │
+│   100 GB   │   100 GB   │   100 GB   │     │   100 GB   │          │
+└──────────────────────────────────────────────────────────────────────┘
+     ↑
+Query WHERE date = '2024-01-01' → Only scans this 100 GB</pre>
+    </div>
+  </div>
+
+  <!-- B) Clustering -->
+  <div class="content-block" id="clustering">
+    <div class="variant-card">
+      <div class="variant-letter">B</div>
+      <div class="variant-card-body">
+        <h4>Clustering</h4>
+        <p class="one-liner">Within each partition, sort and colocate data by specified columns to enable further data skipping via min/max statistics.</p>
+      </div>
+    </div>
+
+    <h5>How Clustering Works</h5>
+    <div class="step-list">
+      <div class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-content"><strong>Data sorted by clustering columns</strong><span>Within each partition, rows are physically sorted by the specified columns</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-content"><strong>Storage blocks created</strong><span>~10 MB blocks contain contiguous sorted rows</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-content"><strong>Min/max metadata stored per block</strong><span>Each block records min/max values for each clustering column</span></div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-content"><strong>Query-time block pruning</strong><span>Query can skip entire blocks where the filter can't match the stored min/max range</span></div>
+      </div>
+    </div>
+
+    <h5>Concrete Example</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">EXAMPLE</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>Table: web_events
+- Partitioned by: date
+- Clustered by: country, user_id
+
+Partition: 2024-01-15 (100 GB, 1000 blocks)
+├── Block 1:    country [AR, AU], user_id [1-10000]
+├── Block 2:    country [AU, BE], user_id [10001-20000]
+├── Block 3:    country [BE, BR], user_id [20001-30000]
+...
+└── Block 1000: country [US, ZW], user_id [990001-1000000]
+
+Query: SELECT * FROM web_events 
+       WHERE date = '2024-01-15' 
+       AND country = 'US'
+
+Without clustering: Scan all 1000 blocks (100 GB)
+With clustering:    Scan only ~26 blocks where country min/max includes 'US' (2.6 GB)
+Improvement: ~97% fewer bytes scanned</pre>
+    </div>
+
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">DIAGRAM</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>Partition: 2024-01-15 (100 GB)
+Without Clustering:
+┌─────────────────────────────────────────────────────────────────┐
+│ US │ FR │ US │ JP │ CN │ US │ BR │ US │ FR │ ... │ Randomly    │
+│    │    │    │    │    │    │    │    │    │     │ distributed │
+└─────────────────────────────────────────────────────────────────┘
+Must scan everything to find all 'US' records
+
+With Clustering (by country):
+┌─────────────────────────────────────────────────────────────────┐
+│ AR │ AU │ BE │ BR │ CN │ ... │ JP │ ... │ US │ US │ US │ ZW    │
+│    │    │    │    │    │     │    │     │────────────────      │
+└─────────────────────────────────────────────────────────────────┘
+                                           ↑
+                                    Only scan these blocks!</pre>
+    </div>
+  </div>
+
+  <!-- C) Decision Framework -->
+  <div class="content-block" id="partition-cluster-decision">
+    <div class="variant-card">
+      <div class="variant-letter">C</div>
+      <div class="variant-card-body">
+        <h4>Partitioning + Clustering Decision</h4>
+        <p class="one-liner">A combined decision framework for choosing the right data organization strategy.</p>
+      </div>
+    </div>
+
+    <div class="decision-wrap">
+      <div class="decision-header">⚡ Partition + Cluster Selection Tree</div>
+      <div class="decision-body">
+        <pre>Q1: Do you have a timestamp or date column?
+├── If YES → Partition by that column (almost always)
+│   └── Q2: What other columns appear in WHERE clauses frequently?
+│       ├── User_id        → Cluster by user_id
+│       ├── Region/country → Cluster by region
+│       └── Multiple       → Cluster by most selective first (max 4 columns)
+└── If NO → Consider integer range partitioning or clustering only
+    └── Q3: Do you filter by consistent columns?
+        ├── If YES → Cluster by those columns
+        └── If NO  → May not benefit from clustering</pre>
+      </div>
+    </div>
+
+    <h5>Partitioning vs Clustering — Comparison</h5>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Feature</th><th>Partitioning</th><th>Clustering</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Mechanism</td><td>Physical table division</td><td>Sorted blocks with metadata</td></tr>
+          <tr><td>Column types</td><td>Date / Timestamp / Integer</td><td>Any column type</td></tr>
+          <tr><td>Max columns</td><td>1</td><td>4</td></tr>
+          <tr><td>Query benefit</td><td>Skip entire partitions</td><td>Skip blocks within partitions</td></tr>
+          <tr><td>Maintenance</td><td>Automatic</td><td>Auto-reclustering</td></tr>
+          <tr><td>Cost impact</td><td>Huge (partition pruning)</td><td>Significant (block pruning)</td></tr>
+          <tr><td>Best for</td><td>Time-based filtering</td><td>High-cardinality filtering</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.5 ═══════════════════════════════════ -->
+  <div class="section-divider" id="query-opt">
+    <div class="section-num-label">2.5</div>
+    <h2>Variant: Query Optimization Techniques</h2>
+    <div class="section-desc">Execution stages, join strategies, and materialized views</div>
+  </div>
+
+  <!-- A) Query Plan Stages -->
+  <div class="content-block" id="query-plan">
+    <div class="variant-card">
+      <div class="variant-letter">A</div>
+      <div class="variant-card-body">
+        <h4>Query Plan Stages</h4>
+        <p class="one-liner">BigQuery executes queries in stages, each with distinct characteristics and cost drivers.</p>
+      </div>
+    </div>
+
+    <h5>Stage Types</h5>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Stage Type</th><th>What It Does</th><th>When Expensive</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Input</td><td>Read from storage (Colossus)</td><td>Large tables, no partition/cluster pruning</td></tr>
+          <tr><td>Compute</td><td>Transformations, filters, projections</td><td>Complex expressions, UDFs</td></tr>
+          <tr><td>Repartition</td><td>Redistribute data (hash partitioning)</td><td>Large intermediate results, many partitions</td></tr>
+          <tr><td>Aggregate</td><td>GROUP BY, COUNT, SUM, etc.</td><td>High cardinality groups</td></tr>
+          <tr><td>Join</td><td>Combine tables</td><td>Large tables, no broadcast possible</td></tr>
+          <tr><td>Sort</td><td>ORDER BY</td><td>Large result sets</td></tr>
+          <tr><td>Output</td><td>Write results</td><td>Large results, many files</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h5>How to Read a Query Execution Plan</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">EXPLAIN OUTPUT</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>EXPLAIN SELECT country, SUM(amount) 
+FROM orders 
+WHERE date = '2024-01-01'
+GROUP BY country;
+
+Query Plan:
+Stage 1 (Input): Read orders table
+- Partition pruning: YES (date = '2024-01-01')
+- Rows read: 1M (from single partition)
+- Slots used: 50
+
+Stage 2 (Aggregate): Partial GROUP BY
+- Input rows: 1M
+- Output rows: 200 (countries)
+- Slots used: 50
+
+Stage 3 (Aggregate): Final GROUP BY  
+- Input rows: 10K (from all partial aggregates)
+- Output rows: 200
+- Slots used: 1</pre>
+    </div>
+  </div>
+
+  <!-- B) Join Strategies -->
+  <div class="content-block" id="join-strategies">
+    <div class="variant-card">
+      <div class="variant-letter">B</div>
+      <div class="variant-card-body">
+        <h4>Join Strategies</h4>
+        <p class="one-liner">BigQuery automatically selects between broadcast join and hash join based on table sizes — understanding this drives optimization decisions.</p>
+      </div>
+    </div>
+
+    <h4 class="sub-title">Broadcast Join</h4>
+    <div class="callout green">
+      <div class="callout-label">Mechanism</div>
+      <p>Small table (&lt; 10 MB) is broadcast (copied) to every worker. Large table is scanned in parallel across all workers. <mark>No shuffle required.</mark></p>
+    </div>
+
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">DIAGRAM — BROADCAST JOIN</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>   ┌─────────────────────────────────────────────────────────┐
+   │                    Large Table (1 TB)                    │
+   │ ┌────────┐ ┌────────┐ ┌────────┐       ┌────────┐      │
+   │ │Worker 1│ │Worker 2│ │Worker 3│  ...  │Worker N│      │
+   │ │        │ │        │ │        │       │        │      │
+   │ │ Small  │ │ Small  │ │ Small  │       │ Small  │      │
+   │ │ Table  │ │ Table  │ │ Table  │       │ Table  │      │
+   │ │(copied)│ │(copied)│ │(copied)│       │(copied)│      │
+   │ └────────┘ └────────┘ └────────┘       └────────┘      │
+   └─────────────────────────────────────────────────────────┘
+   
+No shuffle needed! Just copy small table to each worker.</pre>
+    </div>
+
+    <h4 class="sub-title">Hash Join (Shuffle Join)</h4>
+    <div class="callout amber">
+      <div class="callout-label">Mechanism</div>
+      <p>Both tables are hashed by join key. Rows with matching keys are routed to the same shuffle bucket. Each worker then joins one bucket locally. <mark>Shuffle required — expensive but scalable.</mark></p>
+    </div>
+
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">DIAGRAM — HASH JOIN</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>   Orders (1 TB)                    Users (100 GB)
+   ┌──────────────┐                 ┌──────────────┐
+   │ Hash by      │                 │ Hash by      │
+   │ user_id      │                 │ user_id      │
+   └──────┬───────┘                 └──────┬───────┘
+          │                                │
+          ▼                                ▼
+   ┌──────────────────────────────────────────────────┐
+   │              Shuffle Buckets                      │
+   │ ┌──────┐ ┌──────┐ ┌──────┐       ┌──────┐        │
+   │ │Bkt 0 │ │Bkt 1 │ │Bkt 2 │  ...  │Bkt N │        │
+   │ │O + U │ │O + U │ │O + U │       │O + U │        │
+   │ └──────┘ └──────┘ └──────┘       └──────┘        │
+   └──────────────────────────────────────────────────┘
+          │
+          ▼
+   Each bucket joined independently by one worker</pre>
+    </div>
+
+    <h5>Join Type Decision</h5>
+    <div class="table-wrap">
+      <table class="join-table">
+        <thead>
+          <tr><th>Join Type</th><th>Trigger</th><th>Shuffle Required</th><th>When to Use</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Broadcast</td><td>Small table &lt; 10 MB</td><td>No</td><td>Dimension tables, lookups</td></tr>
+          <tr><td>Hash</td><td>Both tables large</td><td>Yes</td><td>Most common join</td></tr>
+          <tr><td>Sort-Merge</td><td>Pre-sorted data</td><td>No</td><td>Clustered tables on join key</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- C) Materialized Views -->
+  <div class="content-block" id="materialized-views">
+    <div class="variant-card">
+      <div class="variant-letter">C</div>
+      <div class="variant-card-body">
+        <h4>Materialized Views</h4>
+        <p class="one-liner">Pre-computed query results that BigQuery automatically maintains and transparently uses to answer matching queries.</p>
+      </div>
+    </div>
+
+    <h5>How It Works</h5>
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label">SQL — MATERIALIZED VIEW</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>-- Create materialized view
+CREATE MATERIALIZED VIEW sales_by_region AS
+SELECT region, DATE(order_date) as date, SUM(amount) as total
+FROM orders
+GROUP BY region, DATE(order_date);
+
+-- This query automatically uses the MV:
+SELECT region, SUM(amount) 
+FROM orders 
+WHERE order_date >= '2024-01-01'
+GROUP BY region;
+-- BigQuery rewrites to read from sales_by_region</pre>
+    </div>
+
+    <h5>Maintenance Details</h5>
+    <div class="concept-grid">
+      <div class="concept-card">
+        <div class="cc-num">01</div>
+        <h5>Auto-Maintained</h5>
+        <p>BigQuery maintains materialized views automatically with incremental refresh — no manual intervention needed.</p>
+      </div>
+      <div class="concept-card">
+        <div class="cc-num">02</div>
+        <h5>Refresh Delay</h5>
+        <p>Near real-time for streaming inserts; immediate for batch DML. Freshness depends on source write pattern.</p>
+      </div>
+      <div class="concept-card">
+        <div class="cc-num">03</div>
+        <h5>Storage Cost</h5>
+        <p>Charged like regular tables — you pay for the pre-aggregated data stored in Colossus.</p>
+      </div>
+      <div class="concept-card">
+        <div class="cc-num">04</div>
+        <h5>Query Cost</h5>
+        <p>Significantly reduced by reading pre-aggregated data instead of scanning the full source table.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.6 ═══════════════════════════════════ -->
+  <div class="section-divider" id="comprehensive">
+    <div class="section-num-label">2.6</div>
+    <h2>Comprehensive Variant Comparison</h2>
+    <div class="section-desc">Cross-variant reference tables for all major BigQuery dimensions</div>
+  </div>
+
+  <!-- Storage Formats -->
+  <div class="content-block" id="comp-storage">
+    <h3 class="variant-title">Storage Formats</h3>
+    <div class="table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr><th>Format</th><th>Core Mechanism</th><th>Best For</th><th>Worst For</th><th>Key Trade-off</th><th>Failure Mode</th><th>Real-World User</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Capacitor</td>
+            <td>Columnar with fine-grained stats</td>
+            <td>BigQuery native workloads</td>
+            <td>Non-Google systems</td>
+            <td>Tight integration vs portability</td>
+            <td>N/A (Google internal)</td>
+            <td>BigQuery</td>
+          </tr>
+          <tr>
+            <td>Parquet</td>
+            <td>Row-group based columnar</td>
+            <td>Cross-platform analytics</td>
+            <td>Small files (&lt;128MB)</td>
+            <td>Portability vs optimal stats</td>
+            <td>Small file problem</td>
+            <td>Spark, Athena</td>
+          </tr>
+          <tr>
+            <td>ORC</td>
+            <td>Stripe-based columnar</td>
+            <td>Hive ecosystem</td>
+            <td>Non-Hive systems</td>
+            <td>Compression vs compatibility</td>
+            <td>Stripe corruption</td>
+            <td>Hive, Presto</td>
+          </tr>
+          <tr>
+            <td>Avro</td>
+            <td>Row-based with schema</td>
+            <td>Write-heavy, streaming</td>
+            <td>Analytics queries</td>
+            <td>Write speed vs read efficiency</td>
+            <td>Schema evolution issues</td>
+            <td>Kafka, Flink</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Execution Models -->
+  <div class="content-block" id="comp-execution">
+    <h3 class="variant-title">Execution Models</h3>
+    <div class="table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr><th>Model</th><th>Core Mechanism</th><th>Best For</th><th>Worst For</th><th>Key Trade-off</th><th>Failure Mode</th><th>Real-World User</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Dremel Tree</td>
+            <td>Hierarchical aggregation</td>
+            <td>Single-table aggregation</td>
+            <td>Multi-table shuffle</td>
+            <td>Low shuffle vs flexibility</td>
+            <td>Root bottleneck</td>
+            <td>BigQuery simple queries</td>
+          </tr>
+          <tr>
+            <td>Shuffle (Colossus)</td>
+            <td>Persistent shuffle files</td>
+            <td>Complex joins, high-cardinality GROUP BY</td>
+            <td>Simple queries (overhead)</td>
+            <td>Durability vs latency</td>
+            <td>Shuffle storage exhaustion</td>
+            <td>BigQuery complex queries</td>
+          </tr>
+          <tr>
+            <td>Spark Shuffle</td>
+            <td>Memory + local disk</td>
+            <td>Iterative processing</td>
+            <td>Single-pass analytics</td>
+            <td>Memory efficiency vs fault tolerance</td>
+            <td>Executor failure = recompute</td>
+            <td>Dataproc, Databricks</td>
+          </tr>
+          <tr>
+            <td>Presto MPP</td>
+            <td>In-memory pipeline</td>
+            <td>Interactive queries</td>
+            <td>Very large datasets</td>
+            <td>Low latency vs data size</td>
+            <td>OOM on large intermediate</td>
+            <td>Athena, Starburst</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Slot Models -->
+  <div class="content-block" id="comp-slots">
+    <h3 class="variant-title">Slot Models</h3>
+    <div class="table-wrap">
+      <table class="comp-table">
+        <thead>
+          <tr><th>Model</th><th>Core Mechanism</th><th>Best For</th><th>Worst For</th><th>Key Trade-off</th><th>Failure Mode</th><th>Real-World User</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>On-Demand</td>
+            <td>Shared pool, per-TB billing</td>
+            <td>Sporadic workloads</td>
+            <td>Heavy consistent load</td>
+            <td>Flexibility vs SLA</td>
+            <td>Slot contention</td>
+            <td>Startups, analysts</td>
+          </tr>
+          <tr>
+            <td>Reserved (Standard)</td>
+            <td>Dedicated capacity</td>
+            <td>Consistent workloads</td>
+            <td>Unpredictable patterns</td>
+            <td>Cost efficiency vs flexibility</td>
+            <td>Under-utilization</td>
+            <td>Medium enterprises</td>
+          </tr>
+          <tr>
+            <td>Reserved (Enterprise)</td>
+            <td>+ Workload management</td>
+            <td>Multi-team organizations</td>
+            <td>Single team</td>
+            <td>Priority control vs complexity</td>
+            <td>Misconfigured priorities</td>
+            <td>Large enterprises</td>
+          </tr>
+          <tr>
+            <td>Flex Slots</td>
+            <td>Short-term commitment</td>
+            <td>Burst capacity</td>
+            <td>Steady-state</td>
+            <td>Immediate capacity vs premium cost</td>
+            <td>Over-provisioning waste</td>
+            <td>Black Friday scenarios</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="soundbite">
+      <p>"For senior-level interviews, the key is understanding <mark>not just what each variant does, but when and why</mark> you'd choose one over another — on-demand vs reserved comes down to a break-even calculation, partitioning vs clustering addresses different filter patterns, and join strategy selection is automatic but understanding it helps you write queries that BigQuery can optimize most aggressively."</p>
+    </div>
+  </div>
+
+</main>
+
+<button id="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+// Progress bar
+window.addEventListener('scroll', () => {
+  const scrolled = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+  document.getElementById('progress-bar').style.width = scrolled + '%';
+  document.getElementById('back-to-top').classList.toggle('visible', window.scrollY > 300);
+  updateActiveNav();
+});
+
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id]');
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 130) current = s.id; });
+  document.querySelectorAll('#nav-list a').forEach(a => {
+    const href = a.getAttribute('href');
+    a.classList.toggle('active', href && href === '#' + current);
+  });
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.diagram-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied ✓'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+document.getElementById('sidebar-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#nav-list li').forEach(li => {
+    if (li.classList.contains('nav-part-label') || li.querySelector('.nav-part-label')) return;
+    const text = li.textContent.toLowerCase();
+    li.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+});
+
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+document.getElementById('hamburger').addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('visible');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('visible');
+});
+document.querySelectorAll('#nav-list a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth <= 960) {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('visible');
+    }
+  });
+});
+</script>
+
+</body>
+</html>
