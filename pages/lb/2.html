@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer & API Gateway Internals (Part 2) — When & Why L7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass:#3b82f6;--cass4:#10b981;
+  --l4:#00C9A7;--l7:#845EC2;--lb3:#0081CF;
+  /* Scenario accent colors */
+  --s1:#F97316;--s2:#06B6D4;--s3:#8B5CF6;--s4:#EF4444;--s5:#10B981;--s6:#F59E0B;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--s1),var(--s2),var(--s3),var(--s4),var(--s5),var(--s6));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--l7);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--l7);background:rgba(132,94,194,.1);border:1px solid rgba(132,94,194,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--l7)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(132,94,194,.05)}
+.ni.active a{color:var(--l7);border-left-color:var(--l7);background:rgba(132,94,194,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--l7);border-color:var(--l7);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--l7);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.6rem;font-weight:900;line-height:1.08;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--s1) 28%,var(--s3) 52%,var(--s4) 72%,var(--s5));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(132,94,194,.1);border-color:var(--l7);color:var(--l7)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* SCENARIO CARD — top-level container for each scenario */
+.scenario{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:32px;overflow:hidden}
+.scenario-hdr{padding:16px 22px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.scenario-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px}
+.scenario-company{font-family:var(--fc);font-size:.7rem;color:var(--muted);margin-left:auto;padding-right:8px}
+.scenario-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.scenario-toggle{color:var(--dim);font-size:.78rem;transition:transform .3s;flex-shrink:0}
+.scenario.collapsed .scenario-toggle{transform:rotate(-90deg)}
+.scenario-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.scenario.collapsed .scenario-body{max-height:0;opacity:0}
+.scenario-inner{padding:0 22px 20px}
+
+/* per-scenario accent colors */
+.s1 .scenario-hdr{border-bottom:1px solid rgba(249,115,22,.15);background:rgba(249,115,22,.05)}
+.s1 .scenario-num{background:rgba(249,115,22,.12);color:var(--s1);border:1px solid rgba(249,115,22,.2)}
+.s2 .scenario-hdr{border-bottom:1px solid rgba(6,182,212,.15);background:rgba(6,182,212,.05)}
+.s2 .scenario-num{background:rgba(6,182,212,.12);color:var(--s2);border:1px solid rgba(6,182,212,.2)}
+.s3 .scenario-hdr{border-bottom:1px solid rgba(139,92,246,.15);background:rgba(139,92,246,.05)}
+.s3 .scenario-num{background:rgba(139,92,246,.12);color:var(--s3);border:1px solid rgba(139,92,246,.2)}
+.s4 .scenario-hdr{border-bottom:1px solid rgba(239,68,68,.15);background:rgba(239,68,68,.05)}
+.s4 .scenario-num{background:rgba(239,68,68,.12);color:var(--s4);border:1px solid rgba(239,68,68,.2)}
+.s5 .scenario-hdr{border-bottom:1px solid rgba(16,185,129,.15);background:rgba(16,185,129,.05)}
+.s5 .scenario-num{background:rgba(16,185,129,.12);color:var(--s5);border:1px solid rgba(16,185,129,.2)}
+.s6 .scenario-hdr{border-bottom:1px solid rgba(245,158,11,.15);background:rgba(245,158,11,.05)}
+.s6 .scenario-num{background:rgba(245,158,11,.12);color:var(--s6);border:1px solid rgba(245,158,11,.2)}
+
+/* PROBLEM/SOLUTION SPLIT */
+.prob-sol{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.prob-card{background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.18);border-radius:8px;padding:12px 14px}
+.sol-card{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.18);border-radius:8px;padding:12px 14px}
+.prob-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--no);margin-bottom:8px;font-weight:600}
+.sol-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--cass4);margin-bottom:8px;font-weight:600}
+.prob-card p,.sol-card p{font-size:.86rem;color:var(--muted);line-height:1.6;margin-bottom:5px}
+.prob-card ul,.sol-card ul{padding-left:14px}
+.prob-card li,.sol-card li{font-size:.85rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.prob-card strong,.sol-card strong{color:var(--text)}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--l7);border-color:var(--l7)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* ANALOGY PAIR */
+.analogy-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.analogy-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.analogy-card.bad{border-left:3px solid var(--no)}
+.analogy-card.good{border-left:3px solid var(--cass4)}
+.analogy-tag{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:7px}
+.analogy-card.bad .analogy-tag{color:var(--no)}.analogy-card.good .analogy-tag{color:var(--cass4)}
+.analogy-card h4{font-family:var(--fh);font-size:.88rem;font-weight:600;color:var(--text);margin-bottom:7px}
+.analogy-card p{font-size:.84rem;color:var(--muted);line-height:1.6}
+
+/* DIAGRAM (architecture flow) */
+.diag{background:#010409;border-radius:10px;margin:14px 0;overflow:hidden}
+.diag.s1c{border:1px solid rgba(249,115,22,.2)}.diag.s1c .diag-hdr{background:rgba(249,115,22,.07);border-bottom:1px solid rgba(249,115,22,.18)}.diag.s1c .diag-title{color:var(--s1)}
+.diag.s2c{border:1px solid rgba(6,182,212,.2)}.diag.s2c .diag-hdr{background:rgba(6,182,212,.07);border-bottom:1px solid rgba(6,182,212,.18)}.diag.s2c .diag-title{color:var(--s2)}
+.diag.s3c{border:1px solid rgba(139,92,246,.2)}.diag.s3c .diag-hdr{background:rgba(139,92,246,.07);border-bottom:1px solid rgba(139,92,246,.18)}.diag.s3c .diag-title{color:var(--s3)}
+.diag.s4c{border:1px solid rgba(239,68,68,.2)}.diag.s4c .diag-hdr{background:rgba(239,68,68,.07);border-bottom:1px solid rgba(239,68,68,.18)}.diag.s4c .diag-title{color:var(--s4)}
+.diag.s5c{border:1px solid rgba(16,185,129,.2)}.diag.s5c .diag-hdr{background:rgba(16,185,129,.07);border-bottom:1px solid rgba(16,185,129,.18)}.diag.s5c .diag-title{color:var(--s5)}
+.diag.s6c{border:1px solid rgba(245,158,11,.2)}.diag.s6c .diag-hdr{background:rgba(245,158,11,.07);border-bottom:1px solid rgba(245,158,11,.18)}.diag.s6c .diag-title{color:var(--s6)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.info{background:rgba(0,129,207,.07);border:1px solid rgba(0,129,207,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.info .callout-title{color:var(--lb3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:14px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* CANARY PROGRESS BAR */
+.canary-bar{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0}
+.canary-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--s2);margin-bottom:10px;font-weight:600}
+.canary-stage{margin-bottom:8px}
+.canary-label{font-family:var(--fc);font-size:.74rem;color:var(--muted);margin-bottom:4px}
+.canary-track{height:20px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;display:flex}
+.canary-old{background:rgba(0,201,167,.3);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;font-family:var(--fc);font-size:.65rem;color:var(--l4);transition:width .4s}
+.canary-new{background:rgba(6,182,212,.45);display:flex;align-items:center;padding-left:6px;font-family:var(--fc);font-size:.65rem;color:var(--s2);transition:width .4s}
+
+/* PRIORITY ROUTING VISUAL */
+.priority-grid{display:grid;grid-template-columns:auto 1fr;gap:0;margin:14px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.priority-row{display:contents}
+.priority-tier{padding:10px 14px;font-family:var(--fc);font-size:.78rem;font-weight:700;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.priority-dest{padding:10px 14px;font-size:.85rem;color:var(--muted);border-bottom:1px solid var(--border);border-left:1px solid var(--border)}
+.priority-row:last-child .priority-tier,.priority-row:last-child .priority-dest{border-bottom:none}
+.tier-enterprise{color:var(--lean);background:rgba(255,215,0,.06)}
+.tier-business{color:var(--s2);background:rgba(6,182,212,.04)}
+.tier-free{color:var(--dim);background:rgba(48,54,61,.15)}
+
+/* SUMMARY TABLE */
+.sum-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.sum-table thead tr{background:linear-gradient(90deg,rgba(132,94,194,.1),rgba(0,201,167,.06))}
+.sum-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.09em;color:var(--l7);border-bottom:1px solid rgba(132,94,194,.18)}
+.sum-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:middle;line-height:1.4}
+.sum-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.sum-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.sum-table td:first-child{color:var(--text);font-weight:500}
+.sum-table td.yes{color:var(--cass4);font-family:var(--fc);font-weight:700;font-size:.8rem}
+.sum-table td.no2{color:var(--no);font-family:var(--fc);font-weight:700;font-size:.8rem}
+.sum-table td.warn2{color:var(--lean);font-family:var(--fc);font-size:.78rem}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--l7);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* marks */
+mark{background:rgba(132,94,194,.14);color:var(--l7);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.prob-sol,.analogy-pair{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer & API Gateway · L6/L7 Series</div>
+    <div class="sb-title">L7 Load Balancers — When & Why</div>
+    <div class="sb-part">Part 2 — Six Real-World Scenarios</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">Scenarios</div>
+      <li class="ni sub"><a href="#s1">S1: Microservices URL Routing</a></li>
+      <li class="ni sub"><a href="#s2">S2: Canary Deployments</a></li>
+      <li class="ni sub"><a href="#s3">S3: Header-Based Routing</a></li>
+      <li class="ni sub"><a href="#s4">S4: WAF — Security Inspection</a></li>
+      <li class="ni sub"><a href="#s5">S5: Sticky Sessions</a></li>
+      <li class="ni sub"><a href="#s6">S6: SSL/TLS Centralized Mgmt</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#summary">L4 vs L7 Decision Summary</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer & API Gateway Internals · L6/L7 Series · Part 2</div>
+  <h1>L7 Load Balancers:<br>When & Why</h1>
+  <div class="hero-meta">
+    <span>🛍️ S1: Microservices URL routing (Amazon)</span>
+    <span>🐦 S2: Canary deployments (Netflix)</span>
+    <span>💼 S3: Header-based tenant routing (Slack)</span>
+    <span>🛡️ S4: WAF security inspection</span>
+    <span>🍪 S5: Sticky sessions (legacy apps)</span>
+    <span>🔐 S6: TLS termination (100 domains)</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: L4 vs L7 — First Principles</span>
+    <span class="part-pill ap">Part 2: When & Why L7 — Six Scenarios</span>
+  </div>
+  <p style="margin-top:14px">Part 1 established why L4 wins for a KV store at 300K QPS. Part 2 is the flip side: the six situations where L7 is not just nice-to-have but architecturally necessary. Each scenario has a named company, a concrete problem, and the exact L7 configuration that solves it — because knowing which tool to use is only half the answer. Knowing <em>why it's the right tool for this specific problem</em> is the L7 signal.</p>
+</section>
+
+<!-- SCENARIO 1: MICROSERVICES -->
+<div class="sec-hdr" id="s1"><h2>Scenario 1: Microservices with a Single Domain</h2></div>
+
+<div class="scenario s1" id="s1-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 1</span>
+    <span class="scenario-title">URL-Based Routing to 200+ Microservices</span>
+    <span class="scenario-company">e.g. Amazon / large e-commerce</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">The Problem Without L7</div>
+          <ul>
+            <li>One domain: <code>api.amazon.com</code></li>
+            <li>Behind it: 200+ different services</li>
+            <li>L4 can only see: <code>10.0.0.50:443</code></li>
+            <li>L4 cannot see: <code>/orders/12345</code> (inside TLS)</li>
+            <li>Result: L4 randomly forwards to any server — order requests hit product servers, payment requests hit recommendation servers</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">The Solution With L7</div>
+          <ul>
+            <li>L7 decrypts and reads the URL path</li>
+            <li><code>/orders/*</code> → Order Service (50 servers)</li>
+            <li><code>/products/*</code> → Product Service (100 servers)</li>
+            <li><code>/payments/*</code> → Payment Service (20 servers)</li>
+            <li>Each service scales independently</li>
+            <li>Client sees one domain, gets the right service</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="analogy-pair">
+        <div class="analogy-card bad">
+          <div class="analogy-tag">L4 — Dumb Food Court Host</div>
+          <h4>Random seating</h4>
+          <p>Customer: "I want sushi."<br>Host: "I don't know what sushi is. Here's a random restaurant."<br>Customer: "This is a pizza place!"</p>
+        </div>
+        <div class="analogy-card good">
+          <div class="analogy-tag">L7 — Smart Food Court Host</div>
+          <h4>Intelligent routing</h4>
+          <p>Customer: "I want sushi."<br>Host: "Sushi? Japanese food. Follow me to Sushi Palace."<br>Customer: "Perfect!"</p>
+        </div>
+      </div>
+
+      <div class="code"><div class="code-hdr"><span class="code-lang">NGINX · L7 URL-Based Routing Config</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>http {
+    upstream order_service {
+        server order-1.internal:8080;
+        server order-2.internal:8080;
+        server order-3.internal:8080;
+    }
+    upstream product_service {
+        server product-1.internal:8080;
+        server product-2.internal:8080;
+    }
+    upstream payment_service {
+        server payment-1.internal:8080;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name api.amazon.com;
+
+        location /orders/ {
+            proxy_pass http://order_service;
+        }
+        location /products/ {
+            proxy_pass http://product_service;
+        }
+        location /payments/ {
+            proxy_pass http://payment_service;
+        }
+    }
+}</pre></div>
+
+      <div class="callout fail">
+        <div class="callout-title">Why L4 Physically Cannot Do This</div>
+        <p>L4 only sees: <code>Packet to api.amazon.com:443</code>. The URL <code>/orders/12345</code> is inside the TLS-encrypted payload — L4 never decrypts it. L4 would randomly distribute requests across all backend servers, sending order queries to product servers and vice versa. The only L4-compatible alternative would be separate domains per service (<code>orders.amazon.com</code>, <code>products.amazon.com</code>) — which destroys the unified API surface.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO 2: CANARY -->
+<div class="sec-hdr" id="s2"><h2>Scenario 2: Canary Deployments / A-B Testing</h2></div>
+
+<div class="scenario s2" id="s2-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 2</span>
+    <span class="scenario-title">Safe Traffic Splitting for New Versions</span>
+    <span class="scenario-company">e.g. Netflix rolling out new algorithm</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">The Risk Without L7</div>
+          <ul>
+            <li>New recommendation algorithm: 20% faster but might have bugs</li>
+            <li>Option A: Deploy to everyone → <strong>risky</strong> (100% blast radius)</li>
+            <li>Option B: <code>beta.netflix.com</code> → no real traffic</li>
+            <li>No way to test with real users at partial traffic</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">The Solution With L7</div>
+          <ul>
+            <li>Route 10% of users to new version</li>
+            <li>If new version errors spike → auto-rollback</li>
+            <li>Gradually ramp: 10% → 25% → 50% → 100%</li>
+            <li>Blast radius on failure: only 10% affected</li>
+            <li>Compare error rates and latency per version</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="canary-bar">
+        <div class="canary-title">Canary Rollout — Progressive Traffic Shift</div>
+        <div class="canary-stage">
+          <div class="canary-label">Day 1 — Canary (10% new, 90% stable)</div>
+          <div class="canary-track"><div class="canary-old" style="width:90%">v1 90%</div><div class="canary-new" style="width:10%">v2 10%</div></div>
+        </div>
+        <div class="canary-stage">
+          <div class="canary-label">Day 3 — Ramp up (50% / 50%)</div>
+          <div class="canary-track"><div class="canary-old" style="width:50%">v1 50%</div><div class="canary-new" style="width:50%">v2 50%</div></div>
+        </div>
+        <div class="canary-stage">
+          <div class="canary-label">Day 7 — Full rollout (0% / 100%)</div>
+          <div class="canary-track"><div class="canary-old" style="width:0%"></div><div class="canary-new" style="width:100%">v2 100% ✓</div></div>
+        </div>
+      </div>
+
+      <div class="code"><div class="code-hdr"><span class="code-lang">Envoy · Weighted Cluster Canary Config</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>routes:
+  - match:
+      prefix: "/recommendations"
+    route:
+      weighted_clusters:
+        clusters:
+          - name: recommendations_v1
+            weight: 90         # Stable version
+          - name: recommendations_v2_canary
+            weight: 10         # New version under test
+        total_weight: 100
+
+# Automatic rollback: if v2 error rate > 1%, shift weight back
+# Envoy outlier detection handles this automatically</pre></div>
+
+      <div class="insight">
+        <div class="insight-label">L6/L7 Insight — Why Canary Requires L7</div>
+        <p>"Canary deployments require reading <strong>request-level attributes</strong> (user_id hash, random percentage, header flag) to decide which version to send to. L4 routes at the connection level — once a TCP connection is established to a server, all requests on that connection go there. L7 can inspect each individual HTTP request and make a per-request routing decision. That per-request granularity is exactly what canary deployments need."</p>
+      </div>
+
+      <div class="callout good">
+        <div class="callout-title">Why This Matters Operationally</div>
+        <ul>
+          <li>A bug in the new version only affects 10% of users at initial rollout</li>
+          <li>Error rate monitoring catches regressions before full exposure</li>
+          <li>Rollback is instant — change the weight from 10/90 to 0/100</li>
+          <li>No redeployment needed to roll back — just a config change at the LB</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO 3: HEADER-BASED ROUTING -->
+<div class="sec-hdr" id="s3"><h2>Scenario 3: Header-Based Routing (Multi-Tenancy)</h2></div>
+
+<div class="scenario s3" id="s3-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 3</span>
+    <span class="scenario-title">Tier-Based Priority Routing via HTTP Headers</span>
+    <span class="scenario-company">e.g. Slack — B2B SaaS multi-tenancy</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">The Problem</div>
+          <ul>
+            <li>Free customers: millions, low revenue</li>
+            <li>Enterprise customers: thousands, $$$$ revenue</li>
+            <li>System overloaded: who should get resources?</li>
+            <li>L4 can't distinguish — all packets look the same</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">The Solution</div>
+          <ul>
+            <li>Enterprise request: <code>X-Customer-Tier: enterprise</code></li>
+            <li>L7 reads the header and routes to premium servers</li>
+            <li>Under load: free tier gracefully degrades</li>
+            <li>Enterprise customers never notice an outage</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="priority-grid">
+        <div class="priority-row">
+          <div class="priority-tier tier-enterprise">⭐ Enterprise<br><span style="font-size:.64rem;color:var(--dim)">X-Tier: enterprise</span></div>
+          <div class="priority-dest">→ <strong style="color:var(--lean)">Premium Servers</strong> — dedicated, fast, always available. SLA: 99.99%. Reserved capacity even at peak load.</div>
+        </div>
+        <div class="priority-row">
+          <div class="priority-tier tier-business">◆ Business<br><span style="font-size:.64rem;color:var(--dim)">X-Tier: business</span></div>
+          <div class="priority-dest">→ <strong style="color:var(--s2)">Standard Servers</strong> — shared but well-provisioned. SLA: 99.9%. May queue briefly under extreme load.</div>
+        </div>
+        <div class="priority-row">
+          <div class="priority-tier tier-free">○ Free<br><span style="font-size:.64rem;color:var(--dim)">X-Tier: free</span></div>
+          <div class="priority-dest">→ <strong style="color:var(--dim)">Shared Servers</strong> — best effort. No SLA. Degraded gracefully during overload. Rate-limited at LB.</div>
+        </div>
+      </div>
+
+      <div class="code"><div class="code-hdr"><span class="code-lang">AWS ALB · Header-Based Routing Rules</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>Rule 1: Priority 1
+  IF   Header "X-Customer-Tier" = "enterprise"
+  THEN Forward to target-group-premium
+       (20 instances, c5.4xlarge, dedicated)
+
+Rule 2: Priority 2
+  IF   Header "X-Customer-Tier" = "business"
+  THEN Forward to target-group-standard
+       (10 instances, c5.2xlarge, shared)
+
+Rule 3: Default (catches free tier and untagged requests)
+  Forward to target-group-shared
+  (5 instances, t3.large, overcommitted during peak)</pre></div>
+
+      <div class="insight">
+        <div class="insight-label">L6/L7 Insight — Header Routing Enables QoS Without Application Changes</div>
+        <p>"Header-based routing at L7 implements Quality of Service (QoS) <strong>without touching application code</strong>. The API server doesn't need to know its tier — the load balancer handles routing before the request reaches any application logic. This separation of concerns means you can add new tiers, adjust server pools, or modify routing rules with zero application deploys. Infrastructure change, not code change."</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO 4: WAF -->
+<div class="sec-hdr" id="s4"><h2>Scenario 4: Web Application Firewall (WAF)</h2></div>
+
+<div class="scenario s4" id="s4-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 4</span>
+    <span class="scenario-title">Security Inspection Before Requests Reach Application Code</span>
+    <span class="scenario-company">Any company handling sensitive data (banks, healthcare)</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">Attack Vectors L4 Cannot Block</div>
+          <ul>
+            <li><strong>SQL injection:</strong> <code>/users?id=1; DROP TABLE users;--</code></li>
+            <li><strong>XSS:</strong> <code>/search?q=&lt;script&gt;steal(cookies)&lt;/script&gt;</code></li>
+            <li><strong>Path traversal:</strong> <code>/files/../../../etc/passwd</code></li>
+            <li>L4 sees: <code>Encrypted packet to 10.0.0.50:443</code></li>
+            <li>L4 says: "Looks fine! *forwards malicious payload*"</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">WAF at L7 Intercepts Before Application</div>
+          <ul>
+            <li>L7 decrypts and inspects every request</li>
+            <li>Pattern matching against OWASP attack library</li>
+            <li>SQL injection detected → <strong>BLOCK + LOG</strong></li>
+            <li>XSS payload detected → <strong>BLOCK + ALERT</strong></li>
+            <li>Application code never sees malicious request</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="diag s4c">
+        <div class="diag-hdr"><span class="diag-title">WAF Request Inspection Pipeline</span></div>
+        <pre>Client sends:
+  GET /users?id=1; DROP TABLE users;--
+
+L7 WAF Pipeline:
+  Step 1: TLS Decrypt    → Plaintext HTTP request now visible
+  Step 2: Parse URL      → query param: id = "1; DROP TABLE users;--"
+  Step 3: WAF Rules      → Match against SQL injection patterns
+  Step 4: MATCH FOUND!   → Rule: detect_sqli (OWASP CRS rule 942100)
+  Step 5: Action: BLOCK  → Return 403 Forbidden
+  Step 6: Log event      → {attack_type: "sqli", source_ip: "...", timestamp}
+
+Application server:  Never receives this request ✓
+Security team alert: Triggered immediately ✓
+Attacker:            Gets 403, no information about what was detected</pre>
+      </div>
+
+      <div class="analogy-pair">
+        <div class="analogy-card bad">
+          <div class="analogy-tag">L4 — Airport Ticket Check</div>
+          <h4>Checks ticket only</h4>
+          <p>"Your ticket says Flight 123? Go ahead."<br>Doesn't check if passenger has weapons in bag. Malicious payload sails through to the application.</p>
+        </div>
+        <div class="analogy-card good">
+          <div class="analogy-tag">L7 WAF — Full Security Screening</div>
+          <h4>Inspects contents</h4>
+          <p>"Let me scan your bag… What's this suspicious liquid? <strong>BLOCKED. Security to Gate 7.</strong>" Malicious payload stopped before reaching any backend.</p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <div class="callout-title">WAF Is Defense-in-Depth, Not the Only Layer</div>
+        <p>A WAF at L7 is not a substitute for secure application code. It's a defense-in-depth layer that catches known attack patterns before they reach your code. Known zero-days, novel attacks, and application-logic vulnerabilities (like IDOR — accessing another user's data with a valid request) won't be caught by pattern-matching WAFs. WAF is Layer 1 of security; secure coding is Layer 2.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO 5: STICKY SESSIONS -->
+<div class="sec-hdr" id="s5"><h2>Scenario 5: Sticky Sessions (Stateful Applications)</h2></div>
+
+<div class="scenario s5" id="s5-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 5</span>
+    <span class="scenario-title">Session Affinity for In-Memory Stateful Apps</span>
+    <span class="scenario-company">Legacy applications storing session in server memory</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">The Problem with Stateful Servers + L4</div>
+          <ul>
+            <li>User logs in → Server A stores <code>session["user123"]</code> in RAM</li>
+            <li>Next request → L4 randomly routes to Server B</li>
+            <li>Server B: "Who is user123? I don't know this person!"</li>
+            <li>User: "Why am I logged out?!"</li>
+            <li>Shopping cart, multi-step forms, file uploads all break</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">The Solution with L7 Session Affinity</div>
+          <ul>
+            <li>L7 reads cookie: <code>SERVERID=server-a</code></li>
+            <li>"This user was on server-a before → send back to server-a"</li>
+            <li>Same server, same in-memory session, user stays logged in</li>
+            <li>Cookie inserted on first request, read on every subsequent one</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="code"><div class="code-hdr"><span class="code-lang">HAProxy · Sticky Sessions via Cookie</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre>backend web_servers
+    balance roundrobin
+    
+    # Insert SERVERID cookie on first response, read it on subsequent requests
+    cookie SERVERID insert indirect nocache
+    
+    server web1 10.0.0.1:80 check cookie web1
+    server web2 10.0.0.2:80 check cookie web2
+    server web3 10.0.0.3:80 check cookie web3
+
+# First request: user hits web2 → response includes Set-Cookie: SERVERID=web2
+# All future requests: HAProxy reads SERVERID=web2 → routes to web2
+# If web2 goes down: HAProxy routes to another server (session loss, but graceful)</pre></div>
+
+      <div class="callout info">
+        <div class="callout-title">The Modern Alternative — Avoid Sticky Sessions If Possible</div>
+        <p>Modern applications avoid sticky sessions entirely by storing session state externally:</p>
+        <ul>
+          <li><strong>Redis:</strong> <code>session["user123"] = {...}</code> in shared Redis → any server can read it</li>
+          <li><strong>JWT tokens:</strong> Session state encoded in the token itself → stateless servers, no affinity needed</li>
+          <li><strong>Database sessions:</strong> Session row in PostgreSQL → any server reads the same row</li>
+        </ul>
+        <p style="margin-top:8px">Sticky sessions are a workaround for architectural debt. Use them when you can't modify the application; migrate away from them when you can.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO 6: SSL CENTRALIZED -->
+<div class="sec-hdr" id="s6"><h2>Scenario 6: SSL/TLS Termination with Centralized Certificate Management</h2></div>
+
+<div class="scenario s6" id="s6-card">
+  <div class="scenario-hdr" onclick="toggleScenario(this)">
+    <span class="scenario-num">Scenario 6</span>
+    <span class="scenario-title">Managing TLS for 100+ Domains at One Place</span>
+    <span class="scenario-company">Any company with many subdomains or multi-tenant domains</span>
+    <span class="scenario-toggle">▾</span>
+  </div>
+  <div class="scenario-body">
+    <div class="scenario-inner">
+      <div class="prob-sol">
+        <div class="prob-card">
+          <div class="prob-label">The Problem at Scale</div>
+          <ul>
+            <li>100+ domains: <code>shop.co</code>, <code>api.co</code>, <code>admin.co</code>, <code>partner.co</code>…</li>
+            <li>Each needs its own TLS certificate</li>
+            <li>Certs expire every 90 days (Let's Encrypt) or 1 year</li>
+            <li>Manual renewal on each of 100 servers → expired cert incidents</li>
+            <li>Certificate key rotation requires coordinated deploy across all servers</li>
+          </ul>
+        </div>
+        <div class="sol-card">
+          <div class="sol-label">The Solution — L7 Centralized TLS</div>
+          <ul>
+            <li>All 100 certs stored and managed at L7 LB</li>
+            <li>Auto-renewal via Let's Encrypt (ACME protocol)</li>
+            <li>L7 uses SNI to pick correct cert per domain</li>
+            <li>Backend servers serve HTTP only (no certs, simpler)</li>
+            <li>Cert rotation: one config update, zero backend deploys</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="diag s6c">
+        <div class="diag-hdr"><span class="diag-title">Centralized TLS Termination Architecture</span></div>
+        <pre>┌──────────────────────────────────────────────────────────────┐
+│                 L7 Load Balancer (TLS Hub)                   │
+│                                                              │
+│  Certificates managed here (auto-renewed):                   │
+│    shop.company.com     → cert_shop.pem    (expires: 89 days)│
+│    api.company.com      → cert_api.pem     (expires: 62 days)│
+│    admin.company.com    → cert_admin.pem   (expires: 14 days)│
+│    ... 97 more certs, all auto-renewed                       │
+│                                                              │
+│  Client connects to shop.company.com with TLS:               │
+│    1. TLS ClientHello includes SNI: "shop.company.com"       │
+│    2. L7 selects cert_shop.pem (matching domain)             │
+│    3. TLS handshake completes                                │
+│    4. L7 decrypts → inspects HTTP request                    │
+│    5. Forwards as plain HTTP to backend                      │
+└──────────────────────────────────────────────────────────────┘
+         │ HTTP (no TLS)                │ HTTP (no TLS)
+         ▼                              ▼
+   ┌──────────────┐             ┌──────────────┐
+   │ Backend      │             │ Backend      │
+   │ Server 1     │             │ Server 2     │
+   │ (no certs)   │             │ (no certs)   │
+   └──────────────┘             └──────────────┘
+
+Key: SNI (Server Name Indication) = TLS extension where the client tells
+     the server which hostname it's connecting to, before TLS completes.
+     This lets one IP address serve TLS for hundreds of different domains.</pre>
+      </div>
+
+      <div class="callout warn">
+        <div class="callout-title">The Security Trade-off — Internal HTTP</div>
+        <p>When L7 terminates TLS, traffic from LB to backends is plain HTTP. This is acceptable <strong>only if</strong> the backend network is private and trusted (VPC, private subnets, no external access). If your internal network could be compromised, you should use mTLS between LB and backends — or use L4 pass-through and have backends terminate TLS themselves (as in Part 1's KV store design).</p>
+      </div>
+
+      <div class="insight">
+        <div class="insight-label">L6/L7 Insight — TLS Termination Is Operationally Compelling at Scale</div>
+        <p>"The KV store in Part 1 chose L4 TLS pass-through for latency and trust boundary reasons. But at 100 domains with 90-day cert rotation, the operational cost of distributing certs to every backend server is non-trivial. <strong>The right choice depends on your operational context:</strong> homogeneous API nodes handling their own certs (Part 1: L4 wins) vs. heterogeneous backends that shouldn't deal with cert management (Part 2: L7 wins). Neither is universally correct."</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SUMMARY TABLE -->
+<div class="sec-hdr" id="summary"><h2>L4 vs L7: Decision Summary</h2></div>
+
+<table class="sum-table">
+  <thead><tr><th>Scenario</th><th>L4</th><th>L7</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Distribute traffic to identical servers</td><td class="yes">✅</td><td class="no2">❌</td><td>L4 is faster, cheaper — no inspection needed</td></tr>
+    <tr><td>Route based on URL path (microservices)</td><td class="no2">❌</td><td class="yes">✅</td><td>L4 can't see URL (inside encrypted payload)</td></tr>
+    <tr><td>Route based on HTTP headers</td><td class="no2">❌</td><td class="yes">✅</td><td>L4 can't see headers — all inside TLS</td></tr>
+    <tr><td>Canary / A/B traffic splitting</td><td class="no2">❌</td><td class="yes">✅</td><td>Need per-request routing decision, not per-connection</td></tr>
+    <tr><td>Web Application Firewall (WAF)</td><td class="no2">❌</td><td class="yes">✅</td><td>L4 can't inspect content to detect attack patterns</td></tr>
+    <tr><td>Sticky sessions (cookie-based)</td><td class="no2">❌</td><td class="yes">✅</td><td>L4 can't read cookies — application-layer concept</td></tr>
+    <tr><td>SSL termination for many domains</td><td class="warn2">⚠️ L4 pass-through</td><td class="yes">✅ Central mgmt</td><td>L7 picks cert per domain via SNI; operationally simpler at scale</td></tr>
+    <tr><td>TCP/UDP protocols (not HTTP)</td><td class="yes">✅</td><td class="no2">❌</td><td>L7 is HTTP-only — can't handle raw TCP/UDP streams</td></tr>
+    <tr><td>Lowest possible latency (P99 &lt; 5ms)</td><td class="yes">✅</td><td class="no2">❌</td><td>L7 TLS decryption + HTTP parsing adds 1–5ms overhead</td></tr>
+    <tr><td>Long-lived connections (gRPC, WebSocket)</td><td class="yes">✅</td><td class="warn2">⚠️ Works but overhead</td><td>L4 pass-through avoids L7's dual-connection model</td></tr>
+  </tbody>
+</table>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Key Lesson — L7 Is Not "Better" Than L4</div>
+  <p>Every scenario in this guide shows L7 solving a problem L4 physically cannot. But that's because these are scenarios <em>selected to show L7 at its best</em>. In Part 1, we showed L4 at its best for a KV store at 300K QPS with 20ms P99 targets.</p>
+  <p>The correct mental model: <strong>L4 is fast and simple; L7 is smart and costly.</strong> Use L7 when you genuinely need its intelligence — URL routing, header inspection, canary deployment, WAF, sticky sessions, or centralized cert management. Use L4 when you don't need any of that, and when latency, throughput, or TLS trust boundaries make L7's overhead unjustifiable.</p>
+  <p><strong>The L7 interview signal is not memorizing these scenarios — it's being able to look at a system's access pattern and immediately know which scenarios apply.</strong> "We have homogeneous API nodes, the application layer handles routing, and our P99 target is 20ms" → L4. "We have 15 microservices behind one domain and need a WAF" → L7. That instinctive mapping from system requirements to infrastructure choice is the principal engineer pattern.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleScenario(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
