@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer & API Gateway Internals (Part 6) — Load Balancing in Kubernetes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;--l7:#845EC2;--lb3:#0081CF;
+  /* Part 6 accent — Kubernetes cornflower blue */
+  --k8s:#326CE5;--k8s2:#5B8FEF;--k8s3:#1A56DB;
+  /* Layer colors */
+  --ly1:#6366F1;--ly2:#0EA5E9;--ly3:#F59E0B;--ly4:#8B5CF6;--ly5:#10B981;
+  /* Pod/service colors */
+  --pod:#00C9A7;--svc:#845EC2;--mesh:#F97316;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--ly1),var(--ly2),var(--ly3),var(--ly4),var(--ly5),var(--mesh));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--k8s2);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--k8s2);background:rgba(50,108,229,.1);border:1px solid rgba(50,108,229,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--k8s2)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(50,108,229,.05)}
+.ni.active a{color:var(--k8s2);border-left-color:var(--k8s2);background:rgba(50,108,229,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--k8s2);border-color:var(--k8s2);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--k8s2);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.6rem;font-weight:900;line-height:1.08;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--k8s2) 35%,var(--ly4) 58%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(50,108,229,.1);border-color:var(--k8s2);color:var(--k8s2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* LAYER STACK — 5-layer visual */
+.layer-stack{display:flex;flex-direction:column;gap:3px;margin:18px 0}
+.layer{border-radius:8px;padding:14px 18px;cursor:pointer;transition:opacity .2s;border:1px solid transparent}
+.layer:hover{opacity:.9}
+.ly1{background:rgba(99,102,241,.08);border-color:rgba(99,102,241,.25)}
+.ly2{background:rgba(14,165,233,.08);border-color:rgba(14,165,233,.25)}
+.ly3{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);opacity:.7}
+.ly3.active-layer{opacity:1}
+.ly4{background:rgba(139,92,246,.08);border-color:rgba(139,92,246,.25)}
+.ly5{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.25)}
+.layer-hdr{display:flex;align-items:center;gap:10px}
+.layer-num{font-family:var(--fc);font-size:.65rem;font-weight:700;padding:2px 8px;border-radius:10px;flex-shrink:0}
+.ly1 .layer-num{background:rgba(99,102,241,.15);color:var(--ly1);border:1px solid rgba(99,102,241,.2)}
+.ly2 .layer-num{background:rgba(14,165,233,.15);color:var(--ly2);border:1px solid rgba(14,165,233,.2)}
+.ly3 .layer-num{background:rgba(245,158,11,.15);color:var(--ly3);border:1px solid rgba(245,158,11,.2)}
+.ly4 .layer-num{background:rgba(139,92,246,.15);color:var(--ly4);border:1px solid rgba(139,92,246,.2)}
+.ly5 .layer-num{background:rgba(16,185,129,.15);color:var(--ly5);border:1px solid rgba(16,185,129,.2)}
+.layer-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text)}
+.layer-opt{font-family:var(--fc);font-size:.62rem;color:var(--dim);margin-left:auto;flex-shrink:0}
+.layer-detail{margin-top:8px;font-size:.86rem;color:var(--muted);line-height:1.6;padding-left:4px}
+.layer-arrow{text-align:center;color:var(--dim);font-family:var(--fc);font-size:.9rem;padding:2px 0}
+
+/* COLLAPSIBLE LAYER SECTIONS */
+.layer-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:24px;overflow:hidden}
+.ls-hdr{padding:14px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.ls-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px}
+.ls-title{font-family:var(--fh);font-size:1.02rem;font-weight:700;color:var(--text)}
+.ls-toggle{color:var(--dim);font-size:.78rem;transition:transform .3s;flex-shrink:0;margin-left:auto}
+.layer-section.collapsed .ls-toggle{transform:rotate(-90deg)}
+.ls-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.layer-section.collapsed .ls-body{max-height:0;opacity:0}
+.ls-inner{padding:0 20px 18px}
+/* per-layer accents */
+.la1 .ls-hdr{border-bottom:1px solid rgba(99,102,241,.15);background:rgba(99,102,241,.05)}
+.la1 .ls-num{background:rgba(99,102,241,.12);color:var(--ly1);border:1px solid rgba(99,102,241,.2)}
+.la2 .ls-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.05)}
+.la2 .ls-num{background:rgba(14,165,233,.12);color:var(--ly2);border:1px solid rgba(14,165,233,.2)}
+.la3 .ls-hdr{border-bottom:1px solid rgba(245,158,11,.15);background:rgba(245,158,11,.05)}
+.la3 .ls-num{background:rgba(245,158,11,.12);color:var(--ly3);border:1px solid rgba(245,158,11,.2)}
+.la4 .ls-hdr{border-bottom:1px solid rgba(139,92,246,.15);background:rgba(139,92,246,.05)}
+.la4 .ls-num{background:rgba(139,92,246,.12);color:var(--ly4);border:1px solid rgba(139,92,246,.2)}
+.la5 .ls-hdr{border-bottom:1px solid rgba(16,185,129,.15);background:rgba(16,185,129,.05)}
+.la5 .ls-num{background:rgba(16,185,129,.12);color:var(--ly5);border:1px solid rgba(16,185,129,.2)}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:14px 0;overflow:hidden}
+.diag.d1{border:1px solid rgba(99,102,241,.2)}.diag.d1 .diag-hdr{background:rgba(99,102,241,.06);border-bottom:1px solid rgba(99,102,241,.18)}.diag.d1 .diag-title{color:var(--ly1)}
+.diag.d2{border:1px solid rgba(14,165,233,.2)}.diag.d2 .diag-hdr{background:rgba(14,165,233,.06);border-bottom:1px solid rgba(14,165,233,.18)}.diag.d2 .diag-title{color:var(--ly2)}
+.diag.d3{border:1px solid rgba(245,158,11,.2)}.diag.d3 .diag-hdr{background:rgba(245,158,11,.06);border-bottom:1px solid rgba(245,158,11,.18)}.diag.d3 .diag-title{color:var(--ly3)}
+.diag.d4{border:1px solid rgba(139,92,246,.2)}.diag.d4 .diag-hdr{background:rgba(139,92,246,.06);border-bottom:1px solid rgba(139,92,246,.18)}.diag.d4 .diag-title{color:var(--ly4)}
+.diag.d5{border:1px solid rgba(16,185,129,.2)}.diag.d5 .diag-hdr{background:rgba(16,185,129,.06);border-bottom:1px solid rgba(16,185,129,.18)}.diag.d5 .diag-title{color:var(--ly5)}
+.diag.dmesh{border:1px solid rgba(249,115,22,.2)}.diag.dmesh .diag-hdr{background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.18)}.diag.dmesh .diag-title{color:var(--mesh)}
+.diag.dk8s{border:1px solid rgba(50,108,229,.2)}.diag.dk8s .diag-hdr{background:rgba(50,108,229,.06);border-bottom:1px solid rgba(50,108,229,.18)}.diag.dk8s .diag-title{color:var(--k8s2)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--k8s2);border-color:var(--k8s2)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.info{background:rgba(50,108,229,.07);border:1px solid rgba(50,108,229,.2)}
+.callout.mesh{background:rgba(249,115,22,.07);border:1px solid rgba(249,115,22,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.info .callout-title{color:var(--k8s2)}
+.callout.mesh .callout-title{color:var(--mesh)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* IPTABLES vs IPVS COMPARISON */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.cmp-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.cmp-hdr{padding:9px 14px;font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid var(--border)}
+.cmp-card.iptab .cmp-hdr{background:rgba(107,114,128,.06);color:var(--muted)}
+.cmp-card.ipvs .cmp-hdr{background:rgba(50,108,229,.06);color:var(--k8s2)}
+.cmp-body{padding:12px 14px}
+.cmp-body ul{padding-left:14px}
+.cmp-body li{font-size:.84rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.cmp-body strong{color:var(--text)}
+
+/* IPVS ALGORITHMS */
+.algo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.algo-cell{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px}
+.algo-name{font-family:var(--fc);font-size:.72rem;font-weight:700;color:var(--k8s2);margin-bottom:4px}
+.algo-full{font-size:.75rem;color:var(--muted);line-height:1.45}
+
+/* SERVICE MESH SIDECAR VISUAL */
+.sidecar-box{background:var(--surface);border:1px solid rgba(249,115,22,.25);border-radius:10px;padding:16px;margin:14px 0;position:relative}
+.sidecar-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mesh);margin-bottom:10px;font-weight:600}
+.sidecar-inner{background:rgba(249,115,22,.04);border:1px solid rgba(249,115,22,.15);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sidecar-envoy{background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.2);border-radius:7px;padding:10px 12px}
+.sidecar-app{background:rgba(50,108,229,.06);border:1px solid rgba(50,108,229,.15);border-radius:7px;padding:10px 12px}
+.sidecar-title{font-family:var(--fc);font-size:.66rem;font-weight:700;margin-bottom:6px}
+.sidecar-envoy .sidecar-title{color:var(--mesh)}.sidecar-app .sidecar-title{color:var(--k8s2)}
+.sidecar-item{font-size:.8rem;color:var(--muted);margin-bottom:3px;padding-left:4px}
+.sidecar-item::before{content:'· ';color:var(--dim)}
+.sidecar-arrow{display:flex;align-items:center;justify-content:center;font-family:var(--fc);font-size:1rem;color:var(--dim);grid-column:span 2;text-align:center;padding:4px 0}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* DECISION MATRIX TABLE */
+.dec-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.dec-table thead tr{background:linear-gradient(90deg,rgba(50,108,229,.12),rgba(139,92,246,.06))}
+.dec-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--k8s2);border-bottom:1px solid rgba(50,108,229,.2)}
+.dec-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5}
+.dec-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dec-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dec-table td:first-child{font-weight:700;color:var(--text)}
+.dec-table td.arch{font-family:var(--fc);font-size:.74rem;color:var(--k8s2)}
+
+/* MARKS */
+mark{background:rgba(50,108,229,.14);color:var(--k8s2);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* INTERVIEW BOX */
+.interview{background:linear-gradient(135deg,rgba(50,108,229,.09),rgba(139,92,246,.05));border:1px solid rgba(50,108,229,.25);border-radius:10px;padding:18px 20px;margin:14px 0;position:relative}
+.interview::before{content:'🎤';position:absolute;right:16px;top:14px;font-size:1.3rem;opacity:.4}
+.interview-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--k8s2);margin-bottom:10px;font-weight:600}
+.interview p,.interview ul,.interview li{font-size:.88rem;line-height:1.7;color:var(--muted);margin-bottom:6px}
+.interview ul{padding-left:18px}
+.interview li{margin-bottom:4px}
+.interview strong{color:var(--text)}
+.interview p.lead{color:var(--text);font-style:italic;margin-bottom:10px}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--k8s2);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.compare-grid,.algo-grid,.sidecar-inner{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer & API Gateway · L6/L7 Series</div>
+    <div class="sb-title">Load Balancing in Kubernetes</div>
+    <div class="sb-part">Part 6 — 100 Microservices Deep Dive</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#full-picture">Five-Layer Architecture</a></li>
+      <li class="ni sub"><a href="#uber-example">Uber-Like App Example</a></li>
+    </li>
+    <li class="ng"><div class="nl">Layer by Layer</div>
+      <li class="ni sub"><a href="#layer1">L1: Cloud Load Balancer</a></li>
+      <li class="ni sub"><a href="#layer2">L2: Ingress Controller</a></li>
+      <li class="ni sub"><a href="#layer3">L3: API Gateway (Optional)</a></li>
+      <li class="ni sub"><a href="#layer4">L4: Kubernetes Service</a></li>
+      <li class="ni sub"><a href="#layer5">L5: Pods</a></li>
+    </li>
+    <li class="ng"><div class="nl">Under the Hood</div>
+      <li class="ni sub"><a href="#iptables-ipvs">iptables vs IPVS</a></li>
+      <li class="ni sub"><a href="#east-west">East-West Traffic</a></li>
+      <li class="ni sub"><a href="#service-mesh">Service Mesh (Istio)</a></li>
+    </li>
+    <li class="ng"><div class="nl">Reference</div>
+      <li class="ni sub"><a href="#request-journey">Full Request Journey</a></li>
+      <li class="ni sub"><a href="#decision-matrix">Decision Matrix</a></li>
+      <li class="ni"><a href="#interview-answer">Strong Hire Answer</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer & API Gateway Internals · L6/L7 Series · Part 6</div>
+  <h1>Load Balancing<br>in Kubernetes:<br>100 Microservices</h1>
+  <div class="hero-meta">
+    <span>☸️ Five-layer K8s architecture</span>
+    <span>🚗 Uber-scale example: 100 services, 1000 pods</span>
+    <span>⚙️ iptables vs IPVS — the kernel-level LB</span>
+    <span>🔀 East-west traffic: bypassing ingress</span>
+    <span>🕸️ Service mesh: Envoy sidecars + Istio</span>
+    <span>🏆 Strong Hire interview answer</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Parts 1-5: LB & API Gateway</span>
+    <span class="part-pill ap">Part 6: Kubernetes Deep Dive</span>
+  </div>
+  <p style="margin-top:14px">Parts 1–5 covered the theory. Part 6 applies it to the most common real-world context: a large Kubernetes cluster with 100 microservices and 1,000+ pods. How does a single HTTP request navigate five layers of routing to reach the correct pod? What happens at the kernel level with iptables and IPVS? How do services talk to each other without going through the ingress? This is the complete picture.</p>
+</section>
+
+<!-- FIVE-LAYER OVERVIEW -->
+<div class="sec-hdr" id="full-picture"><h2>The Five-Layer Architecture</h2></div>
+
+<div class="layer-stack">
+  <div class="layer ly1">
+    <div class="layer-hdr">
+      <span class="layer-num">Layer 1</span>
+      <span class="layer-title">Cloud Load Balancer (AWS ALB / GCP LB / Azure LB)</span>
+      <span class="layer-opt">Always present</span>
+    </div>
+    <div class="layer-detail">Entry point from internet. SSL termination. Routes to Ingress Controller pods. Health-checks the Ingress instances.</div>
+  </div>
+  <div class="layer-arrow">▼</div>
+  <div class="layer ly2">
+    <div class="layer-hdr">
+      <span class="layer-num">Layer 2</span>
+      <span class="layer-title">Kubernetes Ingress Controller (NGINX / Traefik / Istio Gateway)</span>
+      <span class="layer-opt">Always present</span>
+    </div>
+    <div class="layer-detail">URL-based routing — /users/* → User Service, /rides/* → Ride Service. Acts as an L7 LB inside Kubernetes. Defined in Ingress YAML resources.</div>
+  </div>
+  <div class="layer-arrow">▼</div>
+  <div class="layer ly3">
+    <div class="layer-hdr">
+      <span class="layer-num">Layer 3</span>
+      <span class="layer-title">API Gateway (Kong / Ambassador / Custom)</span>
+      <span class="layer-opt">Optional</span>
+    </div>
+    <div class="layer-detail">Authentication, rate limiting, request transformation. Only add if the system needs centralized auth across services — adds latency overhead.</div>
+  </div>
+  <div class="layer-arrow">▼</div>
+  <div class="layer ly4">
+    <div class="layer-hdr">
+      <span class="layer-num">Layer 4</span>
+      <span class="layer-title">Kubernetes Service (ClusterIP)</span>
+      <span class="layer-opt">Always present</span>
+    </div>
+    <div class="layer-detail">Virtual IP representing the service. Distributes traffic to pods using iptables/IPVS. <strong>This is where actual pod-level load balancing happens.</strong></div>
+  </div>
+  <div class="layer-arrow">▼</div>
+  <div class="layer ly5">
+    <div class="layer-hdr">
+      <span class="layer-num">Layer 5</span>
+      <span class="layer-title">Pods (Containers running your application code)</span>
+      <span class="layer-opt">Always present</span>
+    </div>
+    <div class="layer-detail">The actual destination. user-service-pod-1, ride-service-pod-7, etc. Receive the request, do business logic, call other services via east-west traffic.</div>
+  </div>
+</div>
+
+<!-- UBER EXAMPLE -->
+<div class="sec-hdr" id="uber-example"><h2>The Real-World Example: Uber-Like Ride Sharing</h2></div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Scale of the System</span></div>
+<pre>100 Microservices:
+  Core Services:
+  ├── user-service       (10 pods)
+  ├── driver-service     (15 pods)
+  ├── ride-service       (20 pods)  ← We'll trace a request here
+  ├── payment-service    ( 8 pods)
+  ├── notification-svc   (12 pods)
+  ├── location-service   (25 pods)
+  ├── pricing-service    (10 pods)
+  ├── matching-service   (15 pods)
+  └── ... 92 more services
+
+Total: 100 services × ~10 pods each = ~1,000 pods across the cluster
+
+Question: When a user requests a ride, how does the request
+          reach the correct pod among 1,000?</pre></div>
+
+<!-- LAYER 1 -->
+<div class="sec-hdr" id="layer1"><h2>Layer 1: Cloud Load Balancer</h2></div>
+
+<div class="layer-section la1">
+  <div class="ls-hdr" onclick="toggleLS(this)">
+    <span class="ls-num">Layer 1</span>
+    <span class="ls-title">Cloud Load Balancer — The Building's Front Door</span>
+    <span class="ls-toggle">▾</span>
+  </div>
+  <div class="ls-body"><div class="ls-inner">
+    <div class="callout info">
+      <div class="callout-title">The Analogy</div>
+      <p>Think of a massive office building (Kubernetes cluster). The Cloud LB is the <strong>main entrance with security guards</strong>. Multiple doors (multiple LB instances). Guards don't know which office you need — they just let you into the building and direct you to the lobby.</p>
+    </div>
+    <div class="diag d1">
+      <div class="diag-hdr"><span class="diag-title">AWS ALB → Ingress Controller Distribution</span></div>
+      <pre>User's phone: https://api.uber.com/v1/rides/request
+
+Cloud LB (AWS ALB):
+  1. Terminates SSL (decrypts HTTPS → HTTP)
+  2. Health-checks Ingress Controller pods every 30 seconds
+  3. Picks a healthy Ingress pod (round-robin or least connections)
+  4. Forwards the HTTP request to the selected Ingress pod
+
+Available Ingress Controller pods:
+  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+  │ Ingress-1 │ │ Ingress-2 │ │ Ingress-3 │ │ Ingress-4 │
+  │    ✓      │ │    ✓      │ │    ✓      │ │    ✓      │
+  └───────────┘ └───────────┘ └───────────┘ └───────────┘
+
+  → Cloud LB picks Ingress-2 (round-robin)
+  → HTTP request forwarded to 10.0.1.20:80 (Ingress-2 IP)</pre>
+    </div>
+    <div class="callout info">
+      <div class="callout-title">Created Automatically by Kubernetes</div>
+      <p>When you create a Kubernetes resource of type <code>LoadBalancer</code> or an Ingress with the right annotations, the cloud provider automatically provisions the ALB/GCP LB/Azure LB. You don't configure the cloud LB manually — Kubernetes does it via the cloud controller manager.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- LAYER 2 -->
+<div class="sec-hdr" id="layer2"><h2>Layer 2: Kubernetes Ingress Controller</h2></div>
+
+<div class="layer-section la2">
+  <div class="ls-hdr" onclick="toggleLS(this)">
+    <span class="ls-num">Layer 2</span>
+    <span class="ls-title">Ingress Controller — The Building Directory</span>
+    <span class="ls-toggle">▾</span>
+  </div>
+  <div class="ls-body"><div class="ls-inner">
+    <div class="callout info">
+      <div class="callout-title">The Analogy</div>
+      <p>You're inside the building now. The Ingress Controller is the <strong>directory board in the lobby</strong>: "Looking for User Services? Floor 3. Ride Services? Floor 7. Payments? Floor 12." It reads the URL and tells the request where to go — it's an L7 load balancer inside Kubernetes.</p>
+    </div>
+    <div class="diag d2">
+      <div class="diag-hdr"><span class="diag-title">Ingress Rule Matching — 100 Services</span></div>
+      <pre>Request arrives: GET /v1/rides/request
+
+Ingress rules (defined in Ingress YAML):
+  Rule  1: /v1/users/*     → user-service:8080
+  Rule  2: /v1/drivers/*   → driver-service:8080
+  Rule  3: /v1/rides/*     → ride-service:8080        ← MATCH ✓
+  Rule  4: /v1/payments/*  → payment-service:8080
+  Rule  5: /v1/locations/* → location-service:8080
+  ...     95 more rules
+
+Decision: This request goes to ride-service!
+
+Ingress forwards to:
+  ride-service.default.svc.cluster.local:8080</pre>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">ingress.yaml — Kubernetes Ingress Config</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: uber-api-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - api.uber.com
+      secretName: uber-tls-secret
+  rules:
+    - host: api.uber.com
+      http:
+        paths:
+          - path: /v1/users
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 8080
+
+          - path: /v1/rides
+            pathType: Prefix
+            backend:
+              service:
+                name: ride-service    # ← Our request goes here
+                port:
+                  number: 8080
+
+          - path: /v1/payments
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-service
+                port:
+                  number: 8080
+          # ... 97 more paths</pre></div>
+    <div class="insight">
+      <div class="insight-label">Key Point — Ingress Controller IS an L7 Load Balancer Inside Kubernetes</div>
+      <p>"NGINX Ingress is essentially NGINX running inside your cluster, configured dynamically as you add or update Ingress resources. <strong>Every Ingress resource creates NGINX upstream configuration at runtime.</strong> The Ingress controller watches Kubernetes API for Ingress changes and reloads NGINX config automatically. No manual NGINX configuration files."</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- LAYER 3 -->
+<div class="sec-hdr" id="layer3"><h2>Layer 3: API Gateway (Optional)</h2></div>
+
+<div class="layer-section la3">
+  <div class="ls-hdr" onclick="toggleLS(this)">
+    <span class="ls-num">Layer 3 — Optional</span>
+    <span class="ls-title">API Gateway — Auth, Rate Limiting, Transformation</span>
+    <span class="ls-toggle">▾</span>
+  </div>
+  <div class="ls-body"><div class="ls-inner">
+    <div class="code"><div class="code-hdr"><span class="code-lang">Decision — Do We Need API Gateway?</span></div>
+    <pre>Q1: Need auth BEFORE reaching services?
+    YES → API Gateway validates JWT before forwarding
+    NO  → Each service validates its own auth
+
+Q2: Need per-user rate limiting?
+    YES → API Gateway tracks user X made N requests in last minute
+    NO  → Simple IP-based rate limiting in Ingress is enough
+
+Q3: Need request transformation?
+    YES → Convert external API format to internal format
+    NO  → Same format throughout
+
+For Uber-like app: YES — need API Gateway
+  - Must validate user JWT before any service sees the request
+  - Must rate-limit per user (prevent abuse)
+  - Must log all API calls for billing/analytics</pre></div>
+
+    <div class="diag d3">
+      <div class="diag-hdr"><span class="diag-title">Kong API Gateway Pipeline — Four Steps</span></div>
+      <pre>Request: GET /v1/rides/request
+Header:  Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+
+Step 1: Validate JWT
+        ✓ Token is valid
+        ✓ User ID: user-12345
+        ✓ Not expired
+        → Extract user identity
+
+Step 2: Check Rate Limit
+        ✓ user-12345 has made 45 requests in last minute
+        ✓ Limit is 100/minute
+        ✓ Under limit → ALLOW
+        (If over limit: return 429 Too Many Requests immediately)
+
+Step 3: Add Internal Headers
+        X-User-ID: user-12345      ← Services read this, no JWT parsing needed
+        X-Request-ID: req-abc-123  ← For distributed tracing
+
+Step 4: Forward to ride-service
+        ride-service.default.svc.cluster.local:8080</pre>
+    </div>
+
+    <div class="compare-grid">
+      <div class="cmp-card iptab">
+        <div class="cmp-hdr">Pattern A — Ingress IS the Gateway (Simpler)</div>
+        <div class="cmp-body">
+          <p style="font-size:.84rem;color:var(--muted);margin-bottom:8px"><code>Cloud LB → NGINX Ingress + auth plugin → Services</code></p>
+          <ul>
+            <li>Basic auth needs (simple JWT)</li>
+            <li>Simple rate limiting (per IP)</li>
+            <li>Less than 50 services</li>
+            <li>Lower operational overhead</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cmp-card ipvs">
+        <div class="cmp-hdr">Pattern B — Separate Gateway (More Powerful)</div>
+        <div class="cmp-body">
+          <p style="font-size:.84rem;color:var(--muted);margin-bottom:8px"><code>Cloud LB → Ingress → Kong → Services</code></p>
+          <ul>
+            <li><strong>Complex auth</strong> (OAuth, multiple IdPs)</li>
+            <li><strong>Per-user rate limiting</strong></li>
+            <li>Request body transformation</li>
+            <li>API analytics and usage billing</li>
+            <li><strong>50+ services</strong> (our case)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<!-- LAYER 4 -->
+<div class="sec-hdr" id="layer4"><h2>Layer 4: Kubernetes Service (ClusterIP)</h2></div>
+
+<div class="layer-section la4">
+  <div class="ls-hdr" onclick="toggleLS(this)">
+    <span class="ls-num">Layer 4</span>
+    <span class="ls-title">Kubernetes Service — The Floor Receptionist</span>
+    <span class="ls-toggle">▾</span>
+  </div>
+  <div class="ls-body"><div class="ls-inner">
+    <div class="callout info">
+      <div class="callout-title">The Analogy — Where Pod-Level Load Balancing Actually Happens</div>
+      <p>You're on Floor 7 (ride-service). There are 20 people (pods) who can help you. The Kubernetes Service is the <strong>receptionist on that floor</strong>: "Oh, you need help with rides? Let me connect you to one of our 20 available agents. Agent 7 seems less busy right now."</p>
+    </div>
+    <div class="diag d4">
+      <div class="diag-hdr"><span class="diag-title">ClusterIP → Pod Selection</span></div>
+      <pre>Service: ride-service
+ClusterIP: 10.96.45.123  (virtual IP — doesn't exist on any machine!)
+Port: 8080
+
+Request arrives at: ride-service.default.svc.cluster.local:8080
+                    (DNS resolves → 10.96.45.123:8080)
+
+ride-service endpoints (actual pod IPs):
+  10.244.1.15:8080  (ride-service-pod-1) — Node 1  ✓ healthy
+  10.244.2.22:8080  (ride-service-pod-2) — Node 2  ✓ healthy
+  10.244.3.18:8080  (ride-service-pod-3) — Node 3  ✓ healthy
+  10.244.1.44:8080  (ride-service-pod-4) — Node 1  ✗ unhealthy (readiness probe failing)
+  10.244.2.55:8080  (ride-service-pod-5) — Node 2  ✓ healthy
+  ... 15 more pods
+
+kube-proxy selects one using round-robin or IPVS algorithm
+→ Selected: 10.244.2.22:8080 (ride-service-pod-2)
+
+DNAT: packet destination rewritten 10.96.45.123 → 10.244.2.22
+      (happens at kernel level via iptables or IPVS)</pre>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">service.yaml + deployment.yaml</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>apiVersion: v1
+kind: Service
+metadata:
+  name: ride-service
+spec:
+  type: ClusterIP         # Internal only — no external access
+  selector:
+    app: ride-service     # Find pods with this label
+  ports:
+    - port: 8080          # Service port (ClusterIP listens here)
+      targetPort: 8080    # Pod port (where your app runs)
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ride-service
+spec:
+  replicas: 20            # 20 pods!
+  selector:
+    matchLabels:
+      app: ride-service
+  template:
+    metadata:
+      labels:
+        app: ride-service # This label matches Service selector above
+    spec:
+      containers:
+        - name: ride-service
+          image: uber/ride-service:v1.2.3
+          ports:
+            - containerPort: 8080</pre></div>
+  </div></div>
+</div>
+
+<!-- LAYER 5 -->
+<div class="sec-hdr" id="layer5"><h2>Layer 5: The Pod</h2></div>
+
+<div class="layer-section la5">
+  <div class="ls-hdr" onclick="toggleLS(this)">
+    <span class="ls-num">Layer 5</span>
+    <span class="ls-title">Pod — The Actual Worker</span>
+    <span class="ls-toggle">▾</span>
+  </div>
+  <div class="ls-body"><div class="ls-inner">
+    <div class="diag d5">
+      <div class="diag-hdr"><span class="diag-title">Inside ride-service-pod-2</span></div>
+      <pre>Pod IP:   10.244.2.22
+Node:     worker-node-2
+
+Container: ride-service
+
+Request received:
+  GET /v1/rides/request
+  X-User-ID: user-12345        (added by API Gateway — no JWT parsing needed)
+  X-Request-ID: req-abc-123
+
+Application processing:
+  1. Parse ride request (pickup: "123 Main St", destination: "456 Oak Ave")
+  2. Call location-service to get user's current location
+     → GET http://location-service.default.svc.cluster.local:8080/location
+  3. Call matching-service to find nearby available drivers
+     → POST http://matching-service.default.svc.cluster.local:8080/match
+  4. Call pricing-service to calculate fare estimate
+     → GET http://pricing-service.default.svc.cluster.local:8080/price
+  5. Return: {"ride_id": "ride-xyz", "driver": "John D.", "eta": "3 min", "fare": "$12.40"}
+
+Note: Steps 2-4 are east-west calls — they do NOT go through Ingress or API Gateway!</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- IPTABLES vs IPVS -->
+<div class="sec-hdr" id="iptables-ipvs"><h2>Under the Hood: iptables vs IPVS</h2></div>
+
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:14px">Kubernetes Service load balancing happens at the Linux kernel level via kube-proxy, which runs on every node. It has two modes — and for 100 services with 1,000 pods, the choice matters significantly.</p>
+
+<div class="compare-grid">
+  <div class="cmp-card iptab">
+    <div class="cmp-hdr">iptables Mode — Default (Simpler)</div>
+    <div class="cmp-body">
+      <p style="font-size:.84rem;color:var(--muted);margin-bottom:8px"><strong>How it works:</strong> kube-proxy writes Linux iptables rules for every Service/Pod combination. Packets are redirected at the kernel netfilter level.</p>
+      <ul>
+        <li>Random load balancing (probabilistic)</li>
+        <li>Linear rule scan: O(n) per packet for n rules</li>
+        <li><strong>1000 pods × avg 5 rules = 5,000 iptables rules</strong></li>
+        <li>Performance degrades as cluster grows</li>
+        <li>No health-aware routing (relies on endpoint removal)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cmp-card ipvs">
+    <div class="cmp-hdr">IPVS Mode — Recommended for Large Clusters</div>
+    <div class="cmp-body">
+      <p style="font-size:.84rem;color:var(--muted);margin-bottom:8px"><strong>How it works:</strong> Uses Linux IPVS (IP Virtual Server), a dedicated kernel load balancer with a hash table. O(1) lookup regardless of cluster size.</p>
+      <ul>
+        <li><strong>O(1) lookup</strong> — hash table, not linear scan</li>
+        <li>Multiple load balancing algorithms</li>
+        <li>Handles 10,000+ pods without degradation</li>
+        <li>Built-in connection tracking</li>
+        <li>Enable: <code>kube-proxy --proxy-mode=ipvs</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">iptables Rules — What kube-proxy Actually Creates (Simplified)</span></div>
+<pre># When ride-service is created, kube-proxy adds these iptables rules:
+
+# Match traffic destined for ClusterIP
+-A KUBE-SERVICES -d 10.96.45.123/32 -p tcp --dport 8080 -j KUBE-SVC-RIDE
+
+# Probabilistic distribution across 4 pods (simplified for 4-pod example)
+-A KUBE-SVC-RIDE -m statistic --mode random --probability 0.25 -j KUBE-SEP-POD1
+-A KUBE-SVC-RIDE -m statistic --mode random --probability 0.33 -j KUBE-SEP-POD2
+-A KUBE-SVC-RIDE -m statistic --mode random --probability 0.50 -j KUBE-SEP-POD3
+-A KUBE-SVC-RIDE                                                -j KUBE-SEP-POD4
+
+# DNAT: rewrite destination to actual pod IP
+-A KUBE-SEP-POD1 -j DNAT --to-destination 10.244.1.15:8080
+-A KUBE-SEP-POD2 -j DNAT --to-destination 10.244.2.22:8080
+-A KUBE-SEP-POD3 -j DNAT --to-destination 10.244.3.18:8080
+-A KUBE-SEP-POD4 -j DNAT --to-destination 10.244.1.44:8080
+
+# For 100 services × 10 pods = 1000 pods → ~5000 iptables rules
+# Every packet scans ALL rules → O(n) degradation at scale</pre></div>
+
+<h3 style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:22px 0 12px">IPVS Load Balancing Algorithms</h3>
+<div class="algo-grid">
+  <div class="algo-cell"><div class="algo-name">rr</div><div class="algo-full">Round Robin — requests distribute sequentially. Request 1→Pod1, 2→Pod2, 3→Pod3...</div></div>
+  <div class="algo-cell"><div class="algo-name">lc</div><div class="algo-full">Least Connections — send to pod with fewest active connections. Best for uneven processing times.</div></div>
+  <div class="algo-cell"><div class="algo-name">dh</div><div class="algo-full">Destination Hash — same destination IP → same pod. Useful for response caching.</div></div>
+  <div class="algo-cell"><div class="algo-name">sh</div><div class="algo-full">Source Hash — same source IP → same pod. Soft session affinity without cookies.</div></div>
+  <div class="algo-cell"><div class="algo-name">sed</div><div class="algo-full">Shortest Expected Delay — estimate queue delay per pod and pick smallest.</div></div>
+  <div class="algo-cell"><div class="algo-name">nq</div><div class="algo-full">Never Queue — always pick an idle pod if available; fall back to SED otherwise.</div></div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Use IPVS for Production Clusters</div>
+  <p>"At 100 services × 10 pods = 1,000 pods, iptables generates ~5,000 rules. Every packet entering the cluster scans all 5,000 rules linearly — O(n) per packet. At 300K packets/sec, this becomes a measurable CPU bottleneck. <strong>IPVS uses a hash table: O(1) lookup regardless of how many pods exist.</strong> Enable it with <code>kube-proxy --proxy-mode=ipvs --ipvs-scheduler=lc</code>. For any cluster with more than 50 services, IPVS is the right choice."</p>
+</div>
+
+<!-- EAST-WEST TRAFFIC -->
+<div class="sec-hdr" id="east-west"><h2>East-West Traffic: Service-to-Service Calls</h2></div>
+
+<div class="diag dk8s">
+  <div class="diag-hdr"><span class="diag-title">ride-service Calls location-service — The Short Path</span></div>
+  <pre>ride-service-pod-2 needs user's location:
+
+  GET http://location-service.default.svc.cluster.local:8080/location
+       │
+       ├─ Kubernetes DNS resolves:
+       │  location-service.default.svc.cluster.local → 10.96.78.45 (ClusterIP)
+       │
+       ├─ kube-proxy/IPVS intercepts packet:
+       │  10.96.78.45:8080 → selected pod (e.g. 10.244.1.99:8080)
+       │
+       └─ Request reaches location-service-pod-3 directly
+
+Visual:
+┌─────────────────┐      ┌──────────────────────┐      ┌──────────────────┐
+│ ride-service    │─────►│ location-service     │─────►│ location-service │
+│ pod-2           │      │ ClusterIP            │      │ pod-3            │
+│ 10.244.2.22     │      │ 10.96.78.45          │      │ 10.244.1.99      │
+└─────────────────┘      └──────────────────────┘      └──────────────────┘
+                               │ kube-proxy picks pod
+                               │ via iptables/IPVS DNAT
+
+CRITICAL: This does NOT go through Ingress or API Gateway!
+          No JWT validation, no rate limiting, no external URL routing.
+          Direct pod-to-pod via ClusterIP — trusted internal network.</pre>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">Security Implication of Bypassing the Gateway</div>
+  <p>Since east-west traffic bypasses the API Gateway, <strong>services trust each other implicitly on the internal network</strong>. This is fine when all traffic originates from trusted pods in the same cluster. But if a pod is compromised, it can call other services without auth. This is why Service Mesh (mTLS between all pods) is important for large clusters with sensitive data — it adds auth at the pod level, not just at the gateway.</p>
+</div>
+
+<!-- SERVICE MESH -->
+<div class="sec-hdr" id="service-mesh"><h2>Service Mesh: Istio for 100+ Services</h2></div>
+
+<div class="sidecar-box">
+  <div class="sidecar-label">The Sidecar Pattern — Envoy Proxy Injected into Every Pod</div>
+  <div class="sidecar-inner">
+    <div class="sidecar-envoy">
+      <div class="sidecar-title">Envoy Proxy (Sidecar)</div>
+      <div class="sidecar-item">mTLS encryption</div>
+      <div class="sidecar-item">Automatic retries</div>
+      <div class="sidecar-item">Circuit breaker</div>
+      <div class="sidecar-item">Distributed tracing</div>
+      <div class="sidecar-item">Load balancing</div>
+      <div class="sidecar-item">Traffic shaping</div>
+    </div>
+    <div class="sidecar-app">
+      <div class="sidecar-title">Your Application</div>
+      <div class="sidecar-item">Business logic only</div>
+      <div class="sidecar-item">No encryption code</div>
+      <div class="sidecar-item">No retry logic</div>
+      <div class="sidecar-item">No circuit breaker code</div>
+      <div class="sidecar-item">No tracing instrumentation</div>
+      <div class="sidecar-item">Talks to Envoy on localhost</div>
+    </div>
+    <div class="sidecar-arrow">◄──────── Envoy intercepts all traffic in/out ────────►</div>
+  </div>
+</div>
+
+<div class="callout mesh">
+  <div class="callout-title">Why Service Mesh with 100 Services?</div>
+  <ul>
+    <li><strong>Automatic mTLS between ALL services</strong> — every call encrypted, zero code changes. Solves the east-west auth problem.</li>
+    <li><strong>Automatic retries and timeouts</strong> — if service-A → service-B fails, Envoy retries. Your application doesn't handle this.</li>
+    <li><strong>Circuit breakers</strong> — if service-B is consistently failing, Envoy stops calling it. Prevents cascade failures across 100 services.</li>
+    <li><strong>Distributed tracing for EVERY call</strong> — see exactly which service is slow across a chain of 15 service calls. Essential for debugging at this scale.</li>
+    <li><strong>Traffic management</strong> — canary deployments, A/B testing, traffic mirroring at the service mesh level without touching app code.</li>
+  </ul>
+</div>
+
+<div class="diag dmesh">
+  <div class="diag-hdr"><span class="diag-title">Full Architecture with Istio Service Mesh</span></div>
+  <pre>Cloud LB → Istio Ingress Gateway → All pods (with Envoy sidecars)
+
+┌─────────┐     ┌─────────────────────┐     ┌────────────────────────────────────┐
+│ Cloud   │────►│ Istio Ingress       │────►│          Kubernetes Cluster        │
+│ LB      │     │ Gateway             │     │                                    │
+└─────────┘     │ (replaces NGINX     │     │  ┌──────────────────────────────┐  │
+                │  Ingress + does     │     │  │ ride-service pod             │  │
+                │  API gateway work)  │     │  │ ┌──────────┐ ┌───────────┐  │  │
+                └─────────────────────┘     │  │ │  Envoy   │◄►│   App     │  │  │
+                                            │  │ │ (sidecar)│ │  Code     │  │  │
+                                            │  │ └──────────┘ └───────────┘  │  │
+                                            │  └──────────────────────────────┘  │
+                                            │  ┌──────────────────────────────┐  │
+                                            │  │ location-service pod         │  │
+                                            │  │ ┌──────────┐ ┌───────────┐  │  │
+                                            │  │ │  Envoy   │◄►│   App     │  │  │
+                                            │  │ │ (sidecar)│ │  Code     │  │  │
+                                            │  │ └──────────┘ └───────────┘  │  │
+                                            │  └──────────────────────────────┘  │
+                                            │                                    │
+                                            │  All Envoy-to-Envoy calls are:    │
+                                            │  - Encrypted (mTLS automatically) │
+                                            │  - Load balanced (Envoy decides)  │
+                                            │  - Traced (Zipkin/Jaeger)         │
+                                            │  - Retried on failure             │
+                                            └────────────────────────────────────┘</pre>
+</div>
+
+<!-- REQUEST JOURNEY -->
+<div class="sec-hdr" id="request-journey"><h2>The Complete Request Journey</h2></div>
+
+<div class="diag dk8s">
+  <div class="diag-hdr"><span class="diag-title">One Request Through All Five Layers — With Timing</span></div>
+  <pre>User opens Uber app, requests a ride...
+
+Step 1: Phone sends HTTPS request                                    t=0ms
+  POST https://api.uber.com/v1/rides/request
+  Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+  Body: {"pickup": "123 Main St", "destination": "456 Oak Ave"}
+
+Step 2: DNS resolves api.uber.com → AWS ALB IP                      t=1ms
+  api.uber.com → 52.84.123.45 (AWS ALB)
+
+Step 3: Cloud LB (AWS ALB)                                          t=5ms
+  - Terminates SSL
+  - Health-checks Ingress pods (all healthy)
+  - Picks: ingress-nginx-pod-3 (10.0.1.50) via round-robin
+  - Forwards HTTP request
+
+Step 4: Ingress Controller (NGINX)                                  t=7ms
+  - Reads URL: /v1/rides/request
+  - Matches rule 3: /v1/rides/* → kong-api-gateway service
+  - Forwards to Kong's ClusterIP
+
+Step 5: API Gateway (Kong)                                          t=10ms
+  - Validates JWT: ✓ Valid, user: user-12345
+  - Checks rate limit: ✓ 45/100 requests used
+  - Adds X-User-ID: user-12345 header
+  - Routes to: ride-service ClusterIP
+
+Step 6: Kubernetes Service (ride-service)                           t=12ms
+  - ClusterIP: 10.96.45.123
+  - 20 healthy pods available
+  - IPVS algorithm: least-connections
+  - Picks: ride-service-pod-7 (10.244.3.88)
+  - DNAT: rewrites destination IP at kernel level
+
+Step 7: Pod processes request                                       t=12ms → t=90ms
+  - ride-service-pod-7 receives request
+  - Calls location-service (east-west, 5ms)
+  - Calls matching-service (east-west, 40ms)
+  - Calls pricing-service (east-west, 8ms)
+  - Returns: {"ride_id": "ride-xyz", "driver": "John", "eta": "3 min"}
+
+Step 8: Response travels back                                       t=90ms → t=100ms
+  Pod → Service → Kong → Ingress → ALB → Phone
+
+Total round-trip: ~100ms</pre>
+</div>
+
+<!-- DECISION MATRIX -->
+<div class="sec-hdr" id="decision-matrix"><h2>Decision Matrix for Kubernetes</h2></div>
+
+<table class="dec-table">
+  <thead><tr><th>Cluster Size</th><th>Architecture</th><th>Key Decisions</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Small App<br><span style="font-size:.74rem;color:var(--dim)">1–5 services, internal</span></td>
+      <td class="arch">Cloud LB → Ingress → Services → Pods</td>
+      <td>No API Gateway. No Service Mesh. Simple and fast. Auth in each service is manageable.</td>
+    </tr>
+    <tr>
+      <td>Medium App<br><span style="font-size:.74rem;color:var(--dim)">5–20 services, some external</span></td>
+      <td class="arch">Cloud LB → Ingress → Kong → Services → Pods</td>
+      <td>API Gateway for centralized auth and rate limiting. No Service Mesh yet. IPVS recommended.</td>
+    </tr>
+    <tr>
+      <td>Large App<br><span style="font-size:.74rem;color:var(--dim)">20–100 services, complex</span></td>
+      <td class="arch">Cloud LB → Istio Gateway → Kong → Envoy-sidecar Pods</td>
+      <td>Full enterprise setup. Service Mesh for east-west observability and mTLS. IPVS mandatory at this scale.</td>
+    </tr>
+    <tr>
+      <td>High-Perf App<br><span style="font-size:.74rem;color:var(--dim)">Latency critical</span></td>
+      <td class="arch">Cloud L4 LB → Custom API Layer → Services → Pods</td>
+      <td>Skip separate gateway. Auth in API layer. Service Mesh optional (adds ~1ms Envoy overhead).</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- INTERVIEW ANSWER -->
+<div class="sec-hdr" id="interview-answer"><h2>Strong Hire Interview Answer</h2></div>
+
+<div class="interview">
+  <div class="interview-label">🎤 "Design Load Balancing for 100 Microservices in Kubernetes"</div>
+  <p class="lead">"For 100 microservices in Kubernetes, I'd design a multi-layer architecture. Let me walk through each layer and the reasoning behind it."</p>
+  <p><strong>Layer 1 — Cloud Load Balancer (L4 or L7 depending on WAF needs):</strong> Entry point from the internet. SSL termination. Routes to Ingress Controller pods. I'd use L4 for lowest latency unless I need a WAF at the cloud LB level, in which case L7 ALB.</p>
+  <p><strong>Layer 2 — Ingress Controller (NGINX or Istio Gateway):</strong> URL-based routing to all 100 services. Defined in Ingress YAML resources — one rule per service path. Ingress controller watches Kubernetes API and reconfigures dynamically as services are added. This is the L7 load balancer inside the cluster.</p>
+  <p><strong>Layer 3 — API Gateway (Kong or Ambassador) — for external-facing APIs:</strong> JWT validation, per-user rate limiting, request transformation, API analytics. Not needed for purely internal services — centralizes auth so none of the 100 services duplicate it. For 100 services, code duplication cost easily justifies the gateway.</p>
+  <p><strong>Layer 4 — Kubernetes Services (ClusterIP) with IPVS:</strong> Each service gets a ClusterIP virtual IP. kube-proxy creates the routing rules. <strong>I'd use IPVS, not iptables</strong> — at 100 services × 10 pods = 1,000 pods, iptables generates ~5,000 rules scanned linearly per packet. IPVS uses a hash table: O(1) lookup. Enable with <code>--proxy-mode=ipvs --ipvs-scheduler=lc</code> (least-connections for services with uneven processing time).</p>
+  <p><strong>Layer 5 — Service Mesh (Istio) — recommended at this scale:</strong> With 100 services, observability is critical — distributed tracing shows which service is slow in a chain of 15 calls. Automatic mTLS secures east-west traffic that bypasses the API Gateway. Circuit breakers prevent cascade failures. Envoy sidecars add ~1ms overhead but the operational value at 100 services is worth it.</p>
+  <p><strong>Critical insight on traffic paths:</strong> External traffic follows the full stack (Cloud LB → Ingress → Gateway → Service → Pod). Internal service-to-service traffic (east-west) bypasses Ingress and API Gateway entirely — it goes directly through ClusterIP services. This means the API Gateway never sees internal traffic, which is why Service Mesh mTLS is important for securing that traffic.</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Kubernetes Load Balancing Key Insights</div>
+  <p><strong>There are five distinct layers of load balancing in a Kubernetes cluster</strong>, and they each solve a different problem: the Cloud LB handles internet ingress and SSL, the Ingress Controller handles URL routing between services, the API Gateway handles auth and rate limiting, the ClusterIP handles pod-level distribution, and the Service Mesh handles east-west security and observability.</p>
+  <p><strong>Pod-level load balancing (ClusterIP) is entirely different from the Load Balancers in Parts 1-5</strong> — it happens at the Linux kernel level via iptables or IPVS DNAT rules, not via any application-layer proxy. Every packet gets its destination IP rewritten before it even leaves the node — sub-millisecond, no userspace involved.</p>
+  <p><strong>East-west traffic bypasses Ingress and API Gateway</strong> — services call each other via ClusterIP DNS names directly. This is intentional (no latency overhead for internal calls) but has security implications (implicit trust). Service Mesh resolves this by adding mTLS at the sidecar level without touching application code.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleLS(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
