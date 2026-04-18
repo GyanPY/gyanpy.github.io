@@ -164,8 +164,20 @@
   "Technolgia": {
     "Load Balancer / API gateway / GLB": [
       {
-        "title": "Differences",
-        "file": "pages/lb/lb.html"
+        "title": "Deep Dive-1",
+        "file": "pages/lb/1.html"
+      },
+       {
+        "title": "Deep Dive-2",
+        "file": "pages/lb/2.html"
+      },
+       {
+        "title": "Deep Dive-3",
+        "file": "pages/lb/3.html"
+      },
+       {
+        "title": "Deep Dive-4",
+        "file": "pages/lb/4.html"
       }
     ]
   },
