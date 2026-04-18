@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Internals (Part 4) — Industry Deep-Dive & Interview Mastery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;
+  --bq:#4285F4;--bq2:#1A73E8;--bq3:#8AB4F8;
+  --l5:#6B7280;--l6:#0EA5E9;--l7:#8B5CF6;
+  --hire:#059669;--rf:#EF4444;--nuance:#F59E0B;--cq:#6366F1;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--bq),var(--l7),var(--hire),var(--nuance),var(--rf));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--bq3);background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--bq3)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(66,133,244,.05)}
+.ni.active a{color:var(--bq3);border-left-color:var(--bq3);background:rgba(66,133,244,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--bq3);border-color:var(--bq3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--bq3) 32%,var(--l7) 58%,var(--hire));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(66,133,244,.1);border-color:var(--bq3);color:var(--bq3)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* INDUSTRY CARDS */
+.industry-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+.ind-hdr{padding:13px 20px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.ind-company{font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:10px}
+.ind-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.ind-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.industry-card.collapsed .ind-toggle{transform:rotate(-90deg)}
+.ind-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.industry-card.collapsed .ind-body{max-height:0;opacity:0}
+.ind-inner{padding:0 20px 16px}
+.google-c .ind-hdr{border-bottom:1px solid rgba(66,133,244,.15);background:rgba(66,133,244,.05)}
+.google-c .ind-company{background:rgba(66,133,244,.12);color:var(--bq);border:1px solid rgba(66,133,244,.2)}
+.amazon-c .ind-hdr{border-bottom:1px solid rgba(249,115,22,.15);background:rgba(249,115,22,.05)}
+.amazon-c .ind-company{background:rgba(249,115,22,.12);color:var(--obs);border:1px solid rgba(249,115,22,.2)}
+.meta-c .ind-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.05)}
+.meta-c .ind-company{background:rgba(14,165,233,.12);color:var(--l6);border:1px solid rgba(14,165,233,.2)}
+.oss-c .ind-hdr{border-bottom:1px solid rgba(16,185,129,.15);background:rgba(16,185,129,.05)}
+.oss-c .ind-company{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+
+/* L5/L6/L7 COMPARISON TABLE */
+.level-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.level-table thead tr{background:var(--surface2)}
+.level-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.64rem;font-weight:700;border-bottom:1px solid var(--border)}
+.level-table th.l5h{color:var(--l5)}.level-table th.l6h{color:var(--l6)}.level-table th.l7h{color:var(--l7)}
+.level-table th:first-child{color:var(--dim)}
+.level-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.35);color:var(--muted);vertical-align:top;line-height:1.55;font-size:.8rem}
+.level-table tbody tr:nth-child(odd){background:rgba(22,27,34,.45)}
+.level-table tbody tr:nth-child(even){background:rgba(28,33,41,.35)}
+.level-table td:first-child{font-weight:600;color:var(--text);font-size:.8rem}
+.level-table td.l5c{border-left:2px solid var(--l5)}
+.level-table td.l6c{border-left:2px solid var(--l6)}
+.level-table td.l7c{border-left:2px solid var(--l7)}
+
+/* RED FLAG CARDS */
+.rf-list{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.rf-item{background:var(--surface2);border:1px solid rgba(239,68,68,.2);border-left:3px solid var(--rf);border-radius:0 8px 8px 0;padding:12px 16px}
+.rf-bad{font-family:var(--fc);font-size:.76rem;color:var(--no);margin-bottom:6px;font-weight:700}
+.rf-shows{font-size:.82rem;color:var(--dim);margin-bottom:4px;font-family:var(--fc);font-size:.72rem}
+.rf-better{font-size:.85rem;color:var(--muted);line-height:1.6}
+.rf-better strong{color:var(--cass4)}
+
+/* NUANCE CARDS */
+.nuance-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.ncard{background:var(--surface);border:1px solid rgba(245,158,11,.18);border-radius:9px;padding:13px 15px}
+.ncard-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ncard-num{font-family:var(--fc);font-size:.64rem;font-weight:700;background:rgba(245,158,11,.12);color:var(--nuance);border:1px solid rgba(245,158,11,.2);padding:2px 8px;border-radius:8px}
+.ncard-title{font-family:var(--fh);font-size:.88rem;font-weight:600;color:var(--text)}
+.ncard p{font-size:.84rem;color:var(--muted);line-height:1.6}
+.ncard strong{color:var(--text)}
+
+/* CLARIFYING QUESTIONS */
+.cq-list{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.cq-item{background:var(--surface2);border:1px solid rgba(99,102,241,.18);border-left:3px solid var(--cq);border-radius:0 8px 8px 0;padding:12px 16px}
+.cq-q{font-family:var(--fh);font-size:.92rem;font-weight:600;color:var(--text);margin-bottom:6px;font-style:italic}
+.cq-shows{font-size:.8rem;color:var(--dim);margin-bottom:3px}
+.cq-shows span{font-family:var(--fc);font-size:.72rem;font-weight:700;color:var(--cq)}
+.cq-matters{font-size:.84rem;color:var(--muted);line-height:1.55}
+
+/* SOUND BITE COLLECTION */
+.sb-collection{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.sb-item{background:linear-gradient(135deg,rgba(66,133,244,.08),rgba(139,92,246,.04));border:1px solid rgba(66,133,244,.2);border-radius:9px;padding:16px 18px;position:relative}
+.sb-item::before{content:'🔑';position:absolute;right:14px;top:12px;font-size:1.1rem;opacity:.35}
+.sb-topic{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--bq3);margin-bottom:8px;font-weight:600}
+.sb-item p{font-size:.9rem;line-height:1.7;color:var(--text);font-style:italic;padding-right:24px}
+
+/* COMPARISON TABLE */
+.comp-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.comp-table thead tr{background:linear-gradient(90deg,rgba(66,133,244,.1),rgba(249,115,22,.05),rgba(14,165,233,.05))}
+.comp-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--bq3);border-bottom:1px solid rgba(66,133,244,.2)}
+.comp-table th:nth-child(3){color:var(--obs)}.comp-table th:nth-child(4){color:var(--l6)}
+.comp-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);color:var(--muted);vertical-align:top;line-height:1.4}
+.comp-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.comp-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.comp-table td:first-child{font-weight:600;color:var(--text)}
+
+/* OSS TABLE */
+.oss-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.oss-table thead tr{background:rgba(16,185,129,.06)}
+.oss-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--cass4);border-bottom:1px solid rgba(16,185,129,.18)}
+.oss-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);color:var(--muted);vertical-align:top;line-height:1.4;font-size:.79rem}
+.oss-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.oss-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.oss-table td:first-child{font-weight:700;color:var(--text)}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.bq{background:rgba(66,133,244,.07);border:1px solid rgba(66,133,244,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.bq .callout-title{color:var(--bq3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* MARKS */
+mark{background:rgba(66,133,244,.14);color:var(--bq3);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--bq3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SERIES FINAL */
+.series-final{background:linear-gradient(135deg,rgba(66,133,244,.07),rgba(139,92,246,.05),rgba(16,185,129,.04));border:1px solid rgba(66,133,244,.2);border-radius:12px;padding:24px 28px;margin:28px 0;text-align:center}
+.series-final h3{font-family:var(--fh);font-size:1.25rem;font-weight:700;color:var(--text);margin-bottom:10px}
+.series-final p{font-size:.88rem;color:var(--muted);line-height:1.65;max-width:580px;margin:0 auto 18px}
+.sf-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.sfp{font-family:var(--fc);font-size:.67rem;padding:4px 12px;border-radius:20px}
+.sfp1{background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);color:var(--bq3)}
+.sfp2{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);color:var(--l7)}
+.sfp3{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--nuance)}
+.sfp4{background:rgba(5,150,105,.12);border:1px solid rgba(5,150,105,.3);color:var(--hire);font-weight:700}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.nuance-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">BigQuery Internals · L6/L7 Series</div>
+    <div class="sb-title">Industry Deep-Dive & Interview Mastery</div>
+    <div class="sb-part">Part 4 — The Complete Playbook</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Industry Deep-Dive</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#google">Google — BigQuery/Dremel</a></li>
+      <li class="ni sub"><a href="#amazon">Amazon — Redshift + Athena</a></li>
+      <li class="ni sub"><a href="#meta">Meta — Presto/Trino</a></li>
+      <li class="ni sub"><a href="#oss">Open Source Landscape</a></li>
+    </li>
+    <li class="ng"><div class="nl">Interview Mastery</div>
+      <li class="ni sub"><a href="#level-matrix">L5 / L6 / L7 Matrix</a></li>
+      <li class="ni sub"><a href="#red-flags">Red Flags to Avoid</a></li>
+      <li class="ni sub"><a href="#nuances">7 Impressive Nuances</a></li>
+      <li class="ni sub"><a href="#cq">Clarifying Questions</a></li>
+    </li>
+    <li class="ng"><div class="nl">Sound Bites</div>
+      <li class="ni sub"><a href="#soundbites">Sound Bite Collection (9)</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+      <li class="ni"><a href="#series-final">Series Complete</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">BigQuery Internals · L6/L7 Series · Part 4</div>
+  <h1>Industry Deep-Dive<br>& Interview<br>Mastery</h1>
+  <div class="hero-meta">
+    <span>🏢 Google Dremel · Amazon Redshift/Athena · Meta Trino</span>
+    <span>📊 5 OSS alternatives compared</span>
+    <span>🎯 L5 / L6 / L7 answer matrix — 5 dimensions</span>
+    <span>❌ 6 red flags that kill interviews</span>
+    <span>💡 7 nuances that impress interviewers</span>
+    <span>🔑 9-sound-bite collection</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Architecture</span>
+    <span class="part-pill">Part 2: Query Execution</span>
+    <span class="part-pill">Part 3: Trade-offs & Scale</span>
+    <span class="part-pill ap">Part 4: Mastery</span>
+  </div>
+  <p style="margin-top:14px">Parts 1–3 built deep technical understanding. Part 4 converts it into interview performance. The industry section shows how BigQuery fits into the analytics landscape — how Google's own scale shaped its design, how Redshift and Athena solve the same problem differently, and where open-source solutions stand. Then the complete interview playbook: L5/L6/L7 differentiation across five dimensions, six red flags with recoveries, seven nuances, six clarifying questions, and nine interview-ready sound bites.</p>
+</section>
+
+<!-- INDUSTRY DEEP-DIVE -->
+<div class="sec-hdr" id="industry"><h2>Industry Deep-Dive</h2></div>
+
+<div class="industry-card google-c">
+  <div class="ind-hdr" onclick="toggleInd(this)">
+    <span class="ind-company">Google</span>
+    <span class="ind-title">BigQuery — Dremel + Colossus + Jupiter</span>
+    <span class="ind-toggle">▾</span>
+  </div>
+  <div class="ind-body"><div class="ind-inner" id="google">
+    <div class="callout bq">
+      <div class="callout-title">Architecture: Four Layers of Google Infrastructure</div>
+      <ul>
+        <li><strong>Dremel:</strong> Distributed SQL execution engine — the query optimizer, slot scheduler, and execution graph coordinator</li>
+        <li><strong>Colossus:</strong> Google's distributed file system (successor to GFS) — stores Capacitor columnar files, handles shuffle intermediates</li>
+        <li><strong>Borg:</strong> Google's cluster management system (predecessor to Kubernetes) — allocates physical machines to Dremel workers</li>
+        <li><strong>Jupiter:</strong> Google's datacenter network fabric — provides the high-bandwidth, low-latency shuffle backbone that makes distributed joins practical</li>
+      </ul>
+    </div>
+    <div class="callout bq">
+      <div class="callout-title">Key Design Decisions That Shaped BigQuery</div>
+      <ul>
+        <li><strong>Separation of concerns:</strong> Storage team (Colossus) vs Compute team (Dremel) vs Query team (optimizer) — allows each to evolve independently</li>
+        <li><strong>Multi-tenancy:</strong> Shared infrastructure with isolation via slots — same physical hardware serves millions of queries from different customers</li>
+        <li><strong>Serverless model:</strong> Users manage SQL queries, not clusters. Google manages everything else.</li>
+        <li><strong>SQL-first:</strong> Leverages 40+ years of SQL optimization research — cost-based optimizer, join reordering, predicate pushdown</li>
+      </ul>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">Public Scale Numbers</span></div>
+    <pre>Scans:    Petabytes per second across the Dremel fleet
+Queries:  Millions per day across all customers
+Latency:  Sub-second queries on terabyte datasets (common case)
+Slots:    Hundreds of thousands of slots across Google's fleet
+Storage:  Exabytes of customer data on Colossus</pre></div>
+  </div></div>
+</div>
+
+<div class="industry-card amazon-c">
+  <div class="ind-hdr" onclick="toggleInd(this)">
+    <span class="ind-company">Amazon</span>
+    <span class="ind-title">Redshift + Athena — Two Approaches</span>
+    <span class="ind-toggle">▾</span>
+  </div>
+  <div class="ind-body"><div class="ind-inner" id="amazon">
+    <div class="callout warn">
+      <div class="callout-title">Redshift — Provisioned MPP Cluster</div>
+      <ul>
+        <li>Originally provisioned clusters — you pick node type (ra3, dc2) and count upfront</li>
+        <li>MPP (Massively Parallel Processing) architecture with columnar storage</li>
+        <li>Requires capacity planning: over-provision = waste money, under-provision = slow queries</li>
+        <li>Now has Serverless option (added 2022) but it's an add-on, not the native model</li>
+      </ul>
+    </div>
+    <div class="callout bq">
+      <div class="callout-title">Athena — Serverless Presto Over S3</div>
+      <ul>
+        <li>Serverless Presto engine that queries data directly from S3</li>
+        <li>Pay per query (like BigQuery on-demand) — no cluster to manage</li>
+        <li>Open formats: Parquet, ORC, Avro — no proprietary lock-in</li>
+        <li>Less integrated optimization than BigQuery — relies on data format and partitioning</li>
+        <li>No streaming inserts natively — needs Kinesis/Firehose pipeline</li>
+      </ul>
+    </div>
+    <table class="comp-table">
+      <thead><tr><th>Aspect</th><th>BigQuery</th><th>Redshift</th><th>Athena</th></tr></thead>
+      <tbody>
+        <tr><td>Serverless</td><td>Native from day 1</td><td>Add-on (2022)</td><td>Native</td></tr>
+        <tr><td>Storage format</td><td>Proprietary (Capacitor)</td><td>Proprietary</td><td>Open (S3: Parquet/ORC)</td></tr>
+        <tr><td>Pricing model</td><td>Per-TB scanned or slots</td><td>Per-node or serverless</td><td>Per-TB scanned</td></tr>
+        <tr><td>ML integration</td><td>BigQuery ML (SQL-native)</td><td>Redshift ML (SageMaker)</td><td>Limited</td></tr>
+        <tr><td>Streaming</td><td>Native inserts</td><td>Kinesis integration</td><td>Not native</td></tr>
+        <tr><td>Query optimizer</td><td>Highly integrated</td><td>Good for clusters</td><td>Presto optimizer</td></tr>
+      </tbody>
+    </table>
+  </div></div>
+</div>
+
+<div class="industry-card meta-c">
+  <div class="ind-hdr" onclick="toggleInd(this)">
+    <span class="ind-company">Meta / Facebook</span>
+    <span class="ind-title">Presto → Trino — Open Source MPP</span>
+    <span class="ind-toggle">▾</span>
+  </div>
+  <div class="ind-body"><div class="ind-inner" id="meta">
+    <div class="callout bq">
+      <div class="callout-title">Architecture: Open Source Data Lake SQL</div>
+      <ul>
+        <li><strong>Presto (now Trino):</strong> Interactive SQL engine — open source, no vendor lock-in</li>
+        <li><strong>Hive:</strong> Batch processing — MapReduce-based, handles heavy ETL</li>
+        <li><strong>S3-compatible storage:</strong> ORC and Parquet files — fully open formats</li>
+        <li><strong>Hive Metastore:</strong> Separate metadata layer — stores schema, partition info</li>
+      </ul>
+    </div>
+    <div class="callout warn">
+      <div class="callout-title">Key Differences from BigQuery — Where Trino Falls Short</div>
+      <ul>
+        <li><strong>Memory-based execution:</strong> Faster for data that fits in cluster memory, but fails when memory runs out (no Colossus shuffle persistence)</li>
+        <li><strong>No built-in shuffle persistence:</strong> A failed worker during a large shuffle = recompute from scratch. BigQuery writes shuffle to Colossus = transparent recovery.</li>
+        <li><strong>Requires separate orchestration:</strong> Airflow or similar for pipeline scheduling. BigQuery has Scheduled Queries and integrated workflows.</li>
+        <li><strong>Portable:</strong> Run on your own AWS/GCP/Azure infrastructure. BigQuery is Google-only.</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="industry-card oss-c">
+  <div class="ind-hdr" onclick="toggleInd(this)">
+    <span class="ind-company">Open Source</span>
+    <span class="ind-title">Spark · Trino · Druid · ClickHouse · DuckDB</span>
+    <span class="ind-toggle">▾</span>
+  </div>
+  <div class="ind-body"><div class="ind-inner" id="oss">
+    <table class="oss-table">
+      <thead><tr><th>Solution</th><th>Approach</th><th>Best For</th><th>Limitations</th><th>Maturity</th></tr></thead>
+      <tbody>
+        <tr><td>Apache Spark</td><td>General-purpose distributed compute</td><td>ML + ETL + SQL hybrid workloads</td><td>Not SQL-optimized; complex tuning</td><td>Very high</td></tr>
+        <tr><td>Trino (Presto)</td><td>MPP SQL on data lake</td><td>Interactive queries on existing S3 data</td><td>Memory-bound; poor failure recovery vs BigQuery</td><td>High</td></tr>
+        <tr><td>Apache Druid</td><td>Real-time OLAP with pre-aggregation</td><td>Sub-second aggregations, time-series</td><td>Limited SQL flexibility; rigid schema required upfront</td><td>High</td></tr>
+        <tr><td>ClickHouse</td><td>Columnar OLAP, high insert throughput</td><td>High insert rate + fast aggregation dashboards</td><td>Limited join performance; complex distributed setup</td><td>Medium-high</td></tr>
+        <tr><td>DuckDB</td><td>Embedded in-process analytics</td><td>Local analytics, laptop-scale data</td><td>Single node only; no cluster mode</td><td>Medium</td></tr>
+      </tbody>
+    </table>
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — When to Recommend OSS Over BigQuery</div>
+      <p>"OSS solutions win when: <strong>data sovereignty or vendor lock-in is a hard constraint</strong> (regulated industries), <strong>open format portability is required</strong> (multi-cloud data mesh), or <strong>the query pattern matches a specialized engine</strong> (Druid for sub-second OLAP, ClickHouse for high-insert dashboards). BigQuery wins when: operational simplicity matters, Google's integrated ecosystem (Dataflow, Vertex AI, Looker) is valuable, or scale exceeds what you can manage operationally."</p>
+    </div>
+  </div></div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — The $50K vs $2M Architecture</div>
+  <p>"The architecture that works at 1 TB will bankrupt you at 1 PB. At startup scale, BigQuery is just a SQL database that never runs out of disk. At Google scale, it's a carefully orchestrated system where every layer — partitioning, clustering, materialized views, slot allocation — must be tuned together. <strong>The difference between $50K/month and $2M/month in BigQuery spend is usually just schema design and query patterns.</strong>"</p>
+</div>
+
+<!-- L5/L6/L7 MATRIX -->
+<div class="sec-hdr" id="level-matrix"><h2>Level Differentiation Matrix: L5 / L6 / L7</h2></div>
+
+<table class="level-table">
+  <thead>
+    <tr>
+      <th>Dimension</th>
+      <th class="l5h">L5 — Solid</th>
+      <th class="l6h">L6 — Strong</th>
+      <th class="l7h">L7 — Exceptional</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Initial Approach</td>
+      <td class="l5c">"I'd use BigQuery because it's serverless and handles large scale"</td>
+      <td class="l6c">"BigQuery fits here because we need ad-hoc analytics on structured data at PB scale. The columnar format + separated storage/compute matches our read-heavy pattern."</td>
+      <td class="l7c">"Let me first clarify the query patterns and latency requirements. BigQuery is ideal if >1s latency is acceptable. If we need <100ms, we'd need a different architecture with BigQuery as source and a serving layer."</td>
+    </tr>
+    <tr>
+      <td>Schema Design</td>
+      <td class="l5c">"I'd partition by date"</td>
+      <td class="l6c">"I'd partition by event_date since 90% of queries filter by time range. I'd cluster by user_id since it's the second most common filter with high cardinality."</td>
+      <td class="l7c">"The partition/cluster design depends on query access patterns. If queries are user-specific → cluster by (user_id, event_type). If queries are cross-user for specific events → cluster by (event_type, timestamp). Let me ask: what's the primary use case?"</td>
+    </tr>
+    <tr>
+      <td>Cost Analysis</td>
+      <td class="l5c">"BigQuery charges per TB scanned"</td>
+      <td class="l6c">"At 100 TB/month scanning, we're at $500K/year on-demand. With 500 reserved slots at $120K/year, break-even is around 24 TB/month. Given our volume, reserved makes sense."</td>
+      <td class="l7c">"Cost has three components: storage, query compute, and streaming inserts. I'd model it as: (daily queries × avg scan × pruning efficiency × $5/TB). With partitioning, 95% pruning is achievable, making effective cost $0.25/TB. I'd add query cost attribution by team to create accountability."</td>
+    </tr>
+    <tr>
+      <td>Failure Handling</td>
+      <td class="l5c">"BigQuery automatically retries failed queries"</td>
+      <td class="l6c">"Worker failures are transparent — shuffle persists to Colossus so no recompute. For slot exhaustion, I'd set alerts and flex slot triggers."</td>
+      <td class="l7c">"Three failure domains: worker failure (automatic), slot exhaustion (reservation tuning), query timeout (6-hour limit). For critical pipelines: idempotent queries with destination table timestamps so retries don't duplicate. Dead-letter queues for failed rows. Monitor streaming insert latency to detect backpressure before data loss."</td>
+    </tr>
+    <tr>
+      <td>Operational Thinking</td>
+      <td class="l5c">"We can use BigQuery's built-in monitoring"</td>
+      <td class="l6c">"I'd monitor slot utilization, P50/P99 latency, bytes scanned per query. Alerts on cost anomalies and slow queries."</td>
+      <td class="l7c">"Three instrument layers: 1) Query-level: cost, duration, scan efficiency per query with labels for attribution. 2) System-level: slot utilization, shuffle volume, streaming insert latency. 3) Business-level: time-to-insight, data freshness SLOs. Auto-flag any query scanning >10x necessary data."</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- RED FLAGS -->
+<div class="sec-hdr" id="red-flags"><h2>Red Flags to Avoid</h2></div>
+
+<div class="rf-list">
+  <div class="rf-item">
+    <div class="rf-bad">❌ "Just use BigQuery" without understanding the workload</div>
+    <div class="rf-shows">Shows: Lack of critical thinking — defaulting to a tool without requirements analysis</div>
+    <div class="rf-matters">Better: <strong>"BigQuery is right if we have ad-hoc analytics with >1s latency tolerance. If we need sub-100ms, we'd pair it with Bigtable or BI Engine for the serving layer."</strong></div>
+  </div>
+  <div class="rf-item">
+    <div class="rf-bad">❌ "We'll just add more slots"</div>
+    <div class="rf-shows">Shows: Doesn't understand the cost model — slots affect parallelism, not scan volume</div>
+    <div class="rf-matters">Better: <strong>"More slots reduce query time but don't reduce cost — bytes scanned determines cost. The optimization is at query/schema level, not slot count."</strong></div>
+  </div>
+  <div class="rf-item">
+    <div class="rf-bad">❌ "Partition by everything"</div>
+    <div class="rf-shows">Shows: Doesn't understand the 4,000 partition limit or cardinality issues for clustering</div>
+    <div class="rf-matters">Better: <strong>"Partition on the one dimension most queries filter — usually date. Cluster for secondary dimensions. Clustering supports up to 4 columns; pick the highest-frequency filter columns."</strong></div>
+  </div>
+  <div class="rf-item">
+    <div class="rf-bad">❌ "Real-time means streaming inserts"</div>
+    <div class="rf-shows">Shows: Doesn't understand BigQuery's streaming buffer latency (~10 minutes for MVs)</div>
+    <div class="rf-matters">Better: <strong>"Streaming inserts have ~10s table read latency. Materialized views see streaming data only after batch commit (~10 min). For true real-time serving, Bigtable or Redis; BigQuery for analytics."</strong></div>
+  </div>
+  <div class="rf-item">
+    <div class="rf-bad">❌ "BigQuery is strongly consistent so we're fine globally"</div>
+    <div class="rf-shows">Shows: Doesn't understand multi-region replication lag</div>
+    <div class="rf-matters">Better: <strong>"Strong consistency is within a region. Cross-region replication is async with observable lag. For consistency-critical workloads, single-region with failover — not multi-region active-active."</strong></div>
+  </div>
+  <div class="rf-item">
+    <div class="rf-bad">❌ Not asking about query patterns before schema design</div>
+    <div class="rf-shows">Shows: Schema-first thinking instead of workload-first — the schema encodes query assumptions</div>
+    <div class="rf-matters">Better: <strong>"Before I design the schema, let me understand the top 5 queries by frequency. The partition key, clustering columns, and materialized views should all be derived from those patterns."</strong></div>
+  </div>
+</div>
+
+<!-- NUANCES -->
+<div class="sec-hdr" id="nuances"><h2>7 Impressive Nuances to Demonstrate</h2></div>
+
+<div class="nuance-grid">
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 1</span><span class="ncard-title">Slot Pool Segmentation</span></div>
+    <p>Segment reservations by workload type — <strong>dedicated slots for SLA-bound dashboards, background slots for ETL with idle slot sharing</strong>. A large ETL consuming all slots while dashboards queue is an organizational problem solved by infrastructure isolation, not by adding more slots.</p>
+  </div>
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 2</span><span class="ncard-title">HyperLogLog for Cardinality</span></div>
+    <p>For <code>COUNT(DISTINCT user_id)</code> on billions of rows, exact computation requires massive memory and shuffle. <strong>APPROX_COUNT_DISTINCT uses HyperLogLog++ with ~1% error at 10x performance</strong>. For 99% of analytics use cases, the error is invisible to business decision-making.</p>
+  </div>
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 3</span><span class="ncard-title">Streaming Buffer Visibility</span></div>
+    <p>Data in the streaming buffer <strong>isn't immediately visible to materialized views or table snapshots</strong>. There's a ~10-minute window where streaming data is in a different consistency domain. Affects dashboards claiming "real-time" on MV-powered queries.</p>
+  </div>
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 4</span><span class="ncard-title">Partition Filter Enforcement</span></div>
+    <p>Enable <strong>require_partition_filter</strong> on all large tables to prevent accidental full scans. One bad query without a partition filter on a petabyte table costs $5,000. Governance isn't optional at scale — it's enforced at the schema level.</p>
+  </div>
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 5</span><span class="ncard-title">Clustering Column Order</span></div>
+    <p>Clustering uses <strong>leftmost columns first</strong> — only a prefix of clustering columns enables block pruning. Clustering by (country, user_id) provides zero benefit for queries filtering on user_id alone. Order must match query patterns, not just list the important columns.</p>
+  </div>
+  <div class="ncard">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 6</span><span class="ncard-title">Shuffle Persistence to Colossus</span></div>
+    <p>Unlike Spark where shuffle is ephemeral (failed executor = recompute from source), <strong>BigQuery shuffle writes to Colossus</strong>. This makes large joins more resilient to worker failures, but means shuffle writes have higher latency than in-memory shuffle alternatives.</p>
+  </div>
+  <div class="ncard" style="grid-column:span 2">
+    <div class="ncard-hdr"><span class="ncard-num">Nuance 7</span><span class="ncard-title">BI Engine for Sub-Second Dashboards</span></div>
+    <p>For dashboard workloads needing sub-second latency, <strong>BI Engine caches data in memory and changes BigQuery from 1–10s queries to ~100ms queries for cached data</strong>. It's not a replacement for query optimization — it's an in-memory acceleration layer layered on top of properly partitioned, clustered tables. Best deployed for known high-frequency dashboard queries.</p>
+  </div>
+</div>
+
+<!-- CLARIFYING QUESTIONS -->
+<div class="sec-hdr" id="cq"><h2>Clarifying Questions to Ask</h2></div>
+
+<div class="cq-list">
+  <div class="cq-item">
+    <div class="cq-q">"What are the primary query patterns and top queries by frequency?"</div>
+    <div class="cq-shows"><span>Shows:</span> Workload-driven schema design thinking — schema is derived, not guessed</div>
+    <div class="cq-matters">Determines: Partition column, clustering order, which materialized views to build, where to add indexes</div>
+  </div>
+  <div class="cq-item">
+    <div class="cq-q">"What's the acceptable query latency — is sub-second required?"</div>
+    <div class="cq-shows"><span>Shows:</span> Understanding that BigQuery has a latency floor (~1–5s typical)</div>
+    <div class="cq-matters">Determines: Whether BigQuery is the right tool, or needs BI Engine, or needs a different serving layer entirely</div>
+  </div>
+  <div class="cq-item">
+    <div class="cq-q">"What's the read-to-write ratio and write frequency?"</div>
+    <div class="cq-shows"><span>Shows:</span> Understanding BigQuery's analytics optimization (read-heavy) vs write challenges</div>
+    <div class="cq-matters">Determines: Whether to use batch loading or streaming inserts, and which streaming architecture (if any)</div>
+  </div>
+  <div class="cq-item">
+    <div class="cq-q">"How predictable is the query load — bursty or steady?"</div>
+    <div class="cq-shows"><span>Shows:</span> Thinking about slot allocation strategy and cost optimization</div>
+    <div class="cq-matters">Determines: On-demand (unpredictable/bursty) vs Reserved (steady, high-volume) vs Flex slots (burst on top of reserved)</div>
+  </div>
+  <div class="cq-item">
+    <div class="cq-q">"What are the data retention and compliance requirements?"</div>
+    <div class="cq-shows"><span>Shows:</span> Thinking about storage cost, compliance conflicts, and time travel configuration</div>
+    <div class="cq-matters">Determines: Partition expiration settings, time travel window, GDPR deletion vs audit retention conflict design</div>
+  </div>
+  <div class="cq-item">
+    <div class="cq-q">"Who are the users and what's their SQL proficiency?"</div>
+    <div class="cq-shows"><span>Shows:</span> Thinking about query efficiency, governance, and cost accountability</div>
+    <div class="cq-matters">Determines: Whether to enable require_partition_filter, whether to use authorized views, whether to build abstractions over raw tables</div>
+  </div>
+</div>
+
+<!-- SOUND BITES -->
+<div class="sec-hdr" id="soundbites"><h2>Sound Bite Collection</h2></div>
+
+<div class="sb-collection">
+  <div class="sb-item">
+    <div class="sb-topic">On the Core Concept</div>
+    <p>"BigQuery is three innovations in one: columnar storage that only reads what you query, separated storage and compute that allows thousands of parallel workers, and tree-structured execution that aggregates results efficiently without sending all data to a single node."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Partition vs Clustering</div>
+    <p>"Partitioning is your coarse-grained knife — it eliminates entire date ranges before a single byte is scanned. Clustering is your scalpel — it finds the exact blocks within a partition. Use both, in that order. Never cluster without partitioning."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Trade-offs</div>
+    <p>"BigQuery trades latency for throughput and simplicity for control. If you need sub-100ms, you're using the wrong tool. But if you need to query a petabyte in under a minute without managing infrastructure, nothing else comes close."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Scale and Cost</div>
+    <p>"The architecture that works at 1 TB will bankrupt you at 1 PB. Schema design isn't just about correctness — it's about economics. A well-designed table can be 100x cheaper to query. I've seen companies spend 10x their necessary BigQuery budget because they didn't enforce partition filters."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Failures</div>
+    <p>"BigQuery handles node failures transparently. What it doesn't handle is bad queries. A single full-table-scan on a petabyte table costs $5,000 and takes an hour. The failure mode you design for is the human writing the query — not the hardware."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Distributed Complexity</div>
+    <p>"The shuffle is where distributed systems get expensive. Every GROUP BY and JOIN potentially shuffles data across the network. The art is pushing computation as close to the data as possible — filter early, aggregate early, join late."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Operational Maturity</div>
+    <p>"Monitoring BigQuery isn't about uptime — it manages itself. It's about cost efficiency. Track bytes scanned per dollar of business value. If a dashboard costs $1,000/day to refresh but influences $100 in decisions, something's structurally wrong."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On Common Mistakes</div>
+    <p>"The most common BigQuery mistake is schema design that ignores query patterns. Second is not using approximate functions for high-cardinality aggregations. Third is streaming inserts when batch loading would suffice — streaming costs 10x more per row."</p>
+  </div>
+  <div class="sb-item">
+    <div class="sb-topic">On the Key Insight</div>
+    <p>"BigQuery isn't a database you query — it's a database you design queries for. The schema IS the performance tuning. Get it right and you pay 4 cents for a query. Get it wrong and you pay $25 for the same answer."</p>
+  </div>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Series-Closing Insight</div>
+  <p>Across four parts, one through-line: <strong>BigQuery is a system where decisions made at design time determine performance at query time</strong>. The columnar storage format (Part 1) is the foundation. The tree-structured Dremel execution (Part 2) is the engine. Partitioning, clustering, and schema design (Part 3) are the optimizer. And the complete interview playbook (Part 4) is the meta-layer: knowing not just how the system works, but how to reason about it under interview conditions.</p>
+  <p>The L7 signal across all four parts: <strong>every answer layers feature → cost → failure mode → scale behavior</strong>. "BigQuery uses columnar storage" is L5. "Columnar storage means we only scan the columns in the SELECT clause, which reduces I/O by 80% for wide tables" is L6. "Columnar storage is the reason partitioning is so effective — within a partition, block-level pruning uses the min/max metadata in each column's encoding to skip blocks entirely. This is why clustering column order matters: the leftmost column's min/max range is most informative" is L7. Same topic, three depths. The depth is the signal.</p>
+</div>
+
+<div class="series-final" id="series-final">
+  <h3>📊 BigQuery Internals Series — Complete</h3>
+  <p>Four parts covering columnar architecture through interview mastery. The mental model now lives in your head: schema encodes query assumptions, partitioning is the knife, clustering is the scalpel, the shuffle is where distributed systems get expensive.</p>
+  <div class="sf-pills">
+    <span class="sfp sfp1">Part 1 · Architecture & Storage Internals</span>
+    <span class="sfp sfp2">Part 2 · Query Execution & Dremel Engine</span>
+    <span class="sfp sfp3">Part 3 · Trade-offs, Failures & Scale BOE</span>
+    <span class="sfp sfp4">Part 4 · Industry Deep-Dive & Interview Mastery</span>
+  </div>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleInd(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
