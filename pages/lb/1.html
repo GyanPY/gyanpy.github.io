@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer & API Gateway Internals (Part 1) — L4 vs L7 Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;
+  /* Series accent: electric teal-to-violet — network/infrastructure feel */
+  --lb:#00C9A7;--lb2:#845EC2;--lb3:#0081CF;--lbwarm:#FF6F91;
+  --l4:#00C9A7;--l7:#845EC2;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--l4),var(--lb3),var(--l7),var(--lbwarm));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--lb);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--lb);background:rgba(0,201,167,.1);border:1px solid rgba(0,201,167,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--lb)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(0,201,167,.05)}
+.ni.active a{color:var(--lb);border-left-color:var(--lb);background:rgba(0,201,167,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--lb);border-color:var(--lb);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--lb);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.6rem;font-weight:900;line-height:1.08;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--l4) 35%,var(--lb3) 58%,var(--l7));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* PART BANNER */
+.part-banner{border-radius:12px;padding:22px 26px;margin:0 0 32px;background:linear-gradient(135deg,rgba(0,201,167,.08),rgba(132,94,194,.05));border:1px solid rgba(0,201,167,.22)}
+.part-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--lb);margin-bottom:7px;font-weight:600}
+.part-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.part-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+
+/* OSI LAYER PILLS */
+.osi-row{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0}
+.osi-pill{font-family:var(--fc);font-size:.72rem;padding:5px 13px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.osi-pill.l4{background:rgba(0,201,167,.12);border-color:var(--l4);color:var(--l4);font-weight:700}
+.osi-pill.l7{background:rgba(132,94,194,.12);border-color:var(--l7);color:var(--l7);font-weight:700}
+.osi-pill.active{font-weight:700}
+
+/* L4 vs L7 SPLIT COMPARISON */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.split-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.split-card.l4h{border-top:3px solid var(--l4)}
+.split-card.l7h{border-top:3px solid var(--l7)}
+.split-hdr{padding:10px 14px;display:flex;align-items:center;gap:8px}
+.split-hdr.l4h{background:rgba(0,201,167,.06)}
+.split-hdr.l7h{background:rgba(132,94,194,.06)}
+.split-tag{font-family:var(--fc);font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:12px}
+.split-tag.l4{background:rgba(0,201,167,.15);color:var(--l4)}
+.split-tag.l7{background:rgba(132,94,194,.15);color:var(--l7)}
+.split-label{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text)}
+.split-body{padding:12px 14px}
+.split-body p{font-size:.86rem;color:var(--muted);line-height:1.6;margin-bottom:6px}
+.split-body strong{color:var(--text)}
+.split-body ul{padding-left:14px;margin:4px 0}
+.split-body li{font-size:.85rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+
+/* CODE / PACKET VIEWS */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--lb);border-color:var(--lb)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:18px 0;overflow:hidden}
+.diag.l4b{border:1px solid rgba(0,201,167,.22)}
+.diag.l7b{border:1px solid rgba(132,94,194,.22)}
+.diag.neutral{border:1px solid rgba(0,129,207,.22)}
+.diag-hdr{padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag.l4b .diag-hdr{background:rgba(0,201,167,.07);border-bottom:1px solid rgba(0,201,167,.18)}
+.diag.l7b .diag-hdr{background:rgba(132,94,194,.07);border-bottom:1px solid rgba(132,94,194,.18)}
+.diag.neutral .diag-hdr{background:rgba(0,129,207,.06);border-bottom:1px solid rgba(0,129,207,.18)}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag.l4b .diag-title{color:var(--l4)}.diag.l7b .diag-title{color:var(--l7)}.diag.neutral .diag-title{color:var(--lb3)}
+.diag pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.l4c{background:rgba(0,201,167,.07);border:1px solid rgba(0,201,167,.2)}
+.callout.l7c{background:rgba(132,94,194,.07);border:1px solid rgba(132,94,194,.2)}
+.callout.info{background:rgba(0,129,207,.07);border:1px solid rgba(0,129,207,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.l4c .callout-title{color:var(--l4)}
+.callout.l7c .callout-title{color:var(--l7)}.callout.info .callout-title{color:var(--lb3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* LATENCY TABLE */
+.lat-table{width:100%;border-collapse:collapse;font-size:.8rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.lat-table thead tr{background:linear-gradient(90deg,rgba(0,201,167,.1),rgba(132,94,194,.06))}
+.lat-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--lb);border-bottom:1px solid rgba(0,201,167,.18)}
+.lat-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5}
+.lat-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.lat-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.lat-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc)}
+.lat-table td.good-val{color:var(--l4);font-family:var(--fc);font-weight:700}
+.lat-table td.bad-val{color:var(--no);font-family:var(--fc)}
+.lat-table td.warn-val{color:var(--lean);font-family:var(--fc)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:14px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* ANALOGY CARDS */
+.analogy-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}
+.analogy-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.analogy-card.l4{border-left:3px solid var(--l4)}
+.analogy-card.l7{border-left:3px solid var(--l7)}
+.analogy-tag{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:8px}
+.analogy-card.l4 .analogy-tag{color:var(--l4)}.analogy-card.l7 .analogy-tag{color:var(--l7)}
+.analogy-card h4{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text);margin-bottom:7px}
+.analogy-card p{font-size:.84rem;color:var(--muted);line-height:1.6}
+
+/* DECISION TREE */
+.dtree{background:#010409;border:1px solid rgba(0,129,207,.2);border-radius:10px;margin:18px 0;overflow:hidden}
+.dtree-hdr{background:rgba(0,129,207,.06);border-bottom:1px solid rgba(0,129,207,.18);padding:10px 16px}
+.dtree-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--lb3);font-weight:600}
+.dtree pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.85;color:#c9d1d9;white-space:pre}
+
+/* MARKS */
+mark{background:rgba(0,201,167,.14);color:var(--l4);border-radius:3px;padding:1px 4px}
+mark.v{background:rgba(132,94,194,.14);color:var(--l7);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong);border-radius:3px;padding:1px 4px}
+
+/* WHEN TO USE GRID */
+.when-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+.when-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.when-hdr{padding:9px 14px;font-family:var(--fc);font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em}
+.when-card.wl4 .when-hdr{background:rgba(0,201,167,.08);color:var(--l4);border-bottom:1px solid rgba(0,201,167,.15)}
+.when-card.wl7 .when-hdr{background:rgba(132,94,194,.08);color:var(--l7);border-bottom:1px solid rgba(132,94,194,.15)}
+.when-body{padding:12px 14px}
+.when-body li{font-size:.85rem;color:var(--muted);line-height:1.6;margin-bottom:5px;padding-left:4px}
+.when-body ul{padding-left:14px}
+.when-body strong{color:var(--text)}
+
+/* STRONG HIRE BOX */
+.hire-box{background:linear-gradient(135deg,rgba(0,201,167,.09),rgba(132,94,194,.06));border:1px solid rgba(0,201,167,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.hire-box::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.hire-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--lb);margin-bottom:10px;font-weight:600}
+.hire-box p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+.hire-box ol{padding-left:20px;margin-top:8px}
+.hire-box li{font-size:.9rem;color:var(--muted);line-height:1.65;margin-bottom:6px}
+.hire-box li strong{color:var(--text)}
+
+/* KEY LESSON */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--lb);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.split,.analogy-pair,.when-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer & API Gateway · L6/L7 Series</div>
+    <div class="sb-title">L4 vs L7 Load Balancer</div>
+    <div class="sb-part">Part 1 — Deep Dive from First Principles</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Foundations</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#osi">OSI Model Context</a></li>
+      <li class="ni sub"><a href="#analogy">Postal Service Analogy</a></li>
+      <li class="ni sub"><a href="#what-they-see">What Each Layer Sees</a></li>
+    </li>
+    <li class="ng"><div class="nl">Why L4 for KV Store</div>
+      <li class="ni sub"><a href="#reason1">Reason 1: Raw Speed at 300K QPS</a></li>
+      <li class="ni sub"><a href="#reason2">Reason 2: TLS Termination Location</a></li>
+      <li class="ni sub"><a href="#reason3">Reason 3: L7 Smarts Not Needed Here</a></li>
+      <li class="ni sub"><a href="#reason4">Reason 4: Connection Handling</a></li>
+    </li>
+    <li class="ng"><div class="nl">When to Use L7</div>
+      <li class="ni sub"><a href="#when-l7">L7 Scenarios</a></li>
+      <li class="ni sub"><a href="#both-worlds">Best of Both Worlds</a></li>
+      <li class="ni sub"><a href="#cost">Cost Comparison</a></li>
+    </li>
+    <li class="ng"><div class="nl">Decision Framework</div>
+      <li class="ni sub"><a href="#decision-tree">Decision Tree</a></li>
+      <li class="ni sub"><a href="#summary-table">Summary Table</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#strong-hire">Strong Hire Answer</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer & API Gateway Internals · L6/L7 Series · Part 1</div>
+  <h1>L4 vs L7<br>Load Balancer</h1>
+  <div class="hero-meta">
+    <span>📦 OSI Layer Model from First Principles</span>
+    <span>⚡ Latency math at 300K QPS</span>
+    <span>🔒 TLS termination trade-offs</span>
+    <span>🔀 Connection handling models</span>
+    <span>🌐 When to use which — decision framework</span>
+    <span>🏆 Strong Hire answer</span>
+  </div>
+  <p style="margin-top:14px">The question separates experienced engineers from beginners. "Why L4 and not L7?" is not about memorizing two acronyms — it's about understanding where intelligence should live in a system, what the cost of that intelligence is at scale, and when the trade-off flips. This guide builds the answer from first principles.</p>
+</section>
+
+<!-- OSI CONTEXT -->
+<div class="part-banner" id="osi">
+  <div class="part-banner-label">Foundations · OSI Networking Model</div>
+  <h2>What Do "L4" and "L7" Mean?</h2>
+  <p>These numbers refer to the OSI (Open Systems Interconnection) model — think of it as layers of an onion, each handling a different aspect of network communication. L4 is the Transport Layer; L7 is the Application Layer. A load balancer at each layer has a fundamentally different view of the traffic it handles.</p>
+</div>
+
+<div class="osi-row" id="osi-pills">
+  <span class="osi-pill">L1 Physical</span>
+  <span class="osi-pill">L2 Data Link</span>
+  <span class="osi-pill">L3 Network (IP)</span>
+  <span class="osi-pill l4">L4 Transport (TCP/UDP) ← LB here</span>
+  <span class="osi-pill">L5 Session</span>
+  <span class="osi-pill">L6 Presentation</span>
+  <span class="osi-pill l7">L7 Application (HTTP) ← LB here</span>
+</div>
+
+<div class="sec-hdr" id="analogy"><h2>The Postal Service Analogy</h2></div>
+
+<div class="analogy-pair">
+  <div class="analogy-card l4">
+    <div class="analogy-tag">L4 — Transport Layer</div>
+    <h4>The Postal Truck</h4>
+    <p>Only cares about: <strong>"Where is this package going?"</strong> (IP address + port). Doesn't open the package. Just delivers based on the address label. Very fast — no need to inspect contents.</p>
+  </div>
+  <div class="analogy-card l7">
+    <div class="analogy-tag">L7 — Application Layer</div>
+    <h4>The Mailroom Clerk</h4>
+    <p>Opens the package (reads the HTTP request). Reads what's inside: <strong>"Oh, this is a request for /api/users/123."</strong> Can make smart decisions based on content. Slower — has to understand what's inside.</p>
+  </div>
+</div>
+
+<div class="callout info">
+  <div class="callout-title">The Restaurant Analogy — Why Speed Is the Difference</div>
+  <p><strong>L4 Host (fast, simple):</strong> "Table for how many? 4? Follow me." Time: 2 seconds. Done.</p>
+  <p style="margin-top:8px"><strong>L7 Host (slow, smart):</strong> "Let me check your reservation… Oh, you're a VIP! Let me read your dietary preferences… You like window seats… Let me check which server handles VIP vegetarians near windows…" Time: 30 seconds.</p>
+  <p style="margin-top:8px">At 300,000 customers per second, those extra milliseconds destroy your latency budget.</p>
+</div>
+
+<!-- WHAT THEY SEE -->
+<div class="sec-hdr" id="what-they-see"><h2>What Each Layer Sees</h2></div>
+
+<div class="split">
+  <div class="split-card l4h">
+    <div class="split-hdr l4h"><span class="split-tag l4">L4</span><span class="split-label">Packet View</span></div>
+    <div class="split-body">
+      <div class="code"><div class="code-hdr"><span class="code-lang">TCP Packet Headers Only</span></div>
+      <pre>Source IP:   192.168.1.100
+Dest IP:     10.0.0.50
+Source Port: 54321
+Dest Port:   443   ← Routes on THIS
+
+──────────────────────────
+[Encrypted blob of data]  ← Cannot see inside</pre></div>
+      <p><strong>L4 LB only sees:</strong> source IP, destination IP, source port, destination port. Everything else is an encrypted blob — it physically cannot inspect it.</p>
+    </div>
+  </div>
+  <div class="split-card l7h">
+    <div class="split-hdr l7h"><span class="split-tag l7">L7</span><span class="split-label">Full HTTP Request View</span></div>
+    <div class="split-body">
+      <div class="code"><div class="code-hdr"><span class="code-lang">Decrypted HTTP Request</span></div>
+      <pre>GET /v1/keys/user:123:profile
+Host: kv.example.com
+Authorization: Bearer eyJ...
+X-Tenant-ID: acme-corp
+Content-Type: application/json
+
+{"value": "..."}   ← Can see body too</pre></div>
+      <p><strong>L7 LB sees:</strong> full URL, every header, auth token, tenant ID, request body. Must decrypt TLS first to inspect any of this.</p>
+    </div>
+  </div>
+</div>
+
+<!-- REASON 1: SPEED -->
+<div class="sec-hdr" id="reason1"><h2>Reason 1: Raw Speed at 300K QPS</h2></div>
+
+<table class="lat-table">
+  <thead><tr><th>Load Balancer</th><th>Added Latency</th><th>At 300K QPS</th><th>Eats P99 Budget</th></tr></thead>
+  <tbody>
+    <tr><td>L4 (AWS NLB)</td><td class="good-val">0.1–0.5ms</td><td class="good-val">Negligible</td><td class="good-val">&lt;3% of 20ms budget</td></tr>
+    <tr><td>L7 (AWS ALB)</td><td class="bad-val">1–5ms</td><td class="bad-val">Adds to every request</td><td class="bad-val">Up to 25% of 20ms budget</td></tr>
+  </tbody>
+</table>
+
+<div class="callout fail">
+  <div class="callout-title">The P99 Budget Problem</div>
+  <p>Our P99 target is 20ms. Adding 5ms at the load balancer <strong>eats 25% of our entire latency budget before the request even reaches the API server</strong>. This is budget spent on packet routing — work the L4 load balancer can do 10× cheaper. The 5ms is not free; it's CPU cycles spent on TLS decryption, HTTP header parsing, and routing table lookup that L7 must do on every single request.</p>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Why L7 Is Slower</div>
+  <p>"L7 overhead is not arbitrary — it's the cost of <strong>actually understanding what's in the packet</strong>. To read the URL and headers, the load balancer must: (1) complete the TLS handshake and decrypt the payload, (2) parse HTTP/1.1 or HTTP/2 framing, (3) read headers and match routing rules, (4) re-encrypt the payload for the backend connection. Each step is CPU work that L4 entirely avoids. At 300K QPS, this CPU work requires 50+ L7 LB instances vs 3–6 L4 instances."</p>
+</div>
+
+<!-- REASON 2: TLS -->
+<div class="sec-hdr" id="reason2"><h2>Reason 2: TLS Termination Location</h2></div>
+
+<div class="diag l7b">
+  <div class="diag-hdr"><span class="diag-title">L7 Approach — TLS Terminated at Load Balancer</span></div>
+  <pre>Client ──[Encrypted]──► L7 LB ──[Decrypted]──► API Server
+                           │          │
+                     Decrypt TLS   Re-encrypt
+                     Parse HTTP    to backend
+                     Route req.
+                     
+Cost: CPU intensive (RSA/ECDH handshake per new connection)
+      50+ LB instances needed at 300K QPS
+      Trust boundary problem: LB sees plaintext, backend gets plaintext</pre>
+</div>
+
+<div class="diag l4b">
+  <div class="diag-hdr"><span class="diag-title">L4 Approach — TLS Pass-Through (Our Choice)</span></div>
+  <pre>Client ──[Encrypted]────────────────────────────► API Server
+              │                                         │
+         L4 just routes                           Decryption
+         based on IP:Port                         happens here
+         Never decrypts                           (in our control)
+         Never re-encrypts
+
+Cost: Minimal CPU (just packet routing)
+      3–6 LB instances at 300K QPS
+      Trust boundary clear: plaintext only inside API server process</pre>
+</div>
+
+<div class="split">
+  <div class="split-card l7h">
+    <div class="split-hdr l7h"><span class="split-tag l7">L7 TLS Termination</span></div>
+    <div class="split-body">
+      <ul>
+        <li>LB handles TLS handshake (CPU: RSA/ECDH operations)</li>
+        <li>Plaintext flows from LB to backend (internal network only)</li>
+        <li>Backend must trust LB completely</li>
+        <li>50+ LB instances needed to handle decryption at 300K QPS</li>
+        <li>TLS certificates managed at LB (centralized but coupled)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="split-card l4h">
+    <div class="split-hdr l4h"><span class="split-tag l4">L4 TLS Pass-Through</span></div>
+    <div class="split-body">
+      <ul>
+        <li>LB forwards encrypted packets without touching TLS</li>
+        <li>Decryption at API server (our code, our control)</li>
+        <li>Trust boundary is clear: plaintext only inside API process</li>
+        <li>3–6 LB instances sufficient at 300K QPS</li>
+        <li>API server manages its own TLS certs (decoupled)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- REASON 3: NO NEED FOR L7 SMARTS -->
+<div class="sec-hdr" id="reason3"><h2>Reason 3: We Don't Need L7 Smarts at This Layer</h2></div>
+
+<div class="diag neutral">
+  <div class="diag-hdr"><span class="diag-title">Architecture — Intelligence Already in the API Layer</span></div>
+  <pre>┌──────────┐    ┌──────────┐    ┌──────────────────────────────────┐
+│  Client  │───►│   L4 LB  │───►│           API Layer              │
+└──────────┘    │ (dumb,   │    │  ✓ Auth (reads JWT)              │
+                │  fast)   │    │  ✓ Rate limiting                 │
+                └──────────┘    │  ✓ Partition routing             │
+                                │  ✓ Tenant isolation              │
+                                │  ✓ Request validation            │
+                                └──────────────────────────────────┘
+
+L7 would give us URL-based routing, header inspection, sticky sessions.
+But the API layer already does all of this — with full application context.
+
+Having L7 do routing = redundant work + added latency + no benefit.</pre>
+</div>
+
+<div class="callout l4c">
+  <div class="callout-title">The Principle: Push Intelligence Up the Stack</div>
+  <p>L7 routing decisions at the load balancer are made with limited context — just URL and headers. The API layer can make the same decisions with <strong>full context</strong>: decoded JWT claims, database state, tenant configuration, real-time rate limit counters. Doing routing at L4 + application logic in the API layer gives you better decisions at lower cost. Only move routing down to L7 when you genuinely need it before the request reaches any application code.</p>
+</div>
+
+<!-- REASON 4: CONNECTION HANDLING -->
+<div class="sec-hdr" id="reason4"><h2>Reason 4: Connection Handling</h2></div>
+
+<div class="split">
+  <div class="split-card l4h">
+    <div class="split-hdr l4h"><span class="split-tag l4">L4 — Pass-Through</span></div>
+    <div class="split-body">
+      <div class="code"><div class="code-hdr"><span class="code-lang">Connection Model</span></div>
+      <pre>Client ←── Single TCP connection ──► API Server
+
+Client opens connection to L4 LB
+L4 LB connects to API server
+All packets flow same path
+Connection "stuck" to one server
+gRPC streams work natively</pre></div>
+      <p><strong>For long-lived connections</strong> (gRPC, connection pooling): ideal. One connection setup, thousands of requests flow through. No re-routing overhead per request.</p>
+    </div>
+  </div>
+  <div class="split-card l7h">
+    <div class="split-hdr l7h"><span class="split-tag l7">L7 — Two Connections</span></div>
+    <div class="split-body">
+      <div class="code"><div class="code-hdr"><span class="code-lang">Connection Model</span></div>
+      <pre>Client ←─ Connection 1 ─► L7 LB ←─ Connection 2 ─► API Server
+
+L7 maintains TWO connections
+Can redirect requests to different servers
+More flexible but: 2× connection overhead
+Connection pooling complexity at LB layer</pre></div>
+      <p><strong>For request-based routing</strong>: L7's two-connection model enables re-routing per request. Useful for canary deployments where different requests go to different backends.</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout l4c">
+  <div class="callout-title">Why L4 Connection Pass-Through Wins for gRPC/KV Stores</div>
+  <p>A KV store client using gRPC opens a connection once and reuses it for thousands of requests. L4's pass-through model lets this connection go directly to an API server — no LB involvement after routing the initial connection. L7's two-connection model means the LB is in the data path for every single request, maintaining connection pools to backends, managing backpressure, and adding per-request overhead even for long-lived streams.</p>
+</div>
+
+<!-- WHEN TO USE L7 -->
+<div class="sec-hdr" id="when-l7"><h2>When Would We Use L7 Instead?</h2></div>
+
+<div class="when-grid">
+  <div class="when-card wl7">
+    <div class="when-hdr">L7 Makes Sense When You Need These</div>
+    <div class="when-body"><ul>
+      <li><strong>URL-based routing to microservices:</strong> <code>/users/*</code> → User Service, <code>/orders/*</code> → Order Service — essential for a single API gateway in front of multiple backends</li>
+      <li><strong>Canary / A/B deployment:</strong> Route 10% of requests to new version by reading a header or cookie</li>
+      <li><strong>Web Application Firewall (WAF):</strong> Inspect requests for SQL injection, block suspicious IPs, validate structure before any backend sees it</li>
+      <li><strong>Sticky sessions:</strong> Route user A to Server 1 based on session cookie (stateful applications)</li>
+      <li><strong>Header injection:</strong> Add request-id, trace headers, or auth context before forwarding</li>
+    </ul></div>
+  </div>
+  <div class="when-card wl4">
+    <div class="when-hdr">L4 Is Correct When</div>
+    <div class="when-body"><ul>
+      <li><strong>Homogeneous backends:</strong> All servers handle all requests equally — no URL-based differentiation needed</li>
+      <li><strong>Latency is critical:</strong> Sub-10ms P99 target where 1–5ms L7 overhead is unacceptable</li>
+      <li><strong>High TLS overhead:</strong> TLS termination at LB requires 50+ instances vs 3–6 for L4 pass-through</li>
+      <li><strong>Long-lived connections:</strong> gRPC, WebSockets, or connection pooling that shouldn't be interrupted</li>
+      <li><strong>Application layer handles routing:</strong> API nodes do their own intelligent routing — no need to duplicate at LB</li>
+    </ul></div>
+  </div>
+</div>
+
+<!-- BEST OF BOTH WORLDS -->
+<div class="sec-hdr" id="both-worlds"><h2>Best of Both Worlds: Using Both in Layers</h2></div>
+
+<div class="diag neutral">
+  <div class="diag-hdr"><span class="diag-title">Layered Architecture — L4 at Edge, L7 Logic in API Nodes</span></div>
+  <pre>                                        ┌─────────────────┐
+                                    ┌──►│   API Node 1    │
+┌────────┐    ┌─────────┐    ┌──────┴─┐ ├─────────────────┤
+│ Client │───►│  L4 LB  │───►│ L7 opt │►│   API Node 2    │
+└────────┘    │  (NLB)  │    │(if req)│ ├─────────────────┤
+              └─────────┘    └────┬───┘ │   API Node N    │
+                                  │     └─────────────────┘
+          Fast packet routing     │
+          No inspection           If needed:
+          Sub-ms latency          - WAF inspection
+                                  - A/B testing header
+                                  - Request-id injection
+
+Layer         Technology                  Purpose
+─────         ──────────                  ───────
+Edge          L4 (AWS NLB / GCP TCP LB)   Speed, TLS pass-through, low cost
+API Layer     L7 logic in API nodes       Auth, rate limiting, partition routing
+Internal      L4 between API→Storage      Speed, minimal overhead</pre>
+</div>
+
+<!-- COST -->
+<div class="sec-hdr" id="cost"><h2>Cost Comparison at Scale</h2></div>
+
+<table class="lat-table">
+  <thead><tr><th>Type</th><th>AWS Service</th><th>Monthly Cost (~300K QPS)</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>L4</td><td>Network Load Balancer (NLB)</td><td class="good-val">~$500/month + data</td><td>No TLS processing, minimal CPU, few instances needed</td></tr>
+    <tr><td>L7</td><td>Application Load Balancer (ALB)</td><td class="bad-val">~$2,000/month + data</td><td>TLS decryption CPU, HTTP parsing, more instances needed</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <div class="callout-title">The Cost Multiplier Is Compounding</div>
+  <p>The 4× cost difference isn't just "L7 charges more per hour." It compounds: L7 requires more instances (CPU for TLS), each instance costs more per hour, and data transfer costs are higher because L7 LBs maintain larger connection state. At 300K QPS sustained for a year, choosing L7 when L4 suffices adds ~$18,000/year in avoidable infrastructure cost — for worse latency.</p>
+</div>
+
+<!-- DECISION TREE -->
+<div class="sec-hdr" id="decision-tree"><h2>The Decision Framework</h2></div>
+
+<div class="dtree">
+  <div class="dtree-hdr"><span class="dtree-title">L4 vs L7 Decision Tree</span></div>
+  <pre>Do you need to inspect HTTP content at the load balancer?
+│
+├── YES: URL routing, header-based routing, WAF, sticky sessions, canary
+│        \
+│         └──► Use L7 (AWS ALB / Nginx / HAProxy in http mode)
+│
+└── NO: Just distributing traffic to identical/homogeneous servers
+    │
+    ├── Is latency critical? (P99 target < 10ms, or 1-5ms overhead unacceptable)
+    │   └── YES ──► Use L4 (AWS NLB / GCP TCP LB / HAProxy in tcp mode)
+    │
+    ├── Is TLS pass-through required? (certs managed by app, not LB)
+    │   └── YES ──► Use L4
+    │
+    ├── Are you using gRPC, WebSockets, or long-lived connections?
+    │   └── YES ──► Use L4 (L7 introduces per-request routing overhead)
+    │
+    └── Is your application layer doing its own routing?
+        └── YES ──► Use L4 (no benefit to duplicating routing at LB layer)</pre>
+</div>
+
+<!-- SUMMARY TABLE -->
+<div class="sec-hdr" id="summary-table"><h2>Summary: L4 vs L7 at a Glance</h2></div>
+
+<table class="lat-table">
+  <thead><tr><th>Factor</th><th>L4 Result</th><th>L7 Result</th><th>Winner for KV Store</th></tr></thead>
+  <tbody>
+    <tr><td>Latency overhead</td><td class="good-val">0.1–0.5ms</td><td class="bad-val">1–5ms</td><td class="good-val">L4 ✅</td></tr>
+    <tr><td>TLS handling</td><td class="good-val">Pass-through (no CPU)</td><td class="bad-val">Terminate + re-encrypt</td><td class="good-val">L4 ✅</td></tr>
+    <tr><td>Routing intelligence</td><td class="warn-val">Not needed (API layer does it)</td><td class="good-val">URL/header-based routing</td><td class="good-val">L4 ✅ (not needed)</td></tr>
+    <tr><td>Monthly cost (~300K QPS)</td><td class="good-val">~$500/month</td><td class="bad-val">~$2,000/month</td><td class="good-val">L4 ✅</td></tr>
+    <tr><td>gRPC / long-lived connections</td><td class="good-val">Native pass-through</td><td class="bad-val">2-connection overhead</td><td class="good-val">L4 ✅</td></tr>
+    <tr><td>Instances needed at 300K QPS</td><td class="good-val">3–6 instances</td><td class="bad-val">50+ instances</td><td class="good-val">L4 ✅</td></tr>
+    <tr><td>URL-based microservice routing</td><td class="bad-val">Not possible</td><td class="good-val">Native feature</td><td class="warn-val">L7 (if needed)</td></tr>
+    <tr><td>Canary / A/B deployments</td><td class="bad-val">Not at LB layer</td><td class="good-val">Header/cookie-based %</td><td class="warn-val">L7 (if needed)</td></tr>
+    <tr><td>WAF / request inspection</td><td class="bad-val">Not possible</td><td class="good-val">Native feature</td><td class="warn-val">L7 (if needed)</td></tr>
+  </tbody>
+</table>
+
+<!-- STRONG HIRE ANSWER -->
+<div class="sec-hdr" id="strong-hire"><h2>Strong Hire Signal Answer</h2></div>
+
+<div class="hire-box">
+  <div class="hire-label">🔑 When the Interviewer Asks "Why L4 vs L7?"</div>
+  <p>"I chose L4 at the edge for three reasons:"</p>
+  <ol>
+    <li><strong>Latency.</strong> At 300K QPS with a 20ms P99 target, I can't afford 3–5ms of L7 overhead at the load balancer. That's 25% of my entire latency budget spent before the request even reaches an API server. L4 adds sub-millisecond latency and stays out of the critical path.</li>
+    <li><strong>TLS termination.</strong> I want TLS terminated at my API layer, not the load balancer. This keeps the trust boundary clear — plaintext only exists inside my API server process. It also avoids making the LB a CPU bottleneck for RSA/ECDH operations. At 300K QPS, L7 TLS termination would require 50+ LB instances versus 3–6 for L4 pass-through.</li>
+    <li><strong>We don't need L7 features here.</strong> All the smart routing — auth, rate limiting, partition routing, tenant isolation — happens in my API layer with full application context. The load balancer's only job is distributing packets to healthy nodes. L4 does exactly that with minimal overhead.</li>
+  </ol>
+  <p style="margin-top:10px;font-style:italic;font-size:.88rem;color:var(--muted)">"If we needed URL-based routing to different services, or a WAF at the edge, or canary deployments without deploying new API code, I'd reconsider L7. But for a KV store with homogeneous API nodes where the application layer already handles routing, L4 is the right choice."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Key Insight</div>
+  <p>The L4 vs L7 choice is not about which is "better" — it's about <strong>where intelligence should live in your system and what it costs at each layer</strong>.</p>
+  <p>L7 intelligence is powerful but has a non-zero cost: TLS decryption CPU, HTTP parsing, connection doubling, and higher latency. If your application layer already has that intelligence with better context (full JWT decoding, database state, tenant config), then paying L7's overhead gets you nothing new.</p>
+  <p><strong>The principal engineer insight: push intelligence up the stack to where it has the most context, and make the layers below it as fast and simple as possible.</strong> L4 at the edge is fast and simple. L7 in the API application code is smart and context-rich. This combination beats L7 at the edge + dumb API nodes.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
