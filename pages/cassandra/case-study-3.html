@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cassandra Internals (Part 7) — Uber Locations, Instagram DMs, Anti-Patterns & Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;--text:#e6edf3;--muted:#8b949e;--dim:#6e7681;--strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;--cass:#3b82f6;--cass2:#8b5cf6;--cass3:#06b6d4;--cass4:#10b981;--uber:#000000;--uber2:#09091A;--uber3:#276EF1;--ig:#E1306C;--ig2:#F56040;--fh:'Playfair Display',Georgia,serif;--fb:'Source Serif 4',Georgia,serif;--fc:'JetBrains Mono','Fira Code',monospace;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--uber3),var(--ig),var(--no),var(--strong),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--uber3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.9rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--uber3);background:rgba(39,110,241,.1);border:1px solid rgba(39,110,241,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--uber3)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(39,110,241,.05)}
+.ni.active a{color:var(--uber3);border-left-color:var(--uber3);background:rgba(39,110,241,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--uber3);border-color:var(--uber3);transform:translateY(-2px)}
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--uber3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--uber3) 32%,var(--ig) 58%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(39,110,241,.1);border-color:var(--uber3);color:var(--uber3)}
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+/* system banners */
+.sys-banner{border-radius:12px;padding:22px 26px;margin:0 0 28px}
+.sys-banner.uber{background:linear-gradient(135deg,rgba(39,110,241,.1),rgba(6,182,212,.04));border:1px solid rgba(39,110,241,.22)}
+.sys-banner.ig{background:linear-gradient(135deg,rgba(225,48,108,.1),rgba(245,96,64,.05));border:1px solid rgba(225,48,108,.22)}
+.sys-banner-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;margin-bottom:7px;font-weight:600}
+.sys-banner.uber .sys-banner-label{color:var(--uber3)}
+.sys-banner.ig .sys-banner-label{color:var(--ig)}
+.sys-banner h2{font-family:var(--fh);font-size:1.5rem;font-weight:700;color:var(--text);margin-bottom:7px}
+.sys-banner p{font-size:.9rem;color:var(--muted);line-height:1.65}
+/* code */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:14px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--uber3);border-color:var(--uber3)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+/* trace / flow */
+.trace{background:#010409;border-radius:10px;margin:18px 0;overflow:hidden}
+.trace.uber{border:1px solid rgba(39,110,241,.2)}
+.trace.ig{border:1px solid rgba(225,48,108,.2)}
+.trace.ops{border:1px solid rgba(16,185,129,.2)}
+.trace-hdr{padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+.trace.uber .trace-hdr{background:rgba(39,110,241,.07);border-bottom:1px solid rgba(39,110,241,.18)}
+.trace.ig .trace-hdr{background:rgba(225,48,108,.07);border-bottom:1px solid rgba(225,48,108,.18)}
+.trace.ops .trace-hdr{background:rgba(16,185,129,.06);border-bottom:1px solid rgba(16,185,129,.18)}
+.trace-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.trace.uber .trace-title{color:var(--uber3)}
+.trace.ig .trace-title{color:var(--ig)}
+.trace.ops .trace-title{color:var(--cass4)}
+.trace pre{padding:18px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+/* callouts */
+.callout{border-radius:8px;padding:14px 16px;margin:13px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.uber{background:rgba(39,110,241,.07);border:1px solid rgba(39,110,241,.2)}
+.callout.ig{background:rgba(225,48,108,.07);border:1px solid rgba(225,48,108,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.uber .callout-title{color:var(--uber3)}
+.callout.ig .callout-title{color:var(--ig)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+/* insight */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:14px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+/* scale box */
+.scale-box{background:rgba(39,110,241,.06);border:1px solid rgba(39,110,241,.18);border-radius:8px;padding:16px 18px;margin:14px 0}
+.scale-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--uber3);margin-bottom:12px;font-weight:600}
+.scale-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(39,110,241,.08)}
+.scale-row:last-child{border-bottom:none}
+.scale-key{font-family:var(--fc);font-size:.79rem;color:var(--muted)}
+.scale-val{font-family:var(--fc);font-size:.86rem;color:var(--uber3);font-weight:700}
+/* anti-pattern card */
+.ap-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:22px;overflow:hidden}
+.ap-hdr{padding:12px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border)}
+.ap-num{font-family:var(--fc);font-size:.7rem;font-weight:700;background:rgba(255,107,107,.12);color:var(--no);border:1px solid rgba(255,107,107,.2);padding:2px 9px;border-radius:4px}
+.ap-title{font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text)}
+.ap-toggle{margin-left:auto;color:var(--dim);font-size:.76rem;transition:transform .3s;flex-shrink:0}
+.ap-card.collapsed .ap-toggle{transform:rotate(-90deg)}
+.ap-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1;padding:0 18px 18px}
+.ap-card.collapsed .ap-body{max-height:0;opacity:0;padding:0}
+.ap-body p{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px;margin-top:10px}
+.ap-body strong{color:var(--text)}
+/* monitoring table */
+.mon-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:10px 0;border-radius:8px;overflow:hidden}
+.mon-table thead tr{background:linear-gradient(90deg,rgba(16,185,129,.1),rgba(6,182,212,.05))}
+.mon-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.09em;color:var(--cass4);border-bottom:1px solid rgba(16,185,129,.18)}
+.mon-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5;font-size:.8rem}
+.mon-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.mon-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.mon-table td:first-child{font-family:var(--fc);font-size:.76rem;color:var(--text)}
+.mon-table td.threshold{font-family:var(--fc);font-size:.76rem;color:var(--no);font-weight:700}
+.mon-table td.warn-thresh{font-family:var(--fc);font-size:.76rem;color:var(--lean);font-weight:700}
+/* checklist */
+.checklist-section{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;overflow:hidden}
+.checklist-hdr{padding:12px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border)}
+.checklist-icon{font-size:1.1rem}
+.checklist-title{font-family:var(--fh);font-size:.98rem;font-weight:600;color:var(--text)}
+.checklist-toggle{margin-left:auto;color:var(--dim);font-size:.76rem;transition:transform .3s;flex-shrink:0}
+.checklist-section.collapsed .checklist-toggle{transform:rotate(-90deg)}
+.checklist-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1;padding:0 18px 16px}
+.checklist-section.collapsed .checklist-body{max-height:0;opacity:0;padding:0}
+.chk-item{display:flex;align-items:flex-start;gap:10px;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.25)}
+.chk-item:last-child{border-bottom:none}
+.chk-box{width:16px;height:16px;border:2px solid var(--border);border-radius:3px;flex-shrink:0;margin-top:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.65rem;transition:all .15s}
+.chk-box.checked{background:var(--cass4);border-color:var(--cass4);color:#fff}
+.chk-text{font-size:.85rem;color:var(--muted);line-height:1.55}
+.chk-text strong{color:var(--text)}
+/* marks */
+mark{background:rgba(39,110,241,.14);color:var(--uber3);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+/* ig phase steps */
+.phase{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--ig);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px}
+.phase-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.phase-num{font-family:var(--fc);font-size:.65rem;font-weight:700;background:rgba(225,48,108,.12);color:var(--ig);border:1px solid rgba(225,48,108,.25);padding:2px 8px;border-radius:4px}
+.phase-title{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text)}
+.phase-lat{font-family:var(--fc);font-size:.72rem;color:var(--dim);margin-left:auto}
+.phase p{font-size:.87rem;color:var(--muted);line-height:1.65}
+/* soundbite */
+.soundbite{background:linear-gradient(135deg,rgba(39,110,241,.1),rgba(6,182,212,.04));border:1px solid rgba(39,110,241,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--uber3);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+/* key lesson */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--uber3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}
+.kl strong{color:var(--text)}
+@media(max-width:768px){#sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}#hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}.hero h1{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Cassandra Internals · L6/L7 Series</div>
+    <div class="sb-title">Multi-System Deep Dive</div>
+    <div class="sb-part">Part 7 — Uber · Instagram · Anti-Patterns · Ops</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">System 3: Uber Driver Locations</div>
+      <li class="ni sub"><a href="#uber-problem">The Problem</a></li>
+      <li class="ni sub"><a href="#uber-schema">Data Model & Geohash</a></li>
+      <li class="ni sub"><a href="#uber-movement">Driver Movement & TTL</a></li>
+      <li class="ni sub"><a href="#uber-twcs">TWCS for Locations</a></li>
+      <li class="ni sub"><a href="#uber-dc">Single-DC Design</a></li>
+    </li>
+    <li class="ng"><div class="nl">System 4: Instagram DMs</div>
+      <li class="ni sub"><a href="#ig-overview">Alice → Bob "Hey!" Flow</a></li>
+      <li class="ni sub"><a href="#ig-phase1">Phase 1–3: Write Path</a></li>
+      <li class="ni sub"><a href="#ig-phase4">Phase 4: Push Notification</a></li>
+      <li class="ni sub"><a href="#ig-phase5">Phase 5: Bob Opens App</a></li>
+      <li class="ni sub"><a href="#ig-edge">Edge Case: Cross-DC Gap</a></li>
+    </li>
+    <li class="ng"><div class="nl">Anti-Patterns</div>
+      <li class="ni sub"><a href="#ap1">AP 1: Cassandra as Queue</a></li>
+      <li class="ni sub"><a href="#ap2">AP 2: Secondary Index Abuse</a></li>
+      <li class="ni sub"><a href="#ap3">AP 3: Unbounded Partition Growth</a></li>
+    </li>
+    <li class="ng"><div class="nl">Operational Excellence</div>
+      <li class="ni sub"><a href="#monitoring">Monitoring Dashboard</a></li>
+      <li class="ni sub"><a href="#incident-compaction">Incident: Compaction Storm</a></li>
+      <li class="ni sub"><a href="#incident-hot">Incident: Hot Partition</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#checklist">L6/L7 Checklist</a></li>
+    </li>
+  </ul>
+</nav>
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Cassandra Internals · L6/L7 Deep Dive · Part 7</div>
+  <h1>Uber Locations,<br>Instagram DMs,<br>Anti-Patterns & Ops</h1>
+  <div class="hero-meta">
+    <span>🚗 Uber: 500K location writes/sec · Geohash partitioning</span>
+    <span>💬 Instagram DM: End-to-end message lifecycle</span>
+    <span>⚠️ 3 Anti-patterns that kill clusters</span>
+    <span>📊 Production monitoring dashboard</span>
+    <span>🔥 Compaction storm & hot partition runbooks</span>
+    <span>✅ Principal-level design checklist</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 5: Discord Messages</span>
+    <span class="part-pill">Part 6: Netflix History</span>
+    <span class="part-pill ap">Part 7: Uber · Instagram · Ops</span>
+  </div>
+  <p style="margin-top:14px;font-size:.87rem;color:var(--dim);line-height:1.65">The series finale. Two more real-world systems — Uber's real-time location grid (geohash partitioning + TTL to avoid tombstones) and Instagram's DM lifecycle (cross-DC consistency gap and how to solve it). Then the three anti-patterns that destroy production clusters, the Netflix-style monitoring dashboard, two incident runbooks, and the comprehensive L6/L7 design checklist.</p>
+</section>
+
+<!-- UBER -->
+<div class="sys-banner uber" id="uber-problem">
+  <div class="sys-banner-label">Real-World System 3 · Uber Driver Locations</div>
+  <h2>The Problem Uber Faced</h2>
+  <p>Real-time location tracking: 5M+ drivers worldwide, millions online simultaneously. Location updates every 4 seconds. Riders need to see nearby drivers instantly. Must work across network partitions (driver in a tunnel).</p>
+</div>
+
+<div class="scale-box">
+  <div class="scale-title">Scale Numbers</div>
+  <div class="scale-row"><span class="scale-key">Online drivers (peak)</span><span class="scale-val">2M+ simultaneously</span></div>
+  <div class="scale-row"><span class="scale-key">Update frequency</span><span class="scale-val">Every 4 seconds per driver</span></div>
+  <div class="scale-row"><span class="scale-key">Write rate</span><span class="scale-val">2M ÷ 4s = 500K writes/sec</span></div>
+  <div class="scale-row"><span class="scale-key">Event size</span><span class="scale-val">~100 bytes (lat, lng, status, timestamp)</span></div>
+  <div class="scale-row"><span class="scale-key">Daily storage (raw)</span><span class="scale-val">500K × 100B × 86,400s = 4.3TB/day</span></div>
+</div>
+
+<div class="sec-hdr" id="uber-schema"><h2>Data Model: Geohash Partitioning</h2></div>
+<div class="code"><div class="code-hdr"><span class="code-lang">CQL · driver_locations Table</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+<pre>Partition Key:   (city_id, geohash_prefix)
+Clustering Key:  driver_id
+
+city_id | geohash_prefix | driver_id | lat       | lng        | status    | updated_at
+--------+----------------+-----------+-----------+------------+-----------+---------------------
+1       | 9q8y           | driver_a  | 37.7749   | -122.4194  | AVAILABLE | 2024-01-15 10:00:00
+1       | 9q8y           | driver_b  | 37.7751   | -122.4190  | ON_TRIP   | 2024-01-15 10:00:01
+1       | 9q8z           | driver_c  | 37.7800   | -122.4100  | AVAILABLE | 2024-01-15 10:00:02
+
+Query: "Find available drivers near rider at (37.775, -122.419)"
+1. Compute geohash of rider location: "9q8y"
+2. SELECT * FROM driver_locations
+   WHERE city_id = 1 AND geohash_prefix = '9q8y'
+   AND status = 'AVAILABLE'
+   → Single partition read → application filters by exact distance</pre></div>
+
+<div class="callout uber">
+  <div class="callout-title">Three Design Decisions — Why (city_id, geohash_prefix)?</div>
+  <ul>
+    <li><strong>Why city_id?</strong> Bounds partition size (SF drivers vs NYC drivers stay in separate partitions). Enables city-level operations. Keeps data local — SF Cassandra cluster handles SF traffic.</li>
+    <li><strong>Why 4-char geohash prefix?</strong> Full geohash (8 chars) is too specific — single building. 4-char prefix = ~1km × 1km cell. Busy urban areas: 100–500 drivers per cell. Correct balance between partition density and query recall.</li>
+    <li><strong>Why not lat/lng range query?</strong> Cassandra can't efficiently filter on two columns simultaneously. Geohash converts a 2D spatial query to a 1D partition key lookup — that's the entire trick.</li>
+  </ul>
+</div>
+
+<div class="sec-hdr" id="uber-movement"><h2>Handling Driver Movement: TTL vs Tombstones</h2></div>
+<div class="trace uber">
+  <div class="trace-hdr"><span class="trace-title">The Tombstone Trap — Wrong vs Right Approach</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>WRONG APPROACH — Explicit delete when driver changes geohash cell:
+
+Driver moves from geohash "9q8y" to "9q8z":
+  Step 1: DELETE FROM driver_locations
+          WHERE city_id=1 AND geohash_prefix='9q8y' AND driver_id='driver_a'
+  Step 2: INSERT INTO driver_locations
+          VALUES (1, '9q8z', 'driver_a', ...)
+
+PROBLEM: 500K updates/sec = 500K deletes/sec = 500K tombstones/sec
+         Tombstones accumulate in SSTables
+         Every query for '9q8y' must scan tombstones
+         Within 24 hours: billions of tombstones → cluster becomes unreadable
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CORRECT APPROACH — TTL-based expiry:
+
+Every location update: INSERT with TTL=30s (no explicit delete ever)
+
+INSERT INTO driver_locations
+  (city_id, geohash_prefix, driver_id, lat, lng, status, updated_at)
+VALUES (1, '9q8y', 'driver_a', 37.7749, -122.4194, 'AVAILABLE', now())
+USING TTL 30;
+
+Why 30 seconds?
+  Update frequency: every 4 seconds
+  → Location refreshed 7× before TTL expires
+  → If driver loses connectivity: they disappear from search ✓  (correct!)
+  → If driver restores: next INSERT brings them back ✓
+  → Driver crosses into new cell: old cell row expires in ≤30s ✓
+  → Zero tombstones. Zero. Forever.</pre>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — TTL Is the Right Delete for Time-Bound Data</div>
+  <p>"Cassandra tombstones are not free. At 500K writes/sec with explicit deletes, you create 500K tombstones/sec. They accumulate in SSTables and every read must scan them to establish what's been deleted. <strong>TTL-based expiry is the correct pattern for ephemeral data</strong> — the storage engine handles expiry during compaction, dropping whole SSTables with no tombstone overhead. The 30s TTL also gives you correct behavior on driver disconnect for free."</p>
+</div>
+
+<div class="sec-hdr" id="uber-twcs"><h2>Compaction Strategy: TWCS for Location Data</h2></div>
+<div class="trace uber">
+  <div class="trace-hdr"><span class="trace-title">TWCS — Perfect Fit for 30s TTL Location Data</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Configuration:
+  TWCS time_window = 1 minute (2× the TTL, to capture a full expiry cycle)
+
+What happens:
+  t=0:   New SSTable created — 30M rows, TTL=30s each
+  t=1m:  Another SSTable created — 30M rows
+  t=2m:  TWCS compacts minute-0 + minute-1 → single SSTable
+         TTL has now expired on minute-0's data
+         Compaction drops expired rows — entire minute-0 data gone
+  t=3m:  Minute-2 SSTable compacted similarly
+
+Steady state:
+  Always ≤ 2 SSTables active (1-2 minutes of data)
+  Old data removed automatically by compaction
+  Zero tombstones — TTL expiry is not a tombstone
+  Read path: 2 SSTables to check (not 50+)
+
+Why TWCS and not STCS here?
+  STCS: Mixes all time windows → driver from 10 minutes ago might
+        be in same SSTable as current drivers → reads must filter expired rows
+  TWCS: Time-aligned SSTables → entire SSTable of expired data is
+        dropped as a file → no per-row scanning needed</pre>
+</div>
+
+<div class="sec-hdr" id="uber-dc"><h2>Cross-DC Design: Why Uber Uses Single-DC for Locations</h2></div>
+<div class="trace uber">
+  <div class="trace-hdr"><span class="trace-title">Multi-DC Challenge — Why Cross-DC Replication Doesn't Help Here</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Scenario: Driver and rider both in San Francisco (US-WEST)
+
+Normal operation:
+  Driver writes → US-WEST Cassandra
+  Rider reads  → US-WEST Cassandra  ✓ (same DC, consistent)
+
+During US-WEST maintenance (traffic routed to US-EAST):
+  Driver writes → US-EAST (eventually)
+  Rider reads  → US-EAST
+  Cross-DC replication lag: ~100ms
+  Data TTL: 30 seconds
+
+  Problem: Cross-DC lag = 100ms, TTL = 30,000ms
+           Replication completes with 99.7% of TTL remaining → OK?
+
+  But: Peak lag during failures can exceed 5-10 seconds
+       During that window, rider sees stale driver positions
+       For ride-hailing, stale positions = wrong driver dispatching
+
+Uber's solution:
+  driver_locations → SINGLE DC, no cross-DC replication
+  RF = 3 (within the regional cluster)
+  If SF cluster is down: SF matching is degraded (not wrong)
+
+Why this is the right trade-off:
+  Ephemeral data (30s TTL) loses its value during cross-DC lag
+  Regional outage → degrade gracefully, not serve stale locations
+  Netflix viewing history (durable, hours old = still useful) ≠ driver positions</pre>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Uber Location Sound Bite</div>
+  <p>"Not all Cassandra tables should be multi-DC. For ephemeral real-time data like driver locations, cross-DC replication adds latency without benefit — by the time data arrives in another DC, it may already be stale. The correct design degrades gracefully on regional failure rather than serving incorrect data. This is a nuanced understanding of when global consistency doesn't matter."</p>
+</div>
+
+<!-- INSTAGRAM DM -->
+<div class="sec-hdr" id="ig-overview"><h2>End-to-End Flow: Instagram DM — Alice → Bob "Hey!"</h2></div>
+<div class="sys-banner ig">
+  <div class="sys-banner-label">Real-World System 4 · Instagram Direct Messages</div>
+  <h2>Putting It All Together</h2>
+  <p>A complete request lifecycle across a messaging system like Instagram DMs. Five distinct phases from Alice's tap to Bob seeing the message — each with exact latency accounting and the hidden consistency challenge in Phase 5.</p>
+</div>
+
+<div id="ig-phase1">
+<div class="phase">
+  <div class="phase-hdr"><span class="phase-num">Phase 1</span><span class="phase-title">Client → API Server</span><span class="phase-lat">t=0 → t=20ms</span></div>
+  <p>Alice's phone (NYC) sends: <code>POST /api/messages</code> with <code>{conversation_id: "conv_alice_bob", sender: "alice", content: "Hey!", client_timestamp: "2024-01-15T10:00:00.123Z"}</code>. Routed to API server in US-EAST (geographically closest). Network latency: 20ms.</p>
+</div>
+<div class="phase">
+  <div class="phase-hdr"><span class="phase-num">Phase 2</span><span class="phase-title">API Server Processing</span><span class="phase-lat">t=20ms → t=22ms</span></div>
+  <p>API server: (1) validates auth + rate limit, (2) generates server-side message_id (Snowflake ID: 1234567890), (3) sets <code>server_timestamp</code> as the authoritative timestamp — client timestamp is untrusted, (4) computes bucket: <code>message_id >> 22 = bucket_42</code>. Latency: 2ms.</p>
+</div>
+</div>
+
+<div class="trace ig" id="ig-phase3">
+  <div class="trace-hdr"><span class="trace-title">Phase 3 · Write to Cassandra — Step by Step</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Table: messages
+Partition Key:   (conversation_id, bucket)
+Clustering Key:  message_id DESC
+
+INSERT INTO messages (conversation_id, bucket, message_id, ...)
+VALUES ('conv_alice_bob', 42, 1234567890, ...)
+WITH CL=LOCAL_QUORUM
+
+Coordinator (Node X, US-EAST):
+  1. Hash('conv_alice_bob', 42) → token 847293
+  2. Replicas: A(rack1), B(rack2), C(rack3) in US-EAST
+  3. Parallel sends to A, B, C
+
+  Node A: Commit log append (0.5ms) + Memtable write (0.01ms) → ACK at t=23ms
+  Node B: Commit log append (0.6ms) + Memtable write (0.01ms) → ACK at t=23.5ms
+  Node C: (disk I/O contention) ... still writing ...
+
+  Coordinator has 2 ACKs = LOCAL_QUORUM → SUCCESS returned to client ✓
+
+  t=25ms: SUCCESS sent to Alice's app (total: 25ms round-trip)
+
+  Async (non-blocking): Coordinator sends to EU-WEST, AP-SOUTH replicas
+  EU-WEST receives at t=125ms (transatlantic)
+  AP-SOUTH receives at t=175ms (trans-pacific)</pre>
+</div>
+
+<div class="phase" id="ig-phase4">
+  <div class="phase-hdr"><span class="phase-num">Phase 4</span><span class="phase-title">Push Notification (parallel to Cassandra write)</span><span class="phase-lat">t=22ms → t=30ms (push sent)</span></div>
+  <p>While Cassandra write executes: (1) publish "new_message" event to Kafka, (2) push service consumes event, (3) look up Bob's registered device tokens, (4) send push notification to Bob's phone via APNs/FCM. Bob in Tokyo (AP-SOUTH) receives push at approximately t=30ms: <code>"Alice: Hey!"</code>.</p>
+</div>
+
+<div class="trace ig" id="ig-phase5">
+  <div class="trace-hdr"><span class="trace-title">Phase 5 · Bob Opens App — The Consistency Gap</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>Bob's phone (Tokyo) receives push at t=30ms and opens app immediately.
+
+Bob's query:
+  GET /api/conversations/conv_alice_bob/messages?limit=50
+  Routed to AP-SOUTH (closest API server)
+
+  SELECT * FROM messages
+  WHERE conversation_id = 'conv_alice_bob' AND bucket = 42
+  ORDER BY message_id DESC LIMIT 50
+  WITH CL=LOCAL_ONE
+
+AP-SOUTH Cassandra status at t=100ms (Bob opens app):
+  Async replication from US-EAST → AP-SOUTH was sent at t=25ms
+  Cross-DC propagation time: ~150ms
+  AP-SOUTH receives the message at t=175ms
+
+  Bob opens at t=100ms → AP-SOUTH does NOT yet have the message!
+  Bob's query returns 0 results for the new message ← PROBLEM</pre>
+</div>
+
+<div class="callout ig" id="ig-edge">
+  <div class="callout-title">Edge Case: Three Solutions to the Cross-DC Consistency Gap</div>
+  <p><strong>Timeline of the problem:</strong> t=0ms Alice sends → t=5ms push sent → t=30ms Bob receives push → t=100ms Bob opens app → t=120ms Bob's query reaches AP-SOUTH Cassandra → t=175ms async replication completes. Gap: 55ms where Bob sees nothing.</p>
+  <ul>
+    <li><strong>Option A — Include message in push payload (Instagram's approach ✓):</strong> Push contains the full message content. App renders push content immediately. Background sync with Cassandra catches up. No perceived inconsistency — the push IS the delivery mechanism.</li>
+    <li><strong>Option B — Route Bob's query to US-EAST:</strong> Detect that notification source was US-EAST, route message fetch there. Consistent, but adds ~200ms extra latency for Bob's message load. Trade-off: complexity for consistency.</li>
+    <li><strong>Option C — Delay push until all DCs replicated:</strong> Don't send push until AP-SOUTH confirms receipt. Simple, but adds 150ms to push latency. Unacceptable for real-time messaging UX.</li>
+  </ul>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — The Cross-DC Gap Is Where Most Engineers Miss the Complexity</div>
+  <p>"You can't just 'use Cassandra' and call it done. <strong>You need to design around eventual consistency at the application layer.</strong> Instagram's solution is elegant: treat the push notification as the primary delivery mechanism, with Cassandra as the durable backup. The app shows push content immediately and syncs with Cassandra in the background. The user never perceives a gap — but only if the push payload carries the message, not just a notification."</p>
+</div>
+
+<!-- ANTI-PATTERNS -->
+<div class="sec-hdr" id="anti-patterns"><h2>Anti-Patterns: What Goes Wrong in Production</h2></div>
+
+<div class="ap-card" id="ap1">
+  <div class="ap-hdr" onclick="toggleAP(this)">
+    <span class="ap-num">Anti-Pattern 1</span>
+    <span class="ap-title">Using Cassandra as a Queue</span>
+    <span class="ap-toggle">▾</span>
+  </div>
+  <div class="ap-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BAD Pattern</span></div>
+    <pre>Table: job_queue
+  job_id | status | created_at | payload
+
+Workers poll:
+  SELECT * FROM job_queue WHERE status = 'PENDING' LIMIT 10
+  → FULL TABLE SCAN — no partition key filter!
+
+Workers update:
+  UPDATE job_queue SET status = 'PROCESSING' WHERE job_id = X
+  → Not in-place modification — creates a new version in memtable</pre></div>
+    <div class="callout fail">
+      <div class="callout-title">Four Failure Modes</div>
+      <ul>
+        <li><strong>Full table scan on every poll:</strong> <code>WHERE status = 'PENDING'</code> has no partition key — Cassandra fans out to all nodes, each does a local scan. This is a full cluster scan on every worker heartbeat.</li>
+        <li><strong>Cassandra can't "find rows matching condition":</strong> It's a distributed key-value store, not a query engine. Filtering without a partition key is always O(N) across the cluster.</li>
+        <li><strong>UPDATE is not in-place:</strong> Cassandra appends a new version — old version persists until compaction. No true update semantics.</li>
+        <li><strong>No distributed locking:</strong> Two workers can grab the same job simultaneously. No transactions means no <code>SELECT FOR UPDATE</code> equivalent.</li>
+      </ul>
+    </div>
+    <p><strong>Fix:</strong> Use Kafka, SQS, or Redis for queues. Cassandra is for key-value access with known partition keys — not for finding rows by arbitrary conditions.</p>
+  </div>
+</div>
+
+<div class="ap-card" id="ap2">
+  <div class="ap-hdr" onclick="toggleAP(this)">
+    <span class="ap-num">Anti-Pattern 2</span>
+    <span class="ap-title">Secondary Index Abuse</span>
+    <span class="ap-toggle">▾</span>
+  </div>
+  <div class="ap-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BAD Pattern</span></div>
+    <pre>Table: users (Partition Key: user_id)
+CREATE INDEX ON users(city);
+
+Query:
+  SELECT * FROM users WHERE city = 'San Francisco';
+
+What actually happens:
+  1. Query sent to coordinator
+  2. Coordinator fans out to ALL nodes
+  3. Each node scans its LOCAL secondary index for 'San Francisco'
+  4. Results merged back at coordinator
+  → Full cluster scan disguised as an index lookup</pre></div>
+    <div class="callout fail">
+      <div class="callout-title">Why Cassandra Secondary Indexes Are Not Like Relational Indexes</div>
+      <ul>
+        <li><strong>Local, not global:</strong> The index exists separately on each node — it only indexes data that node holds. There is no global B-tree spanning the cluster.</li>
+        <li><strong>High cardinality = poor selectivity:</strong> If users are spread across 1000 cities, each node's local index for 'San Francisco' contains only a small fraction of SF users. The merge at coordinator is expensive.</li>
+        <li><strong>Every node involved:</strong> Unlike a partition key query that routes to 1-3 nodes, a secondary index query always touches ALL nodes.</li>
+      </ul>
+    </div>
+    <p><strong>When secondary index IS acceptable:</strong> Low cardinality (status = 'ACTIVE' — only 3 values), combined with partition key (<code>WHERE user_id = X AND status = 'ACTIVE'</code>), or small tables (&lt;1M rows).</p>
+    <p><strong>Fix:</strong> Denormalize. Create <code>users_by_city</code> with <code>city</code> as partition key, <code>user_id</code> as clustering key. Two writes per user, fast single-partition reads per city.</p>
+  </div>
+</div>
+
+<div class="ap-card" id="ap3">
+  <div class="ap-hdr" onclick="toggleAP(this)">
+    <span class="ap-num">Anti-Pattern 3</span>
+    <span class="ap-title">Unbounded Partition Growth</span>
+    <span class="ap-toggle">▾</span>
+  </div>
+  <div class="ap-body">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BAD Pattern</span></div>
+    <pre>Table: events
+  Partition Key: customer_id
+  Clustering:    event_timestamp
+
+SELECT * FROM events WHERE customer_id = 'big_enterprise';
+
+What happens for an enterprise customer with 100M events:
+  Partition size: 100M × 500 bytes = 50GB
+  Single partition read: coordinator must merge data across
+    all SSTables that ever held this partition
+  Compaction of 50GB partition: read 50GB, write 50GB simultaneously
+    → disk I/O saturated for minutes
+    → read latency for ALL reads on that node spikes
+    → Cassandra emergency memory pressure</pre></div>
+    <div class="callout fail">
+      <div class="callout-title">The Cascading Failure</div>
+      <ul>
+        <li>The node hosting the 50GB partition runs out of memory during compaction</li>
+        <li>GC pauses lengthen → other queries on that node time out</li>
+        <li>Coordinator marks node as slow → routes traffic to replicas</li>
+        <li>Replicas also have the 50GB partition → same problem there</li>
+        <li>Entire cluster latency degrades for all customers, not just the enterprise one</li>
+      </ul>
+    </div>
+    <p><strong>Fix — Add time bucketing to partition key:</strong></p>
+    <div class="code"><div class="code-hdr"><span class="code-lang">GOOD Pattern</span></div>
+    <pre>Partition Key: (customer_id, year_month)
+
+Now each partition: ≤ 1M events per month (bounded)
+Partition size: 1M × 500B = 500MB → still high, consider year_week
+
+Recent query:
+  WHERE customer_id = 'X' AND year_month = '2024-01'  ← single partition
+
+Historical query:
+  Run parallel queries for each month → coordinator merges results
+  Each partition is small and fast → total latency acceptable</pre></div>
+  </div>
+</div>
+
+<!-- OPERATIONAL EXCELLENCE -->
+<div class="sec-hdr" id="monitoring"><h2>Operational Excellence: Production Monitoring</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:16px">The Netflix-style monitoring dashboard. These are the metrics a principal engineer watches at 3am during an incident.</p>
+
+<div class="trace ops">
+  <div class="trace-hdr"><span class="trace-title">Critical Metrics — Alert Immediately if Breached</span></div>
+  <pre style="padding:0">
+<table class="mon-table">
+<thead><tr><th>Metric</th><th>Alert Threshold</th><th>Why It Matters</th></tr></thead>
+<tbody>
+<tr><td>Pending Compactions</td><td class="threshold">&gt; 50</td><td>Read latency will spike — SSTables accumulating faster than compaction can merge</td></tr>
+<tr><td>SSTable Count per Read (P99)</td><td class="threshold">&gt; 20</td><td>Compaction falling behind — reads must merge too many files</td></tr>
+<tr><td>Write Latency P99</td><td class="threshold">&gt; 50ms</td><td>Commit log I/O pressure or memtable flush backpressure</td></tr>
+<tr><td>Read Latency P99</td><td class="threshold">&gt; 100ms</td><td>Compaction backlog or tombstone avalanche in hot partition</td></tr>
+<tr><td>Tombstones Scanned P99</td><td class="threshold">&gt; 1,000</td><td>Delete-heavy workload — data model mismatch</td></tr>
+<tr><td>Dropped Mutations</td><td class="threshold">&gt; 0</td><td>Node overloaded and dropping writes — data loss in progress</td></tr>
+<tr><td>Hint Files</td><td class="threshold">&gt; 100</td><td>Nodes down too long, hints accumulating — repair needed</td></tr>
+<tr><td>Heap Utilization</td><td class="threshold">&gt; 85%</td><td>GC pressure incoming — expect stop-the-world pauses in 15-30 min</td></tr>
+</tbody>
+</table></pre>
+</div>
+
+<div class="trace ops">
+  <div class="trace-hdr"><span class="trace-title">Warning Metrics — Investigate Within the Hour</span></div>
+  <pre style="padding:0">
+<table class="mon-table">
+<thead><tr><th>Metric</th><th>Warning Threshold</th><th>Risk if Ignored</th></tr></thead>
+<tbody>
+<tr><td>Cross-DC Latency P99</td><td class="warn-thresh">&gt; 200ms</td><td>Network degradation — async replication falling behind</td></tr>
+<tr><td>Disk Utilization</td><td class="warn-thresh">&gt; 70%</td><td>Add capacity soon — compaction needs 2× data space temporarily</td></tr>
+<tr><td>Repair Completion (7-day window)</td><td class="warn-thresh">Not complete</td><td>Data divergence accumulating — eventual consistency violated</td></tr>
+<tr><td>Schema Agreement</td><td class="warn-thresh">Mismatch</td><td>DDL change not fully propagated — queries may fail on some nodes</td></tr>
+</tbody>
+</table></pre>
+</div>
+
+<div class="sec-hdr" id="incident-compaction"><h2>Incident Response: Compaction Storm</h2></div>
+<div class="trace ops">
+  <div class="trace-hdr"><span class="trace-title">Runbook · P99 Read Latency Spikes 10ms → 500ms</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>SCENARIO: P99 read latency spikes from 10ms to 500ms in 20 minutes
+
+STEP 1 — DIAGNOSE: Check pending compactions
+  $ nodetool compactionstats
+  pending tasks: 347  ← WAY too high, normal is <10
+
+STEP 2 — CONFIRM: Check SSTable count
+  $ nodetool cfstats messages | grep "SSTable count"
+  SSTable count: 89  ← Should be <20 for healthy cluster
+
+STEP 3 — FIND ROOT CAUSE
+  Check deployment log: New feature shipped 30 min ago
+  Increased write rate 10×: 50K/sec → 500K/sec
+  Compaction throughput (default 64MB/s) can't keep up
+
+IMMEDIATE MITIGATION (within 5 minutes):
+  $ nodetool setcompactionthroughput 256   # Raise from 64 to 256MB/s
+  $ nodetool setconcurrentcompactors 4     # Raise from 2 to 4 threads
+
+  If disk I/O is saturated and reads need priority:
+  $ nodetool stop COMPACTION               # On the hottest table only
+  (This pauses compaction — SSTable count grows but reads improve)
+
+  Watch: pending compactions should start dropping within 5-10 min
+
+LONG-TERM FIX (within 24-48 hours):
+  1. Scale cluster — add nodes to spread write load per node
+  2. Review compaction strategy: STCS → LCS for read-heavy tables
+  3. Add alerting: pending_compactions > 20 → PagerDuty
+  4. Capacity plan new features BEFORE shipping: estimate write rate delta</pre>
+</div>
+
+<div class="sec-hdr" id="incident-hot"><h2>Incident Response: Hot Partition</h2></div>
+<div class="trace ops">
+  <div class="trace-hdr"><span class="trace-title">Runbook · 3 Nodes at 90% CPU, Rest at 20%</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+  <pre>SCENARIO: 3 specific nodes running at 90% CPU, rest of cluster at 20%
+          P99 reads rising only for specific conversations
+
+STEP 1 — IDENTIFY the hot partition
+  $ nodetool toppartitions messages 1000
+  
+  Top partitions by read count (last 1000ms sample):
+  (conversation_id='celeb_123', bucket=42): 50,000 reads/sec  ← HOT
+  (conversation_id='conv_alice_bob', bucket=42): 3 reads/sec
+  
+  celeb_123 is a celebrity with 10M followers — viral moment triggered
+
+ROOT CAUSE: All followers refreshing the celebrity's DM simultaneously
+
+IMMEDIATE MITIGATION:
+
+Option A — Cache the hot partition (if reads are cacheable)
+  1. Add Redis cache: key = conversation:celeb_123:bucket_42
+  2. TTL = 30 seconds (acceptable stale window for a read-heavy feed)
+  3. Application reads from Redis first, falls back to Cassandra on miss
+  4. Impact: 50K/sec → ~500/sec hitting Cassandra (99% cache hit)
+
+Option B — Rate limit at application layer (if not cacheable)
+  1. Limit refresh rate for this conversation to 1 req/5sec per user
+  2. Serve stale content with "updated X seconds ago" indicator
+  3. Background polling with exponential backoff
+
+LONG-TERM FIX:
+
+1. Partition splitting for celebrity accounts:
+   Multiple buckets per time window: bucket = (time_window, random(0,9))
+   Application writes to random bucket → reads from all 10 buckets
+   Scatters the hot partition across 10× more nodes
+
+2. Dedicated VIP infrastructure:
+   Identify celebrity/high-traffic accounts programmatically
+   Route to dedicated cache layer or dedicated Cassandra cluster
+   Pre-warm cache on viral content detection</pre>
+</div>
+
+<!-- CHECKLIST -->
+<div class="sec-hdr" id="checklist"><h2>The L6/L7 Cassandra Design Checklist</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:20px">When designing with Cassandra, a Principal Engineer considers all of these. Click any checkbox to track your review progress.</p>
+
+<div class="checklist-section" id="chk-data">
+  <div class="checklist-hdr" onclick="toggleChk(this)">
+    <span class="checklist-icon">📐</span>
+    <span class="checklist-title">Data Modeling</span>
+    <span class="checklist-toggle">▾</span>
+  </div>
+  <div class="checklist-body">
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Partition key has high cardinality</strong> (millions of unique values — no single key receives disproportionate traffic)</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Partition size bounded</strong> (&lt;100MB, &lt;100K rows — calculated for worst-case user/entity, not average)</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Clustering key matches query ORDER BY</strong> — physical sort order matches access pattern (DESC for recent-first)</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Denormalized for each query pattern</strong> — one table per query shape, not one table for everything</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>No cross-partition queries in hot path</strong> — every hot-path query specifies the full partition key</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>TTL used instead of DELETE</strong> for ephemeral data — tombstone accumulation calculated and acceptable</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Time bucketing applied</strong> where partition growth is unbounded by nature (events, logs, metrics)</div></div>
+  </div>
+</div>
+
+<div class="checklist-section" id="chk-consistency">
+  <div class="checklist-hdr" onclick="toggleChk(this)">
+    <span class="checklist-icon">⚖️</span>
+    <span class="checklist-title">Consistency & Replication</span>
+    <span class="checklist-toggle">▾</span>
+  </div>
+  <div class="checklist-body">
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>RF ≥ 3 in each DC</strong> for production — RF=1 or RF=2 are not safe for production workloads</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>LOCAL_QUORUM for critical writes</strong> — default safe choice unless write rate makes it prohibitive</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>LOCAL_ONE only for non-critical reads</strong> (logs, metrics, ephemeral data) — documented decision, not default</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>EACH_QUORUM only when global consistency required</strong> — rare, adds cross-DC latency, explicitly justified</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Cross-DC replication lag considered</strong> — application handles eventual consistency window (push payloads, retry logic)</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Single-DC evaluated for ephemeral data</strong> — real-time data may not benefit from cross-DC replication</div></div>
+  </div>
+</div>
+
+<div class="checklist-section" id="chk-storage">
+  <div class="checklist-hdr" onclick="toggleChk(this)">
+    <span class="checklist-icon">💾</span>
+    <span class="checklist-title">Storage & Compaction</span>
+    <span class="checklist-toggle">▾</span>
+  </div>
+  <div class="checklist-body">
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Compaction strategy matches workload:</strong> TWCS for time-series/TTL, LCS for read-heavy, STCS for write-heavy append-only</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>TTL window matches TWCS window</strong> — TWCS time_window should be 2× the TTL to capture a full expiry cycle</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Tombstone accumulation monitored</strong> — tombstones/read alert set, data model reviewed if &gt;1K tombstones/read P99</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Compaction throughput sized for write rate</strong> — default 64MB/s insufficient for high-volume tables</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Disk headroom for compaction</strong> — STCS requires 2× data space temporarily; disk utilization target is ≤70%</div></div>
+  </div>
+</div>
+
+<div class="checklist-section" id="chk-ops">
+  <div class="checklist-hdr" onclick="toggleChk(this)">
+    <span class="checklist-icon">🔧</span>
+    <span class="checklist-title">Operational Excellence</span>
+    <span class="checklist-toggle">▾</span>
+  </div>
+  <div class="checklist-body">
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Monitoring for pending compactions, SSTable count, P99 latency</strong> — all three correlated in dashboards</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Repair scheduled</strong> — incremental repair preferred at scale, full repair on new nodes, scheduled during low-traffic</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Backup strategy</strong> — snapshots (nodetool snapshot) + streaming backups; recovery procedure tested quarterly</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Capacity planning accounts for compaction overhead</strong> — new features: write rate estimated before deploy</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Runbooks exist for:</strong> compaction storm, hot partition, node down &gt;3h (hint expiry), repair failure</div></div>
+  </div>
+</div>
+
+<div class="checklist-section" id="chk-arch">
+  <div class="checklist-hdr" onclick="toggleChk(this)">
+    <span class="checklist-icon">🏗️</span>
+    <span class="checklist-title">Architecture Patterns</span>
+    <span class="checklist-toggle">▾</span>
+  </div>
+  <div class="checklist-body">
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Cache layer for read-heavy access</strong> — EVCache/Redis in front of Cassandra; cache-miss rate monitored</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Not used as a queue</strong> — no polling patterns with status filters; Kafka/SQS for async job processing</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Secondary indexes used sparingly</strong> — only for low-cardinality + partition-key-constrained queries; denormalized otherwise</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Application handles eventual consistency</strong> — retries with idempotency keys; push payloads carry data; stale reads tolerated or bounded</div></div>
+    <div class="chk-item"><div class="chk-box" onclick="toggleBox(this)"></div><div class="chk-text"><strong>Hot partition mitigation plan exists</strong> — bucket splitting for celebrities/VIPs, cache layer for viral content</div></div>
+  </div>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Series Complete — The Principal Engineer Mindset</div>
+  <p>Seven parts. Discord messages, Netflix history, Uber locations, Instagram DMs. Four real production systems, each teaching a different Cassandra lesson: partition key design, clustering key as physical layout, TTL over tombstones, cache as the read layer, cross-DC consistency gaps, TWCS temporal locality, single-DC for ephemeral data.</p>
+  <p>The through-line: <strong>there is no universal "correct" Cassandra configuration.</strong> Every choice — partition key, consistency level, compaction strategy, replication topology — is derived from the access pattern, durability requirement, write volume, and acceptable staleness window of the specific system. Cassandra gives you the most expressive set of levers in distributed databases. The L7 signal is knowing which ones to pull, in which direction, and being able to defend the trade-off you're making when you pull them.</p>
+  <p>The anti-patterns exist not because engineers are careless, but because Cassandra looks like a database and people use it like a database. <strong>It is not a database. It is a distributed, append-only, eventually-consistent key-value store with tunable consistency and pluggable compaction.</strong> Design to its strengths and it will handle 1.4M writes/sec without breaking a sweat. Fight against its model and a 50GB partition will bring down your whole cluster at 3am.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleAP(h){h.parentElement.classList.toggle('collapsed')}
+function toggleChk(h){h.parentElement.classList.toggle('collapsed')}
+function toggleBox(box){box.classList.toggle('checked');box.textContent=box.classList.contains('checked')?'\u2713':'';}
+function copyCode(btn){const pre=btn.closest('.code,.trace').querySelector('pre');navigator.clipboard.writeText(pre?pre.innerText:'').then(()=>{btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);});}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
