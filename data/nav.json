@@ -108,9 +108,22 @@
     ],
     "BigQuery": [
       {
-        "title": "Internals",
-        "file": "pages/BigQuery/BigQuery.html"
-      }
+        "title": "Deep Dive-1",
+        "file": "pages/BigQuery/1.html"
+      },
+        {
+        "title": "Deep Dive-2",
+        "file": "pages/BigQuery/2.html"
+      },
+        {
+        "title": "Deep Dive-3",
+        "file": "pages/BigQuery/3.html"
+      },
+        {
+        "title": "Deep Dive-4",
+        "file": "pages/BigQuery/4.html"
+      },
+      
     ],
     "ClickHouse": [
       {
