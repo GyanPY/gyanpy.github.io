@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elasticsearch — Senior Staff Engineer Deep-Dive</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #161b27;
+    --bg3: #1e2535;
+    --bg4: #252d42;
+    --border: #2a3350;
+    --accent: #4f8ef7;
+    --accent2: #7c5cfc;
+    --accent3: #00c9a7;
+    --accent4: #f7b94f;
+    --accent5: #f75f5f;
+    --text: #e2e8f8;
+    --text2: #a0aec8;
+    --text3: #6b7fa8;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --purple: #a78bfa;
+    --teal: #2dd4bf;
+    --code-bg: #0a0e1a;
+    --tag-hot: #ff6b6b;
+    --tag-l7: #a78bfa;
+    --tag-boe: #34d399;
+    --tag-mis: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+  /* ── Layout ── */
+  .toc-sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 260px;
+    height: 100vh;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 24px 0;
+    z-index: 100;
+  }
+  .toc-sidebar::-webkit-scrollbar { width: 4px; }
+  .toc-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .toc-logo {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .toc-logo h1 { font-size: 14px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  .toc-logo p { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .toc-item {
+    display: block;
+    padding: 7px 20px;
+    font-size: 12px;
+    color: var(--text2);
+    text-decoration: none;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+    line-height: 1.4;
+  }
+  .toc-item:hover, .toc-item.active {
+    color: var(--text);
+    background: var(--bg3);
+    border-left-color: var(--accent);
+  }
+  .toc-section {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    padding: 14px 20px 6px;
+    text-transform: uppercase;
+  }
+  .content {
+    margin-left: 260px;
+    max-width: 1000px;
+    padding: 48px 56px 100px;
+  }
+  /* ── Hero ── */
+  .hero {
+    background: linear-gradient(135deg, #0f1620 0%, #141b2e 50%, #0f1620 100%);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(79,142,247,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(79,142,247,0.1);
+    border: 1px solid rgba(79,142,247,0.3);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 20px;
+    letter-spacing: 0.05em;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #e2e8f8 0%, #a0aec8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .hero p { color: var(--text2); font-size: 16px; max-width: 600px; margin-bottom: 28px; }
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .hero-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .hero-stat .label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; }
+  .hero-stat .value { font-size: 14px; font-weight: 600; color: var(--text); }
+  /* ── Pillar sections ── */
+  .pillar {
+    margin-bottom: 64px;
+    scroll-margin-top: 32px;
+  }
+  .pillar-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pillar-number {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(79,142,247,0.1);
+    border: 1px solid rgba(79,142,247,0.2);
+    border-radius: 8px;
+    padding: 6px 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-top: 4px;
+  }
+  .pillar-title h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+  }
+  .pillar-title p { color: var(--text2); font-size: 14px; }
+  /* ── Content elements ── */
+  h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 32px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h3::before {
+    content: '';
+    width: 3px; height: 18px;
+    background: var(--accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent4);
+    margin: 20px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+  }
+  p { color: var(--text2); margin-bottom: 16px; line-height: 1.8; }
+  strong { color: var(--text); font-weight: 600; }
+  em { color: var(--accent4); font-style: normal; }
+  /* ── Code blocks ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #a8d8ff;
+  }
+  code {
+    background: rgba(79,142,247,0.12);
+    border: 1px solid rgba(79,142,247,0.2);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #a8d8ff;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  /* ── Tags ── */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin: 4px 0;
+  }
+  .tag-hot { background: rgba(255,107,107,0.15); border: 1px solid rgba(255,107,107,0.4); color: var(--tag-hot); }
+  .tag-l7  { background: rgba(167,139,250,0.15); border: 1px solid rgba(167,139,250,0.4); color: var(--tag-l7); }
+  .tag-boe { background: rgba(52,211,153,0.15);  border: 1px solid rgba(52,211,153,0.4);  color: var(--tag-boe); }
+  .tag-mis { background: rgba(251,191,36,0.15);  border: 1px solid rgba(251,191,36,0.4);  color: var(--tag-mis); }
+  /* ── Alert boxes ── */
+  .alert {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-left: 3px solid;
+    font-size: 14px;
+  }
+  .alert-hot  { background: rgba(255,107,107,0.08); border-color: var(--red); color: var(--text2); }
+  .alert-l7   { background: rgba(167,139,250,0.08); border-color: var(--purple); color: var(--text2); }
+  .alert-boe  { background: rgba(52,211,153,0.08);  border-color: var(--green); color: var(--text2); }
+  .alert-info { background: rgba(79,142,247,0.08);  border-color: var(--accent); color: var(--text2); }
+  .alert strong { display: block; margin-bottom: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .alert-hot strong  { color: var(--red); }
+  .alert-l7 strong   { color: var(--purple); }
+  .alert-boe strong  { color: var(--green); }
+  .alert-info strong { color: var(--accent); }
+  /* ── ASCII diagram ── */
+  .ascii-diagram {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #7dd3fc;
+    overflow-x: auto;
+    margin: 20px 0;
+    white-space: pre;
+  }
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; margin: 20px 0; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th {
+    background: var(--bg3);
+    color: var(--text);
+    font-weight: 600;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  td { padding: 11px 16px; color: var(--text2); border-top: 1px solid var(--border); vertical-align: top; line-height: 1.6; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td.good  { color: var(--green); }
+  td.warn  { color: var(--amber); }
+  td.bad   { color: var(--red); }
+  td.bold  { color: var(--text); font-weight: 600; }
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  .card p { font-size: 13px; margin: 0; }
+  /* ── Scenario blocks ── */
+  .scenario {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .scenario-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .scenario-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .scenario-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); display: block; margin-bottom: 4px; }
+  .scenario-field p { font-size: 13px; margin: 0; }
+  /* ── Key takeaway ── */
+  .takeaway {
+    background: linear-gradient(135deg, rgba(79,142,247,0.1) 0%, rgba(124,92,252,0.1) 100%);
+    border: 1px solid rgba(79,142,247,0.3);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin: 32px 0 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .takeaway-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+  .takeaway-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent); margin-bottom: 4px; }
+  .takeaway p { font-size: 14px; color: var(--text); margin: 0; }
+  /* ── Lists ── */
+  ul, ol { padding-left: 22px; margin: 12px 0; color: var(--text2); }
+  li { margin-bottom: 8px; line-height: 1.7; }
+  li strong { color: var(--text); }
+  /* ── Number badges ── */
+  .num-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px; height: 22px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  /* ── Version badge ── */
+  .version-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0,201,167,0.12);
+    border: 1px solid rgba(0,201,167,0.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--accent3);
+    font-weight: 600;
+  }
+  /* ── Simulation block ── */
+  .simulation {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin: 24px 0;
+  }
+  .sim-header {
+    background: linear-gradient(135deg, #1a2035 0%, #1e2840 100%);
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sim-header h3 {
+    font-size: 16px;
+    margin: 0;
+    color: var(--text);
+  }
+  .sim-header h3::before { display: none; }
+  .sim-body { padding: 24px; }
+  .sim-step {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+  }
+  .sim-step-num {
+    width: 30px; height: 30px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    flex-shrink: 0;
+  }
+  .sim-step-content { flex: 1; }
+  .sim-step-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .sim-step-desc { font-size: 13px; color: var(--text2); }
+  /* ── Divider ── */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+  /* ── Interview section ── */
+  .interview-q {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent2);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    margin: 16px 0;
+  }
+  .interview-q .q-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent2); margin-bottom: 6px; }
+  .interview-q .q-text { font-size: 15px; color: var(--text); }
+  .interview-a {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 8px 0 24px;
+    font-size: 13.5px;
+    color: var(--text2);
+  }
+  /* ── Progress bar ── */
+  .progress-container { display: flex; gap: 4px; margin: 20px 0; }
+  .progress-item { flex: 1; height: 4px; border-radius: 2px; background: var(--border); }
+  .progress-item.done { background: var(--accent); }
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .toc-sidebar { display: none; }
+    .content { margin-left: 0; padding: 32px 24px 80px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .scenario-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     SIDEBAR TABLE OF CONTENTS
+     ═══════════════════════════════════════════════════════ -->
+<nav class="toc-sidebar">
+  <div class="toc-logo">
+    <h1>ELASTICSEARCH</h1>
+    <p>Staff Engineer Deep-Dive</p>
+  </div>
+  <span class="toc-section">Navigation</span>
+  <a class="toc-item" href="#p1">01 · Core Concepts &amp; Mental Models</a>
+  <a class="toc-item" href="#p2">02 · Architecture Deep Dive</a>
+  <a class="toc-item" href="#p3">03 · Trade-offs &amp; Design Decisions</a>
+  <a class="toc-item" href="#p4">04 · Failure Modes &amp; Resilience</a>
+  <a class="toc-item" href="#p5">05 · Scaling Strategies</a>
+  <a class="toc-item" href="#p6">06 · Real-World Engineering Decisions</a>
+  <a class="toc-item" href="#p7">07 · Google-Scale &amp; Beyond</a>
+  <a class="toc-item" href="#p8">08 · Interview Simulation</a>
+  <span class="toc-section">Tags</span>
+  <div style="padding: 0 16px; display: flex; flex-direction: column; gap: 6px;">
+    <span class="tag tag-hot">🔥 Common Interview Mistake</span>
+    <span class="tag tag-l7">⚡ L7/L8 Differentiator</span>
+    <span class="tag tag-boe">📐 Back-of-Envelope</span>
+    <span class="tag tag-mis">⚠️ Operational Pitfall</span>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════════════ -->
+<main class="content">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">Senior Staff Engineer Interview Prep</div>
+    <h1>Elasticsearch<br>Mastery Guide</h1>
+    <p>A complete, no-shortcuts deep-dive across 8 pillars — from first principles to Google-scale engineering. Designed for L6/L7/L8 interview performance.</p>
+    <div class="hero-meta">
+      <div class="hero-stat"><span class="label">Depth Level</span><span class="value">L7 / L8 Target</span></div>
+      <div class="hero-stat"><span class="label">Coverage</span><span class="value">8 Pillars</span></div>
+      <div class="hero-stat"><span class="label">Latest Version</span><span class="value">Elasticsearch 8.x (2025)</span></div>
+      <div class="hero-stat"><span class="label">Interview Level</span><span class="value">Staff / Principal</span></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 1: CORE CONCEPTS
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p1">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 01</div>
+      <div class="pillar-title">
+        <h2>🧠 Core Concepts &amp; Mental Models</h2>
+        <p>First principles, core abstractions, guarantees, and invariants</p>
+      </div>
+    </div>
+
+    <h3>The World Before Elasticsearch</h3>
+    <p>Before Elasticsearch, full-text search in production systems was a patchwork of painful compromises. Traditional relational databases like MySQL and PostgreSQL supported full-text search through <code>LIKE '%keyword%'</code> queries or rudimentary <code>FULLTEXT</code> indexes. The fundamental problem with these approaches was architectural: relational databases were designed around the principle of precise, structured retrieval — finding rows where a column exactly matches a value. Full-text search is a fundamentally different paradigm where relevance ranking, linguistic analysis, approximate matching, and sub-second latency at scale are all first-class requirements.</p>
+    <p>Before Elasticsearch's rise (it was first released in 2010 by Shay Banon), teams would deploy Apache Solr (which itself wraps Apache Lucene) directly, operating it as a standalone search server. Solr required significant operational expertise: managing ZooKeeper for distributed coordination, manually configuring schema.xml files, and dealing with a Java ecosystem that was brittle and opaque. Lucene itself — the underlying inverted index library — had to be embedded directly in application code, meaning every application team was responsible for shard management, replication, query routing, and cluster health themselves. There was no REST API, no JSON-native interface, and no auto-scaling story. Horizontal scaling meant writing custom routing logic and shard management code.</p>
+    <p>Logging and observability were equally painful. Teams would write millions of log lines into flat files or simple relational tables, and any analytical query that touched large volumes of event data would time out or require expensive pre-aggregations. There was no system that could simultaneously handle unstructured text search, structured filtering, and real-time aggregations on billions of documents. Elasticsearch unified these capabilities into a single, operationally coherent system accessible over a simple HTTP/JSON interface.</p>
+
+    <h3>The Core Abstraction &amp; Why It Is Powerful</h3>
+    <p>The core abstraction that Elasticsearch provides is the <strong>distributed inverted index exposed through a document-oriented JSON API</strong>. Let's unpack each component of this phrase deeply because each word carries significant engineering weight.</p>
+    <p>An <strong>inverted index</strong> is the fundamental data structure that makes full-text search possible at scale. In a traditional forward index, you map from a document identifier to its contents (document 1 contains "the quick brown fox"). In an inverted index, you flip this: you map from every term that appears in any document to the list of document IDs that contain that term. When a user searches for "brown fox," the engine performs a lookup on two terms simultaneously in the inverted index, retrieves the posting lists for each term, intersects them, scores the results by relevance using algorithms like BM25 (Best Match 25), and returns a ranked list of documents. This lookup is O(1) for the dictionary lookup plus O(k) for intersecting posting lists where k is proportional to the number of matching documents — dramatically faster than scanning every document for the presence of a keyword.</p>
+    <p>The <strong>distributed</strong> dimension means Elasticsearch automatically partitions this inverted index across multiple machines called shards. A shard is a fully self-contained Lucene index that can independently serve read and write requests. By distributing shards across nodes in a cluster, Elasticsearch achieves horizontal scalability: you can spread a trillion-document index across hundreds of nodes, parallelizing both indexing throughput and query execution. During search, a coordinating node fans out the query to all relevant shards simultaneously, collects partial results, merges them using a distributed merge sort, and returns the global top-k results — all transparently to the client.</p>
+    <p>The <strong>document-oriented JSON API</strong> means that Elasticsearch treats documents as the unit of storage and retrieval, and exposes all operations through a RESTful HTTP interface that speaks JSON. This is architecturally significant because it means Elasticsearch is schema-flexible: documents can have arbitrary nested fields, arrays, geo-coordinates, and date ranges — all handled natively. The JSON API means integration is trivial from any language or toolchain, and the dynamic mapping feature means Elasticsearch can auto-detect field types and configure appropriate analyzers without explicit schema definition.</p>
+
+    <h3>Fundamental Guarantees (and Non-Guarantees)</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title" style="color: var(--green);">✅ What ES Guarantees</div>
+        <ul style="font-size: 13px; padding-left: 16px; margin: 0;">
+          <li><strong>Near-Real-Time (NRT) Search:</strong> Documents become searchable within ~1 second of indexing by default (configurable refresh interval)</li>
+          <li><strong>Eventual Consistency:</strong> A document written to the primary shard will eventually be replicated to all replica shards, with no hard guarantee on replication lag</li>
+          <li><strong>Durability via WAL:</strong> Writes are appended to a translog (write-ahead log) before being acknowledged, ensuring durability across node restarts</li>
+          <li><strong>Shard-Level Atomicity:</strong> Individual document writes within a single shard are atomic — a document is either fully indexed or not at all</li>
+          <li><strong>Cross-Cluster High Availability:</strong> With replica shards, cluster can tolerate node failures without data loss (provided replication factor &gt; 1)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color: var(--red);">❌ What ES Does NOT Guarantee</div>
+        <ul style="font-size: 13px; padding-left: 16px; margin: 0;">
+          <li><strong>Strong Consistency / Read-Your-Writes:</strong> A write confirmed to the client may not be immediately visible on all nodes — replica reads can return stale data</li>
+          <li><strong>Cross-Document ACID Transactions:</strong> There is no native distributed transaction spanning multiple documents or indices</li>
+          <li><strong>Zero Data Loss on Split-Brain:</strong> Under certain network partition scenarios without careful quorum configuration, writes to both sides of a split may be irreconcilable</li>
+          <li><strong>Exactly-Once Delivery:</strong> The same document may be indexed multiple times if the client retries; idempotency requires using explicit document IDs</li>
+          <li><strong>Strict Schema Enforcement:</strong> Dynamic mapping can silently create fields with incorrect types (e.g., treating a numeric string as a keyword)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="alert alert-hot">
+      <strong>🔥 Common Interview Mistake</strong>
+      Candidates frequently say "Elasticsearch is strongly consistent." It is NOT. ES is an AP system (Available + Partition-tolerant) in CAP terms. Write operations are acknowledged once the primary shard has written — replicas are updated asynchronously. A stale read from a replica is entirely normal and expected. Confusing this with strong consistency is an immediate signal that the candidate lacks production experience.
+    </div>
+
+    <h3>Critical Invariants for Correctness</h3>
+    <p>Several invariants must always hold for Elasticsearch to operate correctly. Understanding these is what separates an operator from an architect:</p>
+    <ul>
+      <li><strong>Primary Term &amp; Sequence Number Ordering:</strong> Every write to a shard carries a monotonically increasing sequence number and a primary term (an epoch that increments when a new primary is elected). These two values together form a logical clock that prevents stale writes from overwriting newer data during node failures and re-elections. A shard replica will reject writes that arrive out of order.</li>
+      <li><strong>Shard Count Immutability:</strong> The number of primary shards in an index is fixed at creation time and cannot be changed without reindexing. This is because document routing is determined by <code>shard = hash(document_id) % num_primary_shards</code>. Changing the shard count would break the routing formula and make all previously indexed documents invisible to queries. This invariant has major operational consequences for capacity planning.</li>
+      <li><strong>Minimum Master Nodes (Quorum):</strong> Prior to ES 7.x, operators had to configure <code>minimum_master_nodes = (N/2 + 1)</code> to prevent split-brain. In ES 7+, this is automated via the voting configuration mechanism, but the quorum invariant still holds: a master can only be elected if a majority of master-eligible nodes agree. Violating this invariant results in two simultaneous active masters, causing data corruption.</li>
+      <li><strong>Lucene Segment Immutability:</strong> Once a Lucene segment is written to disk, it is never modified in place. Updates and deletes are implemented by marking documents as deleted in a <code>.del</code> file and writing new versions as fresh documents. This immutability is what makes Lucene segments safe to cache and replicate — their content never changes once written. Garbage collection happens through segment merging, which reads old segments and writes new consolidated segments.</li>
+    </ul>
+
+    <h3>Mental Model: Conceptual Architecture</h3>
+    <div class="ascii-diagram">
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ELASTICSEARCH CLUSTER                            │
+│                                                                     │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐           │
+│  │  NODE 1      │   │  NODE 2      │   │  NODE 3      │           │
+│  │  (Master +   │   │  (Data)      │   │  (Data)      │           │
+│  │   Data)      │   │              │   │              │           │
+│  │              │   │              │   │              │           │
+│  │ ┌──────────┐ │   │ ┌──────────┐ │   │ ┌──────────┐ │           │
+│  │ │ Shard P0 │ │   │ │ Shard R0 │ │   │ │ Shard P1 │ │           │
+│  │ │(Primary) │ │   │ │(Replica) │ │   │ │(Primary) │ │           │
+│  │ │          │ │   │ │          │ │   │ │          │ │           │
+│  │ │[Lucene   │ │   │ │[Lucene   │ │   │ │[Lucene   │ │           │
+│  │ │ Segments]│ │   │ │ Segments]│ │   │ │ Segments]│ │           │
+│  │ └──────────┘ │   │ └──────────┘ │   │ └──────────┘ │           │
+│  │ ┌──────────┐ │   │ ┌──────────┐ │   │ ┌──────────┐ │           │
+│  │ │ Shard R1 │ │   │ │ Shard P2 │ │   │ │ Shard R2 │ │           │
+│  │ │(Replica) │ │   │ │(Primary) │ │   │ │(Replica) │ │           │
+│  │ └──────────┘ │   │ └──────────┘ │   │ └──────────┘ │           │
+│  └──────────────┘   └──────────────┘   └──────────────┘           │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────┐           │
+│  │              CLUSTER STATE (in-memory)              │           │
+│  │  Index metadata · Shard allocation · Node registry  │           │
+│  │  Routing table · Template configs · Aliases         │           │
+│  └─────────────────────────────────────────────────────┘           │
+│                              │                                      │
+│              Published to ALL nodes via Gossip/Raft                 │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │   CLIENT LAYER      │
+                    │  REST API (HTTP)    │
+                    │  Transport (TCP)    │
+                    └─────────────────────┘
+
+Document Routing:  shard_id = hash(routing_key) % num_primary_shards
+Lucene Index:      Segments → Segment Merges → .fdt .fdx .tim .tip .doc
+Translog:          Every write → WAL → flush to Lucene on fsync interval</div>
+
+    <div class="alert alert-l7">
+      <strong>⚡ L7/L8 Differentiator</strong>
+      Understanding that a Lucene index is itself composed of multiple immutable segments — and that Elasticsearch manages a fleet of these Lucene indexes (one per shard) — is critical at L7+. The segment merge policy directly impacts write amplification, disk I/O patterns, and query performance. Discussing TieredMergePolicy vs LogByteSizeMergePolicy in context of write-heavy vs read-heavy workloads signals deep expertise.
+    </div>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 1</div>
+        <p>Elasticsearch's power comes from making a distributed, horizontally-scalable inverted index (which is fundamentally a read-optimized immutable data structure) feel as simple as a REST API over JSON — but its consistency model, shard immutability, and NRT-not-real-time semantics are the landmines that distinguish experienced practitioners from novices.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 2: ARCHITECTURE DEEP DIVE
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p2">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 02</div>
+      <div class="pillar-title">
+        <h2>🏗️ Architecture Deep Dive</h2>
+        <p>Internal components, write/read paths, data layout, and flow control</p>
+      </div>
+    </div>
+
+    <h3>Internal Components &amp; Their Responsibilities</h3>
+
+    <h4>Cluster State &amp; Master Node</h4>
+    <p>The <strong>master node</strong> is the brain of the cluster — it is the only node authorized to make global cluster state changes. The cluster state is a comprehensive data structure stored in memory on all nodes (replicated from master) that contains: the index-level metadata (settings, mappings, aliases), the shard allocation table (which shard lives on which node), the list of live nodes, and index templates. The master is elected through a Raft-based consensus process (ES 7+ replaced the older Zen Discovery with Raft for provably correct leader election). Any change to cluster state — creating an index, reallocating a shard, removing a node — must go through the master, which publishes the new state to all nodes synchronously (or fails the operation).</p>
+    <p>In ES 7+, dedicated master-eligible nodes are strongly recommended at scale. These nodes are configured with <code>node.roles: [ master ]</code> and perform no data serving, which prevents GC pauses from data operations from causing master election timeouts — a significant operational improvement over earlier versions where any node could be master and heavy indexing could cause false master failures.</p>
+
+    <h4>Data Nodes &amp; Shard Management</h4>
+    <p>Data nodes are responsible for storing shard data and executing search/aggregation queries on those shards. Each shard is a fully functional Lucene index running in-process on the JVM. A data node hosts multiple shards (both primaries and replicas), managing their lifecycle, memory pressure, and I/O scheduling. Within a data node, each shard runs in its own Lucene directory on disk, isolated from other shards.</p>
+    <p>The <strong>Index Shard</strong> is the fundamental unit of allocation and failure recovery. When a node fails, the master detects the failure (via missed heartbeats), marks all shards on that node as unavailable, and initiates recovery by promoting replica shards of the failed primaries to primary status on other nodes. The recovery process involves copying shard data (either from a peer recovery or from snapshot storage) and replaying the translog of any writes that occurred after the last Lucene commit — ensuring no data loss.</p>
+
+    <h4>Coordinating Nodes</h4>
+    <p>Any node in an Elasticsearch cluster can act as a coordinating node for any request — it's a role that every node fills for requests that arrive at it, not a dedicated node type (though you can have dedicated coordinating-only nodes). When a search request arrives at a coordinating node, it is responsible for: parsing and validating the query, determining which shards need to be consulted (using the routing table from cluster state), fanning out sub-queries to those shards in parallel, collecting partial results, performing the final merge/sort/scoring, and returning the final response. This scatter-gather pattern means that complex aggregation queries may require significant heap memory on the coordinating node to hold intermediate results.</p>
+
+    <h4>The Translog (Write-Ahead Log)</h4>
+    <p>The translog is Elasticsearch's durability mechanism and is one of the most commonly misunderstood components. When a document is indexed, it is first written to the translog (a sequential append-only log file on disk), then added to an in-memory buffer (the Lucene index buffer). The client receives an acknowledgment at this point — the document is durable (it will survive a JVM crash because it's in the translog), but it is not yet searchable (it's still in the Lucene buffer, not in a committed segment). Periodically (every 1 second by default), a <strong>refresh</strong> operation creates a new in-memory Lucene segment from the buffer and makes it visible to search. This is the source of ES's "near-real-time" (not real-time) search characteristic — there is up to 1 second of visibility lag by default.</p>
+    <p>The translog continues accumulating until either a <strong>flush</strong> is triggered (a full Lucene commit + translog rotation) or it grows beyond its configured size. A flush is more expensive than a refresh: it performs an fsync on all Lucene segments and replaces the translog with a new empty one. If a node crashes, on recovery it replays the translog from the last committed Lucene checkpoint — exactly like PostgreSQL's WAL replay. In ES 8.x, translog operations can also be asynchronously acknowledged for higher throughput workloads (<code>index.translog.durability: async</code>) at the cost of up to the async interval of data loss on crash.</p>
+
+    <h3>Full Write Path — Step by Step</h3>
+    <div class="ascii-diagram">
+CLIENT                COORDINATING NODE          PRIMARY SHARD         REPLICA SHARDS
+  │                          │                         │                      │
+  │── PUT /index/_doc/1 ──▶  │                         │                      │
+  │   { "field": "value" }   │                         │                      │
+  │                          │                         │                      │
+  │                    [Route Request]                  │                      │
+  │                    hash(doc_id) % shards            │                      │
+  │                          │── Forward to Primary ──▶│                      │
+  │                          │                         │                      │
+  │                          │                   [Write Translog]             │
+  │                          │                   [Add to Lucene Buffer]       │
+  │                          │                   [Apply to in-memory index]   │
+  │                          │                         │                      │
+  │                          │                         │── Replicate ────────▶│
+  │                          │                         │   (parallel, async)  │
+  │                          │                         │◀─── ACK ─────────────│
+  │                          │                         │                      │
+  │                          │◀────── ACK from Primary─│                      │
+  │◀──────── 201 Created ────│                         │                      │
+  │                          │                         │                      │
+  │  [~1 sec later - Refresh]│                         │                      │
+  │                          │                 [Lucene Buffer → New Segment]  │
+  │                          │                 [Segment now searchable]       │
+  │                          │                         │                      │
+  │  [~30 min - Flush]       │                         │                      │
+  │                          │                 [fsync all segments]            │
+  │                          │                 [Rotate translog]              │</div>
+
+    <h3>Full Read / Search Path — Step by Step</h3>
+    <div class="ascii-diagram">
+CLIENT          COORDINATING NODE         SHARD A (P0)      SHARD B (P1)   SHARD C (P2)
+  │                    │                      │                  │               │
+  │──GET /index/_search▶                      │                  │               │
+  │  {                 │                      │                  │               │
+  │   "query":{...},   │                      │                  │               │
+  │   "size": 10       │  ┌──────────────────────────────────────────────────┐  │
+  │  }                 │  │  QUERY PHASE: Fan out to all shards simultaneously│  │
+  │                    │──┼──────────────────▶│                  │               │
+  │                    │──┼──────────────────────────────────────▶│              │
+  │                    │──┼──────────────────────────────────────────────────────▶
+  │                    │  └──────────────────────────────────────────────────┘  │
+  │                    │                      │                  │               │
+  │                    │                [Execute locally]   [Execute locally] [Execute]
+  │                    │                [Score top 10]     [Score top 10]  [Score top 10]
+  │                    │                [Return doc_ids]   [Return doc_ids][Return ids]
+  │                    │                    + scores             + scores     + scores
+  │                    │                      │                  │               │
+  │                    │◀─────────────────────│                  │               │
+  │                    │◀────────────────────────────────────────│               │
+  │                    │◀───────────────────────────────────────────────────────│
+  │                    │                      │                  │               │
+  │                    │  [MERGE: Global top-k sort across all shard results]
+  │                    │  [Select top 10 from combined results]
+  │                    │                      │                  │               │
+  │                    │  ┌────────────────────────────────────────────────────┐ │
+  │                    │  │ FETCH PHASE: Get full document sources for top 10  │ │
+  │                    │──┼────────▶ fetch docs 2,7 ──────────────────────────┤ │
+  │                    │──┼──────────────────────────────── fetch doc 5 ───────┤ │
+  │                    │  └────────────────────────────────────────────────────┘ │
+  │                    │                      │                  │               │
+  │◀──── Final Results─│                      │                  │               │
+  │      (10 docs)     │                      │                  │               │</div>
+
+    <div class="alert alert-l7">
+      <strong>⚡ L7/L8 Differentiator</strong>
+      The two-phase query-then-fetch model is critical to understand. In the query phase, each shard scores its local top-N documents and returns only document IDs + scores. The coordinating node merges these into a global top-N. Only then does it fetch the full source documents (in the fetch phase) for just those top-N documents. This minimizes network transfer: for a query returning 10 results from 100 shards, you score 100×N documents but only transfer 10 full documents over the network. Candidates who describe ES as doing a single scatter-gather miss this critical two-phase optimization.
+    </div>
+
+    <h3>On-Disk and In-Memory Data Layout</h3>
+
+    <h4>Lucene Segment Files</h4>
+    <p>A Lucene segment is composed of multiple files that together constitute a complete, searchable, immutable inverted index for the subset of documents assigned to it. Understanding these files is crucial for diagnosing disk usage and I/O patterns:</p>
+    <ul>
+      <li><strong><code>.tim</code> / <code>.tip</code> (Term Dictionary):</strong> The sorted list of all terms that appear in the segment, along with a pointer to the posting list for each term. This is the "index into the index" — you do a binary search or trie lookup here to find your term, then follow the pointer to the postings. The <code>.tip</code> file is a term index that maps term prefixes to positions in the <code>.tim</code> file for faster navigation.</li>
+      <li><strong><code>.doc</code> (Postings Lists):</strong> For each term, the ordered list of document IDs that contain that term, plus optional position data (for phrase queries) and payload data. This is compressed using frame-of-reference (FOR) and variable byte encoding, making it extremely compact. A posting list for a common term like "the" might contain millions of document IDs, compressed to a few megabytes.</li>
+      <li><strong><code>.fdt</code> / <code>.fdx</code> (Stored Fields):</strong> The original field values for each document (the <code>_source</code>). The <code>.fdt</code> file contains the raw data, and <code>.fdx</code> is an index into it for O(1) random access. These files are used during the fetch phase to retrieve full document sources. By default, the entire original JSON document is stored here (compressed with LZ4).</li>
+      <li><strong><code>.dvd</code> / <code>.dvm</code> (Doc Values):</strong> Column-oriented data storage for numeric fields, keyword fields, and dates. Doc values store field values in a column-store format rather than row-store, enabling extremely efficient sorting, aggregations, and script operations. Without doc values, sorting requires loading all field values into heap memory (field data cache), which is catastrophically expensive at scale. Doc values are memory-mapped and accessed in O(1) time per document.</li>
+      <li><strong><code>.si</code> (Segment Info):</strong> Metadata about the segment: number of documents, which files belong to it, the codec used, etc.</li>
+      <li><strong><code>segments_N</code>:</strong> The segment commit point — a file that lists all segments currently part of the Lucene index. An atomic rename of this file is how Lucene makes segment additions/merges atomic and crash-safe.</li>
+    </ul>
+
+    <h4>The Inverted Index In Detail</h4>
+    <div class="ascii-diagram">
+Document 1: "Elasticsearch is a distributed search engine"
+Document 2: "Elasticsearch scales horizontally across shards"
+Document 3: "Search engines use inverted indexes for speed"
+
+═══════════════════════════════════════════
+          INVERTED INDEX (simplified)
+═══════════════════════════════════════════
+Term             │ Doc IDs     │ Positions
+─────────────────┼─────────────┼──────────
+"across"         │ [2]         │ [4]
+"distributed"    │ [1]         │ [3]
+"elasticsearch"  │ [1, 2]     │ [0], [0]
+"engine"         │ [1, 3]     │ [5], [2]
+"engines"        │ [3]         │ [1]
+"horizontally"   │ [2]         │ [3]
+"indexes"        │ [3]         │ [5]
+"inverted"       │ [3]         │ [4]
+"is"             │ [1]         │ [1]
+"scales"         │ [2]         │ [2]
+"search"         │ [1, 2, 3]  │ [4],[1],[0]
+"shards"         │ [2]         │ [5]
+"speed"          │ [3]         │ [7]
+"use"            │ [3]         │ [3]
+
+Text Analysis Pipeline (before indexing):
+  Input: "Elasticsearch is a DISTRIBUTED Search Engine"
+  1. Character filter → "Elasticsearch is a DISTRIBUTED Search Engine"
+  2. Tokenizer        → ["Elasticsearch","is","a","DISTRIBUTED","Search","Engine"]
+  3. Token filter 1 (lowercase)  → ["elasticsearch","is","a","distributed","search","engine"]
+  4. Token filter 2 (stop words) → ["elasticsearch","distributed","search","engine"]
+  5. Token filter 3 (stemmer)    → ["elasticsearch","distribut","search","engin"]
+  → These normalized tokens are stored in the inverted index</div>
+
+    <h3>Back-Pressure and Flow Control</h3>
+    <p>Elasticsearch manages back-pressure through several mechanisms that operate at different layers. Understanding these is critical for operating ES at scale without triggering cascading failures:</p>
+    <p>The <strong>indexing circuit breaker</strong> monitors the estimated heap memory required for indexing operations. If adding new documents to the Lucene buffer would cause estimated heap usage to exceed a threshold (default: 10% of JVM heap), the circuit breaker rejects new indexing requests with a <code>429 Too Many Requests</code> response. This prevents out-of-memory errors that would cause a full JVM crash, which is far more expensive to recover from than a brief period of write rejection.</p>
+    <p>The <strong>bulk queue</strong> is a bounded queue on each node that buffers incoming bulk indexing requests before they are processed by the indexing thread pool. The thread pool itself is bounded (typically configured to the number of available CPUs). When both the thread pool and the queue are full, new requests are rejected. Operators should monitor <code>thread_pool.bulk.rejected</code> as a key signal of sustained overload.</p>
+    <p>The <strong>merge throttling</strong> mechanism limits the I/O bandwidth consumed by segment merge operations. If unconstrained, segment merges (which are CPU and I/O intensive) can starve the indexing path, causing indexing latency to spike. Elasticsearch uses an adaptive merge throttle (<code>indices.store.throttle.max_bytes_per_sec</code>) to limit merge bandwidth, trading off slightly higher segment count (and therefore slightly slower search) for stable indexing throughput.</p>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 2</div>
+        <p>Elasticsearch's write path is a multi-stage pipeline (translog → Lucene buffer → refresh → segment → merge → flush) and its read path is a two-phase scatter-gather (query phase for scores, fetch phase for source documents) — understanding both at the component level is mandatory for diagnosing production issues and making architectural decisions.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 3: TRADE-OFFS
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p3">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 03</div>
+      <div class="pillar-title">
+        <h2>⚖️ Trade-offs &amp; Design Decisions</h2>
+        <p>CAP theorem, PACELC analysis, consistency models, and operational trade-offs</p>
+      </div>
+    </div>
+
+    <h3>CAP Theorem Analysis</h3>
+    <p>Elasticsearch is unambiguously an <strong>AP system</strong> (Available + Partition-tolerant). During a network partition, Elasticsearch will continue to serve both reads and writes on the side of the partition that contains the active primary shards and the elected master, even if that means replica shards on the other side of the partition become stale. The cluster state will reflect unavailable replicas (yellow cluster health) rather than refusing service. This is the correct choice for Elasticsearch's primary use cases (search, logging, analytics) where availability is more valuable than strict consistency.</p>
+    <p>The specific tradeoff in ES's design: <strong>writes are acknowledged from the primary shard and replicated asynchronously to replicas</strong>. A client that writes to Node A and then immediately reads from Node B (which serves a replica) may see the old value or no value at all, because replication hasn't completed. ES provides a <code>wait_for_active_shards</code> parameter that can increase the number of copies that must acknowledge before the write is confirmed — at the extreme, setting it to <code>all</code> approximates strong consistency at the cost of availability (any replica failure now causes write failures).</p>
+
+    <div class="alert alert-hot">
+      <strong>🔥 Common Interview Mistake</strong>
+      Saying "Elasticsearch is CP because writes go to the primary first" is wrong. The primary shard acknowledgment provides primary-level consistency for a single shard write, but the cluster as a whole operates with eventual consistency between primary and replicas. The <code>wait_for_active_shards</code> default is 1 (just the primary), not ALL — meaning replicas are updated asynchronously after the client has received a success response.
+    </div>
+
+    <h3>PACELC Analysis</h3>
+    <p>PACELC (Partition: Available/Consistent; Else: Latency/Consistency) gives us a richer picture of Elasticsearch's tradeoffs even when the network is healthy:</p>
+    <ul>
+      <li><strong>Under Partition (P):</strong> ES chooses Availability (A). The cluster continues serving requests even if some replicas are unreachable, accepting the risk of stale reads.</li>
+      <li><strong>Else (no partition, E):</strong> ES chooses Latency (L). In normal operation, reads are served immediately from any replica without any coordination overhead. There is no Paxos/Raft round-trip for reads — any replica can serve reads independently, achieving the lowest possible read latency but allowing momentarily stale reads. This is a deliberate latency-over-consistency choice.</li>
+    </ul>
+    <p>The implication is that Elasticsearch optimizes for <strong>low-latency, high-throughput reads in the common case</strong> and accepts eventual consistency as the cost. This makes it an excellent choice for use cases where slight staleness is acceptable (search, analytics, dashboards) and a poor choice for use cases where read-after-write consistency is required (financial ledgers, inventory management).</p>
+
+    <h3>Trade-off Matrix</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Trade-off Dimension</th>
+            <th>Default Choice</th>
+            <th>Why This Default</th>
+            <th>How to Change (and Cost)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="bold">Consistency vs. Availability</td>
+            <td>Eventual consistency (AP)</td>
+            <td>Search &amp; analytics tolerate slight staleness; availability is paramount for user-facing search</td>
+            <td><code>wait_for_active_shards=all</code>: synchronous replication to all replicas before ACK. Cost: write latency spikes on any replica slowness; write unavailability on any replica failure</td>
+          </tr>
+          <tr>
+            <td class="bold">Refresh Interval (Search Latency vs. Write Throughput)</td>
+            <td>1 second refresh</td>
+            <td>Near-real-time search without sacrificing too much write throughput (each refresh creates a new segment, too frequent = too many small segments)</td>
+            <td>Set to <code>-1</code> during bulk indexing: no automatic refresh, dramatically higher indexing throughput. Set to <code>30s</code> or <code>60s</code> for log pipelines. Set to <code>100ms</code> for near-RT requirements at ~20% throughput penalty</td>
+          </tr>
+          <tr>
+            <td class="bold">Translog Durability vs. Indexing Throughput</td>
+            <td><code>request</code> (fsync per write)</td>
+            <td>Durability: every acknowledged write is durable even on immediate power loss</td>
+            <td><code>async</code> durability: fsync at interval (default 5s). Up to 5 seconds of data loss on hard crash, but ~2–3x higher indexing throughput. Acceptable for log ingestion, not for financial records</td>
+          </tr>
+          <tr>
+            <td class="bold">Replica Count (Availability vs. Storage/Write Cost)</td>
+            <td>1 replica (2 copies total)</td>
+            <td>Tolerates one node failure without data loss; doubles storage cost but provides strong availability</td>
+            <td>0 replicas for dev/testing. 2+ replicas for critical production. Each replica multiplies storage cost AND write amplification (every write goes to N+1 shards). More replicas = more read throughput (can serve reads from replicas)</td>
+          </tr>
+          <tr>
+            <td class="bold">Shard Count (Parallelism vs. Overhead)</td>
+            <td>1 shard (ES 8.x default changed from 5→1)</td>
+            <td>Avoid over-sharding: each shard has fixed overhead (file handles, heap segments, recovery cost). Fewer shards = lower overhead for small indices</td>
+            <td>Scale shard count with data volume: ~30–50GB per shard is a healthy range. Too few shards = single-node bottleneck. Too many = "oversharding" with excessive coordination overhead. Cannot change after index creation — must reindex.</td>
+          </tr>
+          <tr>
+            <td class="bold">Doc Values (Column Store) vs. Field Data Cache</td>
+            <td>Doc values enabled by default on all keyword/numeric fields</td>
+            <td>Doc values are disk-backed, memory-mapped, and accessed on demand. Field data cache loads entire field into heap — catastrophic for high-cardinality fields</td>
+            <td>Disable doc values ONLY if you never sort/aggregate on a field and need to reduce disk usage. Once disabled, aggregations fall back to the field data cache, which can cause OOM errors on high-cardinality keyword fields</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Consistency Models in Elasticsearch</h3>
+    <p><strong>Read-your-writes:</strong> Not guaranteed by default. If your application requires that after writing a document you can immediately read it back, you have two options: (1) use the document's <code>_id</code> to do a GET request by ID (which routes to the primary shard, ensuring you get the latest version), or (2) pass <code>?preference=_local</code> consistently routing reads to the same shard copy. Alternatively, using <code>?refresh=wait_for</code> on the indexing request causes ES to wait for the document to become searchable before acknowledging — at the cost of 1 refresh interval (up to 1 second) of added write latency.</p>
+    <p><strong>Causal consistency:</strong> Achievable within a single index with explicit use of <code>if_seq_no</code> and <code>if_primary_term</code> parameters for optimistic concurrency control. These allow you to implement compare-and-swap semantics: "update this document only if it hasn't changed since version X." This is how you prevent lost updates in concurrent modification scenarios without distributed transactions.</p>
+    <p><strong>Strong consistency:</strong> Not natively supported across multiple documents. For use cases requiring strong consistency, Elasticsearch is the wrong database. Within a single shard, writes are serialized at the primary shard level, providing shard-level sequential consistency — but this doesn't compose across shards.</p>
+
+    <div class="alert alert-l7">
+      <strong>⚡ L7/L8 Differentiator</strong>
+      Discussing how ES 8.x changed the default shard count from 5 to 1 and what this means operationally shows current knowledge. The old default of 5 shards was designed for clusters that commonly had 5+ nodes — but it caused massive over-sharding for small indices. The new default of 1 is correct for most small-to-medium indices; scaling shard count should be data-volume-driven, not chosen arbitrarily. Additionally, ES 8.x introduced the concept of "optional" replicas — replicas that the cluster will try to allocate but won't mark the cluster yellow if they can't be placed. This is important for cost-optimized deployments on spot instances.
+    </div>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 3</div>
+        <p>Every ES configuration knob is a point on a trade-off curve between consistency, latency, throughput, durability, and cost — and the right setting is always "it depends on your SLO" rather than a single universal answer; the ability to map use-case requirements to specific configuration choices is the hallmark of an L7+ engineer.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 4: FAILURE MODES
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p4">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 04</div>
+      <div class="pillar-title">
+        <h2>🛡️ Failure Modes &amp; Resilience</h2>
+        <p>Detection, automatic recovery, data loss risks, and manual intervention</p>
+      </div>
+    </div>
+
+    <h3>Failure Scenario Analysis</h3>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Single Node Crash — Follower/Replica Node</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Master detects missed heartbeats from the failed node within <code>cluster.fault_detection.follower_check.retry_count × interval</code> (default ~30 seconds). The node is removed from the cluster state.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>All primary shards on the failed node had been running on this replica node — primary shards are already on other nodes and remain active. Replica shards on the dead node are marked "unassigned." Master initiates peer recovery: copies shard data from the existing primary to a surviving node, then replays any translog operations since the last checkpoint.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>Zero data loss — primary shards are on other nodes and remain healthy. Queries can still be served (potentially with reduced replica read scaling). Cluster health transitions to YELLOW (all primaries active, not all replicas).</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Monitor recovery progress with <code>GET /_cat/recovery</code>. Consider temporarily increasing <code>indices.recovery.max_bytes_per_sec</code> to speed recovery if network is not saturated. Replace the failed node to restore GREEN health.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Single Node Crash — Primary Shard Host</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Same heartbeat mechanism. Master immediately detects primary shard loss and marks affected shards as "initializing" on surviving replica nodes.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>Master promotes the best available replica to become the new primary. "Best" is determined by the most up-to-date replica (highest sequence number from the translog). The promoted replica undergoes a "primary terms" increment and begins accepting new writes. Other replicas sync from the new primary.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>Potential for very small data loss: writes that were in-flight to the primary and had not yet been replicated to any replica may be lost. With <code>wait_for_active_shards=1</code> (default), a write is confirmed once the primary acknowledges it — if the primary crashes before replicating, that write is lost. With <code>wait_for_active_shards=all</code>, loss is prevented but availability is reduced.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Verify cluster health transitions from RED to YELLOW to GREEN as recovery progresses. Check <code>GET /_cluster/health?wait_for_status=green&timeout=30s</code>. If an index goes RED, check shard allocation explanations with <code>GET /_cluster/allocation/explain</code>.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Simultaneous Minority Node Failures</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Each failed node detected individually via heartbeat timeouts. Master remains elected because majority of master-eligible nodes are still alive (e.g., 2 of 5 nodes fail: 3 surviving nodes include quorum of 3 for a 5-node cluster with quorum of 3).</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>Master redistributes unallocated shards from failed nodes across surviving nodes. Shard recovery runs in parallel across multiple destinations. This is the most common production failure scenario and ES handles it well — provided the surviving nodes have sufficient disk and heap to absorb the additional shards.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>Depends on replica count. With 1 replica: if primary and its single replica happen to be on the two failed nodes simultaneously, that shard is RED (data temporarily unavailable until one node recovers). True data loss only occurs if ALL copies of a shard are on failed nodes AND the nodes cannot be recovered.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>If surviving nodes lack resources to accept redistributed shards, temporarily disable rebalancing (<code>cluster.routing.rebalance.enable: none</code>) to prevent additional churn. Bring failed nodes back online to restore shard placement without full recovery.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Network Partition — Quorum Side Has Majority</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Nodes on the minority side lose contact with the master. After fault detection timeout, they attempt to elect a new master — but cannot form quorum. They remain master-less and stop accepting writes, serving reads from existing segments only.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>The majority side continues operating normally with the existing master (or elects a new one from its members). When the partition heals, minority-side nodes rejoin the cluster and receive the authoritative cluster state from the master. Any segment data they have is validated against the primary term and sequence number — stale data is discarded and re-synced from primary shards.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>Minimal on the majority side — it continues accepting writes normally. The minority side serves stale reads during the partition. On recovery, minority-side replicas must re-sync from primaries, which may involve discarding some locally-indexed but non-replicated documents.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Monitor with <code>GET /_cluster/health</code> from both sides. Once partition heals, watch for shard recovery activity and ensure recovering nodes have sufficient bandwidth.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Network Partition — Even Split, No Quorum Possible</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Both sides lose contact with enough master-eligible nodes to form quorum. Both sides attempt master election and both fail — or if they were previously split, both lose their master after the configured timeout.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>In ES 7+ with the new Raft-based election, this is handled gracefully: neither side elects a master, so neither side can make cluster-state changes (though existing writes to existing primaries on each side may still be accepted temporarily). When partition heals, the side with the higher primary term wins and the other side must re-sync. This is a significant improvement over ES 6.x where this could cause split-brain.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>Moderate. Writes accepted by primaries on both sides during the split period may conflict. The resolution uses the highest primary term — the side that made fewer changes (lost the election race) must discard writes. For critical data, ES 7+ offers better protection than earlier versions, but this scenario still warrants careful monitoring.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>If the partition is prolonged, consider stopping one side of the cluster manually to avoid data divergence. On recovery, inspect <code>_cluster/state</code> and check for any uncommitted operations before re-enabling writes.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💥 Split-Brain (Legacy ES &lt;7) / Two Active Masters</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>In legacy deployments with incorrect <code>minimum_master_nodes</code> configuration (or misconfigured Zen Discovery), both sides of a partition may elect a master. Each master starts accepting cluster-state changes independently, causing cluster state divergence.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>None — split-brain is catastrophic in ES &lt;7. Both masters accept writes, allocate shards, and make index changes. When the partition heals, there is no safe automatic resolution: both cluster states claim to be authoritative.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>High. Data written during the split to indices managed by both masters is irreconcilable without manual intervention. Index mappings may have diverged, making documents unsearchable.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Stop both clusters. Identify the "correct" side (usually the one that had the original master). Restore the other side from snapshot. Re-import any data written to the sacrificed side if available. ES 7+ eliminates this scenario with Raft-based consensus — this is a primary reason to upgrade.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">🐌 Slow / Degraded Node (Hot Replica / GC Pressure)</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Slow nodes don't trigger normal failure detection — they appear "alive" to heartbeats but cause query timeouts. Visible via slow query logs (<code>index.search.slowlog</code>), elevated p99 latencies, and the "hot threads" API: <code>GET /_nodes/hot_threads</code>. Circuit breakers may start tripping on the slow node.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>ES has limited automatic remediation for slow nodes. The adaptive replica selection (ARS) feature in ES 6.1+ dynamically routes searches to faster replicas, effectively deprioritizing slow nodes for read traffic. This is done using response time exponential moving averages to select the "best" shard copy for each request.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>No data loss — the node is alive and durable. However, if the node is lagging on replication, it may be serving stale reads for longer than expected. If the node is experiencing extreme GC pauses, it may fail heartbeats and get ejected from the cluster, triggering shard redistribution.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Investigate GC pauses with <code>GET /_nodes/stats/jvm</code>. Check for field data cache OOM (<code>indices.fielddata.breaker.tripped</code>). For hot nodes, use shard exclusion to drain traffic: <code>PUT /_cluster/settings { "transient": { "cluster.routing.allocation.exclude._ip": "1.2.3.4" } }</code>.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">💾 Disk Corruption or Partial Write</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Lucene validates segment files using checksums (CRC-32) when loading. A corrupt segment file is detected at shard load time (node restart or recovery) and causes the shard to fail to load. Visible in logs as <code>CorruptIndexException</code>. Elasticsearch 6.x+ also added <code>elasticsearch-shard verify-index</code> CLI tool for manual validation.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>If a replica of the corrupted shard is available on another node, the master will promote the uncorrupted replica to primary and initiate peer recovery from it to a new location. The corrupt shard on the failed node is abandoned.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>No data loss if at least one non-corrupt copy exists. Data loss if all copies of a shard are corrupt — possible if disk corruption affects multiple nodes (e.g., a SAN/RAID issue). This underscores the importance of regular snapshots to a separate storage system (S3, GCS) as a second line of defense.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Use <code>POST /_cluster/reroute</code> with <code>"allocate_stale_primary"</code> action as a last resort to force-allocate a corrupt shard (accepting data loss). Always restore from snapshot first if available. Never run on a 0-replica, no-snapshot configuration in production.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">⏱️ Clock Skew Between Nodes</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>Elasticsearch checks time synchronization between nodes using the master node's clock as reference. ES 7+ actively warns when detected clock skew exceeds 200ms via cluster health warnings. Severe skew can cause master elections to behave unexpectedly because Raft uses timeouts that are wall-clock dependent.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>Limited. ES will log warnings but not automatically remedy clock drift. NTP/chrony on the OS level must be configured correctly. In Kubernetes, the host clock is shared with containers — ensuring the host NTP sync is critical.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>No direct data loss from clock skew. However, time-range queries (<code>@timestamp &gt;= now-1h</code>) that span nodes with different clocks may produce inconsistent results — documents near the boundary of a time window may be included or excluded inconsistently. Also, Kibana dashboards using relative time ranges may behave incorrectly.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Enforce NTP synchronization across all ES nodes. Use <code>GET /_nodes/stats</code> to check <code>timestamp</code> values and manually compare across nodes. Add clock skew monitoring as a separate infrastructure alert — don't rely on ES's own warnings.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">🌩️ Thundering Herd After Recovery</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Detection</label><p>When a previously unavailable node or index comes back online, many clients that had been retrying or queuing requests may simultaneously flood the recovering node. This is observable as a sudden spike in CPU, heap usage, and query latency immediately after recovery completion.</p></div>
+        <div class="scenario-field"><label>Automatic Recovery</label><p>ES has limited built-in thundering herd protection. The circuit breakers will activate if memory pressure becomes critical, rejecting some requests with 429s. The thread pool queue provides some buffering but can be exhausted quickly.</p></div>
+        <div class="scenario-field"><label>Data Loss Risk</label><p>No data loss. However, the recovering node may be re-crashed by the load surge, causing another recovery cycle — a failure amplification loop. This is particularly dangerous for hot data nodes that hold highly-queried shards.</p></div>
+        <div class="scenario-field"><label>Manual Action</label><p>Implement circuit breakers in client libraries (exponential backoff with jitter). Add a warm-up period in deployment pipelines: after bringing a node online, gradually re-enable it in the load balancer. Use <code>cluster.routing.allocation.node_concurrent_recoveries</code> to throttle concurrent shard recoveries.</p></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-title">🌊 Cascading Failures Prevention</div>
+      <div class="scenario-grid">
+        <div class="scenario-field"><label>Pattern Description</label><p>One node fails → shards redistribute to surviving nodes → surviving nodes become overloaded (more shards = more heap, more I/O) → circuit breakers trip or GC pressure increases → nodes become slow → master election timeouts → another node is evicted → cascade accelerates. This is the most dangerous failure pattern in ES operations.</p></div>
+        <div class="scenario-field"><label>Prevention Strategy</label><p>
+          1. <strong>Capacity headroom:</strong> Run cluster at &lt;70% disk usage and &lt;60% heap usage to absorb one node failure<br>
+          2. <strong>Balanced shard distribution:</strong> Use automatic shard balancing with <code>cluster.routing.allocation.balance.shard</code> to prevent hot nodes<br>
+          3. <strong>Freeze unneeded indices:</strong> Cold/frozen tier removes searchable-snapshot shards from heap pressure<br>
+          4. <strong>Shard-level circuit breakers:</strong> Prevent single runaway queries from collapsing an entire node<br>
+          5. <strong>Delayed rebalancing:</strong> <code>index.unassigned.node_left.delayed_timeout: 5m</code> prevents immediate shard storm when a node briefly disconnects
+        </p></div>
+      </div>
+    </div>
+
+    <div class="alert alert-boe">
+      <strong>📐 Back-of-Envelope — Shard Recovery Speed</strong>
+      A 50GB shard recovering from a peer node over a 1Gbps network link takes: 50GB ÷ 125MB/s (theoretical max at 1Gbps) = ~400 seconds = ~6.7 minutes, assuming no other traffic. With ES's default recovery throttle of 40MB/s: 50GB ÷ 40MB/s = ~1,250 seconds = ~20 minutes. For a cluster with 20 failed shards of 50GB each recovering in parallel (limited to 2 concurrent recoveries per node by default): 10 sequential batches × 20 minutes = ~3.3 hours minimum. This explains why over-sharded clusters with large shard sizes take hours to recover — and why keeping shards at 30–50GB and having enough nodes for parallel recovery is operationally critical.
+    </div>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 4</div>
+        <p>ES 7+'s Raft-based master election eliminated the split-brain catastrophe of earlier versions, but cascading failure from node overload during shard redistribution remains the most dangerous operational scenario — requiring proactive capacity headroom, not reactive recovery.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 5: SCALING STRATEGIES
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p5">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 05</div>
+      <div class="pillar-title">
+        <h2>📈 Scaling Strategies</h2>
+        <p>Vertical scaling, horizontal scaling, sharding, replication, and cross-region patterns</p>
+      </div>
+    </div>
+
+    <h3>Vertical Scaling: Limits and Failure Points</h3>
+    <p>Vertical scaling (adding RAM and CPU to individual nodes) in Elasticsearch runs into several hard walls that make it fundamentally limited compared to horizontal scaling. The most critical constraint is the JVM heap. Elasticsearch runs on the JVM, and heap sizes above 30–32GB trigger a critical performance cliff: below 32GB, the JVM uses "compressed ordinary object pointers" (CompressedOops), where object references are encoded in 32 bits instead of 64 bits. This nearly doubles the number of objects that fit in a given heap size and dramatically reduces garbage collection pressure. Above 32GB, full 64-bit pointers are required, which increases heap usage by 40–50% and causes GC pauses that can be severe enough to trigger cluster instability. <strong>The operational recommendation is to hard-limit JVM heap at 30GB per node, regardless of how much physical RAM the machine has.</strong></p>
+    <p>The remaining RAM above the 30GB heap is invaluable — it's used by the OS file system cache for memory-mapping Lucene segment files (<code>.tim</code>, <code>.doc</code>, <code>.dvd</code>). Lucene is designed around the assumption that the OS will cache frequently-accessed pages, and this is the primary mechanism for "hot" data serving. A node with 120GB RAM allocated 30GB to JVM heap has 90GB for file system cache, which can hold substantial portions of index data in memory for zero-disk-seek retrieval. This is why high-memory instances are valuable in ES — not for the heap, but for the file cache.</p>
+    <p>CPU vertical scaling has better returns for compute-heavy operations like complex aggregations and expensive script queries, but for simple search operations, more CPUs past a certain point don't improve latency because the bottleneck is typically disk I/O for cache misses or the coordination overhead of merging results from many shards. Vertical scaling of disk (SSDs over HDDs, NVMe over SATA) provides significant latency improvements for any operation that causes a cache miss.</p>
+
+    <h3>Horizontal Scaling: Architectural Changes</h3>
+    <p>Horizontal scaling in Elasticsearch means adding more nodes and increasing shard count. However, the critical constraint — <strong>primary shard count is fixed at index creation</strong> — means horizontal write scaling requires architectural planning upfront, not reactive scaling. The common pattern is:</p>
+    <ul>
+      <li><strong>Time-series index rotation (ILM):</strong> For log data, metrics, and events, use Index Lifecycle Management to roll over to a new index when the current index reaches a size or document count threshold. Each new index can be created with the appropriate shard count for the expected data volume. Hot-warm-cold-frozen architecture allows efficient tiering of data across node types.</li>
+      <li><strong>Datastreams:</strong> ES 7.9+ introduced datastreams as a first-class abstraction for append-only time-series data, wrapping the ILM rollover pattern with automated backing index management. Under the hood it's still rolling indices, but the API is simpler and more consistent.</li>
+      <li><strong>Shrink API:</strong> An existing index with multiple primary shards can be reduced to fewer primary shards using the Shrink API (e.g., 10 shards → 5 shards). This is useful when you over-sharded at creation. Requires the index to be read-only and all primary shards to be on a single node. The target shard count must be a factor of the source count.</li>
+      <li><strong>Split API:</strong> The inverse of Shrink — an existing index can be split into more primary shards. Again requires the index to be read-only. Target shard count must be a multiple of the source count. Neither operation is cheap — both require reading and re-indexing all data.</li>
+    </ul>
+
+    <h3>Replication Strategies</h3>
+
+    <h4>Synchronous vs. Asynchronous Replication</h4>
+    <p>Elasticsearch uses a hybrid replication model. The write to the primary shard is always synchronous from the client's perspective (the client waits for the primary to acknowledge). Replication to replica shards happens concurrently and in-band with the primary acknowledgment: the primary forwards the write to all active replica shards and waits for them to acknowledge before sending the final ACK to the client (with the default <code>wait_for_active_shards=1</code> configuration, only the primary's ACK is needed, making replica replication effectively asynchronous from the client's perspective).</p>
+    <p>This is important: the replica always receives the exact same operations as the primary, in the same order (using the same Lucene operations, not derived from the document), ensuring eventual consistency. There is no "log shipping" or "change data capture" — replicas execute the same indexing operations as the primary.</p>
+
+    <h3>Sharding / Partitioning Deep Dive</h3>
+    <p>Elasticsearch uses <strong>hash-based routing</strong> by default: <code>shard = hash(routing_key) % num_primary_shards</code>. The default routing key is the document's <code>_id</code> field. This distributes documents uniformly across shards (assuming a diverse set of IDs), preventing hotspots. However, hash-based routing has a critical limitation: it makes shards completely independent — you cannot do cross-shard range queries efficiently unless you scatter to all shards, which doesn't scale.</p>
+
+    <h4>Custom Routing for Hotspot Prevention</h4>
+    <p>Custom routing is a powerful feature that allows you to ensure related documents co-locate on the same shard. The pattern: <code>PUT /index/_doc/1?routing=tenant_id</code>. Now all documents for <code>tenant_id</code> land on the same shard, enabling shard-local queries (passing the same <code>routing</code> parameter to the search request makes ES query only the relevant shards) — dramatically reducing query fan-out for multi-tenant applications. The risk is shard imbalance: if one tenant has 10x the data of others, their shard becomes hot. This requires custom routing strategies with consistent hashing across multiple shard buckets rather than a single key.</p>
+
+    <div class="alert alert-boe">
+      <strong>📐 Back-of-Envelope — Shard Sizing</strong>
+      Target: 30–50GB per shard, max 200M documents per shard. For a 10TB index: 10,000GB ÷ 40GB/shard = 250 primary shards. At 1 replica: 500 total shards. Across a 25-node cluster: 500 ÷ 25 = 20 shards per node. ES recommendation: max 20 shards per GB of heap. At 30GB heap per node: 600 shards per node max — we're at 20, safely within bounds. Query fan-out: a search touches all 250 primary shards (or 250 replica shards if reads are balanced) — coordinating node must merge 250 partial results. For most queries this is fine; for very expensive aggregations across 250 shards, query parallelism helps but coordination overhead grows. Consider rollup indices or summary aggregations for very high-cardinality aggregations across this many shards.
+    </div>
+
+    <h3>Resharding and Reindexing Challenges</h3>
+    <p>The inability to change primary shard count in-place is Elasticsearch's most significant operational limitation. The standard approach for resharding is the Reindex API: create a new index with the desired shard count and copy all documents from the old index to the new one using the <code>POST /_reindex</code> API. This operation is expensive — it reads every document from the source index and re-indexes it into the destination, meaning it's a full I/O operation on the entire dataset. For a 10TB index, this can take hours or days, during which both old and new indices must exist simultaneously (2× storage cost). The common pattern:</p>
+    <ul>
+      <li>Create new index with correct shard count</li>
+      <li>Point a write alias at the old index, a read alias at both (or use blue-green)</li>
+      <li>Start reindex in background</li>
+      <li>When complete, point write alias at new index, stop writes to old</li>
+      <li>Wait for all in-flight reads to drain from old index</li>
+      <li>Delete old index</li>
+    </ul>
+    <p>ES 7.16+ introduced <strong>data stream aliases</strong> which simplify this process significantly for time-series data by providing a logical layer over rolling backing indices — you can reindex a single backing index without touching the others, and swap which backing index is "current" atomically via the datastream API.</p>
+
+    <h3>Cross-Region Replication: Active-Active vs. Active-Passive</h3>
+    <p><strong>Cross-Cluster Replication (CCR)</strong> is the Elasticsearch feature for cross-region data distribution, introduced in ES 6.5. CCR operates in an active-passive model: a "follower" index in one cluster continuously replicates from a "leader" index in another cluster by replaying the leader's Lucene operations in sequence. The follower is read-only — it cannot accept writes. This makes CCR fundamentally active-passive for the replicated index.</p>
+    <p>For active-active (writes accepted in both regions), the standard approach at the application layer is to use a message queue (Kafka, Kinesis) as the source of truth, with ES clusters in each region consuming from the same queue. This ensures both ES clusters receive the same events and converge to the same state. Conflict resolution is event-ordering-based: the queue provides a total order. This sidesteps the need for distributed transactions between ES clusters at the cost of architectural complexity and the queue becoming a critical path dependency.</p>
+
+    <h4>Read vs. Write Scaling — Can They Scale Independently?</h4>
+    <p>Yes — and this is a key architectural strength of Elasticsearch. <strong>Read scaling</strong> is achieved by adding replica shards: each additional replica copy of a shard can serve read requests, so read throughput scales linearly with replica count (and with nodes). This is the easiest scaling lever — just increase <code>number_of_replicas</code> on an existing index (this can be done live with zero downtime). <strong>Write scaling</strong> requires primary shard count changes (harder, requires reindexing) or time-series index rotation (easier, plan this upfront). The combination of hot nodes (SSDs, high throughput for current writes) and warm/cold nodes (HDDs, lower cost for older read-heavy data) in a tiered architecture independently optimizes the write and read cost profiles.</p>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 5</div>
+        <p>Elasticsearch's primary scaling limitation is the immutability of primary shard count per index — all large-scale ES architectures work around this through time-series index rotation (ILM/datastreams), careful pre-capacity-planning, or expensive reindexing operations; read scaling via replicas is trivially cheap by comparison.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 6: REAL-WORLD ENGINEERING DECISIONS
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p6">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 06</div>
+      <div class="pillar-title">
+        <h2>🏭 Real-World Engineering Decisions</h2>
+        <p>Production use cases, anti-patterns, decision matrices, and operational pitfalls</p>
+      </div>
+    </div>
+
+    <h3>Where Elasticsearch Shines Above All Alternatives</h3>
+    <p>Elasticsearch's core strengths map to three distinct but overlapping problem categories:</p>
+    <ul>
+      <li><strong>Full-text search with relevance ranking over large corpora:</strong> When documents are unstructured text and users need ranked results (not exact lookups), ES's Lucene-based BM25 scoring, language analysis pipeline, and rich query DSL (boolean, fuzzy, phrase, multi-match, function score) are unmatched in operational simplicity. Alternatives like Solr are architecturally equivalent but operationally more complex. Databases (even with full-text indexes) lack the rich relevance tuning and aggregation capabilities.</li>
+      <li><strong>Real-time log analytics and observability at scale:</strong> When you need to ingest millions of events per second, make them searchable within seconds, and support arbitrary ad-hoc analytical queries (time-range, regex, term aggregations, histograms), ES's combination of NRT indexing, columnar doc values for aggregations, and distributed query execution is the dominant solution. The Elastic Stack (ES + Kibana + Logstash + Beats) provides an end-to-end observability platform that took years to match with alternatives.</li>
+      <li><strong>Geospatial search and complex multi-dimensional filtering:</strong> ES natively supports geo-point and geo-shape fields with distance queries, bounding box searches, and polygon containment checks. Combined with BM25 text scoring and numeric range filters, this makes ES uniquely suited for location-aware search (find restaurants near me matching "vegan sushi" with minimum 4-star rating) — a combination no SQL database handles efficiently at scale.</li>
+    </ul>
+
+    <h3>Three Real-World Production Examples</h3>
+
+    <div class="simulation">
+      <div class="sim-header">
+        <h3>🌐 GitHub — Code Search at Scale</h3>
+      </div>
+      <div class="sim-body">
+        <p style="color: var(--text2); font-size: 14px; margin-bottom: 20px;">GitHub uses Elasticsearch (and its own fork "Blackbird") to power its code search functionality across hundreds of millions of repositories and trillions of lines of code.</p>
+        <div class="sim-step">
+          <div class="sim-step-num">1</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">The Problem</div>
+            <div class="sim-step-desc">Searching across billions of code files with syntax-aware queries (find all Python files where this function is called, with file path filters, language filters, and fuzzy matching on identifiers) at sub-second latency.</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">2</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Why Elasticsearch</div>
+            <div class="sim-step-desc">Custom analyzers for code tokenization (splitting on camelCase, underscores, dots for language-specific token patterns), geoshard routing by repository (all files of a repo co-locate on the same shard for repo-scoped queries), and the rich filter aggregation for faceted navigation (by language, repository, path) made ES the fit. No SQL database could handle the tokenization requirements and query complexity simultaneously at this scale.</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">3</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Key Challenge</div>
+            <div class="sim-step-desc">Index freshness: when code changes (a commit), the affected files must be reindexed within minutes. GitHub chose partial update strategies (updating individual file documents rather than whole repository bulk reindexes) to achieve low indexing latency. The scale challenge: maintaining &lt;1s search latency across clusters handling petabytes of indexed code.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="simulation">
+      <div class="sim-header">
+        <h3>🛍️ Uber — Marketplace Search and Surge Pricing Visibility</h3>
+      </div>
+      <div class="sim-body">
+        <p style="color: var(--text2); font-size: 14px; margin-bottom: 20px;">Uber uses Elasticsearch for its driver and restaurant search systems, powering location-based discovery with real-time availability data.</p>
+        <div class="sim-step">
+          <div class="sim-step-num">1</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">The Problem</div>
+            <div class="sim-step-desc">Find available drivers within a geofenced area, ranked by ETA and rating, with real-time availability status updates (a driver's availability changes every few seconds as they accept/complete trips).</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">2</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Why Elasticsearch</div>
+            <div class="sim-step-desc">Geo-distance queries with combined relevance scoring (distance × rating × availability) are ES's native strength. The partial update API (<code>POST /_update</code> with <code>doc_as_upsert</code>) allows efficiently updating just the availability field of a driver document without reindexing the entire document. Uber uses custom routing by geographic region to avoid cross-shard fan-out for location queries.</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">3</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Key Challenge &amp; Tradeoff</div>
+            <div class="sim-step-desc">Update throughput: millions of driver position updates per minute create significant indexing load. Uber trades off search freshness vs. update throughput by setting a 2-second refresh interval (rather than the 1-second default) — drivers' positions are slightly older than 2 seconds in search results, which is acceptable for ETA calculations. The alternative (more frequent refresh) would dramatically increase segment count and degraded query performance.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="simulation">
+      <div class="sim-header">
+        <h3>🏦 Netflix — Log Analytics &amp; Security Operations</h3>
+      </div>
+      <div class="sim-body">
+        <p style="color: var(--text2); font-size: 14px; margin-bottom: 20px;">Netflix uses the Elastic Stack at massive scale for their security operations center (SIEM), infrastructure monitoring, and service mesh analytics.</p>
+        <div class="sim-step">
+          <div class="sim-step-num">1</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">The Problem</div>
+            <div class="sim-step-desc">Ingest and make searchable hundreds of billions of log events per day across thousands of microservices, with security analysts needing to perform forensic queries (find all HTTP 403 responses from service X in the last 4 hours where the source IP was in ASN Y) within seconds.</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">2</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Why Elasticsearch</div>
+            <div class="sim-step-desc">ILM-based hot-warm-cold architecture: logs land on NVMe SSD hot nodes with high write throughput, age to warm HDD nodes after 3 days (search still fast, much cheaper storage), then move to frozen tier (searchable snapshots on S3) after 14 days (pay only for query compute, not storage). This tiered approach reduces storage cost by 10x vs. keeping all data on SSDs while maintaining the ability to query 6+ months of data.</div>
+          </div>
+        </div>
+        <div class="sim-step">
+          <div class="sim-step-num">3</div>
+          <div class="sim-step-content">
+            <div class="sim-step-title">Key Challenge</div>
+            <div class="sim-step-desc">Mapping explosion: when developers add new log fields dynamically, ES's dynamic mapping creates new field mappings. At Netflix's scale, thousands of unique field names per service × hundreds of services = cluster state explosion. Netflix enforces strict field naming conventions and uses <code>dynamic: strict</code> mappings with explicitly-allowed fields, with an approval workflow for adding new fields. Unknown fields go into a catch-all <code>message</code> keyword field rather than creating new mappings.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>When NOT to Use Elasticsearch</h3>
+    <div class="alert alert-hot">
+      <strong>🔥 Anti-Pattern: Using ES as a Primary OLTP Database</strong>
+      Elasticsearch lacks multi-document ACID transactions, has eventual consistency, and does not support foreign key constraints or referential integrity. Using ES as the sole store for financial records, inventory counts, or user account data is architecturally dangerous. The correct pattern is to use a relational database or NewSQL system (PostgreSQL, CockroachDB) as the primary store and sync data into ES for search purposes.
+    </div>
+    <div class="alert alert-hot">
+      <strong>🔥 Anti-Pattern: High-Cardinality Aggregations on Keyword Fields</strong>
+      Running a terms aggregation on a field with millions of unique values (like user IDs or session tokens) requires ES to build a global ordinal mapping in memory. For a field with 10 million unique values, this consumes gigabytes of heap on each node involved in the query — potentially triggering OOM and node failure. For high-cardinality analytics, consider pre-aggregating into a summary index or using an analytics database like ClickHouse or BigQuery.
+    </div>
+    <div class="alert alert-hot">
+      <strong>🔥 Anti-Pattern: Using Default Dynamic Mapping in Production</strong>
+      Dynamic mapping auto-creates field mappings when new fields are first encountered. This is convenient for development but catastrophic in production: a typo in a field name creates a permanent mapping entry, a numeric field that sometimes contains strings causes a mapping conflict exception, and tens of thousands of unique field names from uncontrolled log sources can grow cluster state to multi-gigabyte sizes, causing master instability.
+    </div>
+
+    <h3>Decision Matrix: Elasticsearch vs. Alternatives</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>Elasticsearch</th>
+            <th>Apache Solr</th>
+            <th>PostgreSQL FTS</th>
+            <th>OpenSearch</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="bold">Full-Text Search Quality</td><td class="good">Excellent (Lucene BM25, custom analyzers)</td><td class="good">Excellent (same Lucene core)</td><td class="warn">Good (limited analyzers)</td><td class="good">Excellent (Lucene fork)</td></tr>
+          <tr><td class="bold">Operational Simplicity</td><td class="good">Good (REST API, ILM)</td><td class="warn">Complex (ZooKeeper, XML configs)</td><td class="good">Excellent (single system)</td><td class="good">Good (ES fork)</td></tr>
+          <tr><td class="bold">Horizontal Scale</td><td class="good">Excellent</td><td class="good">Good</td><td class="bad">Poor (manual sharding)</td><td class="good">Excellent</td></tr>
+          <tr><td class="bold">ACID Transactions</td><td class="bad">None (single-doc only)</td><td class="bad">None</td><td class="good">Full ACID</td><td class="bad">None</td></tr>
+          <tr><td class="bold">Aggregation Performance</td><td class="good">Excellent (doc values)</td><td class="good">Good</td><td class="warn">Limited at scale</td><td class="good">Excellent</td></tr>
+          <tr><td class="bold">Ecosystem &amp; Tooling</td><td class="good">Excellent (Kibana, Beats, Logstash, APM)</td><td class="warn">Good (Solr Admin)</td><td class="good">Excellent (pgAdmin, monitoring)</td><td class="good">Good (OpenSearch Dashboards)</td></tr>
+          <tr><td class="bold">Licensing Cost</td><td class="warn">Elastic License (SSPL) - some features paid</td><td class="good">Apache 2.0 - fully open</td><td class="good">PostgreSQL license - free</td><td class="good">Apache 2.0 - fully open</td></tr>
+          <tr><td class="bold">Geo Search</td><td class="good">Excellent</td><td class="good">Good</td><td class="warn">PostGIS extension required</td><td class="good">Excellent</td></tr>
+          <tr><td class="bold">ML/Vector Search</td><td class="good">Excellent (kNN dense vectors, ELSER)</td><td class="warn">Limited</td><td class="warn">pgvector (decent)</td><td class="good">Good (k-NN plugin)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Most Common Operational Mistakes in Production</h3>
+    <ul>
+      <li><strong>Over-sharding small indices:</strong> Creating indices with 5–10 shards when the data volume doesn't justify it. Each shard carries fixed overhead (file handles, heap, recovery cost). The ES 8.x default changed to 1 primary shard for this reason — most small indices should have 1 shard.</li>
+      <li><strong>Ignoring the JVM heap 32GB ceiling:</strong> Setting <code>-Xmx40g</code> disables CompressedOops, causing 40–50% additional heap pressure and more frequent GC pauses that can destabilize the cluster.</li>
+      <li><strong>Running data and master roles on the same nodes at scale:</strong> Heavy GC pauses from data operations cause master heartbeat timeouts, triggering unnecessary master elections. Dedicate master-eligible nodes at clusters with 10+ data nodes.</li>
+      <li><strong>Not setting <code>dynamic: strict</code> on production indices:</strong> Dynamic mapping accumulates unbounded field names from uncontrolled data sources, leading to mapping explosion and cluster state growth.</li>
+      <li><strong>Using field data (not doc values) for aggregations:</strong> Field data loads entire field into heap. For any high-cardinality field, this causes OOM. Doc values are the default and correct choice — never disable them on fields used for sorting or aggregations.</li>
+    </ul>
+
+    <h3>Day-1 Monitoring and Alerting</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title">🔴 Critical Alerts</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li>Cluster health = RED (primary shard unavailable)</li>
+          <li>JVM heap usage &gt; 85% (OOM imminent)</li>
+          <li>Circuit breaker tripped rate &gt; 0</li>
+          <li>Disk usage &gt; 85% (ES will stop writing at 90%)</li>
+          <li>Master node down / election in progress</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🟡 Warning Alerts</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li>Cluster health = YELLOW (replica unavailable)</li>
+          <li>JVM heap usage &gt; 70%</li>
+          <li>Thread pool bulk queue rejections &gt; 0</li>
+          <li>Search latency p99 &gt; 2s</li>
+          <li>Pending tasks &gt; 100 (master queue backlog)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">📊 Key Metrics to Track</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li><code>indices.indexing.index_total</code> rate</li>
+          <li><code>indices.search.query_time_in_millis</code> p50/p99</li>
+          <li><code>jvm.gc.collectors.old.collection_time_in_millis</code></li>
+          <li><code>os.cpu.percent</code> per node</li>
+          <li>Segment count per shard (high = merge pressure)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title">🔧 Operational Health Checks</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li>Snapshot success/failure daily</li>
+          <li>Shard distribution imbalance</li>
+          <li>Unassigned shards &gt; 0</li>
+          <li>ILM policy execution errors</li>
+          <li>Field mapping cardinality growth</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 6</div>
+        <p>Elasticsearch excels at full-text search, log analytics, and geo-spatial queries but is a poor fit for ACID-compliant primary data stores; the most common production failures stem from mapping explosion, over-sharding, and JVM misconfiguration — all preventable with explicit schema governance and correct JVM heap sizing.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 7: GOOGLE-SCALE
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p7">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 07</div>
+      <div class="pillar-title">
+        <h2>🌐 Google-Scale &amp; Beyond</h2>
+        <p>1B+ users, hyperscaler differences, multi-tenancy, and global deployments</p>
+      </div>
+    </div>
+
+    <h3>What Breaks at Each Scale Tier</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Scale Tier</th>
+            <th>Typical Volume</th>
+            <th>What Breaks First</th>
+            <th>Architectural Pivot Required</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="bold">Startup / Small</td>
+            <td>&lt;1M docs, &lt;10GB</td>
+            <td>Nothing — single node or small cluster works well</td>
+            <td>None — use managed Elastic Cloud; default settings are fine</td>
+          </tr>
+          <tr>
+            <td class="bold">Growth / Medium</td>
+            <td>10M–500M docs, 100GB–5TB</td>
+            <td>Poor shard sizing choices made at index creation (can't change primary count); GC pressure from field data on unplanned aggregations</td>
+            <td>Introduce ILM for time-series data; implement hot-warm architecture; enforce explicit mappings; add dedicated master nodes at 10+ data nodes</td>
+          </tr>
+          <tr>
+            <td class="bold">Scale / Large</td>
+            <td>500M–10B docs, 5TB–100TB</td>
+            <td>Cluster state size (large number of indices × shards × fields bloats master memory); coordinator node memory during large aggregations; replication write amplification limiting indexing throughput</td>
+            <td>Introduce frozen tier (searchable snapshots on object storage); data tier nodes with NVMe hot / HDD warm / S3 frozen; cluster-level routing policies; consider cross-cluster search for separate index/query clusters</td>
+          </tr>
+          <tr>
+            <td class="bold">Hyperscale</td>
+            <td>&gt;10B docs, &gt;100TB</td>
+            <td>Single cluster master becomes a coordination bottleneck; cluster state publication latency grows with cluster size; coordinating node memory for scatter-gather across thousands of shards is prohibitive</td>
+            <td>Multi-cluster federation with cross-cluster search; separate write clusters (optimized for ingest) from read clusters (optimized for queries via CCR or snapshot restore); distributed query layer (Elasticsearch SQL / custom routing middleware)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>How Google-Scale Deployments Differ from Vanilla ES</h3>
+    <p>At Google-equivalent scale, the assumptions that make vanilla Elasticsearch work break down in fundamental ways. Here is how hyperscale operators solve these problems differently:</p>
+    <p><strong>Cluster state management:</strong> At vanilla ES, the cluster state is a monolithic in-memory object replicated to all nodes synchronously. At hyperscale (500+ nodes, 100K+ shards), publishing a cluster state update requires serializing a multi-gigabyte object and sending it to hundreds of nodes — this can take tens of seconds, blocking cluster state changes. Hyperscalers decompose this by running multiple coordinated ES clusters behind a routing middleware layer, keeping each cluster under the scalable cluster state size (typically &lt;100 nodes, &lt;20K shards per cluster). Elastic itself has been iteratively improving this with lazy cluster state publication (only sending diffs, not full state) in ES 8.x.</p>
+    <p><strong>Ingest pipeline separation:</strong> At hyperscale, the indexing throughput requirements (millions of documents per second) and query requirements (thousands of complex queries per second) are incompatible on the same cluster. Hyperscalers run separate ingest clusters that accept writes and perform heavy analysis (Logstash/pipeline processing), with CCR or snapshot-based replication pushing data to separate query clusters optimized for low-latency reads. The ingest cluster can be tuned for write throughput (large translog, async durability, single replica), while the query cluster is tuned for read latency (more replicas, warmed segment caches, lower refresh interval).</p>
+    <p><strong>Compute-storage separation:</strong> Vanilla ES couples compute (query execution) with storage (shard data on local disk). At hyperscale, this means every node must be both a high-memory machine (for query execution) and a high-storage machine (for data). The frozen tier (searchable snapshots) partially decouples this by storing data on object storage and caching locally. At hyperscale, this evolves to a full disaggregated architecture: shared object storage holds all shard data, and stateless compute nodes load and execute queries against segments they've cached locally — similar to the Snowflake architecture for databases. Elastic's "stateless" architecture project (announced 2023–2024) moves toward this model.</p>
+
+    <h3>Multi-Tenancy and Noisy Neighbor Isolation</h3>
+    <p>Multi-tenancy in Elasticsearch is a hard problem because there is no native resource isolation between indices on the same node. A single expensive query from Tenant A can consume all available search thread pool slots, causing Tenant B's queries to queue and time out. Strategies for isolation at scale:</p>
+    <ul>
+      <li><strong>Dedicated clusters per tenant:</strong> The strongest isolation — each tenant gets their own Elasticsearch cluster. Operationally expensive (many clusters to manage) but completely prevents noisy neighbor. Feasible for large enterprise customers; impractical for millions of small tenants.</li>
+      <li><strong>Cluster-per-tier with routing middleware:</strong> Group tenants into clusters by resource tier (gold, silver, bronze). A middleware layer routes requests to the appropriate cluster. Tenants within the same tier compete for resources, but the blast radius of a noisy neighbor is limited to same-tier tenants. Tier assignment can be data-volume or QPS based.</li>
+      <li><strong>Index-level isolation with thread pool prioritization:</strong> A single shared cluster with per-tenant indices, using custom thread pool routing to prioritize high-SLA tenant queries. ES doesn't natively support per-index thread pool assignment, but routing all tenant-specific requests through dedicated coordinating nodes with tenant-specific configurations approximates this.</li>
+      <li><strong>Query-level circuit breakers per tenant:</strong> Inject a custom query context that limits per-tenant memory consumption. This requires custom ES plugin development or a middleware proxy that rewrites queries to include resource limits (e.g., <code>terminate_after</code> clause to limit documents scanned, <code>timeout</code> on all queries).</li>
+    </ul>
+
+    <h3>Regulatory Data Residency</h3>
+    <p>For deployments subject to GDPR (EU), CCPA (California), or other data residency requirements, the challenge is ensuring that personal data indexed in Elasticsearch remains within specified geographic boundaries. This requires:</p>
+    <ul>
+      <li><strong>Region-isolated clusters:</strong> Each regulatory region (EU, US, APAC) gets a dedicated ES cluster. Application routing layer directs writes and queries to the appropriate regional cluster based on the user's jurisdiction. No data flows between regional clusters.</li>
+      <li><strong>Cross-Cluster Search scoped by region:</strong> Federated search across regional clusters must be careful not to cross-cluster replicate or return data across boundaries. ES's CCS supports executing searches on a specific cluster alias — the middleware layer passes only the allowed cluster aliases for each user's jurisdiction.</li>
+      <li><strong>Encryption and key management:</strong> ES 8.x supports encryption at rest natively. For GDPR's right-to-erasure requirement, "crypto-shredding" (deleting the encryption key for a specific user's data) can effectively erase their data without requiring a full reindex. This requires careful per-user key management design.</li>
+    </ul>
+
+    <h3>"Google Spanner for Elasticsearch" — What Innovations Would Be Needed?</h3>
+
+    <div class="alert alert-l7">
+      <strong>⚡ L7/L8 Differentiator</strong>
+      This is the kind of speculative design question L8 candidates are expected to engage with deeply. A strong answer proposes concrete technical mechanisms, not vague platitudes about "making it more scalable."
+    </div>
+
+    <p>A hypothetical "Google-Spanner-equivalent for Elasticsearch" — call it "Elasticsearch Infinity" — would need to solve several fundamental architectural limitations of current ES:</p>
+    <ul>
+      <li><strong>True distributed transactions for search:</strong> Spanner uses TrueTime and two-phase commit for externally consistent transactions. An ES-equivalent would need a distributed transaction layer for atomic multi-document operations — perhaps using a distributed sequencer service (similar to Google's Percolator) that provides monotonically increasing commit timestamps and allows snapshot-isolated reads at any past timestamp.</li>
+      <li><strong>Disaggregated compute and storage at full scale:</strong> All shard data lives in a distributed object store (like Colossus internally at Google), with stateless query compute nodes that fetch and cache shard segments on demand. Adds cold-start latency for infrequently queried data, but eliminates the storage-compute coupling that limits vanilla ES scalability. Elastic's stateless architecture is moving toward this.</li>
+      <li><strong>Automatic shard count elasticity:</strong> Instead of fixed shard counts at index creation, use consistent hashing with virtual nodes (similar to Cassandra's vnodes) that allow transparent redistribution without the shard-count-immutability limitation. When adding nodes, virtual nodes migrate without full reindexing.</li>
+      <li><strong>Native multi-tenancy with resource isolation:</strong> First-class tenant abstractions in the query engine, with per-tenant memory quotas, CPU scheduling weights, and dedicated I/O priorities enforced at the Lucene reader level — not just at the HTTP layer.</li>
+      <li><strong>Global secondary indexes:</strong> Currently, sorting on a field requires scattering to all shards. With a distributed sorted index (similar to BigTable's sorted column families) maintained separately from the primary sharded index, certain aggregation and sort queries could be served without full scatter-gather.</li>
+    </ul>
+
+    <h3>Cost Efficiency at Scale — Optimizations Only Worth It at High Scale</h3>
+    <ul>
+      <li><strong>Frozen tier / searchable snapshots (&gt;5TB):</strong> Below 5TB, the operational complexity of managing frozen tier (snapshot lifecycle, cache sizing, query latency penalty) isn't worth the storage cost savings. Above 5TB, the 10x storage cost reduction (S3 vs. SSD) becomes economically compelling.</li>
+      <li><strong>Rollup indices (&gt;50B events):</strong> Pre-aggregating time-series data into summary indices (hourly, daily granularity) only makes sense when raw data query patterns are dominated by time-range aggregations (dashboards, reports) rather than document-level searches. Below this scale, query performance on raw data is acceptable.</li>
+      <li><strong>Dedicated coordinating nodes (&gt;20 data nodes):</strong> The overhead of running a coordinating-only node (pure memory + CPU, no disk) is only worthwhile when query coordination overhead (scatter-gather merging) is consuming meaningful resources on data nodes, which typically happens at 20+ data nodes with heavy analytical query loads.</li>
+    </ul>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 7</div>
+        <p>Google-scale Elasticsearch requires decomposing the monolithic cluster into a multi-cluster federation with separated write/read paths, compute-storage disaggregation, and tenant resource isolation mechanisms that do not exist in vanilla ES — and the architectural direction of ES 8.x (stateless nodes, frozen tier, Raft-based master) is incrementally closing this gap.</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════════════════════════════════════
+       PILLAR 8: INTERVIEW SIMULATION
+       ═══════════════════════════════════════════════════ -->
+  <section class="pillar" id="p8">
+    <div class="pillar-header">
+      <div class="pillar-number">Pillar 08</div>
+      <div class="pillar-title">
+        <h2>🎤 Interview Simulation</h2>
+        <p>Staff-level design problem, strong candidate answer, interviewer critique, and rapid-fire questions</p>
+      </div>
+    </div>
+
+    <h3>Step 1: The Design Problem</h3>
+    <div class="interview-q">
+      <div class="q-label">📋 Staff-Level Design Problem</div>
+      <div class="q-text">You are the Staff Engineer at a rapidly growing e-commerce platform with 50 million products, 500 million users, and a merchandising team of 200 that manually curates search results. The current search system is a single MySQL full-text index that times out under load. Your new system must serve product search with sub-200ms p99 latency at 50K QPS peak, support personalized ranking (each user may have different result ordering based on their purchase history and clickstream), allow merchandisers to boost or bury specific products for specific queries without a code deployment, and handle the product catalog changing at ~10K updates per minute during flash sale events. Describe your architecture and the key decisions you would make.</div>
+    </div>
+
+    <h3>Step 2: Strong L7 Candidate Answer</h3>
+
+    <h4>Clarifying Questions</h4>
+    <ul>
+      <li>"When you say sub-200ms p99, does that include personalization computation or just the core search retrieval?" <em>(Answer shapes whether ML ranking is in-request or pre-computed)</em></li>
+      <li>"How 'live' must the product updates be? If a price changes, must the new price appear in search results within seconds or minutes?" <em>(Answer determines refresh interval strategy)</em></li>
+      <li>"What is the expected ratio of unique queries vs. repeated queries? High query repetition justifies caching at the application layer." <em>(Answer shapes query caching strategy)</em></li>
+      <li>"Are product updates idempotent? Can the same product ID be updated multiple times in a row safely?" <em>(Answer determines update vs. upsert strategy)</em></li>
+      <li>"How many distinct merchandising rules exist simultaneously? 100? 100,000?" <em>(Answer determines whether function score queries or pre-computed boosting scores are more appropriate)</em></li>
+    </ul>
+
+    <h4>Stated Assumptions</h4>
+    <ul>
+      <li>Personalization can tolerate pre-computed user affinity scores updated every 15 minutes (not per-request ML inference)</li>
+      <li>Product price/availability updates must appear within 5 seconds in search results (near-real-time, not instant)</li>
+      <li>~50,000 active merchandising rules (manageable with function score queries)</li>
+      <li>Peak load is 50K QPS for up to 2 hours during major sale events</li>
+    </ul>
+
+    <h4>High-Level Architecture</h4>
+    <div class="ascii-diagram">
+┌──────────────────────────────────────────────────────────────────────┐
+│                        SEARCH ARCHITECTURE                           │
+│                                                                      │
+│  ┌──────────┐   ┌──────────┐   ┌─────────────────────────────────┐  │
+│  │  Product │   │  User    │   │      SEARCH SERVICE (Go/Java)    │  │
+│  │  Catalog │   │  Affinity│──▶│  · Query construction           │  │
+│  │  DB      │──▶│  Service │   │  · Merchandising rule injection │  │
+│  └──────────┘   └──────────┘   │  · Response post-processing     │  │
+│       │                        └──────────────┬──────────────────┘  │
+│       │                                       │                      │
+│  ┌────▼──────────────┐              ┌─────────▼───────────────────┐ │
+│  │   CDC + Kafka     │              │    ELASTICSEARCH CLUSTER     │ │
+│  │  (Debezium/MSK)   │──────────────▶    3 zones × 5 data nodes  │ │
+│  └───────────────────┘              │    + 3 dedicated masters    │ │
+│       │                             │    + 3 coordinating nodes   │ │
+│  ┌────▼──────────────┐              └─────────────────────────────┘ │
+│  │  Indexing Service │                                               │
+│  │  (Flink/Consumer) │              ┌─────────────────────────────┐ │
+│  │  · Enrichment     │              │     REDIS CACHE LAYER       │ │
+│  │  · Validation     │              │  · Popular query results    │ │
+│  │  · Bulk API calls │              │  · Merchandising rules      │ │
+│  └───────────────────┘              │  · User affinity scores     │ │
+│                                     └─────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘</div>
+
+    <h4>Deep-Dive Decisions with Specific Numbers</h4>
+
+    <p><strong>ES Cluster Sizing:</strong> 50M products × avg 2KB per document (with all searchable fields) = ~100GB raw data. With 1 replica = 200GB. Target 30–50GB per shard → 4–7 primary shards. Use 6 primary shards + 1 replica = 12 shard copies across 15 data nodes (5 nodes × 3 AZs). Each data node holds ~2 shards = 13GB/shard × 2 = 26GB disk per node (very comfortable). I'd use 30GB JVM heap, r6g.4xlarge instances (128GB RAM) — leaving 98GB for OS file cache. The entire 100GB product index fits in file cache across the cluster = near-zero disk reads for hot queries.</p>
+
+    <p><strong>Query Construction for Personalization:</strong> Rather than per-request ML inference, pre-compute user affinity scores as a weighted keyword bag (e.g., "electronics:0.8, clothing:0.2, brand_apple:0.9") updated every 15 minutes. Store these in Redis. At query time, the search service retrieves the affinity vector from Redis and injects it as <code>function_score</code> clauses that multiply the base BM25 score by the user's affinity for the matched product's category and brand. This keeps the per-request cost low (one Redis GET + a moderately complex ES query) while still personalizing results.</p>
+
+    <p><strong>Merchandising Rules:</strong> Store all rules (boost product X for query "summer dresses" by factor 3) in an external config store (Redis/DynamoDB) with TTL-based invalidation. The search service loads active rules at query time (cached in-process for 30 seconds). Inject rules as <code>function_score</code> filter queries. At 50K rules, a single query may match 10–20 relevant rules — each becomes a clause in the function score. This keeps rules out of the ES index (changes take effect without reindexing) but requires careful rule matching logic to avoid O(N) rule evaluation at query time.</p>
+
+    <p><strong>10K Updates/Minute Handling:</strong> Batch updates using Kafka → Flink consumer → ES Bulk API. Flink buffers 500ms of events and sends batches of ~80 documents per bulk request (10K updates/min = 167 updates/sec, batch size 80 = ~2 requests/sec per consumer partition). Set refresh interval to 5s (acceptable per requirements) rather than 1s — reduces segment creation overhead by 5x during high update periods. Use <code>index.translog.durability: async</code> with 1s fsync for throughput (acceptable data loss risk for product catalog data).</p>
+
+    <div class="alert alert-boe">
+      <strong>📐 Back-of-Envelope — Query Capacity at 50K QPS</strong>
+      50K QPS × 200ms budget = 10K concurrent queries in flight. ES default thread pool = 2× CPU count. At 32 CPUs per data node × 15 data nodes = 480 total search threads across the cluster. 3 coordinating nodes × 32 CPUs × 2 = 192 coordinating threads. With 6 primary shards + 1 replica, each query fans out to 6 shard-level queries. Effective capacity: ~80 queries per second per coordinating node. At 3 coordinating nodes: 240 QPS of complex queries. For 50K QPS, need ~210 coordinating nodes OR a caching layer in front. → Cache hit rate must be &gt;99% to serve 50K QPS with 3 coordinating nodes. Use Redis with 5-minute TTL for popular queries. Top 10K queries by volume cover &gt;95% of traffic in e-commerce — highly cacheable.
+    </div>
+
+    <h3>Step 3: Interviewer Critique</h3>
+
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title" style="color: var(--green);">✅ What the Candidate Did Well</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li>Correctly identified the JVM heap 32GB ceiling and OS file cache importance — shows production experience</li>
+          <li>Proposed async refresh interval change during high-update periods — advanced operational knowledge</li>
+          <li>Caught that 50K QPS is impossible without caching; did the back-of-envelope to prove it — exactly right</li>
+          <li>Correctly separated the personalization problem (pre-computed affinity vs. real-time ML inference)</li>
+          <li>Asked clarifying questions that actually changed architectural decisions — not cosmetic questions</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-title" style="color: var(--red);">❌ What the Candidate Missed</div>
+        <ul style="font-size: 13px; padding-left: 16px;">
+          <li>Didn't address index lifecycle for soft-deleted products (products removed from catalog must be removed from search index — requires either delete-by-query or tombstone documents)</li>
+          <li>Didn't discuss mapping design at all — a critical gap. What analyzer for product titles? Keyword vs. text for brand names? This is the most impactful search quality decision.</li>
+          <li>Skipped the cross-AZ replication latency implications for the 5-second freshness SLO</li>
+          <li>Didn't address the schema migration problem (adding a new field to 50M products requires either reindexing or dynamic mapping — both have tradeoffs)</li>
+          <li>No mention of circuit breaker configuration or what happens to search availability when ES cluster is overloaded during peak</li>
+        </ul>
+      </div>
+    </div>
+
+    <h4>Follow-up Questions That Would Expose Weaknesses</h4>
+    <ul>
+      <li>"Your merchandising rules use function_score. What's the maximum number of function score clauses before query performance degrades — and how would you know when you've hit that limit?"</li>
+      <li>"A flash sale starts and 10K product prices change simultaneously. Walk me through exactly what happens in the ES cluster in the next 5 seconds."</li>
+      <li>"Your Redis cache has a 5-minute TTL. A merchandiser urgently needs to bury a competitor product. How long before the change is visible — and can you make it faster?"</li>
+      <li>"The ES cluster goes into RED health. What does your search service do? Return an error? Serve stale cached results? Fall back to MySQL?"</li>
+    </ul>
+
+    <h4>What an L8 Answer Would Include (That the L7 Did Not)</h4>
+    <ul>
+      <li><strong>Mapping design as a first-class topic:</strong> Using edge n-gram analyzers on product titles for prefix completion, keyword sub-fields for exact match sorting, ICU analyzer for multilingual product names, and semantic vectors (dense_vector field) for vector similarity search alongside BM25 — and how to A/B test different relevance configurations in production.</li>
+      <li><strong>Degradation modes:</strong> What happens when ES is degraded? Explicit fallback to a simpler search service (maybe a Redis sorted set of products by popularity score), alerting thresholds, and a circuit breaker at the application layer that automatically fails over when ES p99 exceeds 500ms.</li>
+      <li><strong>Relevance measurement:</strong> How do you know if search is getting better? Discussing click-through rate (CTR), mean reciprocal rank (MRR), and NDCG as search quality metrics — and how to instrument ES queries to correlate results with user actions for continuous relevance improvement.</li>
+      <li><strong>Explicit cost model:</strong> "15 data nodes at r6g.4xlarge is $X/month in AWS, and I expect to reduce this to $Y/month by migrating the long-tail of rarely-queried product data to the frozen tier after 30 days" — demonstrates senior-level cost ownership.</li>
+    </ul>
+
+    <hr class="divider">
+
+    <h3>Step 4: Rapid-Fire Staff-Level Questions</h3>
+
+    <div class="interview-q">
+      <div class="q-label">Q1</div>
+      <div class="q-text">Explain why Elasticsearch's default shard count changed from 5 to 1 in version 7.0, and what this means operationally.</div>
+    </div>
+    <div class="interview-a">
+      The change was driven by the "oversharding" antipattern: with a 5-shard default, small indices (10MB of data) would be split into 5 shards, each containing 2MB — far below the recommended 30–50GB range. Each shard carries fixed overhead: file handles, JVM heap for segment metadata, and recovery cost. A cluster with 1,000 small indices under the old default would have 5,000 shards; under the new default, 1,000 shards — dramatically reducing cluster state size and GC pressure. Operationally, this means for new clusters on ES 7+, you should set shard count explicitly based on data volume calculations (target 30–50GB per shard) rather than accepting defaults, and legacy clusters migrating from ES 6 may benefit from consolidating small indices.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q2</div>
+      <div class="q-text">What is the difference between a "refresh" and a "flush" in Elasticsearch, and when would you change the defaults for each?</div>
+    </div>
+    <div class="interview-a">
+      A refresh creates a new in-memory Lucene segment from the Lucene buffer, making recently-indexed documents searchable — it does NOT sync to disk. A flush performs a full Lucene commit (all segment files fsynced to disk) and rotates the translog (the write-ahead log is cleared since all data is now in committed Lucene segments). Change the refresh interval to <code>-1</code> during bulk initial indexing to disable automatic refresh (massive throughput improvement — no segment creation overhead), then call <code>POST /_refresh</code> manually when done. Increase flush interval when durability concerns allow it (<code>index.translog.durability: async</code>), which reduces disk I/O during heavy indexing. Never change these for operational (non-bulk) indices without understanding the durability implications.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q3</div>
+      <div class="q-text">A query that runs in 200ms on a small index takes 8 seconds on a 10-billion-document index with the same cluster. Walk through your diagnostic approach.</div>
+    </div>
+    <div class="interview-a">
+      Start with the Profile API (<code>"profile": true</code> in the query) to break down where time is spent: is it in the query phase (Lucene scoring) or the fetch phase (retrieving source documents)? If the query phase is slow, examine the query type — a wildcard or regex query degrades linearly with document count; switch to n-gram tokenization. If it's a terms aggregation, check segment count per shard (too many small segments from under-merging = slow aggregation): call Force Merge to reduce segment count. If it's the fetch phase, consider using <code>_source</code> filtering to return only needed fields. Check if doc values are enabled for sorted/aggregated fields — if not, field data loading is the bottleneck. Finally, consider whether the cluster is undersized for this query load (thread pool saturation visible in <code>/_nodes/stats/thread_pool</code>).
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q4</div>
+      <div class="q-text">How does Elasticsearch handle a situation where you need to update a document 100 times per second for 1 million documents simultaneously?</div>
+    </div>
+    <div class="interview-a">
+      Each update in ES is actually a delete + new insert at the Lucene level (documents are immutable in Lucene segments). At 100 updates/sec × 1M documents = 100K updates/sec total, the cluster must handle this as new indexing load — using the Bulk API with batching is essential (single bulk requests of 5–10MB). The old document versions accumulate as "deleted" documents in segments, increasing disk usage and slowing queries (deleted docs are skipped but still take space). Segment merges eventually clean up deleted documents — configure an aggressive merge policy (<code>max_deleted_ratio: 0.2</code>) to trigger merges sooner. For extremely high-frequency updates on specific fields (like price or inventory), consider using doc_values + scripted updates (partial updates) to avoid re-indexing the full source document. Ultimately, at this update rate, evaluating whether a caching layer in front of ES that batches updates before committing to ES would reduce write amplification.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q5</div>
+      <div class="q-text">Explain what "field data cache" vs. "doc values" are and why using field data on a high-cardinality field in production can bring down your cluster.</div>
+    </div>
+    <div class="interview-a">
+      Doc values are a column-store, disk-backed, memory-mappable structure built at index time for every field marked with <code>doc_values: true</code> (the default for keyword and numeric fields). They allow O(1) per-document access for sorting and aggregations with minimal heap usage. Field data cache is the legacy alternative: when you run an aggregation on a field that was indexed as <code>text</code> (not keyword) without doc values, ES loads all values for that field across all matching documents into JVM heap as an uninverted index. For a field with 1 million unique values, this can consume gigabytes of heap per node simultaneously. At scale, this triggers GC storms → JVM pause → node fails heartbeat → master ejects it → shard redistribution → cascade failure. Prevention: never aggregate on text fields without enabling fielddata explicitly (which is disabled by default for good reason); use keyword sub-fields for aggregation on analyzed text; monitor <code>indices.fielddata.memory_size_in_bytes</code> and the fielddata circuit breaker tripped counter.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q6</div>
+      <div class="q-text">Your Elasticsearch cluster is at 85% heap usage and you cannot add new nodes for 48 hours. What do you do?</div>
+    </div>
+    <div class="interview-a">
+      Immediately identify what's consuming heap: check field data cache (<code>GET /_stats/fielddata</code>), query cache, segment memory, and request cache. If field data is large: clear it (<code>POST /_cache/clear?fielddata=true</code>) and identify which queries are triggering it — add the field as keyword sub-field and migrate queries. Force-merge read-only indices to 1 segment per shard (<code>POST /old-index/_forcemerge?max_num_segments=1</code>) — merged segments use less heap than many small segments. Reduce the query cache size (<code>indices.queries.cache.size: 5%</code>). Cancel any heavy aggregation queries running in-flight that are holding large data structures. As a last resort, reduce the field data circuit breaker limit (<code>indices.breaker.fielddata.limit: 30%</code>) to force earlier rejection of field-data-intensive queries rather than allowing them to fill heap. Set an urgent alert at 75% to avoid this situation recurring.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q7</div>
+      <div class="q-text">How does cross-cluster search (CCS) work in Elasticsearch, and what are its latency implications?</div>
+    </div>
+    <div class="interview-a">
+      CCS allows a coordinating node in one ES cluster to scatter queries to remote clusters and merge their results, treating the remote cluster's shards like local shards in the two-phase query-then-fetch model. The coordinating node establishes persistent TCP connections to the remote cluster's gateway nodes. The query phase fans out to remote shards in parallel with local shards — the latency overhead is determined by the network RTT to the remote cluster plus their query execution time. For cross-region CCS (e.g., US-East to EU-West, ~100ms RTT), the query phase adds at least 100ms to every search request — making CCS suitable only for use cases that can tolerate higher-latency search (analytics, forensic investigation) rather than real-time user-facing search. Minimize CCS cost by explicitly naming only the relevant remote clusters in the search request, avoiding wildcard cluster references that scatter to all remote clusters unnecessarily.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q8</div>
+      <div class="q-text">What is the "Global Ordinals" concept in Elasticsearch and when does it matter?</div>
+    </div>
+    <div class="interview-a">
+      Global ordinals are a segment-level and cluster-wide mapping from keyword field values to sequential integer ordinals, built at query time before executing terms aggregations. Within a single segment, local ordinals map unique values to integers (e.g., "apple"→0, "google"→1) for efficient bucket computation. Across segments, global ordinals provide a unified mapping so that the same value in different segments maps to the same integer, enabling the coordinating node to merge partial aggregation results correctly. Building global ordinals is a significant one-time cost on the first aggregation after an index refresh or merge — it can take seconds for high-cardinality fields. In ES 7.2+, you can pre-build global ordinals eagerly at index refresh time (<code>eager_global_ordinals: true</code> on the field mapping) to avoid this latency spike on the first query after index warming. Critical for keyword fields used heavily in terms aggregations — matters most for high-cardinality fields and for use cases where consistent sub-second aggregation latency is required.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q9</div>
+      <div class="q-text">Describe how you would implement a multi-tenant SaaS product search where each tenant's data is isolated and their searches only return their own data.</div>
+    </div>
+    <div class="interview-a">
+      Two main architectural choices: index-per-tenant (each tenant gets their own index) vs. shared index with tenant field filtering. Index-per-tenant provides true isolation (mapping changes per tenant, independent scaling, simple access control using index-level permissions) but becomes operationally expensive above ~1,000 tenants (cluster state bloat from thousands of indices). Shared index with tenant filtering is operationally simpler but requires every query to include a mandatory <code>must</code> filter clause (<code>term: { tenant_id: "tenant_xyz" }</code>) — enforce this at the search service layer (never expose ES directly to clients). Shard routing by tenant ID (<code>?routing=tenant_id</code>) ensures all of a tenant's documents co-locate on the same shard, making tenant-scoped queries single-shard and eliminating cross-shard fan-out. For large enterprises, consider a hybrid: shared indices for small tenants, dedicated indices for large tenants. Implement row-level security using ES's Document Level Security (DLS) feature (requires Elastic Security license) as an additional defense-in-depth layer.
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q10</div>
+      <div class="q-text">How would you implement zero-downtime reindexing for a live production index with 2 billion documents?</div>
+    </div>
+    <div class="interview-a">
+      Use the alias + reindex pattern. Step 1: ensure the current index is accessed via an alias (<code>products-alias → products-v1</code>). Step 2: create the new index (<code>products-v2</code>) with the correct mapping. Step 3: start the reindex API operation as a background task (<code>POST /_reindex?wait_for_completion=false</code>) which copies documents from v1 to v2. Step 4: during reindexing, continue writing new documents to both v1 (via the write alias) AND v2 (dual-write in the indexing service) to capture changes that occur while reindex runs. Step 5: when reindex completes, reconcile any documents that were updated/deleted in v1 after reindex started using a change-tracking mechanism (use a last-modified timestamp field, re-reindex all documents modified after reindex start time). Step 6: perform an atomic alias swap: <code>POST /_aliases { "actions": [{"remove":{"index":"products-v1","alias":"products-alias"}}, {"add":{"index":"products-v2","alias":"products-alias"}}] }</code>. Step 7: delete v1 after confirming v2 serves correctly. For 2B docs, expect the reindex to take 12–24+ hours — the write-to-both pattern ensures no writes are lost during this window.
+    </div>
+
+    <div class="takeaway">
+      <div class="takeaway-icon">🎯</div>
+      <div>
+        <div class="takeaway-label">Key Takeaway — Pillar 8</div>
+        <p>An L8 answer addresses not just the "how to build it" but the "how to measure it's working," explicit degradation modes, cost ownership, and the specific mapping and relevance quality decisions that determine whether users actually find what they're looking for — the system design is necessary but not sufficient.</p>
+      </div>
+    </div>
+
+  </section>
+
+  <hr class="divider">
+
+  <!-- Version Notes -->
+  <section class="pillar">
+    <div class="pillar-header">
+      <div class="pillar-number">Appendix</div>
+      <div class="pillar-title">
+        <h2>🆕 Key Version Changes (ES 6 → 8.x, 2025)</h2>
+        <p>What changed, what became obsolete, and what was fixed</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Version</th><th>Feature / Change</th><th>Impact</th><th>Status in 8.x</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>7.0</td><td>Raft-based master election (replaced Zen Discovery)</td><td>Eliminated split-brain; <code>minimum_master_nodes</code> removed and auto-configured</td><td class="good">✅ Active</td></tr>
+          <tr><td>7.0</td><td>Default primary shards changed from 5 → 1</td><td>Reduced oversharding on small indices; breaks old automation that assumed 5</td><td class="good">✅ Active</td></tr>
+          <tr><td>7.0</td><td>Document types removed (only <code>_doc</code> type)</td><td>Eliminated multiple-type per-index (caused mapping conflicts); simplifies mapping model</td><td class="good">✅ Mandatory</td></tr>
+          <tr><td>7.7</td><td>Frozen Tier / Searchable Snapshots (GA)</td><td>10x storage cost reduction for cold data; query latency ~3–5x higher than warm</td><td class="good">✅ Stable</td></tr>
+          <tr><td>7.9</td><td>Data Streams (GA)</td><td>First-class API for append-only time-series data; simplifies ILM rollover management</td><td class="good">✅ Recommended for logs/metrics</td></tr>
+          <tr><td>7.10</td><td>Elasticsearch licensed under SSPL + Elastic License 2.0</td><td>AWS forked as OpenSearch (Apache 2.0); major ecosystem split; licensing now critical in vendor selection</td><td class="warn">⚠️ Bifurcated ecosystem</td></tr>
+          <tr><td>8.0</td><td>Security enabled by default (TLS, authentication required)</td><td>Eliminates accidental open clusters (major security improvement); breaks unauthenticated clients</td><td class="good">✅ Mandatory</td></tr>
+          <tr><td>8.0</td><td>Dense vector kNN search (ANN) GA</td><td>Native vector similarity search (HNSW index); enables semantic search and hybrid ranking without external vector DB</td><td class="good">✅ Major feature</td></tr>
+          <tr><td>8.8</td><td>ELSER (Elastic Learned Sparse Encoder)</td><td>Built-in sparse vector ML model for semantic search without dense vector index; no GPU required</td><td class="good">✅ Active ML feature</td></tr>
+          <tr><td>8.x</td><td>Stateless architecture (Project Argo)</td><td>Decouples compute from storage; nodes can be stateless; enables rapid auto-scaling; still in active development</td><td class="warn">⚠️ Preview / Elastic Cloud only</td></tr>
+          <tr><td>8.x</td><td>Kibana ES|QL query language</td><td>New pipe-based query language (like SQL + SPL hybrid); replaces older _sql API; more expressive for analytics</td><td class="good">✅ GA 8.11+</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Active TOC highlight based on scroll position
+  const tocItems = document.querySelectorAll('.toc-item');
+  const sections = document.querySelectorAll('.pillar');
+  
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        tocItems.forEach(item => {
+          item.classList.toggle('active', item.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { threshold: 0.2, rootMargin: '-100px 0px -60% 0px' });
+  
+  sections.forEach(s => { if (s.id) observer.observe(s); });
+</script>
+</body>
+</html>
