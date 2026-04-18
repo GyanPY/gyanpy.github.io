@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Internals (Part 5) — Practice Problem, Strong Hire Rubric & Series Summary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;--l4:#00C9A7;
+  --bq:#4285F4;--bq2:#1A73E8;--bq3:#8AB4F8;
+  --hire:#059669;--hire2:#34D399;
+  --avg:#6B7280;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--bq),var(--hire),var(--strong),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--bq3);background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--bq3)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(66,133,244,.05)}
+.ni.active a{color:var(--bq3);border-left-color:var(--bq3);background:rgba(66,133,244,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--bq3);border-color:var(--bq3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--bq3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--bq3) 32%,var(--hire2) 60%,var(--strong));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(5,150,105,.1);border-color:var(--hire2);color:var(--hire2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* PROBLEM STATEMENT BOX */
+.problem-box{background:linear-gradient(135deg,rgba(66,133,244,.07),rgba(5,150,105,.04));border:1px solid rgba(66,133,244,.22);border-radius:12px;padding:22px 26px;margin:0 0 28px}
+.pb-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.15em;color:var(--bq3);margin-bottom:10px;font-weight:600}
+.pb-h2{font-family:var(--fh);font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:14px}
+.req-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.req-card{background:rgba(22,27,34,.6);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.req-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;font-weight:600;margin-bottom:8px}
+.req-card.func .req-label{color:var(--bq3)}.req-card.nfunc .req-label{color:var(--cass4)}
+.req-card.scale .req-label{color:var(--strong)}.req-card.ambi .req-label{color:var(--obs)}
+.req-card ul{padding-left:14px}
+.req-card li{font-size:.83rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.req-card strong{color:var(--text)}
+
+/* AMBIGUITIES */
+.ambi-list{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.ambi-item{background:var(--surface2);border:1px solid rgba(249,115,22,.18);border-left:3px solid var(--obs);border-radius:0 8px 8px 0;padding:12px 16px}
+.ambi-q{font-family:var(--fh);font-size:.9rem;font-weight:600;color:var(--text);margin-bottom:8px;font-style:italic}
+.ambi-branches{font-size:.84rem;color:var(--muted);line-height:1.65}
+.ambi-branches strong{color:var(--text)}
+
+/* ANSWER SECTIONS — numbered steps */
+.answer-step{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:18px;overflow:hidden}
+.step-hdr{padding:11px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border)}
+.step-num{font-family:var(--fc);font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:10px;flex-shrink:0}
+.step-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.step-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.answer-step.collapsed .step-toggle{transform:rotate(-90deg)}
+.step-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.answer-step.collapsed .step-body{max-height:0;opacity:0}
+.step-inner{padding:0 18px 16px}
+/* step color coding */
+.st1 .step-hdr{background:rgba(66,133,244,.04)}
+.st1 .step-num{background:rgba(66,133,244,.12);color:var(--bq);border:1px solid rgba(66,133,244,.2)}
+.st2 .step-hdr{background:rgba(139,92,246,.04)}
+.st2 .step-num{background:rgba(139,92,246,.12);color:#8B5CF6;border:1px solid rgba(139,92,246,.2)}
+.st3 .step-hdr{background:rgba(16,185,129,.04)}
+.st3 .step-num{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+.st4 .step-hdr{background:rgba(249,115,22,.04)}
+.st4 .step-num{background:rgba(249,115,22,.12);color:var(--obs);border:1px solid rgba(249,115,22,.2)}
+.st5 .step-hdr{background:rgba(245,158,11,.04)}
+.st5 .step-num{background:rgba(245,158,11,.12);color:var(--strong);border:1px solid rgba(245,158,11,.2)}
+.st6 .step-hdr{background:rgba(5,150,105,.04)}
+.st6 .step-num{background:rgba(5,150,105,.12);color:var(--hire);border:1px solid rgba(5,150,105,.2)}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.bq{border:1px solid rgba(66,133,244,.2)}.diag.bq .diag-hdr{background:rgba(66,133,244,.06);border-bottom:1px solid rgba(66,133,244,.18)}.diag.bq .diag-title{color:var(--bq3)}
+.diag.hire{border:1px solid rgba(5,150,105,.2)}.diag.hire .diag-hdr{background:rgba(5,150,105,.06);border-bottom:1px solid rgba(5,150,105,.18)}.diag.hire .diag-title{color:var(--hire2)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--bq3);border-color:var(--bq3)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* SLOT STRATEGY VISUAL */
+.slot-tree{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin:12px 0;font-family:var(--fc);font-size:.78rem;line-height:1.85;color:#c9d1d9}
+.slot-tier{margin-bottom:6px}
+.slot-top{color:var(--bq3);font-weight:700}
+.slot-dash{color:var(--hire);font-weight:700}
+.slot-etl{color:var(--obs);font-weight:700}
+.slot-flex{color:var(--strong);font-weight:700}
+.slot-detail{color:var(--muted);font-size:.74rem;padding-left:24px;line-height:1.6}
+
+/* COST TABLE */
+.cost-box{background:rgba(5,150,105,.06);border:1px solid rgba(5,150,105,.18);border-radius:8px;padding:14px 18px;margin:12px 0}
+.cost-title{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--hire);margin-bottom:10px;font-weight:600}
+.cost-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(5,150,105,.1);font-size:.84rem}
+.cost-row:last-child{border-bottom:none}
+.cost-key{color:var(--muted);font-family:var(--fc);font-size:.76rem}
+.cost-val{font-family:var(--fc);font-size:.84rem;color:var(--hire2);font-weight:700}
+.cost-total{display:flex;justify-content:space-between;border-top:2px solid rgba(5,150,105,.25);padding-top:8px;margin-top:4px}
+.cost-total .cost-key{color:var(--text);font-weight:700}
+.cost-total .cost-val{color:var(--hire);font-size:.92rem}
+
+/* STRONG HIRE RUBRIC TABLE */
+.rubric-table{width:100%;border-collapse:collapse;font-size:.76rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.rubric-table thead tr{background:var(--surface2)}
+.rubric-table th{padding:9px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border)}
+.rubric-table th:nth-child(1){color:var(--dim)}
+.rubric-table th:nth-child(2){color:var(--avg)}
+.rubric-table th:nth-child(3){color:var(--hire2)}
+.rubric-table th:nth-child(4){color:var(--bq3)}
+.rubric-table td{padding:9px 12px;border-bottom:1px solid rgba(48,54,61,.35);vertical-align:top;line-height:1.5;font-size:.79rem}
+.rubric-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.rubric-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.rubric-table td:first-child{font-weight:600;color:var(--text)}
+.rubric-table td:nth-child(2){color:var(--avg);border-left:2px solid rgba(107,114,128,.3)}
+.rubric-table td:nth-child(3){color:var(--muted);border-left:2px solid rgba(5,150,105,.35)}
+.rubric-table td:nth-child(4){color:var(--bq3);border-left:2px solid rgba(66,133,244,.4)}
+
+/* 5-MINUTE REFRESHER */
+.refresher{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.rfsh-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:grid;grid-template-columns:160px 1fr;gap:10px}
+.rfsh-key{font-family:var(--fc);font-size:.72rem;font-weight:700;color:var(--bq3);padding-top:2px}
+.rfsh-val{font-size:.86rem;color:var(--muted);line-height:1.6}
+.rfsh-val strong{color:var(--text)}
+
+/* CHEAT SHEET */
+.cheat-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.cheat-table thead tr{background:linear-gradient(90deg,rgba(5,150,105,.1),rgba(66,133,244,.06))}
+.cheat-table th{padding:9px 14px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;border-bottom:1px solid rgba(5,150,105,.2)}
+.cheat-table th:first-child{color:var(--hire2)}.cheat-table th:last-child{color:var(--bq3)}
+.cheat-table td{padding:9px 14px;border-bottom:1px solid rgba(48,54,61,.35);vertical-align:top;line-height:1.55}
+.cheat-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.cheat-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.cheat-table td:first-child{font-weight:600;color:var(--text);font-style:italic}
+.cheat-table td:last-child{color:var(--muted);font-family:var(--fc);font-size:.75rem}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.bq{background:rgba(66,133,244,.07);border:1px solid rgba(66,133,244,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.bq .callout-title{color:var(--bq3)}
+.callout.warn .callout-title{color:var(--lean)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--hire2);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SERIES FINAL */
+.series-final{background:linear-gradient(135deg,rgba(66,133,244,.07),rgba(5,150,105,.08),rgba(245,166,35,.05));border:1px solid rgba(5,150,105,.22);border-radius:12px;padding:24px 28px;margin:28px 0;text-align:center}
+.series-final h3{font-family:var(--fh);font-size:1.25rem;font-weight:700;color:var(--text);margin-bottom:10px}
+.series-final p{font-size:.88rem;color:var(--muted);line-height:1.65;max-width:580px;margin:0 auto 18px}
+.sf-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.sfp{font-family:var(--fc);font-size:.67rem;padding:4px 12px;border-radius:20px}
+.sfp1{background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);color:var(--bq3)}
+.sfp2{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);color:#8B5CF6}
+.sfp3{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--strong)}
+.sfp4{background:rgba(66,133,244,.1);border:1px solid rgba(66,133,244,.3);color:var(--bq3)}
+.sfp5{background:rgba(5,150,105,.15);border:1px solid rgba(5,150,105,.35);color:var(--hire2);font-weight:700}
+
+mark{background:rgba(66,133,244,.14);color:var(--bq3);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.req-grid{grid-template-columns:1fr}.rfsh-item{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">BigQuery Internals · L6/L7 Series</div>
+    <div class="sb-title">Practice, Rubric & Series Summary</div>
+    <div class="sb-part">Part 5 — The Finale</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Practice Problem</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#problem-stmt">Problem Statement</a></li>
+      <li class="ni sub"><a href="#ambiguities">Ambiguities to Clarify</a></li>
+      <li class="ni sub"><a href="#step1">Step 1: Data Architecture</a></li>
+      <li class="ni sub"><a href="#step2">Step 2: Table Schema</a></li>
+      <li class="ni sub"><a href="#step3">Step 3: Materialized Views</a></li>
+      <li class="ni sub"><a href="#step4">Step 4: Slot Strategy</a></li>
+      <li class="ni sub"><a href="#step5">Step 5: Cost Estimate</a></li>
+      <li class="ni sub"><a href="#step6">Step 6: Monitoring & Governance</a></li>
+    </li>
+    <li class="ng"><div class="nl">Strong Hire Rubric</div>
+      <li class="ni sub"><a href="#rubric">6-Dimension Rubric</a></li>
+    </li>
+    <li class="ng"><div class="nl">Series Summary</div>
+      <li class="ni sub"><a href="#refresher">5-Minute Refresher</a></li>
+      <li class="ni sub"><a href="#cheatsheet">Interview Cheat Sheet</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+      <li class="ni"><a href="#series-final">Series Complete</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">BigQuery Internals · L6/L7 Series · Part 5</div>
+  <h1>Practice, Strong Hire<br>Rubric & Series<br>Summary</h1>
+  <div class="hero-meta">
+    <span>🛍️ Full e-commerce analytics design problem</span>
+    <span>❓ 4 ambiguities with branching implications</span>
+    <span>📐 6-step strong hire answer (with all SQL)</span>
+    <span>📊 $400K/month cost estimate with math</span>
+    <span>🏆 6-dimension strong hire rubric</span>
+    <span>⚡ 5-minute refresher + interview cheat sheet</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Architecture</span>
+    <span class="part-pill">Part 2: Query Execution</span>
+    <span class="part-pill">Part 3: Trade-offs</span>
+    <span class="part-pill">Part 4: Industry & Mastery</span>
+    <span class="part-pill ap">Part 5: Practice & Summary</span>
+  </div>
+  <p style="margin-top:14px">Part 5 puts everything together. A realistic system design interview problem — global e-commerce analytics at 30 TB/day — with four ambiguities that change the architecture, a six-step strong hire answer complete with SQL, slot strategy visualization, and a cost breakdown showing $400K vs $2M+. Then the strong hire rubric across six dimensions so you know exactly what the interviewer is evaluating. Closing with the 5-minute refresher and the interview cheat sheet.</p>
+</section>
+
+<!-- PROBLEM STATEMENT -->
+<div class="sec-hdr" id="problem-stmt"><h2>Sample Interview Problem</h2></div>
+
+<div class="problem-box">
+  <div class="pb-label">Design Problem</div>
+  <div class="pb-h2">Analytics Platform for a Global E-Commerce Company</div>
+  <div class="req-grid">
+    <div class="req-card func">
+      <div class="req-label">Functional Requirements</div>
+      <ul>
+        <li>Product managers query any historical data with SQL</li>
+        <li>Dashboards refresh every <strong>5 minutes</strong> with key metrics</li>
+        <li>Data scientists run ad-hoc queries for experiments</li>
+        <li>Finance team needs daily revenue reports</li>
+        <li>Real-time fraud detection on transactions</li>
+      </ul>
+    </div>
+    <div class="req-card nfunc">
+      <div class="req-label">Non-Functional Requirements</div>
+      <ul>
+        <li>Ad-hoc queries complete in <strong>&lt;60s P95</strong></li>
+        <li>Dashboard queries <strong>&lt;5s P95</strong></li>
+        <li>Data queryable within <strong>15 minutes</strong> of generation</li>
+        <li><strong>3-year</strong> data retention</li>
+        <li>Cost-efficient at scale</li>
+      </ul>
+    </div>
+    <div class="req-card scale">
+      <div class="req-label">Scale Numbers</div>
+      <ul>
+        <li>500M products</li>
+        <li>100M daily active users</li>
+        <li>2B transactions/day × 2KB = <strong>4 TB/day</strong></li>
+        <li>50B page view events/day × 500B = <strong>25 TB/day</strong></li>
+        <li>Total: <strong>~30 TB/day ingestion</strong></li>
+        <li>3-year retention: <strong>~33 PB</strong></li>
+      </ul>
+    </div>
+    <div class="req-card ambi">
+      <div class="req-label">6 Regions, Multiple Teams</div>
+      <ul>
+        <li>Teams across 6 geographic regions</li>
+        <li>All wanting to analyze the same data</li>
+        <li>Different query patterns per team</li>
+        <li>Governance and cost attribution needed</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- AMBIGUITIES -->
+<div class="sec-hdr" id="ambiguities"><h2>Ambiguities to Clarify First</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:14px">The strong hire answer starts with questions, not schema. These four ambiguities materially change the architecture.</p>
+
+<div class="ambi-list">
+  <div class="ambi-item">
+    <div class="ambi-q">"What's the acceptable latency for fraud detection?"</div>
+    <div class="ambi-branches">
+      <strong>If &lt;100ms →</strong> Real-time fraud needs a separate system (Bigtable + ML serving). BigQuery is not the tool.<br>
+      <strong>If minutes →</strong> Can use BigQuery streaming + BigQuery ML. Single platform.
+    </div>
+  </div>
+  <div class="ambi-item">
+    <div class="ambi-q">"Do all 6 regions need all data, or only their local data?"</div>
+    <div class="ambi-branches">
+      <strong>All data →</strong> Multi-region BigQuery dataset with cross-region replication. Higher cost, ~2x storage.<br>
+      <strong>Local data →</strong> Regional BigQuery instances with data federation for cross-region analysis. Lower cost, adds query complexity.
+    </div>
+  </div>
+  <div class="ambi-item">
+    <div class="ambi-q">"Are the dashboards pre-defined or fully ad-hoc?"</div>
+    <div class="ambi-branches">
+      <strong>Pre-defined →</strong> Materialized views + BI Engine. Dashboard queries become sub-second.<br>
+      <strong>Ad-hoc →</strong> More flexible optimization needed. Clustering strategy must cover wider query patterns.
+    </div>
+  </div>
+  <div class="ambi-item">
+    <div class="ambi-q">"How much historical data is queried frequently?"</div>
+    <div class="ambi-branches">
+      <strong>Recent 30 days →</strong> Hot partitions (recent SSD-backed) + aggressive clustering. Cold data can be cheaply archived.<br>
+      <strong>Full 3 years equally →</strong> Different optimization — tiered storage less helpful, need broader clustering strategy.
+    </div>
+  </div>
+</div>
+
+<!-- STRONG ANSWER: 6 STEPS -->
+<div class="sec-hdr" id="answer"><h2>Strong Hire Answer — 6 Steps</h2></div>
+
+<!-- STEP 1: DATA ARCHITECTURE -->
+<div class="answer-step st1" id="step1-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 1</span>
+    <span class="step-title">Data Architecture — The Pipeline</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step1">
+    <div class="diag bq">
+      <div class="diag-hdr"><span class="diag-title">Ingestion Pipeline — Streaming + Batch</span></div>
+      <pre>50B events/day + 2B transactions/day
+         │
+         ▼
+┌─────────────────────┐
+│    Pub/Sub          │  ← Streaming ingestion (decouples producers)
+│    Topics:          │
+│    - events         │
+│    - transactions   │
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│    Dataflow         │  ← Stream processing:
+│                     │     Validation + enrichment
+│                     │     Schema normalization
+│                     │     Region tagging
+└─────────────────────┘
+         │
+    ┌────┴────────────────────────────┐
+    │                                 │
+    ▼                                 ▼
+┌──────────────────┐         ┌──────────────────────┐
+│   BigQuery       │         │   Bigtable           │
+│   (Analytics)    │         │   (Low-latency)      │
+│   - Events table │         │   - Real-time fraud  │
+│   - Transactions │         │     features         │
+│   - Historical   │         │   - Sub-100ms reads  │
+└──────────────────┘         └──────────────────────┘
+
+Key decision: Fraud detection at &lt;100ms → Bigtable serving layer
+              BigQuery for fraud analytics, not fraud serving</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- STEP 2: TABLE SCHEMA -->
+<div class="answer-step st2" id="step2-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 2</span>
+    <span class="step-title">BigQuery Table Design — Schema is the Optimization</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step2">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — events table definition</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>CREATE TABLE events (
+  event_id          STRING      NOT NULL,
+  event_timestamp   TIMESTAMP   NOT NULL,
+  user_id           STRING,
+  event_type        STRING,        -- 'page_view' | 'transaction' | 'search' | 'add_to_cart'
+  product_id        STRING,
+  session_id        STRING,
+  region            STRING,        -- 'us-east' | 'eu-west' | 'ap-south' etc.
+  properties        JSON,          -- Flexible schema for arbitrary event properties
+  -- Nested structs for type-specific data (avoid separate tables)
+  page_view         STRUCT<url STRING, referrer STRING, time_on_page_ms INT64>,
+  transaction       STRUCT<amount DECIMAL(18,2), currency STRING,
+                           payment_method STRING, is_fraudulent BOOL>
+)
+PARTITION BY DATE(event_timestamp)
+CLUSTER BY event_type, user_id, product_id
+OPTIONS(
+  partition_expiration_days = 1095,  -- 3 years exactly
+  require_partition_filter = TRUE     -- CRITICAL: prevent $5K accidental scans
+);
+
+-- Why this clustering order?
+-- (event_type, user_id, product_id)
+-- 90% of queries filter on event_type first
+-- User-specific analysis filters event_type + user_id
+-- Product analysis filters event_type + product_id
+-- Leftmost columns must match most common filter pattern</pre></div>
+    <div class="callout good">
+      <div class="callout-title">Why STRUCT Over Separate Tables</div>
+      <p>Joining event table with a transactions table requires a JOIN on 50B rows — expensive shuffle. Nested STRUCTs keep all event data in one row, enabling columnar pruning within the struct without a cross-table join. BigQuery reads only the struct columns you query.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- STEP 3: MATERIALIZED VIEWS -->
+<div class="answer-step st3" id="step3-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 3</span>
+    <span class="step-title">Materialized Views — Dashboard &lt;5s SLA</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step3">
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — Materialized View for Dashboard</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Pre-aggregate for dashboard performance
+-- This MV is incrementally refreshed every 5 minutes
+CREATE MATERIALIZED VIEW daily_revenue_by_region
+OPTIONS(
+  enable_refresh = TRUE,
+  refresh_interval_minutes = 5
+) AS
+SELECT
+  DATE(event_timestamp)          AS date,
+  region,
+  SUM(transaction.amount)        AS total_revenue,
+  COUNT(DISTINCT user_id)        AS unique_customers,
+  COUNT(*)                       AS transaction_count,
+  APPROX_COUNT_DISTINCT(user_id) AS approx_unique_customers  -- 10x faster cardinality
+FROM events
+WHERE event_type = 'transaction'
+GROUP BY 1, 2;
+
+-- Additional MVs for other dashboard panels:
+-- daily_top_products_by_region (APPROX_TOP_COUNT)
+-- hourly_fraud_rate_by_payment_method
+-- weekly_cohort_retention (pre-computed rolling window)
+
+-- Cost impact:
+-- Without MV: 50B rows × daily dashboard refresh = expensive per-query cost
+-- With MV: Pre-aggregated to region × date grain = tiny scan, &lt;1s response</pre></div>
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — MV Refresh vs Streaming Buffer Lag</div>
+      <p>"Materialized views only see committed data — not the streaming buffer. With a 5-minute refresh interval and ~10-minute streaming buffer commit time, dashboards may show data up to 15 minutes old. <strong>This satisfies the '15 minutes to queryable' NFR exactly.</strong> If the requirement were stricter, we'd query the base table directly for the most recent window and merge with MV for historical."</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- STEP 4: SLOT STRATEGY -->
+<div class="answer-step st4" id="step4-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 4</span>
+    <span class="step-title">Slot Strategy — Reserved + Flex</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step4">
+    <div class="slot-tree">
+      <div class="slot-tier"><span class="slot-top">Reserved Slots (Enterprise Edition)</span></div>
+      <div class="slot-tier">
+        <span class="slot-dash">├── Dashboard Reservation: 500 slots — HIGH priority</span>
+        <div class="slot-detail">Serves: 5-min dashboard refreshes via MVs<br>SLA: &lt;5s P95 | Never preempted by ETL | Dedicated</div>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-top">│</span>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-dash">├── Analyst Reservation: 1,000 slots — MEDIUM priority</span>
+        <div class="slot-detail">Serves: Data scientist ad-hoc queries, PM analysis<br>SLA: &lt;60s P95 | Can borrow idle Dashboard slots</div>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-top">│</span>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-etl">├── ETL Reservation: 2,000 slots — LOW priority, idle sharing</span>
+        <div class="slot-detail">Serves: Daily aggregation pipelines, ML training jobs<br>SLA: Best effort | Borrows from Analyst when idle</div>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-top">│</span>
+      </div>
+      <div class="slot-tier">
+        <span class="slot-flex">└── Flex Slots: On-demand for burst periods</span>
+        <div class="slot-detail">Serves: End-of-quarter reporting, annual analysis, Black Friday peaks<br>Billed per second | Auto-provision | Decommission after burst</div>
+      </div>
+    </div>
+    <div class="callout bq">
+      <div class="callout-title">Why Segment Reservations?</div>
+      <p>Without segmentation, a single large ETL pipeline consuming all 3,500 slots will block dashboard refreshes, causing SLA violations. Reservations provide hard isolation: the Dashboard pool guarantees 500 slots are always available for 5-second refreshes, regardless of what ETL is doing.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- STEP 5: COST ESTIMATE -->
+<div class="answer-step st5" id="step5-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 5</span>
+    <span class="step-title">Cost Estimate — $400K vs $2M+</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step5">
+    <div class="cost-box">
+      <div class="cost-title">Monthly Cost Breakdown — Reserved Architecture</div>
+      <div class="cost-row"><span class="cost-key">Storage: 33 PB × $0.01/GB avg (tiered active + long-term)</span><span class="cost-val">~$330K/month</span></div>
+      <div class="cost-row"><span class="cost-key">Reserved slots: 3,500 slots × $20/slot/month</span><span class="cost-val">$70K/month</span></div>
+      <div class="cost-row"><span class="cost-key">Flex slots: burst periods (estimated)</span><span class="cost-val">~$5K/month</span></div>
+      <div class="cost-row"><span class="cost-key">Streaming inserts: 30 TB/day × $0.01/200MB</span><span class="cost-val">~$10K/month</span></div>
+      <div class="cost-total">
+        <span class="cost-key">Total estimated (reserved architecture)</span>
+        <span class="cost-val">~$415K/month</span>
+      </div>
+    </div>
+    <div class="cost-box" style="background:rgba(255,107,107,.06);border-color:rgba(255,107,107,.2)">
+      <div class="cost-title" style="color:var(--no)">On-Demand Alternative (for comparison)</div>
+      <div class="cost-row"><span class="cost-key" style="color:var(--muted)">10 PB/day scan × 30 days × $5/TB</span><span class="cost-val" style="color:var(--no)">$1.5M/month</span></div>
+      <div class="cost-row"><span class="cost-key" style="color:var(--muted)">Storage: same</span><span class="cost-val" style="color:var(--no)">$330K/month</span></div>
+      <div class="cost-total" style="border-color:rgba(255,107,107,.25)">
+        <span class="cost-key" style="color:var(--text)">Total on-demand (naive)</span>
+        <span class="cost-val" style="color:var(--no);font-size:.92rem">~$1.83M/month</span>
+      </div>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">The Business Case: $1.4M/month Savings</div>
+      <p>Reserved slots at $415K/month vs on-demand at $1.83M/month = <strong>$1.4M/month savings ($16.8M/year)</strong>. Break-even calculation: 3,500 slots × $20 = $70K/month reserved. On-demand equivalent: $1.5M/month compute. Reserved makes sense at any scan volume above ~14 TB/month for this slot count.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- STEP 6: MONITORING -->
+<div class="answer-step st6" id="step6-card">
+  <div class="step-hdr" onclick="toggleStep(this)">
+    <span class="step-num">Step 6</span>
+    <span class="step-title">Monitoring & Governance</span>
+    <span class="step-toggle">▾</span>
+  </div>
+  <div class="step-body"><div class="step-inner" id="step6">
+    <div class="callout bq">
+      <div class="callout-title">Five Governance Layers</div>
+      <ul>
+        <li><strong>Query cost attribution by team:</strong> BigQuery labels on every query. Dashboard: cost per team per day. Creates accountability without permission changes.</li>
+        <li><strong>Partition filter enforcement:</strong> <code>require_partition_filter = TRUE</code> on all tables &gt;1 TB. Prevents $5K accidental full scans. Enforced at schema level, not policy level.</li>
+        <li><strong>Slow query alerts (&gt;60s):</strong> INFORMATION_SCHEMA.JOBS monitoring. Alert fires → auto-label query → notify team. Identifies optimization candidates.</li>
+        <li><strong>Cost anomaly detection:</strong> Daily spend per team vs 7-day rolling average. 3σ deviation triggers PagerDuty to data engineering on-call.</li>
+        <li><strong>Slot utilization dashboards:</strong> Per-reservation slot utilization P50/P95. If Dashboard reservation &gt;80% sustained → add slots before SLA degrades.</li>
+      </ul>
+    </div>
+    <div class="code"><div class="code-hdr"><span class="code-lang">BigQuery SQL — Cost Attribution Query</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>-- Run daily: cost per team, identify top spending queries
+SELECT
+  labels['team']                           AS team,
+  DATE(creation_time)                      AS query_date,
+  COUNT(*)                                 AS query_count,
+  SUM(total_bytes_processed) / POW(10,12)  AS tb_scanned,
+  SUM(total_bytes_processed) / POW(10,12) * 5.0 AS estimated_cost_usd,
+  MAX(total_slot_ms / 1000 / 60)           AS max_slot_minutes
+FROM
+  `region-us`.INFORMATION_SCHEMA.JOBS
+WHERE
+  creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+  AND job_type = 'QUERY'
+  AND state = 'DONE'
+GROUP BY 1, 2
+ORDER BY estimated_cost_usd DESC;</pre></div>
+  </div></div>
+</div>
+
+<!-- STRONG HIRE RUBRIC -->
+<div class="sec-hdr" id="rubric"><h2>Strong Hire Rubric — 6 Dimensions</h2></div>
+
+<table class="rubric-table">
+  <thead>
+    <tr>
+      <th>Dimension</th>
+      <th>Average Candidate</th>
+      <th>Strong Hire</th>
+      <th>How to Demonstrate</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Problem Decomposition</td>
+      <td>Starts with data model immediately</td>
+      <td>Starts with query patterns and SLAs, derives schema from those</td>
+      <td>"Before I design the schema, let me understand the access patterns and query latency requirements…"</td>
+    </tr>
+    <tr>
+      <td>Technical Depth</td>
+      <td>Knows partitioning exists</td>
+      <td>Explains why clustering column order matters for the specific query patterns</td>
+      <td>"Clustering by (event_type, user_id) helps queries filtering on event type first, but for user-specific analysis without event type filter, this order fails to prune…"</td>
+    </tr>
+    <tr>
+      <td>Trade-off Analysis</td>
+      <td>States trade-offs exist</td>
+      <td>Quantifies trade-offs and connects to business impact</td>
+      <td>"Materialized views add $X in storage but save $Y in query costs and enable the 5-second dashboard SLA — which is worth it because…"</td>
+    </tr>
+    <tr>
+      <td>Scale Reasoning</td>
+      <td>"BigQuery scales"</td>
+      <td>Calculates storage, query costs, slot requirements with concrete numbers</td>
+      <td>"30 TB/day × 3 years = 33 PB. At this scale, tiered storage drops effective cost from $0.02 to $0.01/GB. Reserved slots at $70K/month vs $1.5M/month on-demand…"</td>
+    </tr>
+    <tr>
+      <td>Operational Thinking</td>
+      <td>"We'll monitor it"</td>
+      <td>Designs specific monitoring, alerting, and governance with concrete implementation</td>
+      <td>"I'd enforce partition filters at schema level to prevent $5K queries. Cost attribution labels on all queries. Alert on 3σ cost deviation per team…"</td>
+    </tr>
+    <tr>
+      <td>Communication</td>
+      <td>Technical accuracy only</td>
+      <td>Technical accuracy + business translation at every decision point</td>
+      <td>"This design costs $415K/month vs $1.83M/month naive approach — $1.4M/month savings — while meeting all SLAs. The two key decisions driving the difference are…"</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- 5-MINUTE REFRESHER -->
+<div class="sec-hdr" id="refresher"><h2>The 5-Minute Refresher</h2></div>
+
+<div class="refresher">
+  <div class="rfsh-item">
+    <span class="rfsh-key">Architecture</span>
+    <span class="rfsh-val"><strong>Capacitor</strong> (columnar storage on Colossus) + <strong>Dremel</strong> (tree-structured distributed execution) + <strong>Slots</strong> (dynamically allocated compute units). Separated storage and compute — they scale independently.</span>
+  </div>
+  <div class="rfsh-item">
+    <span class="rfsh-key">Why It's Fast</span>
+    <span class="rfsh-val">Only reads <strong>columns you query</strong> (projection pruning) + <strong>thousands of parallel workers</strong> + <strong>tree aggregation</strong> reduces shuffle volume by aggregating at each level before forwarding to root mixer.</span>
+  </div>
+  <div class="rfsh-item">
+    <span class="rfsh-key">Key Optimizations</span>
+    <span class="rfsh-val"><strong>Partition</strong> (eliminate entire date ranges before any scan) → <strong>Cluster</strong> (skip blocks within partitions using min/max metadata) → <strong>Materialized Views</strong> (pre-compute aggregations, incremental refresh). Apply in that order.</span>
+  </div>
+  <div class="rfsh-item">
+    <span class="rfsh-key">Cost Model</span>
+    <span class="rfsh-val">Pay per <strong>TB scanned</strong> (on-demand: $5/TB) or per <strong>slot commitment</strong> (reserved: $20/slot/month). Schema design determines scan volume. <strong>Effective cost = $5/TB × (1 - pruning efficiency)</strong>. With 95% pruning, effective cost is $0.25/TB.</span>
+  </div>
+  <div class="rfsh-item">
+    <span class="rfsh-key">Failure Handling</span>
+    <span class="rfsh-val"><strong>Worker failures:</strong> automatic (shuffle persisted to Colossus, work reassigned). <strong>Slot exhaustion:</strong> queries queue and degrade. <strong>The failure mode you design for</strong> is the human writing a full table scan on a petabyte — governance, not infrastructure.</span>
+  </div>
+</div>
+
+<!-- CHEAT SHEET -->
+<div class="sec-hdr" id="cheatsheet"><h2>Interview Cheat Sheet</h2></div>
+
+<table class="cheat-table">
+  <thead><tr><th>If They Ask</th><th>Answer With</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>"How does BigQuery achieve scale?"</td>
+      <td>Columnar storage reads only queried columns + separated storage/compute allows thousands of parallel workers + tree-structured Dremel execution aggregates without full shuffle to root</td>
+    </tr>
+    <tr>
+      <td>"How would you optimize this query?"</td>
+      <td>Partition pruning (date filter) → Cluster pruning (secondary filter, leftmost columns) → Projection pruning (SELECT only needed columns) → Approximate functions (APPROX_COUNT_DISTINCT) → Materialized views (pre-compute if repeating)</td>
+    </tr>
+    <tr>
+      <td>"How do you handle cost at scale?"</td>
+      <td>Schema design (partition/cluster) to maximize pruning efficiency → Materialized views to pre-compute common aggregations → Reserved slots (break-even ~24 TB/month for 500 slots) → require_partition_filter to prevent accidental scans → Cost attribution labels by team</td>
+    </tr>
+    <tr>
+      <td>"What about real-time data?"</td>
+      <td>Streaming inserts: ~10s latency for table reads, ~10min before visible to MVs. True real-time serving → Bigtable. BigQuery for analytics on near-real-time data. Streaming costs 10x more per row than batch loading.</td>
+    </tr>
+    <tr>
+      <td>"How do you monitor BigQuery?"</td>
+      <td>Slot utilization per reservation (alert &gt;80% sustained), bytes scanned efficiency (TB scanned / rows returned), P50/P99 query duration by team, cost attribution via labels, cost anomaly detection vs rolling baseline</td>
+    </tr>
+    <tr>
+      <td>"BigQuery vs [Redshift/Athena/Spark]?"</td>
+      <td>BigQuery wins: serverless from day 1, integrated ML, native streaming, deep Google ecosystem (Dataflow/Looker/Vertex). Redshift wins: co-location benefits, AWS-native. Athena wins: open formats, no lock-in. Spark wins: general-purpose ML+ETL+SQL, portable.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Final Lesson — Apply the Framework, Don't Memorize the Answers</div>
+  <p>Every element of the practice problem answer above was derived from the same framework: <strong>requirements → query patterns → schema → optimization → cost → monitoring</strong>. The specific SQL, the slot numbers, the cost estimate — these change for every system. The framework doesn't.</p>
+  <p>When an interviewer gives you a novel system you haven't seen before, start with: What are the query patterns? What's the latency tolerance? What does the scan volume look like? What are the retention requirements? The answers to those questions determine the partition key, the clustering columns, whether MVs are needed, and whether reserved slots are worth it. <strong>The schema and the slot strategy are derived conclusions, not starting points.</strong></p>
+  <p>That's the difference the rubric measures: average candidates start with the schema; strong hires start with the questions that make the schema obvious.</p>
+</div>
+
+<div class="series-final" id="series-final">
+  <h3>📊 BigQuery Internals Series — Complete</h3>
+  <p>Five parts from columnar architecture to interview-ready practice problem. The complete mental model: schema encodes assumptions, partition is the knife, cluster is the scalpel, shuffle is where distributed systems get expensive, and governance is the real failure mode to design for.</p>
+  <div class="sf-pills">
+    <span class="sfp sfp1">Part 1 · Architecture & Storage Internals</span>
+    <span class="sfp sfp2">Part 2 · Query Execution & Dremel Engine</span>
+    <span class="sfp sfp3">Part 3 · Trade-offs, Failures & Scale BOE</span>
+    <span class="sfp sfp4">Part 4 · Industry Deep-Dive & Interview Mastery</span>
+    <span class="sfp sfp5">Part 5 · Practice, Rubric & Series Summary</span>
+  </div>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleStep(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
