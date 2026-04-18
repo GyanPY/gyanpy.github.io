@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer & API Gateway Internals (Part 4) — System Design Interview Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;
+  --cass4:#10b981;--l4:#00C9A7;--l7:#845EC2;--lb3:#0081CF;
+  /* Series accent for Part 4: synthesis — deep cobalt */
+  --p4:#2563EB;--p4b:#1D4ED8;--p4l:#60A5FA;
+  /* Scenario accent colors */
+  --s1c:#6B7280;--s2c:#0EA5E9;--s3c:#8B5CF6;--s4c:#F59E0B;--s5c:#00C9A7;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--s1c),var(--s2c),var(--s3c),var(--s4c),var(--s5c));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--p4l);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--p4l);background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--p4l)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(37,99,235,.05)}
+.ni.active a{color:var(--p4l);border-left-color:var(--p4l);background:rgba(37,99,235,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--p4l);border-color:var(--p4l);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--p4l);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.6rem;font-weight:900;line-height:1.08;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--p4l) 35%,var(--s3c) 58%,var(--s4c));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(37,99,235,.1);border-color:var(--p4l);color:var(--p4l)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* QUICK REFERENCE TABLE */
+.qr-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:0 0 14px;border-radius:9px;overflow:hidden}
+.qr-table thead tr{background:linear-gradient(90deg,rgba(37,99,235,.12),rgba(139,92,246,.06))}
+.qr-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--p4l);border-bottom:1px solid rgba(37,99,235,.2)}
+.qr-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.45}
+.qr-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.qr-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.qr-table td:first-child{font-weight:600;color:var(--text)}
+.qr-table td:nth-child(2){font-family:var(--fc);font-size:.74rem;color:var(--p4l);font-weight:700}
+
+/* LAYERED ARCHITECTURE DIAGRAM */
+.layers{background:#010409;border:1px solid rgba(37,99,235,.2);border-radius:10px;margin:18px 0;overflow:hidden}
+.layers-hdr{background:rgba(37,99,235,.07);border-bottom:1px solid rgba(37,99,235,.18);padding:9px 16px}
+.layers-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p4l);font-weight:600}
+.layers pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.85;color:#c9d1d9;white-space:pre}
+
+/* SCENARIO CARD — full system */
+.sys{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:32px;overflow:hidden}
+.sys-hdr{padding:15px 22px;display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none}
+.sys-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px}
+.sys-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text)}
+.sys-sub{font-family:var(--fc);font-size:.7rem;color:var(--muted);margin-left:auto;padding-right:8px}
+.sys-toggle{color:var(--dim);font-size:.78rem;transition:transform .3s;flex-shrink:0}
+.sys.collapsed .sys-toggle{transform:rotate(-90deg)}
+.sys-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.sys.collapsed .sys-body{max-height:0;opacity:0}
+.sys-inner{padding:0 22px 20px}
+/* per-scenario accent */
+.c1 .sys-hdr{border-bottom:1px solid rgba(107,114,128,.15);background:rgba(107,114,128,.05)}
+.c1 .sys-num{background:rgba(107,114,128,.12);color:var(--s1c);border:1px solid rgba(107,114,128,.2)}
+.c2 .sys-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.05)}
+.c2 .sys-num{background:rgba(14,165,233,.12);color:var(--s2c);border:1px solid rgba(14,165,233,.2)}
+.c3 .sys-hdr{border-bottom:1px solid rgba(139,92,246,.15);background:rgba(139,92,246,.05)}
+.c3 .sys-num{background:rgba(139,92,246,.12);color:var(--s3c);border:1px solid rgba(139,92,246,.2)}
+.c4 .sys-hdr{border-bottom:1px solid rgba(245,158,11,.15);background:rgba(245,158,11,.05)}
+.c4 .sys-num{background:rgba(245,158,11,.12);color:var(--s4c);border:1px solid rgba(245,158,11,.2)}
+.c5 .sys-hdr{border-bottom:1px solid rgba(0,201,167,.15);background:rgba(0,201,167,.05)}
+.c5 .sys-num{background:rgba(0,201,167,.12);color:var(--s5c);border:1px solid rgba(0,201,167,.2)}
+
+/* ARCHITECTURE DIAGRAM blocks */
+.arch{background:#010409;border-radius:10px;margin:14px 0;overflow:hidden}
+.arch.c1b{border:1px solid rgba(107,114,128,.2)}.arch.c1b .arch-hdr{background:rgba(107,114,128,.06);border-bottom:1px solid rgba(107,114,128,.18)}.arch.c1b .arch-title{color:var(--s1c)}
+.arch.c2b{border:1px solid rgba(14,165,233,.2)}.arch.c2b .arch-hdr{background:rgba(14,165,233,.06);border-bottom:1px solid rgba(14,165,233,.18)}.arch.c2b .arch-title{color:var(--s2c)}
+.arch.c3b{border:1px solid rgba(139,92,246,.2)}.arch.c3b .arch-hdr{background:rgba(139,92,246,.06);border-bottom:1px solid rgba(139,92,246,.18)}.arch.c3b .arch-title{color:var(--s3c)}
+.arch.c4b{border:1px solid rgba(245,158,11,.2)}.arch.c4b .arch-hdr{background:rgba(245,158,11,.06);border-bottom:1px solid rgba(245,158,11,.18)}.arch.c4b .arch-title{color:var(--s4c)}
+.arch.c5b{border:1px solid rgba(0,201,167,.2)}.arch.c5b .arch-hdr{background:rgba(0,201,167,.06);border-bottom:1px solid rgba(0,201,167,.18)}.arch.c5b .arch-title{color:var(--s5c)}
+.arch-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.arch-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.arch pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--p4l);border-color:var(--p4l)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* DECISION CHECKLIST inside scenario */
+.dec-list{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:12px 0}
+.dec-title{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:10px;font-weight:600}
+.dec-item{display:flex;align-items:flex-start;gap:8px;padding:3px 0;font-size:.85rem;color:var(--muted);line-height:1.5}
+.dec-q{flex:1}
+.dec-a{font-family:var(--fc);font-size:.76rem;padding:1px 7px;border-radius:3px;flex-shrink:0;margin-top:2px}
+.dec-a.yes{background:rgba(16,185,129,.12);color:var(--cass4)}
+.dec-a.no{background:rgba(107,114,128,.12);color:var(--dim)}
+.dec-verdict{background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:6px 12px;margin-top:8px;font-family:var(--fc);font-size:.72rem;font-weight:700;display:flex;align-items:center;gap:6px}
+
+/* BEFORE/AFTER SIDE-BY-SIDE */
+.before-after{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.ba-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.ba-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:8px}
+.ba-card.before .ba-label{color:var(--no)}.ba-card.after .ba-label{color:var(--cass4)}
+.ba-card.before{border-left:3px solid var(--no)}.ba-card.after{border-left:3px solid var(--cass4)}
+.ba-card p,.ba-card ul{font-size:.85rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+.ba-card ul{padding-left:14px}.ba-card li{margin-bottom:3px}.ba-card strong{color:var(--text)}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.info{background:rgba(37,99,235,.07);border:1px solid rgba(37,99,235,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.info .callout-title{color:var(--p4l)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* TRADE-OFF TABLE */
+.tradeoff{width:100%;border-collapse:collapse;font-size:.79rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.tradeoff thead tr{background:linear-gradient(90deg,rgba(16,185,129,.08),rgba(255,107,107,.06))}
+.tradeoff th{padding:8px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;border-bottom:1px solid var(--border)}
+.tradeoff th:nth-child(2){color:var(--no)}.tradeoff th:nth-child(3){color:var(--cass4)}
+.tradeoff th:first-child{color:var(--muted)}
+.tradeoff td{padding:8px 13px;border-bottom:1px solid rgba(48,54,61,.3);color:var(--muted);vertical-align:top;line-height:1.45}
+.tradeoff tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.tradeoff tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.tradeoff td:first-child{font-weight:600;color:var(--text)}
+.tradeoff td:nth-child(2){color:var(--no)}.tradeoff td:nth-child(3){color:var(--cass4)}
+
+/* INTERVIEW ANSWER BOX */
+.interview{background:linear-gradient(135deg,rgba(37,99,235,.09),rgba(139,92,246,.05));border:1px solid rgba(37,99,235,.25);border-radius:10px;padding:18px 20px;margin:14px 0;position:relative}
+.interview::before{content:'🎤';position:absolute;right:16px;top:14px;font-size:1.3rem;opacity:.4}
+.interview-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p4l);margin-bottom:10px;font-weight:600}
+.interview p{font-size:.88rem;line-height:1.7;color:var(--muted);margin-bottom:8px}
+.interview ul{padding-left:18px;margin-bottom:8px}
+.interview li{font-size:.87rem;color:var(--muted);line-height:1.6;margin-bottom:4px}
+.interview strong{color:var(--text)}
+.interview p:first-of-type{color:var(--text);font-style:italic}
+
+/* MARKS */
+mark{background:rgba(37,99,235,.14);color:var(--p4l);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--p4l);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SERIES COMPLETE BANNER */
+.series-complete{background:linear-gradient(135deg,rgba(0,201,167,.08),rgba(37,99,235,.05),rgba(139,92,246,.06));border:1px solid rgba(0,201,167,.2);border-radius:12px;padding:22px 26px;margin:28px 0 0;text-align:center}
+.series-complete h3{font-family:var(--fh);font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:10px}
+.series-complete p{font-size:.88rem;color:var(--muted);line-height:1.65;max-width:560px;margin:0 auto 14px}
+.series-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.series-pill{font-family:var(--fc);font-size:.68rem;padding:4px 12px;border-radius:20px}
+.sp1{background:rgba(0,201,167,.1);border:1px solid rgba(0,201,167,.3);color:var(--l4)}
+.sp2{background:rgba(132,94,194,.1);border:1px solid rgba(132,94,194,.3);color:var(--l7)}
+.sp3{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:var(--strong)}
+.sp4{background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);color:var(--p4l)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.before-after{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer & API Gateway · L6/L7 Series</div>
+    <div class="sb-title">System Design Interview Guide</div>
+    <div class="sb-part">Part 4 — Five Architectures, Five Answers</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Overview</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#quick-ref">Quick Reference Table</a></li>
+      <li class="ni sub"><a href="#layers">The Complete Layer Model</a></li>
+    </li>
+    <li class="ng"><div class="nl">Five System Architectures</div>
+      <li class="ni sub"><a href="#s1">S1: Simple Blog / Portfolio</a></li>
+      <li class="ni sub"><a href="#s2">S2: E-Commerce (+ Growth Path)</a></li>
+      <li class="ni sub"><a href="#s3">S3: Social Media Platform</a></li>
+      <li class="ni sub"><a href="#s4">S4: Developer API Platform</a></li>
+      <li class="ni sub"><a href="#s5">S5: High-Performance KV Store</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+      <li class="ni"><a href="#series-wrap">Series Complete</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer & API Gateway Internals · L6/L7 Series · Part 4</div>
+  <h1>Five Architectures,<br>Five Interview<br>Answers</h1>
+  <div class="hero-meta">
+    <span>📝 Blog: L7 LB only</span>
+    <span>🛍️ E-Commerce: L7 LB → growth path to API Gateway</span>
+    <span>📱 Social media: L4 + API Gateway combo</span>
+    <span>💳 Developer API: Full Gateway + Developer Portal</span>
+    <span>⚡ KV Store: L4 + custom API layer (no gateway)</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: L4 vs L7</span>
+    <span class="part-pill">Part 2: When L7</span>
+    <span class="part-pill">Part 3: API Gateway</span>
+    <span class="part-pill ap">Part 4: Five Architectures</span>
+  </div>
+  <p style="margin-top:14px">Parts 1–3 built the framework. Part 4 applies it: five real system types, each with a complete architecture, a decision checklist showing exactly why each component was chosen, and the <em>interview-ready answer</em> you'd give under pressure. The goal is not to memorize architectures — it's to develop the reasoning process so you can derive the right answer for any system you haven't seen before.</p>
+</section>
+
+<!-- QUICK REFERENCE -->
+<div class="sec-hdr" id="quick-ref"><h2>Quick Reference — What to Use When</h2></div>
+
+<table class="qr-table">
+  <thead><tr><th>System Type</th><th>Architecture</th><th>Key Reasoning</th></tr></thead>
+  <tbody>
+    <tr><td>Simple internal service</td><td>L4 LB only</td><td>Fast, cheap, no HTTP smarts needed — L4 is enough</td></tr>
+    <tr><td>Web app with one backend</td><td>L7 LB only</td><td>URL routing + SSL termination — L7 covers all needs</td></tr>
+    <tr><td>Microservices (internal)</td><td>L7 LB + light API logic in services</td><td>Keep it simple — no external devs, no developer portal needed</td></tr>
+    <tr><td>Microservices (complex)</td><td>L7 LB + API Gateway</td><td>Cross-cutting concerns (auth, logging, rate limiting) centralized</td></tr>
+    <tr><td>Public API (external devs)</td><td>LB + Full API Gateway</td><td>API keys, per-plan rate limits, developer portal, usage billing</td></tr>
+    <tr><td>Ultra low-latency system</td><td>L4 LB + custom API layer</td><td>Every millisecond matters — gateway overhead is unacceptable</td></tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <div class="callout-title">The Key Insight Behind the Table</div>
+  <p>It's not "either/or" — it's about <strong>what problems you're solving at each layer</strong>. The right combination is determined by: Do you have external developers? How many services? What's your latency budget? What's your throughput? What does the application layer already handle? Every row in this table answers a different combination of those questions.</p>
+</div>
+
+<!-- LAYER MODEL -->
+<div class="sec-hdr" id="layers"><h2>The Complete Layer Model</h2></div>
+
+<div class="layers">
+  <div class="layers-hdr"><span class="layers-title">Five Layers — You Don't Always Need All of Them</span></div>
+  <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 1: Edge / CDN  (Optional)                                            │
+│  Cloudflare, AWS CloudFront — static caching, DDoS protection               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 2: Load Balancer (L4 or L7)  ← Always present                       │
+│  Traffic distribution, health checks, SSL termination (L7)                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 3: API Gateway  (Optional — only when needed)                        │
+│  Auth, rate limiting, request transformation, API versioning                │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 4: Application Services  ← Always present                           │
+│  Business logic — microservices or monolith                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LAYER 5: Data Layer  ← Always present                                     │
+│  Databases, caches, queues                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Layers 1 and 3 are optional — add them only when they solve a real problem.</pre>
+</div>
+
+<!-- SCENARIO 1 -->
+<div class="sec-hdr" id="s1"><h2>Scenario 1: Simple Web Application</h2></div>
+
+<div class="sys c1" id="s1-card">
+  <div class="sys-hdr" onclick="toggleSys(this)">
+    <span class="sys-num">Scenario 1</span>
+    <span class="sys-title">Blog, Portfolio, Simple Node.js App</span>
+    <span class="sys-sub">Answer: L7 LB only</span>
+    <span class="sys-toggle">▾</span>
+  </div>
+  <div class="sys-body"><div class="sys-inner">
+
+    <div class="arch c1b">
+      <div class="arch-hdr"><span class="arch-title">Architecture</span></div>
+      <pre>┌──────────┐     ┌──────────────────────┐     ┌──────────────┐     ┌──────────┐
+│  Users   │────►│   L7 Load Balancer   │────►│ Web Server   │────►│ Database │
+│          │     │   (NGINX / ALB)      │     │ (2-3 copies) │     │ (MySQL)  │
+└──────────┘     │                      │     └──────────────┘     └──────────┘
+                 │  Provides:           │
+                 │  - SSL termination   │
+                 │  - Health checks     │
+                 │  - Load distribution │
+                 └──────────────────────┘</pre>
+    </div>
+
+    <div class="dec-list">
+      <div class="dec-title">Decision Checklist — Why L7 LB Only</div>
+      <div class="dec-item"><span class="dec-q">External API developers who need API keys and documentation?</span><span class="dec-a no">NO</span></div>
+      <div class="dec-item"><span class="dec-q">10+ microservices that need centralized cross-cutting concerns?</span><span class="dec-a no">NO</span></div>
+      <div class="dec-item"><span class="dec-q">Per-user rate limiting based on pricing plan?</span><span class="dec-a no">NO</span></div>
+      <div class="dec-item"><span class="dec-q">API versioning for breaking changes?</span><span class="dec-a no">NO</span></div>
+      <div class="dec-item"><span class="dec-q">Complex authentication (OAuth, JWT across services)?</span><span class="dec-a no">NO</span></div>
+      <div class="dec-item"><span class="dec-q">URL routing, SSL termination, basic health checks?</span><span class="dec-a yes">YES</span></div>
+      <div class="dec-verdict">
+        <span style="color:var(--cass4)">✓</span>
+        <span style="font-size:.76rem;color:var(--muted)">All NO on gateway questions → L7 LB is sufficient. All YES questions L7 handles natively.</span>
+      </div>
+    </div>
+
+    <div class="interview">
+      <div class="interview-label">🎤 Interview Answer</div>
+      <p>"For a simple web application, I'd use just an L7 load balancer — NGINX or AWS ALB."</p>
+      <p>The L7 LB gives me SSL termination for HTTPS, health checks for my web servers, and distribution across 2–3 server instances. I don't need an API Gateway because there's no external API, no complex auth requirements, and no microservices to coordinate. Adding a gateway would add 5–20ms of latency and operational complexity without solving any problem I actually have.</p>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- SCENARIO 2 -->
+<div class="sec-hdr" id="s2"><h2>Scenario 2: E-Commerce Website</h2></div>
+
+<div class="sys c2" id="s2-card">
+  <div class="sys-hdr" onclick="toggleSys(this)">
+    <span class="sys-num">Scenario 2</span>
+    <span class="sys-title">Online Store — Products, Cart, Checkout</span>
+    <span class="sys-sub">L7 LB now → L7 LB + Gateway on growth</span>
+    <span class="sys-toggle">▾</span>
+  </div>
+  <div class="sys-body"><div class="sys-inner">
+
+    <div class="arch c2b">
+      <div class="arch-hdr"><span class="arch-title">Current State — Monolith Behind L7 LB</span></div>
+      <pre>┌──────────┐     ┌─────────────────┐     ┌───────────────────────────────────┐
+│  Users   │────►│ L7 Load         │────►│         Application               │
+│          │     │ Balancer (ALB)  │     │                                   │
+└──────────┘     │                 │     │  ┌───────────┐  ┌───────────┐    │
+                 │ Routes:         │────►│  │  Product  │  │   Cart    │    │
+                 │  /products/*    │     │  │  Module   │  │  Module   │    │
+                 │  /cart/*        │     │  └───────────┘  └───────────┘    │
+                 │  /checkout/*    │     │  ┌───────────┐  ┌───────────┐    │
+                 └─────────────────┘     │  │ Checkout  │  │   User    │    │
+                                         │  │  Module   │  │  Module   │    │
+                                         │  └───────────┘  └───────────┘    │
+                                         │  One deployable unit — MONOLITH   │
+                                         └───────────────────────────────────┘</pre>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-title">Why No Gateway for a Monolith</div>
+      <p>All modules (Product, Cart, Checkout, User) are in ONE deployable unit. There's no external API — customers use the website, not an API. Auth is simple session cookies handled inside the app. An API Gateway would add latency and complexity to solve routing problems that don't exist.</p>
+    </div>
+
+    <div class="arch c2b">
+      <div class="arch-hdr"><span class="arch-title">Growth State — Microservices Need API Gateway</span></div>
+      <pre>┌──────────┐     ┌──────────┐     ┌─────────────────────┐     ┌────────────────────┐
+│  Users   │────►│  L7 LB   │────►│    API Gateway      │────►│   Microservices    │
+│          │     │  (ALB)   │     │                     │     │                    │
+└──────────┘     └──────────┘     │  /products/* ───────────► Product Service     │
+                                  │  /cart/*     ───────────► Cart Service        │
+                                  │  /checkout/* ───────────► Checkout Service    │
+                                  │  /users/*    ───────────► User Service        │
+                                  │                     │     │                    │
+                                  │  Cross-cutting:     │     └────────────────────┘
+                                  │  - Auth (JWT)       │
+                                  │  - Rate limiting    │
+                                  │  - Centralized logs │
+                                  └─────────────────────┘</pre>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — The Graduation Trigger</div>
+      <p>"The right time to add an API Gateway is when you decompose the monolith into microservices — not before. <strong>The trigger is the cross-cutting concern problem:</strong> if you have 5+ services each implementing the same auth logic, the cost of that duplication justifies a gateway. Before that point, a gateway is premature abstraction."</p>
+    </div>
+
+    <div class="interview">
+      <div class="interview-label">🎤 Interview Answer</div>
+      <p>"For the e-commerce site today, just an L7 load balancer — the app is still a monolith with modules inside one deployable unit."</p>
+      <p><strong>But I'd design for the growth path:</strong> when the team grows and we decompose into microservices, I'd add an API Gateway at that point. The trigger is the cross-cutting concern problem — five services each implementing JWT validation means five copies of the same security-critical code. A gateway centralizes that to one implementation. Before decomposition, a gateway adds complexity without solving any real problem.</p>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- SCENARIO 3 -->
+<div class="sec-hdr" id="s3"><h2>Scenario 3: Social Media Platform</h2></div>
+
+<div class="sys c3" id="s3-card">
+  <div class="sys-hdr" onclick="toggleSys(this)">
+    <span class="sys-num">Scenario 3</span>
+    <span class="sys-title">Twitter / Instagram Scale — Posts, Feeds, Notifications</span>
+    <span class="sys-sub">L4 + API Gateway combo</span>
+    <span class="sys-toggle">▾</span>
+  </div>
+  <div class="sys-body"><div class="sys-inner">
+
+    <div class="arch c3b">
+      <div class="arch-hdr"><span class="arch-title">Full Architecture — Why Each Layer</span></div>
+      <pre>┌──────────┐     ┌──────────────┐     ┌───────────────────────────┐
+│  Mobile  │     │   L4 Load    │     │        API Gateway        │
+│   Apps   │────►│   Balancer   │────►│                           │
+│          │     │   (NLB)      │     │  Auth: JWT / OAuth        │
+└──────────┘     │              │     │  Rate limit: per user     │
+                 │  Why L4?     │     │    free: 100 req/min      │
+┌──────────┐     │  - Long-lived│     │    premium: 1000 req/min  │
+│   Web    │────►│    gRPC      │     │                           │────►  Post Service
+│  Users   │     │    conns     │     │  Routing:                 │────►  Feed Service
+└──────────┘     │  - Sub-ms   │     │    /feed/*                │────►  Notification
+                 │    latency  │     │    /posts/*               │────►  Messaging
+                 │  - Scale    │     │    /messages/*            │
+                 │    GW horiz.│     │    /notifications/*       │
+                 └──────────────┘     └───────────────────────────┘
+
+Why both L4 LB + API Gateway?
+  L4 LB:   Makes API Gateway instances horizontally scalable
+  Gateway: Handles all HTTP-level intelligence
+  Separation: Each component does what it's best at</pre>
+    </div>
+
+    <div class="dec-list">
+      <div class="dec-title">Why This Combination</div>
+      <div class="dec-item"><span class="dec-q">Long-lived connections? (mobile gRPC streams, WebSockets)</span><span class="dec-a yes">YES → L4</span></div>
+      <div class="dec-item"><span class="dec-q">Need to scale the Gateway itself horizontally?</span><span class="dec-a yes">YES → L4 in front</span></div>
+      <div class="dec-item"><span class="dec-q">10+ microservices needing centralized auth?</span><span class="dec-a yes">YES → API Gateway</span></div>
+      <div class="dec-item"><span class="dec-q">Per-user rate limiting (free vs premium tiers)?</span><span class="dec-a yes">YES → API Gateway</span></div>
+      <div class="dec-item"><span class="dec-q">URL routing to different backend services?</span><span class="dec-a yes">YES → API Gateway</span></div>
+    </div>
+
+    <div class="interview">
+      <div class="interview-label">🎤 Interview Answer</div>
+      <p>"For a social media platform, I'd use L4 Load Balancer at the edge feeding into an API Gateway, which routes to microservices."</p>
+      <p><strong>L4 at the edge because:</strong> mobile apps maintain long-lived gRPC connections — L4's pass-through model handles these natively without the overhead of L7's two-connection model. More importantly, L4 makes the API Gateway itself horizontally scalable — we can run 20 Gateway instances and L4 distributes across them.</p>
+      <p><strong>API Gateway behind it because:</strong> we have JWT authentication that shouldn't be duplicated across every service, per-user rate limiting (free: 100 req/min, premium: 1000), and URL-based routing to 10+ backend services. The gateway gives us unified logging and API versioning as a bonus.</p>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- SCENARIO 4 -->
+<div class="sec-hdr" id="s4"><h2>Scenario 4: Developer API Platform</h2></div>
+
+<div class="sys c4" id="s4-card">
+  <div class="sys-hdr" onclick="toggleSys(this)">
+    <span class="sys-num">Scenario 4</span>
+    <span class="sys-title">Stripe / Twilio — External API for 100K+ Developers</span>
+    <span class="sys-sub">Full API Gateway + Developer Portal essential</span>
+    <span class="sys-toggle">▾</span>
+  </div>
+  <div class="sys-body"><div class="sys-inner">
+
+    <div class="arch c4b">
+      <div class="arch-hdr"><span class="arch-title">Full Architecture — Developer API Platform</span></div>
+      <pre>┌─────────────────┐    ┌──────────────────┐    ┌──────────────────────────────────────┐
+│  External       │    │    L7 LB         │    │         API GATEWAY (Kong/Apigee)     │
+│  Developers     │───►│    + WAF         │───►│                                      │
+│  (100,000+)     │    │                  │    │  Auth:                               │
+└─────────────────┘    │  SSL termination │    │    API key: sk_live_abc123 → valid?  │
+                       │  DDoS protection │    │    Permissions: read/write?          │
+                       │  WAF: block SQLi │    │                                      │
+                       └──────────────────┘    │  Rate Limiting (per plan):           │
+                                               │    Free: 100 req/day                 │
+                                               │    Startup: 10,000 req/day           │
+                                               │    Enterprise: unlimited             │
+                                               │                                      │
+                                               │  Usage Tracking → Billing:           │
+                                               │    Increment counter per API key     │
+                                               │    Trigger invoice at month-end      │
+                                               │                                      │
+                                               │  Routing:                            │
+                                               │    /v1/charges → Payment v1          │
+                                               │    /v2/charges → Payment v2 (faster) │
+                                               └─────────────────┬────────────────────┘
+                                                                 │
+                                                   ┌─────────────┴──────────────┐
+                                                   ▼                            ▼
+                                             ┌─────────────┐           ┌─────────────┐
+                                             │   Payment   │           │   Payout    │
+                                             │   Service   │           │   Service   │
+                                             └─────────────┘           └─────────────┘</pre>
+    </div>
+
+    <div class="arch c4b">
+      <div class="arch-hdr"><span class="arch-title">Developer Portal — The Gateway Product Surface</span></div>
+      <pre>┌─────────────────────────────────────────────────────────────────────────────┐
+│                         DEVELOPER PORTAL                                     │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐           │
+│  │  Sign up         │  │  API Keys        │  │  Usage Dashboard │           │
+│  │  → sk_live_abc   │  │  Management      │  │  & Billing       │           │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘           │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐           │
+│  │  API             │  │  Code            │  │  Sandbox         │           │
+│  │  Documentation   │  │  Examples        │  │  Testing         │           │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘           │
+└─────────────────────────────────────────────────────────────────────────────┘
+The API Gateway IS the product — not just infrastructure.</pre>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-title">Without API Gateway — The Developer Experience Collapses</div>
+      <ul>
+        <li>Developer: "How do I get an API key?" → You: "Email us and we'll manually create one…"</li>
+        <li>Developer: "How do I see my usage?" → You: "Check our logs somehow…"</li>
+        <li>Developer: "Is there a sandbox?" → You: "No, just use production carefully…"</li>
+        <li>Developer: <strong>Uses Stripe / competitor instead.</strong></li>
+      </ul>
+    </div>
+
+    <div class="interview">
+      <div class="interview-label">🎤 Interview Answer</div>
+      <p>"For a public developer API like Stripe, the API Gateway is the product — not just infrastructure. My architecture has three layers:"</p>
+      <p><strong>L7 LB with WAF at the edge</strong> — SSL termination with certificates for our domains, Web Application Firewall to block SQL injection and DDoS before it reaches application code.</p>
+      <p><strong>Full API Gateway (Kong or AWS API Gateway)</strong> — API key authentication and management, per-plan rate limiting (Free: 100/day, Startup: 10K/day, Enterprise: unlimited), usage tracking that feeds into billing, request/response logging, and API versioning so we can release v2 without breaking v1 integrations.</p>
+      <p><strong>Developer Portal</strong> — self-service API key generation, usage dashboards, API documentation auto-generated from OpenAPI specs, code examples in 6 languages, sandbox environment. Without this, developers can't self-serve and we can't build a developer platform business.</p>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- SCENARIO 5 -->
+<div class="sec-hdr" id="s5"><h2>Scenario 5: High-Performance KV Store</h2></div>
+
+<div class="sys c5" id="s5-card">
+  <div class="sys-hdr" onclick="toggleSys(this)">
+    <span class="sys-num">Scenario 5</span>
+    <span class="sys-title">Distributed KV Store — 300K QPS, P99 &lt; 20ms</span>
+    <span class="sys-sub">L4 + custom API layer (NO gateway)</span>
+    <span class="sys-toggle">▾</span>
+  </div>
+  <div class="sys-body"><div class="sys-inner">
+
+    <div class="arch c5b">
+      <div class="arch-hdr"><span class="arch-title">Architecture — Gateway Features Embedded in API Layer</span></div>
+      <pre>┌──────────┐     ┌──────────────────┐     ┌──────────────────────────────────────────┐
+│  Client  │────►│   L4 Load        │────►│             API LAYER (40 nodes)         │
+│  (SDK)   │     │   Balancer (NLB) │     │        Gateway features BUILT-IN         │
+└──────────┘     │                  │     │                                          │
+                 │  Why L4:         │     │  ┌──────────────────────────────────┐    │
+                 │  - 0.1ms added   │     │  │  Auth: JWT validation in-process │    │
+                 │  - No HTTP parse │     │  │         ~0.1ms (not 5ms)         │    │
+                 │  - gRPC friendly │     │  │  Rate limit: Redis token bucket  │    │
+                 │  - Scales GW     │     │  │  Routing: consistent hash lookup │    │
+                 │    horizontally  │     │  │  Metrics: Prometheus in-process  │    │
+                 └──────────────────┘     │  │  Tracing: Jaeger spans inline    │    │
+                                          │  │  Idempotency: deduplicate writes │    │
+                                          │  └──────────────────────────────────┘    │
+                                          │                                          │
+                                          │  No extra network hop.                   │
+                                          │  No separate process.                    │
+                                          │  No added latency.                       │
+                                          └──────────────────────────────────────────┘
+                                                           │
+                                                           ▼
+                                          ┌──────────────────────────────────────────┐
+                                          │              STORAGE LAYER               │
+                                          │  Partition 1   Partition 2   Partition N │
+                                          │  (Raft group)  (Raft group)  (Raft group)│
+                                          └──────────────────────────────────────────┘</pre>
+    </div>
+
+    <div class="code"><div class="code-hdr"><span class="code-lang">The Latency Math — Why Gateway Is Disqualified</span><button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+    <pre>P99 latency budget: 20ms
+
+Typical API Gateway overhead per request:
+  Network hop (client → gateway):  +1–2ms
+  TLS termination at gateway:       +1ms
+  Request parsing + routing:        +1–2ms
+  Auth check (external call):       +1–2ms
+  Network hop (gateway → API):      +1–2ms
+  Total gateway overhead:           +5–10ms
+
+5–10ms = 25–50% of our ENTIRE P99 budget
+Consumed before the request even reaches the storage layer.
+
+Our in-process middleware overhead:
+  JWT validation (in-process):      ~0.1ms
+  Rate limit check (Redis):         ~0.5ms
+  Partition routing (hash lookup):  ~0.01ms
+  Total embedded overhead:          ~0.6ms  ← 10–15× less</pre></div>
+
+    <table class="tradeoff">
+      <thead><tr><th>Approach</th><th>Drawbacks</th><th>Benefits</th></tr></thead>
+      <tbody>
+        <tr><td>Separate API Gateway</td><td>Adds 5–10ms latency; extra network hop; generic, not optimized</td><td>Off-the-shelf (Kong, Apigee); easy config; feature-rich out of box</td></tr>
+        <tr><td>Custom API Layer (our choice)</td><td>More code to write; more to maintain; requires expertise</td><td>Zero extra latency; optimized for our workload; full control</td></tr>
+      </tbody>
+    </table>
+
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — The Embedded Gateway Pattern</div>
+      <p>"The gateway is a <strong>pattern, not a product</strong>. The pattern is: centralize auth, rate limiting, routing, and observability at the entry point. The product implementation (Kong, Apigee, AWS API Gateway) adds a network hop and 5–10ms overhead. <strong>For latency-critical systems, implement the pattern in-process.</strong> For everything else, the product implementation is cheaper to operate."</p>
+    </div>
+
+    <div class="interview">
+      <div class="interview-label">🎤 Interview Answer</div>
+      <p>"For our high-performance KV store, I deliberately chose NOT to use a separate API Gateway. Here's the reasoning:"</p>
+      <p><strong>L4 Load Balancer at the edge</strong> — adds 0.1–0.5ms, no HTTP parsing, handles long-lived gRPC connections natively, and makes the API layer horizontally scalable.</p>
+      <p><strong>Custom API Layer with embedded gateway features</strong> — all the gateway functionality (JWT auth, Redis-backed rate limiting, partition routing, Prometheus metrics, Jaeger tracing) implemented as in-process middleware. Zero extra network hops. ~0.6ms overhead versus ~5–10ms for a separate gateway.</p>
+      <p><strong>The math is unambiguous:</strong> our P99 target is 20ms. A typical gateway eats 5–10ms — that's 25–50% of the entire budget before we touch storage. The trade-off is more code to maintain, but for a performance-critical internal system with no external developers, it's the right call.</p>
+    </div>
+
+  </div></div>
+</div>
+
+<!-- KEY LESSON -->
+<div class="sec-hdr" id="kl-section"><h2>The Decision Process — Apply This to Any System</h2></div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Universal Decision Process</span></div>
+<pre>Given a system design question, ask these questions in order:
+
+1. Do I have external API developers?
+   YES → API Gateway is almost certainly required
+   NO  → continue
+
+2. Do I have 10+ microservices with shared cross-cutting concerns?
+   YES → API Gateway to avoid code duplication across services
+   NO  → continue
+
+3. Am I migrating from monolith to microservices?
+   YES → API Gateway as the migration control plane (strangler pattern)
+   NO  → continue
+
+4. Do I need URL or header-based routing between services?
+   YES → L7 Load Balancer is sufficient
+   NO  → continue
+
+5. Is P99 latency < 10ms? Or is 1–5ms L7 overhead unacceptable?
+   YES → L4 Load Balancer + custom API layer (embed gateway features)
+   NO  → L7 Load Balancer with some app-level logic
+
+6. Is this a simple single-backend app?
+   YES → L7 Load Balancer only (NGINX or AWS ALB)
+
+Remember: These are additive. If the answer to #1 is YES and #4 is YES,
+          you use: L7 LB + API Gateway + Developer Portal.</pre></div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 The Series Key Insight</div>
+  <p>Across four parts, one theme: <strong>every layer in the stack has a cost and a purpose</strong>. L4 is fast and dumb — use it when speed matters more than intelligence. L7 is smart and medium-cost — use it when you need HTTP-level routing without the full API lifecycle. API Gateway is comprehensive and expensive — use it when you have external developers, cross-cutting concerns across many services, or need API lifecycle management.</p>
+  <p>The principal engineer pattern is knowing that these aren't three competing choices — they're three different tools on a spectrum. You can use all three (social media platform), two (e-commerce microservices), or one (simple blog). You can also build a custom point on the spectrum by embedding gateway features in your application layer when none of the off-the-shelf implementations fit your latency and throughput constraints.</p>
+  <p><strong>The question in any system design interview isn't "which one do I use?" — it's "what problems am I solving at each layer, and what's the cheapest component that solves each one?"</strong> Answer that question for each layer in the stack and the right architecture emerges naturally.</p>
+</div>
+
+<!-- SERIES COMPLETE -->
+<div class="series-complete" id="series-wrap">
+  <h3>Series Complete — Load Balancer & API Gateway Internals</h3>
+  <p>Four parts covering the full spectrum from first principles to interview-ready system design. The decision framework now lives in your head, not as a memorized table but as a set of questions you ask about any system.</p>
+  <div class="series-pills">
+    <span class="series-pill sp1">Part 1 · L4 vs L7 — First Principles</span>
+    <span class="series-pill sp2">Part 2 · When & Why L7 — Six Scenarios</span>
+    <span class="series-pill sp3">Part 3 · API Gateway — When & When Not</span>
+    <span class="series-pill sp4">Part 4 · Five Architectures — Interview Guide</span>
+  </div>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleSys(h){h.parentElement.classList.toggle('collapsed')}
+function copyCode(btn){
+  const pre=btn.closest('.code').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(()=>{
+    btn.textContent='Copied \u2713';btn.style.color='var(--cass4)';
+    setTimeout(()=>{btn.textContent='Copy';btn.style.color='';},2000);
+  });
+}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
