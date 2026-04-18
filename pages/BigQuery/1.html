@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BigQuery Internals · L6/L7 Mastery Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --strong-hire: #F5A623;
+    --hire: #00BFA5;
+    --lean-hire: #FFD700;
+    --no-hire: #FF6B6B;
+    --code-bg: #010409;
+    --sidebar-w: 280px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 300;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.6s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--hire));
+    width: 0%; z-index: 9999; transition: width 0.1s linear;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed; top: 0; left: 0; width: var(--sidebar-w);
+    height: 100vh; background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .sidebar-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  #sidebar-search {
+    margin: 12px 14px;
+    padding: 8px 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    width: calc(100% - 28px);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #sidebar-search:focus { border-color: var(--accent); }
+  #sidebar-search::placeholder { color: var(--text-muted); }
+
+  nav ul { list-style: none; padding: 8px 0; }
+
+  nav li a {
+    display: block; padding: 6px 20px;
+    color: var(--text-muted); text-decoration: none;
+    font-size: 12.5px; font-family: 'Source Serif 4', serif;
+    transition: all 0.15s; border-left: 2px solid transparent;
+    line-height: 1.4;
+  }
+
+  nav li a:hover { color: var(--text); background: rgba(88,166,255,0.06); border-left-color: var(--accent); }
+  nav li a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,0.08); }
+
+  nav li.nav-sub a { padding-left: 32px; font-size: 11.5px; }
+  nav li.nav-part a { font-weight: 600; color: var(--text); font-size: 12px; padding: 10px 20px 4px; text-transform: uppercase; letter-spacing: 0.08em; pointer-events: none; }
+
+  /* HAMBURGER */
+  #hamburger {
+    display: none; position: fixed; top: 12px; left: 12px;
+    z-index: 200; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text);
+    font-size: 16px;
+  }
+
+  /* MAIN */
+  main {
+    margin-left: var(--sidebar-w);
+    max-width: 900px;
+    padding: 60px 60px 120px;
+  }
+
+  /* HERO */
+  .hero {
+    margin-bottom: 64px;
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+
+  .hero::before {
+    content: 'BQ';
+    position: absolute; top: 32px; right: 0;
+    font-family: 'Playfair Display', serif;
+    font-size: 140px; font-weight: 900;
+    color: rgba(88,166,255,0.04);
+    line-height: 1; pointer-events: none;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background: rgba(88,166,255,0.1);
+    border: 1px solid rgba(88,166,255,0.3);
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    margin-bottom: 20px;
+  }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 48px; font-weight: 900;
+    line-height: 1.1;
+    color: var(--text);
+    margin-bottom: 16px;
+  }
+
+  .hero h1 span { color: var(--accent); }
+
+  .hero p {
+    font-size: 16px; color: var(--text-muted);
+    max-width: 540px; line-height: 1.7;
+  }
+
+  /* SECTION HEADERS */
+  .part-header {
+    margin: 72px 0 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+
+  .part-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .part-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 36px; font-weight: 900; line-height: 1.15;
+    margin-bottom: 8px;
+  }
+
+  .part-separator {
+    height: 1px; background: linear-gradient(90deg, var(--accent), transparent);
+    margin-top: 20px; margin-bottom: 8px;
+  }
+
+  /* SECTION CARDS */
+  .section-block {
+    margin-bottom: 48px;
+  }
+
+  .section-block h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 24px; font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--text);
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .section-block h3 .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--accent);
+    background: rgba(88,166,255,0.1);
+    padding: 2px 8px; border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .section-block h4 {
+    font-family: 'Playfair Display', serif;
+    font-size: 18px; font-weight: 700;
+    margin: 28px 0 12px;
+    color: var(--text);
+  }
+
+  .section-block h5 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 15px; font-weight: 600;
+    margin: 20px 0 8px;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+
+  p { margin-bottom: 14px; }
+
+  /* CALLOUT / INFO BOX */
+  .callout {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+
+  .callout.green { border-left-color: var(--hire); }
+  .callout.amber { border-left-color: var(--strong-hire); }
+  .callout.red { border-left-color: var(--no-hire); }
+
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  /* SOUNDBITE */
+  .soundbite {
+    background: linear-gradient(135deg, rgba(88,166,255,0.08), rgba(0,191,165,0.05));
+    border: 1px solid rgba(88,166,255,0.25);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 24px 0;
+    position: relative;
+  }
+
+  .soundbite::before {
+    content: '🔑';
+    position: absolute; top: -12px; left: 20px;
+    font-size: 20px;
+  }
+
+  .soundbite p {
+    font-style: italic;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.8;
+    margin: 0;
+  }
+
+  /* ANALOGY BOX */
+  .analogy-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 20px 0;
+  }
+
+  .analogy-box .analogy-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px; font-weight: 700;
+    color: var(--strong-hire);
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 20px 0; border-radius: 8px; border: 1px solid var(--border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+
+  thead tr {
+    background: linear-gradient(90deg, var(--surface2), var(--surface));
+  }
+
+  th {
+    padding: 12px 16px; text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  tbody tr:nth-child(even) { background: rgba(22,27,34,0.5); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+
+  td:first-child { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--strong-hire); }
+
+  /* CODE / DIAGRAM BLOCKS */
+  .diagram-wrap {
+    position: relative; margin: 20px 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+
+  .diagram-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diagram-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--text-muted);
+    background: rgba(88,166,255,0.1);
+    padding: 2px 8px; border-radius: 3px;
+    color: var(--accent);
+  }
+
+  .copy-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 3px 10px;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-muted);
+    cursor: pointer; transition: all 0.15s;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--hire); color: var(--hire); }
+
+  pre {
+    padding: 16px 20px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #c9d1d9;
+    white-space: pre;
+  }
+
+  /* LISTS */
+  ul.styled-list, ol.styled-list {
+    padding-left: 0; list-style: none; margin: 14px 0;
+  }
+
+  ul.styled-list li, ol.styled-list li {
+    padding: 6px 0 6px 24px;
+    position: relative;
+    border-bottom: 1px solid rgba(48,54,61,0.3);
+    font-size: 14.5px;
+  }
+
+  ul.styled-list li:last-child, ol.styled-list li:last-child { border-bottom: none; }
+
+  ul.styled-list li::before {
+    content: '›';
+    position: absolute; left: 8px;
+    color: var(--accent); font-weight: 700;
+  }
+
+  /* CHECK/CROSS LISTS */
+  .check-list { list-style: none; padding: 0; margin: 12px 0; }
+  .check-list li { padding: 5px 0 5px 28px; position: relative; font-size: 14px; }
+  .check-list li::before { position: absolute; left: 0; font-size: 15px; }
+  .check-list li.yes::before { content: '✅'; }
+  .check-list li.no::before { content: '❌'; }
+
+  /* CONCEPT CARDS */
+  .concept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px; margin: 20px 0;
+  }
+
+  .concept-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    counter-increment: concept;
+  }
+
+  .concept-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(88,166,255,0.08);
+  }
+
+  .concept-card .concept-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px; font-weight: 700;
+    color: rgba(88,166,255,0.2);
+    line-height: 1; margin-bottom: 8px;
+  }
+
+  .concept-card h5 {
+    font-family: 'Playfair Display', serif;
+    font-size: 15px; font-weight: 700;
+    color: var(--text); margin: 0 0 8px; letter-spacing: 0;
+  }
+
+  .concept-card p { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+
+  /* GUARANTEE GRID */
+  .guarantee-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+
+  .guarantee-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+
+  .guarantee-card.yes { border-top: 2px solid var(--hire); }
+  .guarantee-card.no { border-top: 2px solid var(--no-hire); }
+
+  .guarantee-card h5 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    color: var(--text-muted);
+  }
+
+  .guarantee-card.yes h5 { color: var(--hire); }
+  .guarantee-card.no h5 { color: var(--no-hire); }
+
+  .guarantee-card ul { list-style: none; padding: 0; }
+  .guarantee-card ul li { font-size: 12.5px; padding: 3px 0; color: var(--text-muted); }
+
+  /* SCALE TABLE SPECIAL */
+  .scale-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 2px 7px;
+    border-radius: 3px; margin-left: 6px;
+  }
+
+  /* BACK TO TOP */
+  #back-to-top {
+    position: fixed; bottom: 32px; right: 32px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-muted);
+    font-size: 18px; transition: all 0.2s;
+    opacity: 0; pointer-events: none; z-index: 50;
+  }
+
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
+
+  /* VARIANT HEADER */
+  .variant-header {
+    display: flex; align-items: flex-start; gap: 16px;
+    margin: 36px 0 20px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-left: 3px solid var(--strong-hire);
+  }
+
+  .variant-header .variant-letter {
+    font-family: 'Playfair Display', serif;
+    font-size: 36px; font-weight: 900;
+    color: var(--strong-hire); line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .variant-header h4 {
+    margin: 0 0 6px;
+    font-size: 17px;
+  }
+
+  .variant-header p {
+    font-size: 13px; color: var(--text-muted); margin: 0;
+  }
+
+  /* STEP WALKTHROUGH */
+  .step-list { margin: 16px 0; }
+
+  .step-item {
+    display: flex; gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(48,54,61,0.4);
+  }
+
+  .step-item:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    color: var(--accent);
+    background: rgba(88,166,255,0.1);
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px;
+  }
+
+  .step-content { flex: 1; }
+  .step-content strong { display: block; font-size: 14px; color: var(--text); margin-bottom: 4px; font-family: 'Source Serif 4', serif; font-weight: 600; }
+  .step-content span { font-size: 13px; color: var(--text-muted); }
+
+  /* TRADEOFF TABLE */
+  .tradeoff-table td:nth-child(2) { color: var(--hire); }
+  .tradeoff-table td:nth-child(3) { color: var(--no-hire); }
+
+  /* COMPARISON TABLE - Spark vs BQ */
+  .compare-table td:first-child { color: var(--text-muted); }
+
+  /* SMELL TEST */
+  .smell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+
+  .smell-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+
+  .smell-card.good { border-top: 2px solid var(--hire); }
+  .smell-card.bad { border-top: 2px solid var(--no-hire); }
+
+  .smell-card h5 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    letter-spacing: 0;
+  }
+
+  .smell-card.good h5 { color: var(--hire); }
+  .smell-card.bad h5 { color: var(--no-hire); }
+
+  .smell-card ul { list-style: none; padding: 0; }
+  .smell-card ul li { font-size: 12.5px; padding: 4px 0 4px 20px; color: var(--text-muted); position: relative; }
+  .smell-card.good ul li::before { content: '✅'; position: absolute; left: 0; font-size: 12px; }
+  .smell-card.bad ul li::before { content: '❌'; position: absolute; left: 0; font-size: 12px; }
+
+  /* KEYWORD TRIGGERS */
+  .keyword-cloud {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0;
+  }
+
+  .keyword-pill {
+    display: inline-block;
+    padding: 5px 12px;
+    background: rgba(88,166,255,0.08);
+    border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--accent);
+  }
+
+  /* CONCRETE NUMBERS */
+  .numbers-card {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px;
+    margin: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px; line-height: 2;
+    color: #c9d1d9;
+  }
+
+  .numbers-card .num-label { color: var(--text-muted); }
+  .numbers-card .num-val { color: var(--strong-hire); }
+
+  /* FAILURE SCENARIOS */
+  .failure-grid {
+    display: grid; gap: 12px; margin: 16px 0;
+  }
+
+  .failure-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--no-hire);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+  }
+
+  .failure-card .failure-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; color: var(--no-hire);
+    margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+  }
+
+  .failure-card p { font-size: 13px; color: var(--text-muted); margin: 0; }
+
+  .solution-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 1px 7px;
+    background: rgba(0,191,165,0.1);
+    border: 1px solid rgba(0,191,165,0.3);
+    border-radius: 3px; color: var(--hire);
+    margin-left: 8px;
+  }
+
+  mark {
+    background: rgba(245,166,35,0.15);
+    color: var(--strong-hire);
+    padding: 1px 3px; border-radius: 3px;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    #sidebar { transform: translateX(-100%); }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; align-items: center; justify-content: center; }
+    main { margin-left: 0; padding: 60px 24px 100px; }
+    .hero h1 { font-size: 32px; }
+    .guarantee-grid, .smell-grid { grid-template-columns: 1fr; }
+    .concept-grid { grid-template-columns: 1fr; }
+  }
+
+  /* SIDEBAR OVERLAY */
+  #sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+
+  #sidebar-overlay.visible { display: block; }
+
+  .hidden-section { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<div id="sidebar-overlay"></div>
+
+<button id="hamburger" aria-label="Open navigation">☰</button>
+
+<aside id="sidebar" aria-label="Navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-title">BigQuery Internals</div>
+    <div class="sidebar-subtitle">L6 / L7 Mastery Guide</div>
+  </div>
+  <input id="sidebar-search" type="search" placeholder="Search sections..." aria-label="Search sections">
+  <nav>
+    <ul id="nav-list">
+      <li class="nav-part"><a>Part 1 · Core Understanding</a></li>
+      <li><a href="#elevator-pitch">1.1 Elevator Pitch</a></li>
+      <li><a href="#the-analogy">1.2 The Perfect Analogy</a></li>
+      <li class="nav-sub"><a href="#concert-analogy">Concert Census Analogy</a></li>
+      <li class="nav-sub"><a href="#analogy-variants">Extending to Variants</a></li>
+      <li class="nav-sub"><a href="#failure-scenarios">Failure Scenarios</a></li>
+      <li><a href="#mental-model">1.3 The Mental Model</a></li>
+      <li class="nav-sub"><a href="#five-concepts">5 Core Concepts</a></li>
+      <li class="nav-sub"><a href="#guarantees">What BQ Guarantees</a></li>
+      <li class="nav-sub"><a href="#tradeoffs">Fundamental Trade-offs</a></li>
+      <li><a href="#when-it-comes-up">1.4 When Does This Come Up?</a></li>
+      <li class="nav-sub"><a href="#keywords">Interview Keywords</a></li>
+      <li class="nav-sub"><a href="#scale-thresholds">Scale Thresholds</a></li>
+      <li class="nav-sub"><a href="#smell-test">Smell Test</a></li>
+      <li class="nav-part"><a>Part 2 · The Variants</a></li>
+      <li><a href="#storage-architecture">2.1 Storage Architecture</a></li>
+      <li class="nav-sub"><a href="#capacitor">A) Capacitor Format</a></li>
+      <li class="nav-sub"><a href="#colossus">B) Colossus</a></li>
+      <li><a href="#query-execution">2.2 Query Execution Models</a></li>
+      <li class="nav-sub"><a href="#dremel-tree">A) Dremel Tree Execution</a></li>
+      <li class="nav-sub"><a href="#shuffle-execution">B) Shuffle-Based Execution</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<main>
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <div class="hero-badge">INTERVIEW MASTERY · SYSTEM DESIGN</div>
+    <h1>BigQuery <span>Internals</span></h1>
+    <h1 style="font-size:28px;font-weight:400;color:var(--text-muted);margin-top:-8px;margin-bottom:20px;">Complete L6/L7 Mastery Guide</h1>
+    <p>A deep technical reference covering Dremel, Colossus, columnar storage, and petabyte-scale query execution — engineered for senior engineering interviews.</p>
+  </div>
+
+  <!-- PART 1 -->
+  <div class="part-header" id="part1">
+    <div class="part-label">Part 1</div>
+    <h2>Core Understanding</h2>
+    <p style="color:var(--text-muted);font-size:14px;">Make It Click</p>
+    <div class="part-separator"></div>
+  </div>
+
+  <!-- 1.1 -->
+  <div class="section-block" id="elevator-pitch">
+    <h3><span class="section-num">1.1</span> The Elevator Pitch</h3>
+
+    <div class="callout">
+      <div class="callout-label">For a smart non-engineer</div>
+      <p>BigQuery is like having a massive team of workers who can instantly split up any question you ask, each tackle a tiny piece simultaneously, and combine their answers in seconds—no matter how much data you're asking about.</p>
+    </div>
+
+    <div class="callout green">
+      <div class="callout-label">For a fellow engineer</div>
+      <p>BigQuery is a <mark>serverless, petabyte-scale analytics warehouse</mark> built on Dremel (columnar execution engine) and Colossus (distributed file system), using a <mark>separation of storage and compute architecture</mark> with aggressive column pruning and tree-structured aggregation to achieve sub-minute queries over multi-petabyte datasets.</p>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-title">💡 The "Aha Moment"</div>
+      <p>The magic isn't just parallelism—it's the combination of <strong>columnar storage</strong> (only read what you need), <strong>disaggregated architecture</strong> (storage and compute scale independently), and <strong>tree-shaped query execution</strong> (thousands of workers aggregate upward like a tournament bracket).</p>
+      <br>
+      <p>Traditional databases are like one librarian reading entire books to answer questions; BigQuery is like having <mark>10,000 librarians</mark> who each memorize one column of data and can instantly shout up their partial answer through a hierarchy of summarizers.</p>
+    </div>
+  </div>
+
+  <!-- 1.2 -->
+  <div class="section-block" id="the-analogy">
+    <h3><span class="section-num">1.2</span> The Perfect Analogy</h3>
+
+    <div id="concert-analogy">
+      <h4 style="color:var(--strong-hire);">The Concert Census Analogy</h4>
+      <p>Imagine you need to count how many people wearing blue shirts attended a 100,000-person concert, organized by section.</p>
+
+      <div class="callout red">
+        <div class="callout-label">Traditional Database (Row-Store)</div>
+        <p>You have <strong>ONE census taker</strong> who must walk to every single person, look at their entire outfit (shirt, pants, shoes, hat, accessories), write it all down, then check if the shirt was blue. They visit 100,000 people, writing 10 fields each = <mark>1,000,000 data points examined</mark>.</p>
+      </div>
+
+      <div class="callout green">
+        <div class="callout-label">BigQuery (Columnar)</div>
+        <p>You have a <strong>TEAM</strong> organized like this:</p>
+        <ul class="styled-list" style="margin-top:10px;">
+          <li><strong>Storage Layer (Colossus):</strong> 100 photographers have each taken pictures of ONLY shirts—nothing else. Each photo is labeled with the section.</li>
+          <li><strong>Compute Layer (Dremel Workers):</strong> 100 shirt-counters, each assigned 1,000 photos. They count blues in parallel.</li>
+          <li><strong>Mixer Tree:</strong> Results flow up: 100 workers → 10 regional managers (aggregate) → 1 final manager (combines all).</li>
+        </ul>
+        <p style="margin-top:12px;"><strong>Total data examined:</strong> 100,000 shirt photos × 1 field = <mark>100,000 data points</mark>. Time: Seconds (parallel) vs hours (sequential).</p>
+      </div>
+    </div>
+
+    <div id="analogy-variants">
+      <h4>Extending to Main Variants</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Concept</th><th>Concert Analogy</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Column Pruning</td><td>Photographers only sent shirt photos, not full outfits</td></tr>
+            <tr><td>Partition Pruning</td><td>If you only want Friday concert data, ignore Saturday photo albums entirely</td></tr>
+            <tr><td>Clustering</td><td>Within each section, photos are pre-sorted by shirt color—blue shirts are already grouped together</td></tr>
+            <tr><td>Slots</td><td>Each counter is a "slot"—Google dynamically assigns counters based on workload</td></tr>
+            <tr><td>Shuffle</td><td>When counting "blues per section," counters must pass their section data to the right regional manager—like physical mail sorting</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="failure-scenarios">
+      <h4>Failure Scenarios Through the Analogy</h4>
+      <div class="failure-grid">
+        <div class="failure-card">
+          <div class="failure-title">⚡ Worker (Slot) Failure <span class="solution-badge">AUTO-RETRY</span></div>
+          <p>One counter collapses. The manager notices missing reports, reassigns that batch of 1,000 photos to another counter. Other counters unaffected.</p>
+        </div>
+        <div class="failure-card">
+          <div class="failure-title">🗄️ Storage (Colossus) Failure <span class="solution-badge">REPLICATED</span></div>
+          <p>Photos are stored in triplicate across three warehouses. If one warehouse burns down, photos retrieved from backup warehouse—query continues.</p>
+        </div>
+        <div class="failure-card">
+          <div class="failure-title">🔀 Shuffle Overload <span class="solution-badge">PARALLELISM</span></div>
+          <p>Too many counters trying to pass papers to one regional manager creates a bottleneck. Solution: add more regional managers (increase shuffle parallelism) or reduce what's being passed (push aggregation earlier).</p>
+        </div>
+        <div class="failure-card">
+          <div class="failure-title">🔥 Hot Partition <span class="solution-badge">PRE-SPLIT</span></div>
+          <p>Everyone wore blue on Friday. The Friday regional manager drowns in reports while others are idle. Solution: pre-split the Friday section.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1.3 -->
+  <div class="section-block" id="mental-model">
+    <h3><span class="section-num">1.3</span> The Mental Model</h3>
+
+    <div id="five-concepts">
+      <h4>The 5 Core Concepts You MUST Internalize</h4>
+      <div class="concept-grid">
+        <div class="concept-card">
+          <div class="concept-num">01</div>
+          <h5>Separation of Storage and Compute</h5>
+          <p>Data lives in Colossus, completely separate from query execution. Run 1,000 queries simultaneously on the same data—no locks, no contention. Pay and scale independently.</p>
+        </div>
+        <div class="concept-card">
+          <div class="concept-num">02</div>
+          <h5>Columnar Storage (Capacitor Format)</h5>
+          <p>Data stored column-by-column. <code style="font-size:11px;color:var(--accent);">SELECT name FROM users</code> reads only the name column. Columns compress better and enable vectorized processing.</p>
+        </div>
+        <div class="concept-card">
+          <div class="concept-num">03</div>
+          <h5>Tree-Structured Query Execution (Dremel)</h5>
+          <p>Root (coordinator) → Mixers (intermediate aggregators) → Leaf workers (data scanners). Thousands of leaves scan in parallel, aggregate upward. Tree depth: typically 3–4 levels.</p>
+        </div>
+        <div class="concept-card">
+          <div class="concept-num">04</div>
+          <h5>Slots = Units of Computational Resource</h5>
+          <p>A slot is roughly: 1 vCPU + some RAM + network capacity. BigQuery dynamically allocates slots from shared pool (on-demand) or dedicated pool (reserved). Query parallelism is slot-limited.</p>
+        </div>
+        <div class="concept-card">
+          <div class="concept-num">05</div>
+          <h5>Shuffle = Data Redistribution Between Stages</h5>
+          <p>GROUP BY, JOIN require data to shuffle between workers. Expensive—writes to disk, network transfer. BigQuery uses Colossus for shuffle storage: durable, not ephemeral like Spark shuffle.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="guarantees">
+      <h4>What BigQuery Guarantees vs. Does Not Guarantee</h4>
+      <div class="guarantee-grid">
+        <div class="guarantee-card yes">
+          <h5>✅ GUARANTEES</h5>
+          <ul>
+            <li>Strong read-after-write consistency</li>
+            <li>ACID transactions within DML statements</li>
+            <li>Exactly-once query execution</li>
+            <li>Automatic fault tolerance (worker failures transparent)</li>
+            <li>Petabyte-scale queries without cluster management</li>
+          </ul>
+        </div>
+        <div class="guarantee-card no">
+          <h5>❌ DOES NOT GUARANTEE</h5>
+          <ul>
+            <li>Low latency for small queries (min ~200ms overhead)</li>
+            <li>Point-lookup efficiency (analytics, not OLTP)</li>
+            <li>Infinite concurrent slots (contention under heavy load)</li>
+            <li>Predictable query performance (data distribution matters)</li>
+            <li>Real-time freshness (streaming insert ~few seconds delay)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="tradeoffs">
+      <h4>Fundamental Trade-offs Baked In</h4>
+      <div class="table-wrap">
+        <table class="tradeoff-table">
+          <thead>
+            <tr><th>Trade-off</th><th>BigQuery Chooses</th><th>Sacrifices</th><th>Why</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Throughput vs Latency</td><td>High throughput</td><td>Sub-100ms latency</td><td>Analytics workloads favor throughput</td></tr>
+            <tr><td>Flexibility vs Efficiency</td><td>Schema-on-read flexibility</td><td>Some scan efficiency</td><td>Analysts need ad-hoc queries</td></tr>
+            <tr><td>Simplicity vs Control</td><td>Serverless simplicity</td><td>Fine-grained tuning</td><td>Reduce operational burden</td></tr>
+            <tr><td>Consistency vs Performance</td><td>Strong consistency</td><td>Some write throughput</td><td>Data correctness critical for analytics</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1.4 -->
+  <div class="section-block" id="when-it-comes-up">
+    <h3><span class="section-num">1.4</span> When Does This Come Up?</h3>
+
+    <div id="keywords">
+      <h4>Keywords in Interview That Should Trigger BigQuery/Dremel Concepts</h4>
+      <div class="keyword-cloud">
+        <span class="keyword-pill">"Analytics"</span>
+        <span class="keyword-pill">"reporting"</span>
+        <span class="keyword-pill">"dashboard"</span>
+        <span class="keyword-pill">"Petabyte scale"</span>
+        <span class="keyword-pill">"data warehouse"</span>
+        <span class="keyword-pill">"SQL at scale"</span>
+        <span class="keyword-pill">"ad-hoc queries"</span>
+        <span class="keyword-pill">"Columnar"</span>
+        <span class="keyword-pill">"read-heavy workloads"</span>
+        <span class="keyword-pill">"Separate storage and compute"</span>
+        <span class="keyword-pill">"Serverless analytics"</span>
+        <span class="keyword-pill">"large-scale SQL"</span>
+        <span class="keyword-pill">"Design a data warehouse"</span>
+        <span class="keyword-pill">"OLAP system"</span>
+      </div>
+    </div>
+
+    <div id="scale-thresholds">
+      <h4>Scale Thresholds Where This Becomes Essential</h4>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Scale</th><th>What You Need</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>&lt; 10 GB</td><td>PostgreSQL is fine</td></tr>
+            <tr><td>10 GB – 1 TB</td><td>Still row-store works, but columnar helps</td></tr>
+            <tr><td>1 TB – 100 TB</td><td>Must use columnar + distributed (Dremel-style)</td></tr>
+            <tr><td>100 TB – 10 PB</td><td>Need storage-compute separation (can't have 10 PB in memory)</td></tr>
+            <tr><td>&gt; 10 PB</td><td>Need BigQuery-class architecture or nothing works</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h5>Concrete Numbers</h5>
+      <div class="numbers-card">
+        <span class="num-label">Single-node scan throughput: </span><span class="num-val">~500 MB/s per core</span><br>
+        <span class="num-label">1 PB table (single-threaded): </span><span class="num-val">23 days</span><br>
+        <span class="num-label">1 PB table (10,000 Dremel workers): </span><span class="num-val">~10 minutes</span>
+      </div>
+    </div>
+
+    <div id="smell-test">
+      <h4>Smell Test</h4>
+      <div class="smell-grid">
+        <div class="smell-card good">
+          <h5>✅ THIS IS THE RIGHT SOLUTION WHEN</h5>
+          <ul>
+            <li>Queries scan large portions of tables (not point lookups)</li>
+            <li>Query patterns are unpredictable (ad-hoc analytics)</li>
+            <li>Read:write ratio is &gt;100:1</li>
+            <li>You care about total throughput, not p99 latency</li>
+            <li>Data is append-mostly (not frequent updates)</li>
+            <li>You want SQL, not custom MapReduce</li>
+          </ul>
+        </div>
+        <div class="smell-card bad">
+          <h5>❌ THIS IS NOT RIGHT WHEN</h5>
+          <ul>
+            <li>Need sub-10ms latency (use Bigtable)</li>
+            <li>Heavy point lookups (use Spanner)</li>
+            <li>Real-time streaming with millisecond freshness</li>
+            <li>Frequent small updates to existing rows</li>
+            <li>Machine learning feature serving (use Vertex AI Feature Store)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="soundbite">
+      <p>"BigQuery achieves petabyte-scale analytics by combining three key innovations: <mark>columnar storage</mark> that only reads the columns you query, <mark>separation of storage and compute</mark> that allows thousands of parallel workers to access the same data simultaneously, and <mark>tree-structured aggregation</mark> that combines results efficiently. This is why you can query a petabyte in under a minute—you're not bound by single-node I/O or memory."</p>
+    </div>
+  </div>
+
+  <!-- PART 2 -->
+  <div class="part-header" id="part2">
+    <div class="part-label">Part 2</div>
+    <h2>The Variants</h2>
+    <p style="color:var(--text-muted);font-size:14px;">In-Depth Exploration</p>
+    <div class="part-separator"></div>
+  </div>
+
+  <!-- 2.1 -->
+  <div class="section-block" id="storage-architecture">
+    <h3><span class="section-num">2.1</span> Variant: Storage Architecture</h3>
+
+    <div id="capacitor">
+      <div class="variant-header">
+        <div class="variant-letter">A</div>
+        <div>
+          <h4>Capacitor (Storage Format) vs Other Columnar Formats</h4>
+          <p>Capacitor is Google's proprietary columnar storage format that stores each column separately with heavy compression and embedded statistics for query optimization.</p>
+        </div>
+      </div>
+
+      <div class="callout amber">
+        <div class="callout-label">The Core Insight</div>
+        <p>Unlike Parquet which stores row groups (~128MB chunks of multiple columns), <mark>Capacitor is more aggressively columnar</mark> with finer-grained statistics and is optimized for Dremel's query patterns.</p>
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">The Inventor's Problem</div>
+        <p>Google needed a format that could enable predicate pushdown at extremely fine granularity, support nested/repeated fields (Protocol Buffers style), and compress to minimize Colossus storage costs.</p>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Format</th><th>Chunk Size</th><th>Nested Data</th><th>Stats Granularity</th><th>Compression</th><th>Main User</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Capacitor</td><td>Column stripes (~MB)</td><td>Native nested/repeated</td><td>Per-stripe bloom filters, min/max</td><td>Heavy (encoding-aware)</td><td>BigQuery</td></tr>
+            <tr><td>Parquet</td><td>Row groups (~128MB)</td><td>Dremel-style repetition</td><td>Per-row-group</td><td>Good</td><td>Spark, Hive</td></tr>
+            <tr><td>ORC</td><td>Stripes (~64MB)</td><td>Limited nested</td><td>Per-stripe</td><td>Very good</td><td>Hive</td></tr>
+            <tr><td>Arrow</td><td>In-memory columnar</td><td>Full nested</td><td>N/A (in-memory)</td><td>None</td><td>Analytics transfer</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="colossus">
+      <div class="variant-header">
+        <div class="variant-letter">B</div>
+        <div>
+          <h4>Colossus vs Other Distributed File Systems</h4>
+          <p>Colossus is Google's next-generation distributed file system (successor to GFS) that provides durable, high-throughput storage with location-aware data placement.</p>
+        </div>
+      </div>
+
+      <h5>How It Works — Step by Step</h5>
+
+      <div class="step-list">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:8px;">Write Path</div>
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <strong>Data Splitting</strong>
+            <span>Data split into chunks (~64MB)</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <strong>Replication / Erasure Coding</strong>
+            <span>Each chunk replicated to 3+ storage nodes (Reed-Solomon erasure coding for large files)</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <strong>Metadata Storage</strong>
+            <span>Metadata stored separately in Bigtable-like metadata service</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <strong>Acknowledgement</strong>
+            <span>Write acknowledged when replication is complete</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-list" style="margin-top:16px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--hire);margin-bottom:8px;">Read Path</div>
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <strong>Chunk Location Lookup</strong>
+            <span>Query worker asks metadata service for chunk locations</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <strong>Nearest Replica Read</strong>
+            <span>Worker reads from nearest replica (datacenter-aware)</span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <strong>Lock-Free Parallel Access</strong>
+            <span>Multiple workers can read same chunk simultaneously (no locks)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-list" style="margin-top:16px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--no-hire);margin-bottom:8px;">Fault Tolerance</div>
+        <div class="step-item">
+          <div class="step-num">!</div>
+          <div class="step-content">
+            <strong>Failure Detection & Re-replication</strong>
+            <span>Chunk server fails → read from replica. Background scan detects under-replicated chunks. Re-replicate to maintain redundancy.</span>
+          </div>
+        </div>
+      </div>
+
+      <h5>Concrete Example</h5>
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">EXAMPLE</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Table: user_events (100 TB)
+├── event_id column:   10 TB → stored as 156,250 chunks (64 MB each)
+├── timestamp column:   5 TB → 78,125 chunks
+├── user_id column:     8 TB → 125,000 chunks
+└── payload column:    77 TB → 1,203,125 chunks
+
+Each chunk replicated 3x → actual storage: 300 TB
+
+Query: SELECT user_id, timestamp FROM user_events WHERE timestamp > '2024-01-01'
+- Only reads: user_id + timestamp columns = 13 TB (not 100 TB!)
+- Colossus returns chunks from nearest replicas
+- 10,000 workers each read ~1.3 GB</pre>
+      </div>
+
+      <h5>Colossus vs HDFS</h5>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Aspect</th><th>Colossus</th><th>HDFS</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Metadata</td><td>Distributed metadata service</td><td>Single NameNode (bottleneck)</td></tr>
+            <tr><td>Replication</td><td>Erasure coding for large files</td><td>Always 3x replication</td></tr>
+            <tr><td>Compute locality</td><td>Less important (network fast)</td><td>Critical (co-locate compute)</td></tr>
+            <tr><td>Scalability</td><td>Exabytes</td><td>Petabytes (NameNode limit)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2.2 -->
+  <div class="section-block" id="query-execution">
+    <h3><span class="section-num">2.2</span> Variant: Query Execution Models</h3>
+
+    <div id="dremel-tree">
+      <div class="variant-header">
+        <div class="variant-letter">A</div>
+        <div>
+          <h4>Dremel Tree Execution</h4>
+          <p>Dremel executes queries through a multi-level tree where leaf nodes scan data in parallel and intermediate "mixer" nodes aggregate results upward.</p>
+        </div>
+      </div>
+
+      <div class="callout amber">
+        <div class="callout-label">The Core Insight</div>
+        <p>Instead of shuffle-heavy MapReduce stages, Dremel uses a <mark>persistent tree topology</mark> where aggregation happens incrementally as results flow upward—reducing shuffle data dramatically.</p>
+      </div>
+
+      <h5>Step-by-Step Walkthrough</h5>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">Query: <code style="color:var(--accent);">SELECT country, COUNT(*) FROM web_logs GROUP BY country</code></p>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">TREE STRUCTURE (3 levels)</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Level 0: Root Server (1)
+         └── Final aggregation: combines results from Level 1
+
+Level 1: Mixer Servers (50)
+         └── Partial aggregation: combine results from ~40 leaves each
+
+Level 2: Leaf Servers (2,000)
+         └── Scan data, local pre-aggregation</pre>
+      </div>
+
+      <h5>Concrete Example with Numbers</h5>
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">EXECUTION TRACE</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Table: web_logs
+- Size: 10 TB
+- Rows: 100 billion
+- Countries: 200 unique values
+
+Execution:
+1. Root creates execution plan, distributes to tree
+2. 2,000 leaf servers each scan 5 GB (10 TB / 2,000)
+3. Each leaf pre-aggregates: 50M rows → 200 country counts
+4. Each leaf sends 200 counts (~3 KB) to its mixer
+5. Each mixer aggregates 40 leaves: 40 × 200 = 8,000 counts → 200 counts
+6. Root aggregates 50 mixers: 50 × 200 = 10,000 counts → 200 final counts
+
+Shuffle data: Only 2,000 × 3KB + 50 × 3KB = ~6 MB
+(Compare to shuffling 100B rows through traditional approach!)</pre>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">DIAGRAM</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Query: SELECT country, COUNT(*) FROM web_logs GROUP BY country
+
+                    ┌─────────────────┐
+                    │  ROOT SERVER    │
+                    │  Final: 200     │
+                    │  {US:40B,CN:30B}│
+                    └────────┬────────┘
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+    ┌────┴────┐         ┌────┴────┐         ┌────┴────┐
+    │ MIXER 1 │         │ MIXER 2 │   ...   │ MIXER 50│
+    │ 200 cnt │         │ 200 cnt │         │ 200 cnt │
+    └────┬────┘         └────┬────┘         └────┬────┘
+         │                   │                   │
+    ┌────┴────┐         ┌────┴────┐         ┌────┴────┐
+    │ 40 Leaves│         │ 40 Leaves│         │ 40 Leaves│
+    │ scan 5GB │         │ scan 5GB │         │ scan 5GB │
+    │ each     │         │ each     │         │ each     │
+    └──────────┘         └──────────┘         └──────────┘
+    
+    2000 leaves × 5GB = 10TB scanned in parallel</pre>
+      </div>
+
+      <h5>Where It Shines vs. Struggles</h5>
+      <div class="smell-grid">
+        <div class="smell-card good">
+          <h5>✅ WHERE IT SHINES</h5>
+          <ul>
+            <li>Aggregation queries (GROUP BY reduces data)</li>
+            <li>Queries with high selectivity filters (WHERE clause)</li>
+            <li>Single large table scans</li>
+          </ul>
+        </div>
+        <div class="smell-card bad">
+          <h5>❌ WHERE IT STRUGGLES</h5>
+          <ul>
+            <li>Large JOINs (requires shuffle to different tree)</li>
+            <li>Results with high cardinality (millions of groups)</li>
+            <li>Complex multi-stage transformations</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div id="shuffle-execution">
+      <div class="variant-header">
+        <div class="variant-letter">B</div>
+        <div>
+          <h4>Shuffle-Based Execution (Dremel + Shuffle)</h4>
+          <p>For operations requiring data redistribution (JOINs, high-cardinality GROUP BY), BigQuery uses Colossus-backed shuffle that writes intermediate results to disk.</p>
+        </div>
+      </div>
+
+      <div class="callout green">
+        <div class="callout-label">The Core Insight</div>
+        <p>Unlike Spark's ephemeral shuffle (lost on failure), <mark>BigQuery writes shuffle data to Colossus</mark>, making it durable and enabling automatic retry without recomputation.</p>
+      </div>
+
+      <h5>Step-by-Step Walkthrough for JOIN</h5>
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">JOIN EXECUTION STAGES</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Query: SELECT o.*, u.name 
+       FROM orders o 
+       JOIN users u ON o.user_id = u.user_id
+
+Stage 1: Scan + Hash Partition
+├── Workers read orders table, hash(user_id) → write to shuffle buckets
+└── Workers read users table, hash(user_id) → write to shuffle buckets
+
+Stage 2: Join Execution
+├── Each join worker reads ONE bucket from orders + ONE bucket from users
+├── Same hash = same bucket = can join locally
+└── Output written to result set
+
+Shuffle Data Written to Colossus:
+- Orders: 1 TB → 1 TB shuffle files (partitioned by hash)
+- Users: 100 GB → 100 GB shuffle files (partitioned by hash)
+- Total shuffle: 1.1 TB written to persistent storage</pre>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label">DIAGRAM</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Stage 1: Scan & Partition
+═══════════════════════════════════════════════════════════════════
+
+   orders table (1 TB)              users table (100 GB)
+   ┌──────────────────┐             ┌──────────────────┐
+   │ Workers 1-1000   │             │ Workers 1-100    │
+   │ scan + hash      │             │ scan + hash      │
+   └────────┬─────────┘             └────────┬─────────┘
+            │                                │
+            ▼                                ▼
+   ┌──────────────────────────────────────────────────┐
+   │           SHUFFLE (on Colossus)                  │
+   │ ┌────────┐┌────────┐┌────────┐     ┌────────┐   │
+   │ │Bucket 0││Bucket 1││Bucket 2│ ... │Bucket N│   │
+   │ │orders  ││orders  ││orders  │     │orders  │   │
+   │ │users   ││users   ││users   │     │users   │   │
+   │ └────────┘└────────┘└────────┘     └────────┘   │
+   └──────────────────────────────────────────────────┘
+
+Stage 2: Join
+═══════════════════════════════════════════════════════════════════
+
+   ┌────────────────────────────────────────────────────────────┐
+   │                    Join Workers                            │
+   │ ┌─────────┐ ┌─────────┐ ┌─────────┐       ┌─────────┐     │
+   │ │Worker 0 │ │Worker 1 │ │Worker 2 │  ...  │Worker N │     │
+   │ │reads    │ │reads    │ │reads    │       │reads    │     │
+   │ │bucket 0 │ │bucket 1 │ │bucket 2 │       │bucket N │     │
+   │ │join     │ │join     │ │join     │       │join     │     │
+   │ │locally  │ │locally  │ │locally  │       │locally  │     │
+   │ └─────────┘ └─────────┘ └─────────┘       └─────────┘     │
+   └────────────────────────────────────────────────────────────┘</pre>
+      </div>
+
+      <h5>Key Difference from Spark Shuffle</h5>
+      <div class="table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr><th>Aspect</th><th>BigQuery Shuffle</th><th>Spark Shuffle</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Storage</td><td style="color:var(--hire);">Colossus (durable)</td><td style="color:var(--no-hire);">Executor local disk (ephemeral)</td></tr>
+            <tr><td>Failure recovery</td><td style="color:var(--hire);">Read from Colossus</td><td style="color:var(--no-hire);">Recompute from source</td></tr>
+            <tr><td>Shuffle size limit</td><td style="color:var(--hire);">Petabytes</td><td style="color:var(--no-hire);">Memory-bound</td></tr>
+            <tr><td>Write speed</td><td>Optimized for throughput</td><td>Depends on local disk</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<button id="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+// Progress bar
+window.addEventListener('scroll', () => {
+  const scrolled = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+  document.getElementById('progress-bar').style.width = scrolled + '%';
+  document.getElementById('back-to-top').classList.toggle('visible', window.scrollY > 300);
+  updateActiveNav();
+});
+
+// Active nav
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id]');
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 120) current = s.id;
+  });
+  document.querySelectorAll('#nav-list a').forEach(a => {
+    const href = a.getAttribute('href');
+    a.classList.toggle('active', href && href === '#' + current);
+  });
+}
+
+// Copy button
+function copyCode(btn) {
+  const pre = btn.closest('.diagram-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Sidebar search
+document.getElementById('sidebar-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#nav-list li:not(.nav-part)').forEach(li => {
+    const text = li.textContent.toLowerCase();
+    li.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+});
+
+// Hamburger
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+document.getElementById('hamburger').addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('visible');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('visible');
+});
+
+// Close sidebar on nav click (mobile)
+document.querySelectorAll('#nav-list a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth <= 900) {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('visible');
+    }
+  });
+});
+</script>
+
+</body>
+</html>
