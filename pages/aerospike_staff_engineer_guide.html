@@ -1,0 +1,1783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aerospike DB — Staff/Principal Engineer Interview Deep Dive</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --bg2: #141a24;
+    --bg3: #1a2234;
+    --bg4: #0f1520;
+    --border: #1e2d42;
+    --border2: #263548;
+    --text: #dde6f0;
+    --text2: #7d9ab5;
+    --text3: #4a6480;
+    --orange: #e06c10;
+    --orange-light: #f59b3a;
+    --orange-bg: #1e1008;
+    --teal: #0f8b7a;
+    --teal-light: #3ed8c2;
+    --teal-bg: #031a17;
+    --amber: #c47a0a;
+    --amber-light: #f0b840;
+    --amber-bg: #1a1004;
+    --red: #c0392b;
+    --red-light: #e07060;
+    --red-bg: #1a0505;
+    --blue: #1a5fb4;
+    --blue-light: #5ba3f5;
+    --blue-bg: #081428;
+    --green: #1a7a45;
+    --green-light: #40d080;
+    --green-bg: #041410;
+    --purple: #6a3ab0;
+    --purple-light: #a070e8;
+    --ae-orange: #e05a10;
+    --ae-dark: #0a0c10;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0a0e14 0%, #1a1005 50%, #0a1020 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 56px 48px 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(224,90,16,0.12) 0%, transparent 70%);
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(224,90,16,0.15);
+    border: 1px solid rgba(245,155,58,0.35);
+    color: var(--orange-light);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .hero h1 { font-size: 42px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 16px; }
+  .hero h1 span { color: var(--orange-light); }
+  .hero-sub { font-size: 17px; color: var(--text2); max-width: 700px; margin-bottom: 32px; }
+  .hero-meta { display: flex; gap: 16px; flex-wrap: wrap; }
+  .meta-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 8px;
+    font-size: 13px; color: var(--text2);
+  }
+  .meta-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .nav {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 48px;
+    position: sticky; top: 0; z-index: 100;
+    display: flex; gap: 0; overflow-x: auto;
+  }
+  .nav a {
+    color: var(--text2); text-decoration: none;
+    padding: 14px 16px; font-size: 13px; font-weight: 500;
+    white-space: nowrap; border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .nav a:hover { color: var(--text); border-bottom-color: var(--orange-light); }
+
+  .content { max-width: 1100px; margin: 0 auto; padding: 0 48px 80px; }
+
+  .pillar { margin-top: 64px; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .pillar-header {
+    padding: 24px 32px;
+    display: flex; align-items: center; gap: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pillar-icon { font-size: 28px; line-height: 1; }
+  .pillar-title { font-size: 22px; font-weight: 700; color: #fff; }
+  .pillar-subtitle { font-size: 13px; color: var(--text3); margin-top: 4px; }
+  .pillar-body { padding: 32px; }
+
+  h2.sec {
+    font-size: 18px; font-weight: 600; color: #fff;
+    margin: 32px 0 12px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2.sec:first-child { margin-top: 0; }
+  h3.subsec { font-size: 15px; font-weight: 600; color: var(--text); margin: 20px 0 8px; }
+  p { color: var(--text2); margin-bottom: 12px; }
+  p strong { color: var(--text); }
+  li { color: var(--text2); margin-bottom: 4px; }
+  li strong { color: var(--text); }
+
+  .callout { border-radius: 10px; padding: 16px 20px; margin: 16px 0; border-left: 4px solid; font-size: 14px; }
+  .callout.fire { background: rgba(192,57,43,0.08); border-color: var(--red-light); }
+  .callout.fire .callout-label { color: var(--red-light); font-weight: 700; margin-bottom: 6px; }
+  .callout.lightning { background: rgba(106,58,176,0.1); border-color: var(--purple-light); }
+  .callout.lightning .callout-label { color: var(--purple-light); font-weight: 700; margin-bottom: 6px; }
+  .callout.calc { background: rgba(15,139,122,0.08); border-color: var(--teal-light); }
+  .callout.calc .callout-label { color: var(--teal-light); font-weight: 700; margin-bottom: 6px; }
+  .callout.info { background: rgba(26,95,180,0.08); border-color: var(--blue-light); }
+  .callout.info .callout-label { color: var(--blue-light); font-weight: 700; margin-bottom: 6px; }
+  .callout p { margin: 0; color: var(--text2); }
+
+  .code-block {
+    background: #020408;
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+    font-family: 'SF Mono','Cascadia Code','Fira Code',monospace;
+    font-size: 13px; line-height: 1.6;
+    overflow-x: auto; margin: 16px 0; color: #c8d8e8;
+  }
+  .code-block .comment { color: #3a5068; }
+  .code-block .key { color: #5aade0; }
+  .code-block .val { color: #8de0f0; }
+  .code-block .str { color: #80e890; }
+  .code-block .num { color: #f0b840; }
+  .code-block .kw { color: #e07060; }
+
+  .ascii {
+    background: #020408; border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+    font-family: 'SF Mono','Cascadia Code',monospace;
+    font-size: 12px; line-height: 1.5;
+    overflow-x: auto; margin: 16px 0; color: #c0d0e0; white-space: pre;
+  }
+
+  .tbl-wrap { overflow-x: auto; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--bg3); color: var(--text); font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text2); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td.green { color: var(--green-light); font-weight: 600; }
+  td.red { color: var(--red-light); font-weight: 600; }
+  td.amber { color: var(--amber-light); font-weight: 600; }
+
+  .pill {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; margin: 2px;
+  }
+  .pill.green { background: rgba(26,122,69,0.15); color: var(--green-light); border: 1px solid rgba(64,208,128,0.25); }
+  .pill.red { background: rgba(192,57,43,0.15); color: var(--red-light); border: 1px solid rgba(224,112,96,0.25); }
+  .pill.amber { background: rgba(196,122,10,0.15); color: var(--amber-light); border: 1px solid rgba(240,184,64,0.25); }
+  .pill.blue { background: rgba(26,95,180,0.15); color: var(--blue-light); border: 1px solid rgba(91,163,245,0.25); }
+  .pill.orange { background: rgba(224,90,16,0.15); color: var(--orange-light); border: 1px solid rgba(245,155,58,0.25); }
+  .pill.teal { background: rgba(15,139,122,0.15); color: var(--teal-light); border: 1px solid rgba(62,216,194,0.25); }
+
+  .key-takeaway {
+    background: linear-gradient(135deg, rgba(224,90,16,0.1), rgba(15,139,122,0.06));
+    border: 1px solid rgba(245,155,58,0.3);
+    border-radius: 12px; padding: 20px 24px; margin-top: 32px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .key-takeaway .kt-icon { font-size: 20px; }
+  .key-takeaway p { margin: 0; color: var(--text); font-weight: 500; font-size: 15px; }
+
+  .failure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .failure-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .failure-card h4 { font-size: 14px; font-weight: 600; color: var(--red-light); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .failure-card .fa-row { margin-bottom: 8px; }
+  .failure-card .fa-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text3); margin-bottom: 2px; }
+  .failure-card .fa-val { font-size: 13px; color: var(--text2); }
+
+  .interview-q { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .interview-q .q-header { padding: 16px 20px; background: rgba(224,90,16,0.08); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text); font-size: 14px; display: flex; gap: 10px; }
+  .interview-q .q-num { background: var(--ae-orange); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .interview-q .q-body { padding: 16px 20px; font-size: 14px; color: var(--text2); }
+
+  .steps { counter-reset: step; }
+  .step { counter-increment: step; display: flex; gap: 16px; margin-bottom: 16px; position: relative; }
+  .step::before { content: counter(step); width: 28px; height: 28px; border-radius: 50%; background: var(--ae-orange); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+  .step-content { flex: 1; }
+  .step-content strong { color: var(--text); }
+  .step-content p { margin: 4px 0 0; font-size: 14px; }
+
+  .tier-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 16px 0; }
+  .tier-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .tier-card .tier-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+  .tier-card h4 { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 12px; }
+  .tier-card ul { list-style: none; }
+  .tier-card li { font-size: 13px; color: var(--text2); padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .tier-card li:last-child { border-bottom: none; }
+  .tier-card li::before { content: '→ '; color: var(--text3); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+  .highlight-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin: 12px 0; }
+  .highlight-box h4 { color: var(--text); font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+
+  ul.arrow-list { list-style: none; }
+  ul.arrow-list li::before { content: '→ '; color: var(--text3); }
+  ul.arrow-list li { padding: 3px 0; }
+  ul.checklist { list-style: none; }
+  ul.checklist li::before { content: '✓ '; color: var(--green-light); font-weight: 700; }
+  ul.checklist li { padding: 3px 0; }
+  ul.danger-list { list-style: none; }
+  ul.danger-list li::before { content: '✗ '; color: var(--red-light); font-weight: 700; }
+  ul.danger-list li { padding: 3px 0; }
+  ul.bullet-list { list-style: disc; padding-left: 20px; }
+  ul.bullet-list li { padding: 3px 0; }
+
+  .scenario { background: linear-gradient(135deg, rgba(20,26,36,0.9), rgba(14,20,32,0.9)); border: 1px solid rgba(91,163,245,0.2); border-radius: 12px; padding: 24px; margin: 16px 0; }
+  .scenario-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--blue-light); margin-bottom: 8px; }
+  .scenario h4 { color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  .scenario p, .scenario li { font-size: 14px; }
+
+  .critique-box { border-radius: 10px; padding: 16px 20px; margin: 12px 0; border: 1px solid; }
+  .critique-box.good { background: rgba(26,122,69,0.08); border-color: rgba(64,208,128,0.3); }
+  .critique-box.good .cb-label { color: var(--green-light); font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+  .critique-box.bad { background: rgba(192,57,43,0.08); border-color: rgba(224,112,96,0.3); }
+  .critique-box.bad .cb-label { color: var(--red-light); font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+  .critique-box.upgrade { background: rgba(106,58,176,0.08); border-color: rgba(160,112,232,0.3); }
+  .critique-box.upgrade .cb-label { color: var(--purple-light); font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+  .critique-box p { margin: 0; font-size: 14px; color: var(--text2); }
+
+  .config-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 12px 0; }
+  .config-card-header { background: var(--bg3); padding: 10px 16px; font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  .config-card-body { padding: 16px; }
+
+  .apm-section { background: var(--bg4); border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .apm-section-header { padding: 14px 20px; background: rgba(15,139,122,0.08); border-bottom: 1px solid var(--border); font-weight: 600; color: var(--teal-light); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .apm-section-body { padding: 20px; }
+
+  /* pillar colors */
+  .pillar.p1 { border-color: rgba(245,155,58,0.35); }
+  .pillar.p1 .pillar-header { background: linear-gradient(135deg, rgba(224,90,16,0.12), rgba(26,16,5,0.8)); border-color: rgba(245,155,58,0.25); }
+  .pillar.p2 { border-color: rgba(62,216,194,0.3); }
+  .pillar.p2 .pillar-header { background: linear-gradient(135deg, rgba(15,139,122,0.12), rgba(3,26,23,0.8)); border-color: rgba(62,216,194,0.2); }
+  .pillar.p3 { border-color: rgba(240,184,64,0.3); }
+  .pillar.p3 .pillar-header { background: linear-gradient(135deg, rgba(196,122,10,0.12), rgba(26,16,4,0.8)); border-color: rgba(240,184,64,0.2); }
+  .pillar.p4 { border-color: rgba(224,112,96,0.3); }
+  .pillar.p4 .pillar-header { background: linear-gradient(135deg, rgba(192,57,43,0.12), rgba(26,5,5,0.8)); border-color: rgba(224,112,96,0.2); }
+  .pillar.p5 { border-color: rgba(91,163,245,0.3); }
+  .pillar.p5 .pillar-header { background: linear-gradient(135deg, rgba(26,95,180,0.12), rgba(8,20,40,0.8)); border-color: rgba(91,163,245,0.2); }
+  .pillar.p6 { border-color: rgba(64,208,128,0.3); }
+  .pillar.p6 .pillar-header { background: linear-gradient(135deg, rgba(26,122,69,0.12), rgba(4,20,16,0.8)); border-color: rgba(64,208,128,0.2); }
+  .pillar.p7 { border-color: rgba(160,112,232,0.3); }
+  .pillar.p7 .pillar-header { background: linear-gradient(135deg, rgba(106,58,176,0.12), rgba(12,8,24,0.8)); border-color: rgba(160,112,232,0.2); }
+  .pillar.p8 { border-color: rgba(245,155,58,0.3); }
+  .pillar.p8 .pillar-header { background: linear-gradient(135deg, rgba(224,90,16,0.1), rgba(26,16,5,0.8)); border-color: rgba(245,155,58,0.2); }
+
+  hr.div { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  @media (max-width: 768px) {
+    .hero { padding: 32px 20px; }
+    .nav { padding: 0 20px; }
+    .content { padding: 0 20px 60px; }
+    .pillar-body { padding: 20px; }
+    .failure-grid, .two-col, .tier-cards { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-badge">⚡ Staff/Principal Engineer Interview Prep</div>
+  <h1>Aerospike DB:<br><span>Complete L7/L8 Deep Dive</span></h1>
+  <p class="hero-sub">A thorough, first-principles to Google-scale examination of Aerospike's Hybrid Memory Architecture, strong consistency model, failure modes, scaling strategies, and interview simulation — structured for Senior Staff Engineer interviews.</p>
+  <div class="hero-meta">
+    <div class="meta-chip"><div class="dot" style="background:#e06c10"></div> 8 Pillars</div>
+    <div class="meta-chip"><div class="dot" style="background:#0f8b7a"></div> Monitoring Deep Dive</div>
+    <div class="meta-chip"><div class="dot" style="background:#c47a0a"></div> L7/L8 Differentiators</div>
+    <div class="meta-chip"><div class="dot" style="background:#c0392b"></div> Failure Scenarios</div>
+    <div class="meta-chip"><div class="dot" style="background:#1a5fb4"></div> Interview Simulation</div>
+    <div class="meta-chip"><div class="dot" style="background:#1a7a45"></div> April 2026 Coverage</div>
+  </div>
+</div>
+
+<nav class="nav">
+  <a href="#p1">1 Core Concepts</a>
+  <a href="#p2">2 Architecture</a>
+  <a href="#p3">3 Trade-offs</a>
+  <a href="#p4">4 Failure Modes</a>
+  <a href="#p5">5 Scaling</a>
+  <a href="#p6">6 Real-World</a>
+  <a href="#p7">7 Google-Scale</a>
+  <a href="#p8">8 Interview Sim</a>
+  <a href="#monitoring">Monitoring</a>
+</nav>
+
+<div class="content">
+
+<!-- ═══════ PILLAR 1 ═══════ -->
+<div class="pillar p1" id="p1">
+  <div class="pillar-header">
+    <div class="pillar-icon">🧠</div>
+    <div>
+      <div class="pillar-title">Pillar 1 — Core Concepts &amp; Mental Models</div>
+      <div class="pillar-subtitle">First principles: what problem Aerospike solves, its core abstraction, fundamental guarantees, and invariants</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🌍 What Problem Does Aerospike Solve?</h2>
+    <p>To understand why Aerospike exists, you must understand the state of high-performance databases in the 2008–2012 era. The internet economy was producing a class of problems that no existing database could handle gracefully: <strong>sub-millisecond read/write operations at sustained millions of requests per second, with hundreds of terabytes of data, and strong consistency guarantees</strong>. These requirements were mutually exclusive in the existing tool landscape.</p>
+    <p>Relational databases (MySQL, PostgreSQL) provided strong consistency but collapsed under write-heavy load beyond a few thousand operations per second without heroic sharding complexity. Memcached provided microsecond reads at scale but had zero persistence, zero consistency, and zero durability — it was a cache, not a database. Redis solved the persistence problem partially but was fundamentally single-threaded and ran entirely in RAM, making data sizes above a few hundred gigabytes prohibitively expensive. Cassandra and HBase provided scale and persistence but sacrificed strong consistency (Cassandra) or required complex HDFS infrastructure (HBase) with latency in the tens-of-milliseconds range.</p>
+    <p>The specific pain point that motivated Aerospike's creation was <strong>real-time bidding (RTB) in digital advertising</strong>. An ad exchange must decide, in under 10 milliseconds total (including network round trips), whether to bid on an ad impression, at what price, and for which creative. The decision requires looking up a user profile (potentially hundreds of attributes: interest segments, prior ad exposures, frequency caps, demographic inferences) stored in a persistent database. At peak load, a major exchange processes 1–3 million bid requests per second. The data set (user profiles for hundreds of millions of users) is far too large to fit in RAM on commodity hardware, but the latency budget cannot tolerate disk I/O on spinning hard drives (8ms average seek time × 1M requests/second = 8 million ms/second of I/O, clearly impossible).</p>
+    <p>The insight that founded Aerospike: <strong>SSDs fundamentally change the latency calculus</strong>. Enterprise NVMe SSDs provide ~50–150 microsecond random read latency, compared to 8,000 microseconds for spinning disk — a 50–160x improvement. But in 2010, no database was designed specifically to exploit this property. Most databases treated SSDs as "fast disks" and used them with I/O patterns optimized for spinning disk (sequential I/O, large buffers), leaving the SSD's random-access latency advantage unexploited.</p>
+    <p>Aerospike's founding innovation was the <strong>Hybrid Memory Architecture (HMA)</strong>: keep all index entries in RAM (where they provide nanosecond-latency lookups), but store all values on SSD (where enterprise NVMe provides ~100μs random reads). This allows a single commodity server with 64GB RAM to index and access multiple terabytes of SSD data with sub-millisecond total operation latency — impossible with any contemporary alternative.</p>
+
+    <h2 class="sec">🔮 The Core Abstraction</h2>
+    <p>Aerospike's data model is a <strong>multi-dimensional namespace → set → record → bins</strong> hierarchy. Understanding each level deeply is essential:</p>
+    <ul class="arrow-list">
+      <li><strong>Namespace</strong>: The top-level organizational unit, analogous to a database in RDBMS. Each namespace has its own storage configuration — some namespaces may be RAM-only (for hot data), others SSD-backed (for large datasets). A cluster can have multiple namespaces with completely different storage policies. Each namespace is independently replicated across the cluster.</li>
+      <li><strong>Set</strong>: An optional grouping within a namespace, loosely analogous to a table. Sets are a logical concept — records in a set share the same physical storage as other records in the same namespace. Sets enable selective secondary indexing and scan operations. Unlike a table, sets do not define a schema — different records in the same set can have entirely different bin structures (schemaless).</li>
+      <li><strong>Record</strong>: The fundamental unit of storage and atomicity. A record is identified by a <strong>key</strong> (which can be an integer, string, or byte array). The key is hashed using RIPEMD-160 to produce a 20-byte digest that is the actual storage key. Aerospike does not store the original key by default (it stores only the digest) unless <code>send-key true</code> is configured. This is a critically important detail for debugging and operational practices.</li>
+      <li><strong>Bins</strong>: The columns within a record. A record can have up to 32,767 bins (per namespace). Bins are typed (integer, string, bytes, double, list, map, GeoJSON, HyperLogLog, blob). Unlike columns in a relational table, bins are defined per-record — you can add or remove bins on individual records without schema migrations. Bin values are stored together in a single contiguous serialized block on disk, meaning reading one bin reads all bins for that record (no column store capability). This is a significant design trade-off for records with large numbers of wide bins.</li>
+    </ul>
+    <p>The abstraction is powerful because it provides <strong>the ergonomics of a key-value store with the expressive power of a document database, the operational simplicity of a managed database, and the raw performance of a purpose-built in-memory system — all simultaneously</strong>. The bin model means you can store complex hierarchical data structures (maps, lists, maps-within-lists) as native types with in-place partial update operations (e.g., increment a specific integer bin without reading the entire record, or append to a list bin without fetching the full list).</p>
+
+    <h2 class="sec">📋 Fundamental Guarantees</h2>
+    <div class="two-col">
+      <div class="highlight-box">
+        <h4>✅ What Aerospike GUARANTEES</h4>
+        <ul class="arrow-list">
+          <li><strong>Strong consistency (optional, per-namespace)</strong>: With Strong Consistency (SC) mode enabled, all reads and writes to a record are serialized through the master partition for that record. Every read sees the last committed write — Aerospike provides read-your-writes and linearizability within a single record's operations. This requires a majority quorum of replica nodes to acknowledge a write before it is visible to reads.</li>
+          <li><strong>ACID at the record level</strong>: Individual record operations (read, write, delete, operate) are atomic. A single operate() call can modify multiple bins in a record atomically — either all changes are committed or none are. There is no partial write visible to other clients.</li>
+          <li><strong>Durable writes (configurable)</strong>: With the default write policy (commit-master), data is written to persistent storage on the master before the write is acknowledged to the client. With commit-all, data is confirmed on all replica nodes before acknowledgment.</li>
+          <li><strong>Sub-millisecond latency at scale</strong>: Under the Hybrid Memory Architecture, Aerospike guarantees consistent sub-millisecond operation latency for single-record operations — this is an architectural property (RAM index + SSD data), not just a marketing claim.</li>
+          <li><strong>Automatic cluster management</strong>: Node failures, additions, and repartitioning are handled automatically. Data migration after topology changes happens in the background without operator intervention.</li>
+        </ul>
+      </div>
+      <div class="highlight-box">
+        <h4>❌ What Aerospike Does NOT Guarantee</h4>
+        <ul class="danger-list">
+          <li><strong>Multi-record transactions (in traditional versions)</strong>: Prior to Aerospike 7.0, Aerospike did not support multi-record transactions. A read-modify-write across two records could see a torn state. <strong>Note: Aerospike 7.0 (released 2023) introduced multi-record transactions (MRT) with ACID guarantees</strong> — this is a major version change critical to know.</li>
+          <li><strong>SQL query capability</strong>: Aerospike is not a relational database. Complex JOIN operations, GROUP BY aggregations across large datasets, and multi-table ACID transactions (pre-7.0) are either not supported or require Secondary Index queries with application-level logic.</li>
+          <li><strong>Full secondary index performance at high cardinality</strong>: Secondary indexes in Aerospike are in-memory per-node. A secondary index query fans out to all nodes and merges results. At very high cardinality (millions of distinct values), secondary index queries approach full-scan performance — they do not provide the logarithmic query performance of a B-tree index in a relational database.</li>
+          <li><strong>Query planner / optimizer</strong>: Aerospike has no query optimizer. There are no EXPLAIN plans, no statistics-based query planning, and no automatic index selection. Query paths are entirely programmer-determined.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 class="sec">⚖️ Invariants That Must Always Hold</h2>
+    <ul class="arrow-list">
+      <li><strong>Partition ownership is always deterministic</strong>: Aerospike uses a fixed 4,096-partition scheme. Every record key maps to exactly one partition via RIPEMD-160 hash. The cluster's partition map (which node owns which partitions as master) is always consistent — there is no ambiguity about where a record lives. Violating this (e.g., through misconfiguration of the cluster nodes list) causes split-brain where two groups of nodes independently claim partition ownership.</li>
+      <li><strong>Generation counter monotonicity</strong>: Every record carries an internal generation counter that increments on every write. This counter is used for optimistic concurrency control. An application using check-and-set (CAS) operations relies on the generation counter never decreasing. A node crash and recovery (replaying from persistence) must restore the same or higher generation counter — never lower.</li>
+      <li><strong>TTL correctness</strong>: Records with configured TTL (time-to-live) must expire on or after their deadline, never before. The eviction and expiration subsystem must process TTLs in order. A record that has not yet expired must be readable. Partial writes (writing data but not the TTL field) would violate this invariant.</li>
+      <li><strong>Replication factor consistency</strong>: If a namespace is configured with replication factor N, every partition must have exactly N copies across different nodes (in a healthy cluster with sufficient nodes). During migration, replica counts may be temporarily below N, but the cluster must converge to exactly N replicas in finite time after any topology change.</li>
+    </ul>
+
+    <h2 class="sec">🗺️ Mental Model: Hybrid Memory Architecture</h2>
+    <div class="ascii">┌──────────────────────────────────────────────────────────────────────┐
+│                  AEROSPIKE HYBRID MEMORY ARCHITECTURE                 │
+└──────────────────────────────────────────────────────────────────────┘
+
+  CLIENT REQUEST: GET key "user:12345"
+          │
+          ▼
+  ┌───────────────────────────────────────────────────────────────────┐
+  │  STEP 1: KEY HASHING (Client Library)                            │
+  │  RIPEMD-160("user:12345") → 20-byte digest                       │
+  │  digest[0:1] → partition_id 0-4095                               │
+  │  Cluster partition map → Node A owns partition 2847              │
+  │  Route request directly to Node A  ─────────────────────────────►│
+  └───────────────────────────────────────────────────────────────────┘
+          │ (direct TCP to correct node, no coordinator)
+          ▼
+  ┌───────────────────────────────────────────────────────────────────┐
+  │  AEROSPIKE NODE A (Physical Server)                              │
+  │                                                                   │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  PRIMARY INDEX (100% IN RAM)                              │   │
+  │  │                                                           │   │
+  │  │  Hash Table: digest → {device_id, byte_offset, size}     │   │
+  │  │                                                           │   │
+  │  │  Each entry = 64 bytes (fits in one cache line!)          │   │
+  │  │  1 billion records = 64 GB RAM for index                 │   │
+  │  │                                                           │   │
+  │  │  LOOKUP: ~100ns (RAM access, hash lookup)                 │   │
+  │  └──────────────────────┬────────────────────────────────────┘   │
+  │                         │ {device: /dev/nvme0, offset: 4GB+32K}  │
+  │                         ▼                                         │
+  │  ┌──────────────────────────────────────────────────────────┐   │
+  │  │  SSD STORAGE LAYER (Direct I/O, bypass page cache)       │   │
+  │  │                                                           │   │
+  │  │  /dev/nvme0  [raw device, no filesystem]                 │   │
+  │  │  ┌─────────────────────────────────────────────────┐    │   │
+  │  │  │ Block 0  │ Block 1  │ ... │ Block N  │           │    │   │
+  │  │  │ [record] │ [record] │     │ [record] │           │    │   │
+  │  │  └─────────────────────────────────────────────────┘    │   │
+  │  │                                                           │   │
+  │  │  READ: pread64(fd, buf, size, offset) → 50-150μs         │   │
+  │  │  WRITE: Append-only to write buffer, flush periodically   │   │
+  │  └──────────────────────────────────────────────────────────┘   │
+  │                                                                   │
+  │  TOTAL READ LATENCY: ~100ns (RAM) + ~100μs (SSD) ≈ 200μs        │
+  └───────────────────────────────────────────────────────────────────┘
+
+  NAMESPACE STORAGE OPTIONS:
+  ─────────────────────────
+  data-in-memory: true    → Both index AND data in RAM → ~50ns reads
+  data-in-memory: false   → Index in RAM, data on SSD → ~200μs reads
+  storage-engine: memory  → Pure RAM, no persistence (cache mode)
+  storage-engine: device  → SSD-backed with HMA (default production)
+
+  PARTITION MAP (Cluster of 3 Nodes):
+  ─────────────────────────────────
+  4096 partitions total
+  Node A: master 0-1365,   replica 1366-2731 (for Node B masters)
+  Node B: master 1366-2731, replica 2732-4095 (for Node C masters)
+  Node C: master 2732-4095, replica 0-1365    (for Node A masters)
+
+  Every client has a copy of this partition map and routes directly.</div>
+
+    <div class="callout lightning">
+      <div class="callout-label">⚡ L7/L8 Differentiator</div>
+      <p>Most candidates describe Aerospike as "a NoSQL database with SSD storage." The L7+ insight is that HMA is not just "storing on SSD" — it's the architectural decision to <strong>bypass the operating system page cache entirely via Direct I/O on raw devices</strong>, eliminating OS cache management overhead and achieving deterministic latency. Without Direct I/O, the OS might page out "cold" Aerospike data to make room for other processes, creating unpredictable latency spikes. With Direct I/O on raw NVMe, Aerospike controls its own I/O scheduling and achieves consistent p99 latency rather than excellent p50 with terrible p99.</p>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-label">📌 Aerospike 7.x Major Changes (2023–2026)</div>
+      <p><strong>Aerospike 7.0 (2023): Multi-Record Transactions (MRT)</strong> — the single most significant change in Aerospike's history. ACID transactions spanning multiple records are now supported natively, using a two-phase commit protocol with a transaction coordinator role. This eliminates the most common objection to using Aerospike for financial applications. <strong>Aerospike 7.1+: Enhanced XDR (Cross-Datacenter Replication)</strong> — improved conflict resolution with Last-Write-Wins based on hybrid logical clocks, and topology-aware routing that reduces cross-region bandwidth. <strong>Aerospike 7.x: Improved Secondary Index architecture</strong> — SI now supports range queries on numeric bins and geo-spatial queries with improved performance at higher cardinality.</p>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>Aerospike's core insight — <strong>keep the index in RAM and the data on NVMe SSD with Direct I/O, bypassing all OS page cache management</strong> — is what enables consistent sub-millisecond latency at terabyte scale that is architecturally impossible for any database treating SSD as "fast spinning disk."</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 2 ═══════ -->
+<div class="pillar p2" id="p2">
+  <div class="pillar-header">
+    <div class="pillar-icon">🏗️</div>
+    <div>
+      <div class="pillar-title">Pillar 2 — Architecture Deep Dive</div>
+      <div class="pillar-subtitle">All internal components, full write/read paths, discovery, latency critical path, on-disk layout, backpressure</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🔩 Internal Component Breakdown</h2>
+
+    <h3 class="subsec">1. Transaction Subsystem (TS)</h3>
+    <p>The Transaction Subsystem is the heart of Aerospike's request processing pipeline. Each incoming client request (read, write, delete, operate, batch) is assigned to a transaction thread from a configurable pool (<code>transaction-threads-per-queue</code>, default 4 per queue, with multiple queues). The TS performs key routing (mapping digest to partition to node), executes the operation against the storage engine, manages replication to replica nodes, and sends the response back to the client.</p>
+    <p>A critical design choice: <strong>Aerospike uses a shared-nothing, lockless design within the TS for single-record operations</strong>. Each partition's data is owned by a single TS queue, and the hash of the partition determines which queue processes that record's transactions. This eliminates inter-thread lock contention for single-record operations — a record's entire lifecycle within a transaction is processed by a single thread from dispatch to completion. Contention only occurs at the per-record level (when two concurrent writes target the same record simultaneously), which is handled with a fine-grained record-level lock (not a partition-level lock).</p>
+
+    <h3 class="subsec">2. Storage Engine</h3>
+    <p>The Storage Engine manages persistent data on SSD devices. Key implementation details:</p>
+    <ul class="arrow-list">
+      <li><strong>Append-only write model</strong>: New records and updates are always written to the current write block at the tail position. Aerospike never overwrites existing data in place on SSD. This decision has profound consequences: (1) It completely eliminates write amplification from random-write I/O patterns that destroy SSD endurance. (2) It makes the write path extremely fast — a write is always sequential, which maximizes SSD write bandwidth. (3) It creates the need for a garbage collection / defragmentation process (Defragmenter) to reclaim space from dead (overwritten or expired) records.</li>
+      <li><strong>Write Buffer (WBLOCK)</strong>: All incoming writes are first staged in RAM in a write buffer (configurable size, typically 128KB). When the buffer fills, it is flushed to SSD as a single write I/O. This converts application-level random writes (individual records of variable size) into large sequential SSD writes, maximizing SSD throughput. The cost: data in the write buffer is in RAM, so a node crash without a write buffer flush causes loss of the in-flight buffer. The <code>write-block-size</code> parameter controls this.</li>
+      <li><strong>Defragmenter</strong>: A background process that continuously scans existing SSD extents (typically 128MB chunks). When the live record density in an extent falls below a threshold (default: 50% live records), the defragmenter reads all live records from the extent, rewrites them to new extents, and marks the old extent as free. This process runs continuously at a controlled rate to avoid I/O saturation. The <code>defrag-sleep</code> parameter controls how aggressively defragmentation runs. If defragmentation falls behind (write rate exceeds defrag rate), disk space fills up and the node stops accepting writes.</li>
+      <li><strong>Persisted Index (PI) — Aerospike 5.2+</strong>: Prior to 5.2, the primary index was entirely in DRAM and had to be rebuilt on every node restart by scanning the SSD — at terabyte scale, this cold start could take 30–60 minutes. Persisted Index stores the primary index to a separate SSD (or flash) device, allowing cold start in under a minute even for multi-terabyte datasets. This is a significant operational improvement for disaster recovery scenarios.</li>
+    </ul>
+
+    <h3 class="subsec">3. Cluster Protocol (Paxos-like Consensus)</h3>
+    <p>Aerospike uses a proprietary cluster formation and membership protocol based on a heartbeat mechanism and a Paxos-like consensus for partition ownership decisions. Every node broadcasts heartbeats to all other nodes (configurable via mesh or multicast topology). If a node misses a configurable number of consecutive heartbeats from a peer, it is considered failed, and the surviving cluster initiates a <strong>cluster reformation</strong> event.</p>
+    <p>During cluster reformation, a new <strong>succession list</strong> is established via a distributed agreement protocol — all surviving nodes must agree on the same set of live nodes. This succession list then determines a new partition map: partitions are redistributed among surviving nodes, and data migration begins to restore the configured replication factor.</p>
+    <p>The partition map at any moment has three possible states for each node-partition combination: <strong>Master</strong> (read/write authoritative), <strong>Replica</strong> (receives write replications from master, serves as failover), or <strong>Absent</strong> (does not hold this partition). The cluster always maintains exactly one master per partition — there is never a case where two nodes simultaneously believe they are master for the same partition in a correctly configured cluster.</p>
+
+    <h3 class="subsec">4. Cross-Datacenter Replication (XDR)</h3>
+    <p>XDR is Aerospike's asynchronous geo-replication subsystem. It maintains an internal change log (the XDR digest log — or in 5.x+, the XDR change notification stream derived from the storage engine's write activity) and ships changes to remote Aerospike clusters over TCP. XDR provides eventual consistency across datacenters, not strong consistency. The lag depends on network bandwidth and cross-DC write rate, typically ranging from milliseconds to seconds under normal conditions.</p>
+    <p>In Aerospike 7.x, XDR supports <strong>topology-aware routing</strong>: XDR can be configured to route writes only to specific namespaces or sets in the remote cluster, enabling fine-grained replication policies (e.g., replicate only user profile data to EU, not ad targeting data, for GDPR compliance).</p>
+
+    <h3 class="subsec">5. Scan and Query Engine</h3>
+    <p>The Scan Engine enables full-namespace or full-set scans, streaming all records through a configurable predicate filter. Scans are partition-parallel: the cluster divides partitions among all nodes, each node scans its local partition data, and results are streamed back to the client. A scan in Aerospike can read from the master partitions (consistent but higher load on masters) or from replica partitions (lower load on masters, but may return slightly stale data if recent writes have not replicated yet).</p>
+    <p>Secondary Index (SI) queries use in-memory B-tree indexes maintained per node. An SI query is sent to all nodes (fan-out), each node queries its local SI and returns matching records, and the client merges results. This fan-out model means SI query latency is approximately equal to the slowest node's response time — a single slow node (due to a GC pause or I/O saturation) creates tail latency for SI queries. This is a critical architectural weakness compared to range queries in a B-tree RDBMS.</p>
+
+    <h2 class="sec">📊 Full Data Flow — Write Path</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-content">
+          <strong>Client Key Hashing &amp; Routing</strong>
+          <p>The Aerospike client library hashes the key using RIPEMD-160, takes the first 12 bits of the digest to determine the partition ID (0–4095), and consults its local copy of the cluster partition map to determine which node is the current master for that partition. The client opens a direct TCP connection to the master node (no coordinator proxy — this is direct routing). <strong>Latency contribution: ~1μs for in-process hash + map lookup; ~100μs network RTT.</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Master Node: Transaction Dispatch</strong>
+          <p>The master node receives the write request on its fabric listener. The request is placed in the appropriate transaction queue (determined by the partition ID modulo the number of queues). A transaction thread picks it up. The thread acquires the per-record lock (a fine-grained lock on the specific 20-byte digest). <strong>Latency: ~1μs lock acquisition if uncontended; can be tens of μs if the same record is being concurrently updated.</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Write to Storage Engine</strong>
+          <p>The transaction thread serializes the record (key, bins, metadata: generation, TTL, last-modified timestamp) into a flat byte array. The serialized record is written to the in-memory write buffer (WBLOCK). If the WBLOCK is full, it is flushed to SSD synchronously (blocking write) and a new WBLOCK is started. The Primary Index entry for this record is updated in DRAM: the 64-byte index entry is updated with the new {device_id, byte_offset, size} pointing to the freshly written data. The old index entry (pointing to the previous version of the record on SSD) now points to dead data — the Defragmenter will reclaim it later. <strong>Latency: ~1μs for WBLOCK write (RAM); +100μs if a WBLOCK flush to SSD is triggered.</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Replication to Replica Nodes</strong>
+          <p>After writing to the master's storage engine, the transaction thread sends the write to all replica nodes in parallel over the intracluster fabric (separate TCP connections from client-facing connections). The policy is configurable: <strong>commit-master</strong> (default) — acknowledge to client after master write completes, replica write is in-flight asynchronously. <strong>commit-all</strong> — wait for all replicas to confirm before acknowledging. With commit-master, replica writes complete within ~1ms on a local network. <strong>Latency: 0 added for commit-master (parallel with client response); ~200μs additional for commit-all.</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Client Acknowledgment</strong>
+          <p>The master node sends the write acknowledgment to the client. The TCP response contains: result code (OK, KEY_EXISTS, GENERATION, etc.), and optionally the post-write record (if the client requested it). The client library delivers the result to the application. <strong>Total write latency: ~300–600μs end-to-end for commit-master on LAN; ~500μs–1ms for commit-all.</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="sec">📖 Full Data Flow — Read Path</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-content">
+          <strong>Client Routing (Same as Write)</strong>
+          <p>RIPEMD-160 hash → partition ID → partition map lookup → direct TCP to master node. In Strong Consistency mode, reads MUST go to the master. In availability mode (eventual), reads can be served by any replica, distributing read load across the cluster.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Primary Index Lookup (RAM)</strong>
+          <p>The master node receives the read request. The transaction thread performs a hash table lookup in the Primary Index (entirely in DRAM) using the 20-byte digest as the key. If the key is found, the index entry returns: {device_id, byte_offset, size_in_bytes}. If not found, the node returns KEY_NOT_FOUND immediately without any SSD I/O. <strong>Index lookup latency: ~50–100ns (RAM access + hash table probe).</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>SSD Read via Direct I/O</strong>
+          <p>If the record exists, the transaction thread calls pread64() with the device file descriptor (opened with O_DIRECT to bypass OS page cache), the byte offset from the index entry, and the size. The Linux kernel submits this as a raw I/O request to the NVMe device. The NVMe controller services the request directly from flash cells. <strong>SSD read latency: 50–150μs on enterprise NVMe (e.g., Samsung PM9A3, Micron 9400).</strong></p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Deserialization and Response</strong>
+          <p>The raw bytes from SSD are deserialized into Aerospike's wire protocol format. If the client requested specific bins (projection), only those bins are serialized into the response — the rest are discarded. The response is sent back over TCP. <strong>Deserialization latency: ~1–5μs depending on record size.</strong></p>
+        </div>
+      </div>
+    </div>
+    <p><strong>Total read latency: ~200–300μs typical on LAN with NVMe storage. Sub-100μs with data-in-memory=true.</strong></p>
+
+    <h2 class="sec">🗄️ On-Disk Data Layout</h2>
+    <div class="ascii">SSD RAW DEVICE LAYOUT (/dev/nvme0n1 used directly)
+════════════════════════════════════════════════════════════════════
+
+[SUPER BLOCK]  [EXTENT 0 (128MB)] [EXTENT 1 (128MB)] ... [EXTENT N]
+                │
+                ├─ WBLOCK 0 (128KB) ─┐
+                │   ┌─────────────────┴──────────────────────────┐
+                │   │ RECORD HEADER (24 bytes)                    │
+                │   │   magic: 0xAE (2 bytes)                     │
+                │   │   generation: uint32                        │
+                │   │   expiration_time: uint32 (seconds from epoch)│
+                │   │   namespace_id: uint16                      │
+                │   │   set_id: uint16                            │
+                │   │   n_bins: uint16                            │
+                │   │   record_size: uint32                       │
+                │   ├─────────────────────────────────────────────┤
+                │   │ BINS (variable length)                      │
+                │   │   bin[0]: {name_len, name, type, value_len, value}│
+                │   │   bin[1]: {name_len, name, type, value_len, value}│
+                │   │   ...                                        │
+                │   └─────────────────────────────────────────────┘
+                ├─ WBLOCK 1 (128KB): next batch of records
+                └─ WBLOCK N: ...
+
+PRIMARY INDEX ENTRY (64 bytes, in DRAM):
+═══════════════════════════════════════
+┌─────────────────────────────────────┐
+│ digest[0:19]    (20 bytes)          │
+│ generation      (4 bytes)           │
+│ ttl             (4 bytes)           │
+│ set_id          (2 bytes)           │
+│ bin_name_count  (2 bytes)           │
+│ device_id       (1 byte)            │
+│ flags           (1 byte)            │
+│ byte_offset     (8 bytes)           │
+│ size            (4 bytes)           │
+│ [padding]       (18 bytes to 64)    │
+└─────────────────────────────────────┘
+64 bytes × 1 billion records = 64 GB RAM for 1B record index
+
+SECONDARY INDEX (B-tree, in DRAM, per node):
+═══════════════════════════════════════════
+  bin_value → sorted set of {digest, set_id}
+  Maintained in-memory; rebuilt on restart by scanning primary index
+  NOT persisted to disk (unlike primary index in 5.2+)</div>
+
+    <h2 class="sec">🔄 Backpressure and Flow Control</h2>
+    <p>Aerospike implements backpressure at several levels:</p>
+    <ul class="arrow-list">
+      <li><strong>Transaction queue depth limit</strong>: The <code>transaction-queues</code> × <code>transaction-threads-per-queue</code> configuration bounds the maximum concurrent in-flight transactions. When the transaction queue is full (queue depth exceeds the limit), new incoming requests are rejected immediately with an <code>AEROSPIKE_ERR_SERVER</code> error. The client library receives this and can implement its own backpressure (delay + retry). This is a hard backpressure mechanism — the server refuses further work rather than queuing indefinitely.</li>
+      <li><strong>Write quota (storage space)</strong>: When the SSD fill ratio exceeds the <code>stop-writes-pct</code> threshold (default 90%), the node stops accepting new writes. This prevents the defragmenter from being unable to keep up, which would otherwise lead to full disks and data corruption. The <code>eviction</code> feature can be configured to evict the oldest TTL records before this limit is hit.</li>
+      <li><strong>Migration throttle</strong>: Data migration after cluster topology changes is throttled by the <code>migrate-threads</code> and <code>migrate-sleep</code> configuration parameters. This prevents migration from consuming all I/O bandwidth and causing performance degradation for live traffic.</li>
+    </ul>
+
+    <div class="callout fire">
+      <div class="callout-label">🔥 Common Interview Mistake</div>
+      <p>Candidates say "Aerospike reads are fast because it uses SSDs." This misses the critical mechanism. The speed comes from: (1) the index is 100% in RAM — the SSD is never touched for a key-not-found case, (2) Direct I/O bypasses OS page cache — no Linux kernel page management latency, (3) the write path is always append-only sequential — no random-write SSD wear pattern that would cause latency spikes from SSD garbage collection. The combination of these three design choices, not just "using SSD," is the source of Aerospike's performance characteristics.</p>
+    </div>
+
+    <h2 class="sec">📐 Full Architecture Diagram</h2>
+    <div class="ascii">┌───────────────────────────────────────────────────────────────────────────┐
+│                      AEROSPIKE CLUSTER ARCHITECTURE                        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+  CLIENT TIER                        CLUSTER (3-node example, RF=2)
+  ═══════════                        ══════════════════════════════
+
+  ┌────────────────┐                 ┌────────────────────────────────────┐
+  │ Application    │                 │ NODE A (masters: P0-P1365)          │
+  │  ┌──────────┐  │    Direct TCP   │  ┌───────────┐  ┌───────────────┐ │
+  │  │ AS Client│──┼────────────────►│  │Transaction│  │ Primary Index │ │
+  │  │ Library  │  │  (knows which   │  │Subsystem  │  │ (64GB DRAM)   │ │
+  │  └──────────┘  │   node to hit)  │  │ TS Queues │◄►│ 1B records    │ │
+  │                │                 │  └─────┬─────┘  └───────────────┘ │
+  │  ┌──────────┐  │                 │        │                            │
+  │  │ Partition│  │                 │  ┌─────▼──────────────────────┐   │
+  │  │ Map Cache│  │                 │  │ Storage Engine             │   │
+  │  │(P0→NodeA)│  │                 │  │ Append-only WBLOCK (128KB) │   │
+  │  │(P1→NodeA)│  │                 │  │ Direct I/O on /dev/nvme0   │   │
+  │  │  ...     │  │                 │  │ Defragmenter (background)  │   │
+  │  └──────────┘  │                 │  └───────────────────────────┘    │
+  └────────────────┘                 │                                    │
+                                     │  ┌─────────────────────────────┐  │
+  ┌────────────────┐                 │  │ Cluster Fabric (port 3002)  │  │
+  │ AMC / Aerospike │                │  │ Heartbeat + Replication     │  │
+  │ Monitoring     │◄────────────────┤  └─────────────────────────────┘  │
+  │ Console        │  Info Protocol  └────────────────────────────────────┘
+  └────────────────┘  (port 3003)               │  │  Intracluster
+                                                 │  │  Replication
+  ┌────────────────┐                 ┌───────────▼──▼────────────────────┐
+  │ XDR (Cross-DC) │                 │ NODE B (masters: P1366-P2731)      │
+  │  Remote        │◄────────────────│  [Same internal structure as A]    │
+  │  Cluster       │  Async XDR      │  Replica for A's partitions        │
+  └────────────────┘  (port 3000)    └────────────────────────────────────┘
+                                                 │
+                                     ┌───────────▼────────────────────────┐
+                                     │ NODE C (masters: P2732-P4095)      │
+                                     │  [Same internal structure as A]    │
+                                     │  Replica for B's partitions        │
+                                     └────────────────────────────────────┘
+
+  PORTS:
+  3000 = Client protocol (TCP)
+  3001 = Heartbeat (mesh or multicast)
+  3002 = Fabric (intracluster replication)
+  3003 = Info (AMC/monitoring/CLI)
+  8080 = HTTP monitoring endpoint (newer versions)
+
+  LATENCY BUDGET (NVMe SSD, LAN):
+  ────────────────────────────────
+  Client hash + route:    ~1μs
+  Network to node:       ~100μs
+  Index lookup (RAM):    ~50-100ns
+  SSD pread (if stored): ~50-150μs
+  Deserialization:       ~1-5μs
+  Network return:        ~100μs
+  ────────────────────────────────
+  Total READ:            ~250-400μs typical
+  Total WRITE (master):  ~300-500μs typical</div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>Aerospike's direct-routing client (no coordinator, client routes directly to the partition master using a locally cached partition map) eliminates an entire network hop compared to proxy-based architectures — this single design decision contributes ~100–200μs reduction in median latency compared to a coordinator-based topology.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 3 ═══════ -->
+<div class="pillar p3" id="p3">
+  <div class="pillar-header">
+    <div class="pillar-icon">⚖️</div>
+    <div>
+      <div class="pillar-title">Pillar 3 — Trade-offs &amp; Design Decisions</div>
+      <div class="pillar-subtitle">CAP positioning, PACELC, consistency models, durability vs performance, and every design knob</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🗺️ CAP Theorem Positioning</h2>
+    <p>Aerospike's CAP positioning is uniquely configurable — it is one of very few databases that can operate in both CP and AP modes, <strong>selectable at the namespace level</strong>. This is the critical differentiator to articulate at L7+:</p>
+
+    <div class="two-col">
+      <div class="highlight-box">
+        <h4>CP Mode (Strong Consistency — SC Mode)</h4>
+        <p style="font-size:13px;color:var(--text2)">Enabled with <code>strong-consistency true</code> in the namespace configuration. In SC mode, partitions that lose quorum (fewer than <code>replication-factor/2 + 1</code> nodes accessible) become unavailable rather than serving potentially stale data. Writes require acknowledgment from a majority of roster nodes. This provides linearizability — any read will see the most recent committed write. The cost: during a network partition, the minority side of the split stops accepting writes (and optionally reads), sacrificing availability for consistency.</p>
+        <p style="font-size:13px;color:var(--text2)"><strong>Use for:</strong> financial balances, inventory counts, session state, anything where stale reads cause business harm.</p>
+      </div>
+      <div class="highlight-box">
+        <h4>AP Mode (Availability — Default)</h4>
+        <p style="font-size:13px;color:var(--text2)">Default configuration. During a network partition, both sides of the split continue serving reads and writes from their local partitions. This means both sides may independently accept writes to the same record, creating conflicts. Conflicts are resolved with Last-Write-Wins (based on wall clock timestamp, with generation counter as tiebreaker). The more recent write (by timestamp) survives; the other is silently discarded.</p>
+        <p style="font-size:13px;color:var(--text2)"><strong>Use for:</strong> session cookies, ad frequency caps, recommendation scores, any data where brief staleness or loss of concurrent conflicting writes is acceptable.</p>
+      </div>
+    </div>
+
+    <h2 class="sec">📊 PACELC Analysis</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Scenario</th><th>Aerospike Choice</th><th>Mechanism</th><th>Observable Effect</th></tr>
+        <tr>
+          <td><strong>Partition (P) — SC Mode</strong></td>
+          <td><span class="pill amber">Consistency</span></td>
+          <td>Minority-side partitions reject reads/writes; clients receive CLUSTER_IS_INCONSISTENT error</td>
+          <td>Service unavailability during partition; no stale reads. Minority side blocks until quorum restored.</td>
+        </tr>
+        <tr>
+          <td><strong>Partition (P) — AP Mode</strong></td>
+          <td><span class="pill green">Availability</span></td>
+          <td>Both partition sides continue independently; Last-Write-Wins conflict resolution on merge</td>
+          <td>Both sides serve requests; post-partition reconciliation may silently discard writes from one side</td>
+        </tr>
+        <tr>
+          <td><strong>Else — No Partition (E) — commit-master</strong></td>
+          <td><span class="pill green">Latency</span></td>
+          <td>Write acknowledged after master write; replica writes are asynchronous</td>
+          <td>Low write latency (~300μs); brief window where a master crash before replica write completes loses data</td>
+        </tr>
+        <tr>
+          <td><strong>Else — No Partition (E) — commit-all</strong></td>
+          <td><span class="pill amber">Consistency</span></td>
+          <td>Write blocks until all replica nodes confirm; higher write latency</td>
+          <td>~500μs–1ms write latency; zero data loss on single-node crash after acknowledgment</td>
+        </tr>
+      </table>
+    </div>
+
+    <h2 class="sec">🔧 Latency vs. Throughput — The Knobs</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Knob</th><th>Default</th><th>Trade-off</th><th>When to Change</th></tr>
+        <tr>
+          <td><code>write-block-size</code></td>
+          <td>128KB</td>
+          <td>Larger → better sequential SSD write efficiency; smaller → faster per-record write commit latency</td>
+          <td>Decrease to 64KB for very write-latency-sensitive workloads; increase to 1MB for batch-heavy ingest</td>
+        </tr>
+        <tr>
+          <td><code>transaction-queues</code></td>
+          <td>8</td>
+          <td>More queues → higher parallelism, lower lock contention; more memory for queue overhead</td>
+          <td>Increase to 16–32 on servers with 32+ cores; ensure <code>transaction-threads-per-queue</code> × <code>transaction-queues</code> ≤ CPU count</td>
+        </tr>
+        <tr>
+          <td><code>replication-factor</code></td>
+          <td>2</td>
+          <td>Higher → better durability, higher write latency (more replicas to write), more storage overhead</td>
+          <td>Use RF=3 for critical data; RF=1 for ephemeral caches (accept data loss on node failure)</td>
+        </tr>
+        <tr>
+          <td><code>commit-to-device</code></td>
+          <td>false</td>
+          <td>true → fsync each write to SSD; false → buffer writes in OS (actually Aerospike uses Direct I/O, making this moot for SSD namespaces)</td>
+          <td>For <code>storage-engine memory</code> namespaces with pmem, this ensures durability on power loss</td>
+        </tr>
+        <tr>
+          <td><code>read-consistency-level-override</code></td>
+          <td>off</td>
+          <td>Override per-request consistency with cluster-wide setting; reduces configuration surface</td>
+          <td>Force ALL reads to use SC (allow-unavailable) to prevent stale reads at cost of availability</td>
+        </tr>
+        <tr>
+          <td><code>defrag-sleep</code></td>
+          <td>1ms</td>
+          <td>Lower → faster defragmentation (more space reclaimed), higher I/O consumption; higher → less I/O, risk of disk filling up</td>
+          <td>Reduce during initial data load where delete rate is high; increase during peak read/write traffic to reduce defrag I/O pressure</td>
+        </tr>
+      </table>
+    </div>
+
+    <h2 class="sec">🔄 Consistency Models</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Model</th><th>Available?</th><th>Configuration</th><th>Use Case</th></tr>
+        <tr>
+          <td><strong>Linearizability</strong></td>
+          <td class="green">Yes (SC mode)</td>
+          <td><code>strong-consistency true</code> + <code>read-consistency-level = all</code></td>
+          <td>Financial balances, unique ID generation, inventory counts</td>
+        </tr>
+        <tr>
+          <td><strong>Read-Your-Writes</strong></td>
+          <td class="green">Yes (with SC)</td>
+          <td>SC mode guarantees this; AP mode does NOT (replica may be stale)</td>
+          <td>User profile updates visible immediately after write</td>
+        </tr>
+        <tr>
+          <td><strong>Eventual Consistency</strong></td>
+          <td class="green">Yes (AP mode)</td>
+          <td>Default; replicas converge to master's value within milliseconds under normal conditions</td>
+          <td>Ad targeting data, session tokens, rate limiting counters (with LWW acceptable)</td>
+        </tr>
+        <tr>
+          <td><strong>Causal Consistency</strong></td>
+          <td class="red">No</td>
+          <td>Not supported; Aerospike's consistency model is per-record, not causally ordered across records</td>
+          <td>Must be implemented at application layer if required</td>
+        </tr>
+        <tr>
+          <td><strong>Multi-Record Serializable</strong></td>
+          <td class="green">Yes (v7.0+)</td>
+          <td>Multi-Record Transactions (MRT) with <code>transaction-enabled true</code></td>
+          <td>Bank transfers (debit one account, credit another atomically), inventory reservation</td>
+        </tr>
+      </table>
+    </div>
+
+    <h2 class="sec">💾 Durability vs. Performance</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Decision</th><th>Default</th><th>Performance Impact</th><th>Durability Risk</th></tr>
+        <tr>
+          <td>commit-master vs commit-all</td>
+          <td>commit-master</td>
+          <td>commit-all adds ~100–200μs per write</td>
+          <td>commit-master: if master crashes between write and replication, last writes are lost; commit-all eliminates this</td>
+        </tr>
+        <tr>
+          <td>data-in-memory (namespace)</td>
+          <td>false (SSD-backed)</td>
+          <td>true: sub-100μs reads; false: ~200–300μs reads</td>
+          <td>data-in-memory=true with no backing storage loses all data on cluster-wide restart; must use with SSD backing for durability</td>
+        </tr>
+        <tr>
+          <td>replication-factor</td>
+          <td>2</td>
+          <td>RF=3 increases write latency by ~50% (one more replica write); increases storage cost by 50%</td>
+          <td>RF=1 loses data on single node failure; RF=2 safe against single failure; RF=3 safe against simultaneous dual failure</td>
+        </tr>
+        <tr>
+          <td>Persisted Index (5.2+)</td>
+          <td>off (must enable)</td>
+          <td>Minimal throughput impact; slight write latency increase for index persistence I/O</td>
+          <td>Without PI: node restart requires full SSD scan to rebuild index (30–60+ min for TB datasets); with PI: cold start in &lt;1 minute</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="callout lightning">
+      <div class="callout-label">⚡ L7/L8 Differentiator</div>
+      <p>L7+ candidates understand that Aerospike's CAP positioning is not fixed — it's a <strong>per-namespace, runtime-configurable choice</strong>. A production cluster can have Namespace A in CP/SC mode (for financial data) and Namespace B in AP mode (for ad targeting data), running on the same physical cluster with different consistency and availability guarantees, coexisting without interfering with each other. This heterogeneous consistency model is extremely powerful for mixed-workload applications and is unique among major NoSQL databases.</p>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>The default <code>commit-master</code> policy means Aerospike makes an explicit trade-off: <strong>accept the small risk of losing the most recent write on a master crash in exchange for cutting write latency in half</strong> — and for most use cases (ad serving, session management, recommendations), losing 1 in 10,000 writes is far less costly than doubling write latency for all writes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 4 ═══════ -->
+<div class="pillar p4" id="p4">
+  <div class="pillar-header">
+    <div class="pillar-icon">💥</div>
+    <div>
+      <div class="pillar-title">Pillar 4 — Failure Modes &amp; Resilience</div>
+      <div class="pillar-subtitle">Detection, automatic recovery, data loss risk, and manual intervention for every failure class</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🔴 Failure Scenario Analysis</h2>
+    <div class="failure-grid">
+      <div class="failure-card">
+        <h4>💀 Single Node Crash (Master)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Peers miss heartbeats after <code>heartbeat-timeout</code> (default 10 missed intervals, ~3-5 seconds). Cluster initiates reformation without the failed node.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">Replica nodes that held replicas for the failed master's partitions are immediately promoted to master for those partitions. Client receives updated partition map on next connection or via info protocol push. Data migration begins to restore the replication factor by creating new replicas on surviving nodes.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">With commit-master: writes acknowledged between the last successful replica replication and the crash are lost (typically &lt;100ms of writes). With commit-all: zero data loss. In-progress writes at crash time are lost regardless.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Restart the failed node (it rejoins automatically). If permanent replacement: provision new hardware, install Aerospike, add to cluster via mesh config. Monitor migration progress via AMC or <code>asadm</code>.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>👥 Minority Node Failures (e.g., 1 of 5 nodes)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Same heartbeat mechanism. Each failed node's partitions are identified by surviving majority.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">All failed nodes' master partitions are promoted from replicas on surviving nodes. The cluster operates at reduced replica coverage until migration completes. If RF=2 and 2 nodes fail simultaneously, some partitions may have only 1 copy on surviving nodes — still available but no longer protected against another failure.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">No data loss if the failed nodes held replicas (not the only copy). If a partition had both its master and all replicas on the failed nodes (extremely unlikely with good placement), that partition's data is lost.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Restore failed nodes as quickly as possible to restore full replication factor. Use <code>asadm --enable -e "show stat namespace"</code> to monitor migration-remaining counts.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>🌐 Network Partition (Asymmetric — One Side Has Quorum)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Each partition side independently detects missed heartbeats from the other side. Both sides attempt cluster reformation with only the nodes they can see. The majority side (quorum) succeeds in forming a new cluster. The minority side also reforms as a smaller cluster (in AP mode) or blocks writes (in SC mode).</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">AP mode: both sides continue serving reads/writes independently, creating a split-brain scenario. SC mode: majority side operates normally; minority side rejects writes and optionally reads. When the partition heals, the cluster re-merges: SC mode performs a careful merge ensuring no conflicting writes; AP mode uses LWW to resolve conflicts created during the partition.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">AP mode: concurrent writes to the same record on both partition sides → the losing write (by timestamp) is silently discarded. SC mode: no data loss but service interruption on the minority side.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Fix the network partition. In AP mode, review application logs for any business-critical operations that may have been affected by LWW resolution after the merge. Consider implementing application-level conflict detection for high-value records.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>⚡ Network Partition (Even Split — No Quorum)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">In a 4-node cluster split 2-2: both sides see 2 nodes, and 2 &lt; floor(4/2)+1 = 3 (majority). Neither side has quorum.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">SC mode: both sides become unavailable for writes (no quorum on either side). AP mode: both sides operate independently as separate clusters, creating the most dangerous split-brain scenario where both sides accept writes with equal authority.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">SC mode: no data loss but complete unavailability. AP mode: both sides accumulate potentially conflicting writes; LWW resolution on re-merge will silently discard one side's writes for any record written on both sides. For a 10-minute partition at 1M ops/sec, this could mean millions of silently lost writes.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">For SC deployments: this is expected and correct behavior — restore network and monitor re-merge. For AP deployments: implement a "fencing" mechanism at the application layer — client-side awareness of partition state, or use an external coordination service (ZooKeeper) to determine which side should continue serving writes.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>🧠 Split-Brain (Stale Partition Map on Client)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">After a cluster reformation, clients may still have the old partition map cached and route requests to nodes that are no longer masters for those partitions. The node receiving a misrouted request detects it is not the master, returns a NOT_MASTER error to the client.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">The Aerospike client library (Go, Java, Python, C) automatically detects NOT_MASTER responses, fetches the updated partition map from the cluster, and retries the request to the correct new master. This is transparent to the application — the application sees a brief latency increase (one additional RTT for the retry) but not an error.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">None — NOT_MASTER is a routing error, not a data error. The request is retried successfully once the client updates its map.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">No action needed if using official Aerospike client libraries. If using a custom client, implement NOT_MASTER handling with partition map refresh + retry.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>🐌 Slow/Degraded Node (Not Dead, But Lagging)</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Heartbeats continue (node is alive from cluster perspective) but transaction latency on the node spikes. Application clients see high p99 latency for requests routed to that node. Aerospike does not automatically detect or reroute based on latency — it only detects hard failures.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">None automatic. The cluster continues routing master partition requests to the slow node. Clients will experience high tail latency for any record whose master partition is on the degraded node.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">None — the node is still alive and persisting data. Risk is performance degradation, not data loss.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Identify root cause: <code>asadm -e "show latency"</code> per node. Common causes: SSD defragmentation backlog (increase <code>defrag-sleep</code>), OS memory pressure causing swap (ensure adequate RAM), hardware failure (check SSD health via <code>smartctl</code>). In extreme cases, manually remove the node from the cluster to force partition migration to healthy nodes.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>💾 Disk Corruption / Partial Write</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Aerospike stores a magic byte and CRC checksum with each record. During startup SSD scan (or Defragmenter scan), corrupted records are detected by CRC mismatch and the 0xAE magic byte check. Aerospike logs corruption events to the system log at ERROR level.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">Corrupted records are marked as dead and not served to clients. On restart, the primary index is not populated for corrupted records — they are effectively treated as if they never existed. The Defragmenter will eventually reclaim their space.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">Records at corrupted SSD locations are lost. With RF=2+, the replica on another node serves as the authoritative copy — corrupted data loss is limited to the single corrupted physical block. With RF=1, data at corrupted locations is permanently lost.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Replace the failing SSD. After replacement and node restart, data migration restores replicas to the new device. Monitor SSD health proactively with NVMe SMART attributes: <code>nvme smart-log /dev/nvme0</code> — specifically available spare percentage and percentage used.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>⏱️ Clock Skew Between Nodes</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">Aerospike uses wall clock timestamps for Last-Write-Wins conflict resolution and TTL expiration. Clock skew is not actively monitored by Aerospike itself — it relies on the OS NTP/chrony synchronization. Aerospike 7.x's XDR with HLC (Hybrid Logical Clocks) is partially mitigated but not eliminated.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">Aerospike does not self-detect or compensate for clock skew. If Node A's clock is 5 seconds ahead of Node B's clock, writes to Node A will always "win" LWW conflicts against Node B writes, even if Node B's write was logically more recent.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">With significant clock skew (&gt;1 second), LWW conflict resolution produces incorrect results — the semantically "newer" write may be discarded if it came from a clock-behind node. TTL expiration may be premature (clock ahead) or late (clock behind).</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Mandatory: run chrony or ntpd on all nodes. Alert on <code>chrony tracking</code> showing offset &gt;100ms. In SC mode, clock skew matters less for conflict resolution (serialized through master) but still affects TTL accuracy. Configure Aerospike AMC to alert on inter-node clock differences.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>🌩️ Thundering Herd After Recovery</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">After a node recovery, data migration from peers to the recovering node causes a sustained high-read-I/O load on all nodes (they must read their data to send to the recovering node). Simultaneously, the recovering node experiences high write I/O as it receives migration data. This I/O surge can cause temporary latency spikes across the entire cluster.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">Aerospike's migration throttling (<code>migrate-threads</code>, <code>migrate-sleep</code>) bounds the migration I/O rate to prevent catastrophic cluster-wide performance degradation. The cluster remains fully operational for client traffic during migration — migration runs at lower priority than foreground transactions.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">None from thundering herd itself — it is a performance, not a data integrity issue.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Tune <code>migrate-sleep</code> higher (e.g., 5ms) during peak traffic hours to throttle migration more aggressively. Monitor migration progress with <code>asadm -e "show stat namespace"</code> — specifically <code>migrate_rx_partitions_remaining</code>. Accept longer migration time in exchange for maintaining client SLAs.</div></div>
+      </div>
+
+      <div class="failure-card">
+        <h4>🔗 Cascading Failures</h4>
+        <div class="fa-row"><div class="fa-label">Detection</div><div class="fa-val">A node failure triggers migration, which increases I/O load on surviving nodes. If surviving nodes are already near capacity, the migration I/O pushes them over the edge, causing transaction timeouts and potentially further node failures — a death spiral. Detected by monitoring cluster-wide latency spike concurrent with a node failure event.</div></div>
+        <div class="fa-row"><div class="fa-label">Auto-Recovery</div><div class="fa-val">Aerospike has limited automatic protection. The <code>stop-writes-pct</code> threshold prevents disk fill, but does not prevent CPU/memory cascade failures.</div></div>
+        <div class="fa-row"><div class="fa-label">Data Loss Risk</div><div class="fa-val">If cascade leads to multiple simultaneous node failures, partitions whose all replicas are on failed nodes experience data loss.</div></div>
+        <div class="fa-row"><div class="fa-label">Manual Action</div><div class="fa-val">Prevention: provision 30–40% headroom on each node (CPU, I/O, memory) so that losing any single node does not push survivors above their safe operating point. During an active cascade, manually freeze migration (<code>asinfo -v "set-config:context=service;migrate-max-num-incoming=0"</code>) to stop migration I/O, restore node stability, then re-enable migration gradually.</div></div>
+      </div>
+    </div>
+
+    <div class="callout calc">
+      <div class="callout-label">📐 Back-of-Envelope: Data Loss Window for commit-master</div>
+      <p>Replication lag to replicas under commit-master: ~500μs on LAN. At 1M writes/second × 500μs replication lag = ~500 in-flight unacknowledged replica writes at any moment. If a master crashes, these 500 writes are lost. For financial applications: 500 potential lost writes at 1M writes/sec is a 0.05% data loss rate per node crash. For ad serving (where each write is an ad impression or frequency cap update): 500 lost writes per crash is operationally acceptable. This quantifies the actual risk of commit-master, allowing an informed decision about whether commit-all's latency cost is justified.</p>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>Aerospike's partition map-based direct routing means clients automatically recover from master failures within one retry (NOT_MASTER → refresh map → re-route), but <strong>the thundering herd risk during mass recovery is the most dangerous production failure pattern</strong> — pre-provisioning 30% headroom is the only reliable prevention.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 5 ═══════ -->
+<div class="pillar p5" id="p5">
+  <div class="pillar-header">
+    <div class="pillar-icon">📈</div>
+    <div>
+      <div class="pillar-title">Pillar 5 — Scaling Strategies</div>
+      <div class="pillar-subtitle">Vertical limits, horizontal architecture, replication, partitioning, cross-region, and what breaks at scale</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">📏 Vertical Scaling: How Far and What Breaks First</h2>
+    <p>Aerospike is designed to scale vertically to very large single-server configurations. Its shared-nothing internal architecture means larger hardware = near-linear performance increase up to very high scale:</p>
+    <ul class="arrow-list">
+      <li><strong>RAM: linear scaling</strong>. Each additional GB of RAM extends the index capacity by ~15 million records (at 64 bytes/index entry). A server with 512GB RAM can hold the primary index for ~8 billion records. The upper limit is hardware RAM capacity — there is no software-imposed limit on primary index size relative to RAM.</li>
+      <li><strong>NVMe capacity: near-linear</strong>. Additional SSD capacity directly increases data storage capacity. A server with 8 × 8TB NVMe drives = 64TB data capacity. Aerospike's transaction throughput is bounded by SSD IOPS, not just SSD capacity.</li>
+      <li><strong>CPU: transaction thread parallelism</strong>. Aerospike scales transaction throughput nearly linearly with CPU core count up to ~48 cores (beyond which the overhead of managing many transaction queues reduces marginal gains). A 48-core server can sustain ~3–4M ops/second with typical workloads.</li>
+      <li><strong>What breaks first: RAM for index</strong>. At multi-trillion-record scale, the primary index size exceeds available server DRAM. The Aerospike All-Flash (AAF) storage engine option (available in Aerospike 5.x+) stores the index on flash (NVMe) rather than DRAM, reducing the RAM requirement by ~100x at the cost of ~10x higher index lookup latency (from ~100ns DRAM to ~50μs NVMe). This enables a single server to index far more records than physically possible with DRAM alone.</li>
+    </ul>
+
+    <h2 class="sec">↔️ Horizontal Scaling</h2>
+    <p>Adding nodes to an Aerospike cluster is operationally simple and architecturally automatic:</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-content">
+          <strong>Configure the new node</strong>
+          <p>Set the node's mesh or multicast heartbeat configuration to include existing cluster nodes. Start the Aerospike daemon. The new node automatically discovers the cluster via heartbeat.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Cluster reformation</strong>
+          <p>The existing cluster detects the new node. A new partition map is computed: the 4,096 partitions are redistributed across N+1 nodes. The new node receives a portion of each existing node's partitions.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Data migration</strong>
+          <p>Existing nodes begin migrating their newly-reassigned partitions to the new node in the background. This transfers both data and index information. Migration rate is bounded by <code>migrate-threads</code> and <code>migrate-sleep</code>. For a large cluster adding one node, migration completes in minutes to hours depending on data volume.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Live traffic shift</strong>
+          <p>As partitions migrate, the cluster begins routing client requests for those partitions to the new node (for newly received partitions where migration is complete). The transition is continuous and gradual — not a single cutover event.</p>
+        </div>
+      </div>
+    </div>
+    <p><strong>Key insight</strong>: Because Aerospike uses a fixed 4,096-partition scheme with consistent hashing, adding a node does NOT require re-hashing all keys (unlike a naive consistent hashing scheme that re-hashes when the ring changes). Each partition migrates as a unit — the records within a partition don't move individually, they move as a block. This makes resharding operationally simple and deterministic.</p>
+
+    <h2 class="sec">🌍 Cross-Region Replication</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Strategy</th><th>Description</th><th>Conflict Resolution</th><th>RPO / RTO</th></tr>
+        <tr>
+          <td><strong>Active-Passive (XDR)</strong></td>
+          <td>Primary DC accepts writes; XDR asynchronously ships all changes to passive DC. Passive DC is read-only or standby.</td>
+          <td>N/A — only one active writer</td>
+          <td>RPO: seconds (XDR lag); RTO: &lt;1 minute (promote passive to active)</td>
+        </tr>
+        <tr>
+          <td><strong>Active-Active (Bidirectional XDR)</strong></td>
+          <td>Both DCs accept writes; XDR ships changes bidirectionally. Both DCs can serve reads and writes for all keys.</td>
+          <td>Last-Write-Wins based on timestamp. Concurrent writes to same key from both DCs → one is silently discarded. Application must design for this (avoid concurrent cross-DC writes to same key).</td>
+          <td>RPO: 0 if both DCs live; RTO: &lt;1 minute; Stale reads: possible during XDR lag</td>
+        </tr>
+        <tr>
+          <td><strong>Backup-Only (XDR to cold standby)</strong></td>
+          <td>XDR to a smaller, lower-spec cluster running in cold standby mode</td>
+          <td>N/A</td>
+          <td>RPO: seconds–minutes; RTO: minutes–hours (cold start + sync)</td>
+        </tr>
+      </table>
+    </div>
+    <p>Aerospike's XDR conflict resolution with <strong>Last-Write-Wins (LWW)</strong> is the default for active-active deployments. For correctness, applications should design so the same logical entity (user profile, session, inventory count) is never written simultaneously from two DCs. Common patterns: geographic routing (EU users' data always written to EU DC; US users' to US DC), or application-level sharding that pins record ownership to a specific DC.</p>
+
+    <h2 class="sec">📦 Partitioning: How Aerospike Avoids Hotspots</h2>
+    <p>Aerospike uses <strong>consistent hash partitioning</strong> with RIPEMD-160. The key-to-partition mapping is uniform as long as the key distribution is not heavily skewed. Hotspot scenarios:</p>
+    <ul class="arrow-list">
+      <li><strong>Hotspot problem</strong>: If 80% of traffic accesses the same 100 records (e.g., a global configuration record or a viral trending item), those records' partition masters handle disproportionate load regardless of how many nodes are in the cluster. Hash partitioning distributes records, not access frequency.</li>
+      <li><strong>Hotspot mitigation</strong>: (1) Application-layer caching (separate cache layer) for hot records. (2) Record-level read replication: in AP mode, reads can be served by any replica, distributing read load. (3) Bins-as-shards: for a single extremely hot record, split it into N records (e.g., <code>config:global:shard_0</code> through <code>config:global:shard_N</code>) and aggregate client-side. (4) Distributed rate limiting: use Aerospike's operate() with add() on separate counter bins, distributing counter increments across multiple records.</li>
+    </ul>
+
+    <div class="tier-cards">
+      <div class="tier-card">
+        <div class="tier-label" style="color:var(--green-light)">Small Scale</div>
+        <h4>1–5 Nodes</h4>
+        <ul>
+          <li>Single cluster, single DC</li>
+          <li>RF=2, all data visible</li>
+          <li>Simple mesh heartbeat</li>
+          <li>Vertical first (bigger nodes)</li>
+          <li>~$10K-100K hardware</li>
+        </ul>
+      </div>
+      <div class="tier-card">
+        <div class="tier-label" style="color:var(--amber-light)">Medium Scale</div>
+        <h4>5–50 Nodes</h4>
+        <ul>
+          <li>Horizontal scaling common</li>
+          <li>RF=2 or 3 for critical data</li>
+          <li>XDR to passive DC</li>
+          <li>Namespace segregation needed</li>
+          <li>Monitoring/AMC essential</li>
+        </ul>
+      </div>
+      <div class="tier-card">
+        <div class="tier-label" style="color:var(--red-light)">Hyperscale</div>
+        <h4>50+ Nodes</h4>
+        <ul>
+          <li>Multiple namespaces per cluster</li>
+          <li>All-Flash (AAF) for index</li>
+          <li>Active-Active XDR</li>
+          <li>Cardinality of 4096 limits granularity</li>
+          <li>Custom monitoring pipelines</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout calc">
+      <div class="callout-label">📐 Back-of-Envelope: Cluster Sizing for RTB</div>
+      <p>RTB workload: 2M bid requests/second, each requiring a user profile read (500 bytes average record size), 1.5B unique user profiles, 90-day retention. Storage: 1.5B × 500B = 750GB data. Index: 1.5B × 64B = 96GB RAM just for index. Throughput: 2M reads/sec. Per-node capacity (2-socket Intel with 8 NVMe): ~500K reads/sec, 128GB RAM. Nodes needed for throughput: 2M/500K = 4 nodes. Nodes for RAM (with RF=2): 2 × 96GB / 128GB = 1.5 → 2 nodes. Nodes for data (with RF=2): 2 × 750GB / (8 × 8TB) ≈ 0.02 nodes. <strong>Throughput is the binding constraint: 4–6 nodes (with headroom)</strong>. This calculation pattern is exactly what interviewers expect.</p>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>Aerospike's scaling limit is almost always <strong>DRAM for the primary index, not SSD capacity or CPU</strong> — the 64-byte-per-record index overhead means RAM, not disk or processing power, is typically what forces horizontal scaling, and the All-Flash (AAF) option is the architectural escape valve when DRAM cost becomes prohibitive.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 6 ═══════ -->
+<div class="pillar p6" id="p6">
+  <div class="pillar-header">
+    <div class="pillar-icon">🏢</div>
+    <div>
+      <div class="pillar-title">Pillar 6 — Real-World Engineering Decisions</div>
+      <div class="pillar-subtitle">Where Aerospike shines, production examples, anti-patterns, decision matrix, and Day 1 monitoring</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">✨ Where Aerospike Shines</h2>
+    <ul class="arrow-list">
+      <li><strong>Real-Time Bidding (RTB)</strong>: The foundational use case. Sub-millisecond user profile lookups at millions of QPS with terabytes of data. No other database matches this combination.</li>
+      <li><strong>Session Management at Scale</strong>: Billions of active sessions, each requiring sub-ms read/write, with automatic TTL expiration. Aerospike's native TTL handling (no background reaper needed) and HMA efficiency make it ideal.</li>
+      <li><strong>Fraud Detection</strong>: Real-time lookups against hundreds of millions of known-fraudulent entities (IPs, payment methods, device fingerprints) during transaction authorization (&lt;10ms total budget). The combination of sub-ms latency, strong consistency mode (to prevent double-spending through concurrent fraud writes), and binary data type support for compact representations is the winning combination.</li>
+      <li><strong>Rate Limiting at Global Scale</strong>: Aerospike's operate() command with add/increment bins provides atomic counter operations. A distributed rate limiter (N requests per second per user) can be implemented with a single Aerospike record per user with TTL set to the rate window — no external lock or coordination needed.</li>
+    </ul>
+
+    <h2 class="sec">🏭 3 Real-World Production Examples</h2>
+    <div class="scenario">
+      <div class="scenario-label">Example 1 — The Trade Desk</div>
+      <h4>RTB at 10M+ bid requests/second</h4>
+      <p>The Trade Desk, one of the largest demand-side platforms (DSPs), uses Aerospike as its primary user profile store serving its RTB bidding engine. The system must perform profile lookups for every bid request received from ad exchanges worldwide — over 10 million bid requests per second during peak US evening hours. Each profile lookup retrieves behavioral segment data, purchase history indicators, and frequency cap counts for each user.</p>
+      <p><strong>Why Aerospike?</strong> At 10M RPS with a 50ms total bid response budget (including network latency), the database can consume at most 1–2ms of that budget. Only Aerospike's HMA architecture (RAM index + NVMe data) delivers consistent sub-millisecond profile reads at this scale. Redis would require hundreds of terabytes of RAM (cost-prohibitive). Cassandra's p99 latency (typically 5–20ms) is too high. DynamoDB latency is typically 2–5ms even with caching. The architectural uniqueness is irreplaceable here.</p>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-label">Example 2 — Criteo</div>
+      <h4>Personalized Ad Targeting for 1B+ Users</h4>
+      <p>Criteo (French ad-tech company, ~$2B revenue) uses Aerospike to store and serve personalized user interest profiles for over 1 billion users. Their retargeting product requires that every ad impression trigger a lookup of the user's recent browsing history (up to 500KB per user profile), scoring against thousands of advertiser catalogs, within the RTB deadline.</p>
+      <p><strong>Why Aerospike?</strong> Profile sizes at Criteo reach 50KB–500KB per user — far too large to fit in a RAM-only system for 1B users. At 500KB average: 1B users × 500KB = 500TB data. Aerospike's HMA stores this on SSD with only 64GB RAM for the index (1B × 64B), enabling the entire dataset to live on a manageable number of SSD-equipped servers rather than requiring a Redis cluster with 500TB of DRAM. The XDR cross-DC replication maintains a synchronized copy in EU (for GDPR data locality) and US simultaneously.</p>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario-label">Example 3 — Airtel (Telecom)</div>
+      <h4>Subscriber Session Management for 300M+ Mobile Users</h4>
+      <p>Bharti Airtel, India's second-largest mobile carrier, uses Aerospike to manage session state for over 300 million active mobile subscribers. Each data session (4G/5G internet connection) generates multiple per-second lookups to validate the subscriber's plan, check data quota remaining, and update usage counters for billing. The system processes ~5 million state update operations per second during peak hours.</p>
+      <p><strong>Why Aerospike?</strong> Telecom session management requires strong consistency (you cannot let a subscriber use data beyond their quota due to a stale read), sub-millisecond response (session validation is in the per-packet data path), and extreme durability (losing billing data = revenue loss and regulatory violation). Aerospike's SC mode with commit-all provides the consistency and durability guarantees. The Persisted Index feature (5.2+) reduces cold start time from 45 minutes to under 2 minutes — critical for disaster recovery scenarios where billing must resume quickly after a regional failure.</p>
+    </div>
+
+    <h2 class="sec">🚫 When NOT to Use Aerospike</h2>
+    <div class="two-col">
+      <div class="highlight-box">
+        <h4>Anti-Pattern 1: Complex Relational Queries</h4>
+        <p style="font-size:13px;color:var(--text2)">If your workload requires JOINs across multiple record types, GROUP BY aggregations, or analytical queries across billions of records, Aerospike is the wrong tool. It has no query optimizer, no JOIN capability, and its secondary index at high cardinality performs like a full scan. Use PostgreSQL (OLTP), BigQuery/Snowflake (OLAP), or a hybrid architecture where Aerospike stores hot state and a warehouse stores historical analytics.</p>
+      </div>
+      <div class="highlight-box">
+        <h4>Anti-Pattern 2: Rich Text Search</h4>
+        <p style="font-size:13px;color:var(--text2)">Aerospike has no full-text search capability. If you need to query records by substring matching, relevance scoring, or natural language search, use Elasticsearch or OpenSearch. Aerospike can coexist with a search layer — Aerospike stores the canonical record, Elasticsearch indexes it for search, and application code writes to both.</p>
+      </div>
+      <div class="highlight-box">
+        <h4>Anti-Pattern 3: Event Sourcing / Append-Only Logs</h4>
+        <p style="font-size:13px;color:var(--text2)">Aerospike stores one record per key — it is not a log database. If your model requires immutable append-only writes (event sourcing, audit logs, time-series of raw events), Aerospike's LWW model will overwrite older events. Use Kafka (streaming), Cassandra (time-series with compound keys), or ClickHouse (columnar analytics) for these patterns.</p>
+      </div>
+      <div class="highlight-box">
+        <h4>Anti-Pattern 4: Small Teams without Ops Expertise</h4>
+        <p style="font-size:13px;color:var(--text2)">Aerospike requires careful hardware selection (NVMe RAID, memory sizing), cluster configuration (namespace tuning, defrag parameters), and operational discipline (SSD health monitoring, migration management). For a 3-engineer startup that needs "a database that just works," DynamoDB or MongoDB Atlas provides significantly lower operational overhead at the cost of higher latency and lower peak throughput.</p>
+      </div>
+    </div>
+
+    <h2 class="sec">📊 Decision Matrix</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Dimension</th><th>Aerospike</th><th>Redis (Cluster)</th><th>Cassandra</th><th>DynamoDB</th></tr>
+        <tr>
+          <td><strong>Read Latency (p50)</strong></td>
+          <td class="green">100–300μs (SSD)</td>
+          <td class="green">~50μs (RAM)</td>
+          <td class="amber">1–5ms</td>
+          <td class="amber">1–3ms</td>
+        </tr>
+        <tr>
+          <td><strong>Read Latency (p99)</strong></td>
+          <td class="green">&lt;1ms (deterministic)</td>
+          <td class="amber">1–20ms (GC pauses)</td>
+          <td class="red">10–50ms</td>
+          <td class="amber">5–20ms</td>
+        </tr>
+        <tr>
+          <td><strong>Data Size vs Cost</strong></td>
+          <td class="green">TB-scale at SSD cost</td>
+          <td class="red">GB-scale (RAM cost)</td>
+          <td class="green">PB-scale</td>
+          <td class="amber">PB-scale, usage-priced</td>
+        </tr>
+        <tr>
+          <td><strong>Strong Consistency</strong></td>
+          <td class="green">Yes (SC mode)</td>
+          <td class="amber">Yes (single-shard only)</td>
+          <td class="red">No (tunable eventual)</td>
+          <td class="green">Yes (transactions)</td>
+        </tr>
+        <tr>
+          <td><strong>Multi-Record Transactions</strong></td>
+          <td class="green">Yes (v7.0+)</td>
+          <td class="amber">Lua scripting (limited)</td>
+          <td class="amber">Lightweight transactions (limited)</td>
+          <td class="green">Yes</td>
+        </tr>
+        <tr>
+          <td><strong>Ops Overhead</strong></td>
+          <td class="red">High (hardware mgmt)</td>
+          <td class="amber">Medium</td>
+          <td class="red">High</td>
+          <td class="green">Low (managed)</td>
+        </tr>
+        <tr>
+          <td><strong>Max Throughput (ops/sec/node)</strong></td>
+          <td class="green">500K–1M ops/node</td>
+          <td class="amber">100K–300K ops/node</td>
+          <td class="amber">50K–200K ops/node</td>
+          <td class="amber">Partition-level limits</td>
+        </tr>
+      </table>
+    </div>
+
+    <h2 class="sec">🚨 Day 1 Monitoring Setup</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-content">
+          <strong>Node Availability Monitor</strong>
+          <p>Alert on any node leaving the cluster partition map. Use <code>asinfo -v "cluster-key"</code> or AMC: if the cluster key changes unexpectedly outside of a planned maintenance window, a node has joined or left. Page on-call immediately.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Disk Utilization Monitor</strong>
+          <p>Alert at <code>disk_pct_avail &lt; 20%</code> (warning) and <code>&lt;10%</code> (critical). Aerospike stops writes at <code>stop-writes-pct</code> (default 90% full = 10% available). A disk full event causes immediate service degradation — monitor before it hits.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Transaction Latency Histogram</strong>
+          <p>Monitor <code>read_tps</code>, <code>write_tps</code>, and per-histogram-bucket latency from <code>asinfo -v "latency:"</code>. Alert if p99 latency exceeds your SLA. Configure thresholds: if p99 read &gt; 2ms for NVMe-backed namespaces, something is wrong (defrag pressure, SSD degradation, memory pressure).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>Migration Status Monitor</strong>
+          <p>After any cluster topology change, monitor <code>migrate_rx_partitions_remaining</code> and <code>migrate_tx_partitions_remaining</code>. Alert if migration does not complete within 2× the expected migration time (based on data volume and migrate-threads config). Stuck migration indicates a node-to-node connectivity issue.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-content">
+          <strong>SSD Health Monitor</strong>
+          <p>External to Aerospike: monitor NVMe SMART attributes via <code>nvme smart-log</code>. Alert if <code>percentage_used &gt; 80%</code> or <code>available_spare &lt; 20%</code>. SSD wear-out is the most common cause of unexpected node failures in production Aerospike deployments — monitor it proactively.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>The most common production failure mode for Aerospike is <strong>SSD wear-out causing I/O latency spikes that are invisible at the application layer until they become catastrophic</strong> — monitoring NVMe SMART health independently from Aerospike's own metrics is mandatory in production deployments.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 7 ═══════ -->
+<div class="pillar p7" id="p7">
+  <div class="pillar-header">
+    <div class="pillar-icon">🚀</div>
+    <div>
+      <div class="pillar-title">Pillar 7 — Google-Scale &amp; Beyond</div>
+      <div class="pillar-subtitle">What breaks at 1B users, hyperscaler approaches, multi-tenancy, data residency, and cost efficiency</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">📈 What Breaks at Each Scale Tier</h2>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Scale</th><th>Component That Breaks</th><th>Symptom</th><th>Required Pivot</th></tr>
+        <tr>
+          <td><strong>1M users / 5 nodes</strong></td>
+          <td>Default configuration assumptions</td>
+          <td>Default defrag, migration, and transaction settings are not tuned for production load</td>
+          <td>Namespace tuning: adjust write-block-size, defrag-sleep, migrate-sleep for actual workload</td>
+        </tr>
+        <tr>
+          <td><strong>100M users / 20 nodes</strong></td>
+          <td>Secondary index fan-out</td>
+          <td>SI queries fan out to all 20 nodes — p99 latency determined by slowest node; any node rebalancing causes SI scan timeouts</td>
+          <td>Move complex queries to a separate OLAP pipeline; use Aerospike only for key-based access patterns</td>
+        </tr>
+        <tr>
+          <td><strong>1B users / 50+ nodes</strong></td>
+          <td>DRAM cost for primary index; 4096-partition granularity</td>
+          <td>Primary index requires 64B × 1B = 64GB RAM per node for index alone; with RF=2, total cluster RAM for index: 128GB. This is still manageable but expensive.</td>
+          <td>Migrate to All-Flash (AAF): index on NVMe instead of DRAM, reducing RAM requirement by 100x. Accept 10x higher index lookup latency (still &lt;1ms total read).</td>
+        </tr>
+        <tr>
+          <td><strong>10B records / 100+ nodes</strong></td>
+          <td>Cluster gossip/heartbeat overhead; 4096-partition count limits partition-per-node ratio</td>
+          <td>At 100+ nodes, each node's heartbeat mesh connections = O(N²) message overhead. 4096 partitions / 100 nodes = 40 partitions/node — still workable but less fine-grained load distribution</td>
+          <td>Use hierarchical cluster topology (Aerospike's rack-aware placement); consider multiple independent clusters with application-level routing</td>
+        </tr>
+      </table>
+    </div>
+
+    <h2 class="sec">🔬 How Google Would Approach Aerospike's Problems Differently</h2>
+    <p>Google's infrastructure-scale challenges create requirements that push beyond even Aerospike's capabilities:</p>
+    <ul class="arrow-list">
+      <li><strong>Bigtable's approach vs Aerospike's approach</strong>: Both are built for high-performance key-value access. But Bigtable uses a hierarchical storage system (SSTable + GFS/Colossus) that enables horizontal scaling to exabytes — something Aerospike's per-node storage architecture cannot match. Bigtable sacrifices Aerospike's sub-millisecond latency guarantee (Bigtable p50 reads are typically 1–5ms) in exchange for essentially unlimited horizontal scale. Google's use case (search index, Maps data, Gmail storage) requires scale over latency; Aerospike's use cases (RTB, session management) require latency over scale.</li>
+      <li><strong>Spanner's approach to consistency</strong>: Google Spanner achieves globally consistent transactions using TrueTime (GPS + atomic clock hardware) to establish globally consistent timestamps without inter-node coordination. Aerospike's strong consistency requires majority quorum, limiting it to single-datacenter strong consistency. A Spanner-equivalent Aerospike would need hardware-assisted global time synchronization to provide SC across geographic regions without the latency penalty of quorum consensus across continents.</li>
+      <li><strong>What Google would build differently</strong>: A "Google Aerospike" would likely add: (1) TrueTime-based global timestamps for cross-DC strong consistency, (2) disaggregated storage (compute and storage on separate hardware pools, with network-attached NVMe), enabling independent scaling of compute and storage, (3) a columnar micro-shard design enabling per-column index storage for partial record reads without fetching the entire record.</li>
+    </ul>
+
+    <h2 class="sec">🏠 Multi-Tenancy: Noisy Neighbor Isolation</h2>
+    <p>Aerospike's namespace model provides a limited form of multi-tenancy isolation:</p>
+    <ul class="arrow-list">
+      <li><strong>Namespace-level storage isolation</strong>: Different namespaces can be assigned to different SSD devices. Namespace A (ad serving) can use NVMe drives for ultra-low latency; Namespace B (analytics) can use SATA SSDs for higher capacity at lower cost. This prevents storage I/O from different workloads competing on the same device.</li>
+      <li><strong>Rate limiting via transaction queues</strong>: Aerospike does not natively provide per-namespace or per-client transaction rate limiting. A noisy tenant that sends 1M ops/sec will consume proportional server resources, affecting all other tenants on the same cluster. Mitigation: application-level rate limiting at the API gateway; or physical cluster separation for critical workloads.</li>
+      <li><strong>The hard truth</strong>: For strict multi-tenancy with SLA isolation guarantees between tenants, <strong>physical cluster separation is the only reliable approach in Aerospike</strong>. Namespace isolation provides storage isolation but not compute or network isolation. Google-scale multi-tenancy on Aerospike would require a resource governor layer above the Aerospike API that throttles per-tenant request rates and provides per-tenant latency SLA enforcement.</li>
+    </ul>
+
+    <h2 class="sec">🌐 Data Residency and Regulatory Compliance</h2>
+    <ul class="arrow-list">
+      <li><strong>XDR topology-aware replication for GDPR</strong>: Configure XDR to replicate EU user data only to EU DC (<code>set-filter</code> in XDR configuration): records with <code>region:EU</code> tag are replicated to EU cluster only; US records to US cluster only. This requires application-level tagging of every record with a region attribute.</li>
+      <li><strong>Namespace-level data residency</strong>: Create separate namespaces for EU and non-EU data. EU namespace exists only in EU clusters (no XDR to US). Non-EU namespace replicates globally. Application routing logic must direct EU user writes to the EU namespace.</li>
+      <li><strong>Key-based namespace routing challenge</strong>: Implementing data residency in Aerospike requires the application to know, at write time, which namespace (and therefore which DC) should store a given record. This couples the application to data residency logic — a potential maintenance burden as regulations evolve.</li>
+    </ul>
+
+    <div class="callout calc">
+      <div class="callout-label">📐 Back-of-Envelope: Cost at 10B Records</div>
+      <p>10B records, 1KB average size. Data storage: 10B × 1KB = 10TB. With RF=2: 20TB on SSDs across cluster. NVMe SSD cost at $150/TB: 20TB × $150 = $3,000 in storage. RAM for index: 10B × 64B = 640GB RAM. Server RAM cost at $10/GB: $6,400. Or with AAF (index on NVMe): additional 640GB NVMe ≈ $100. <strong>The cost calculation reveals: AAF becomes economically compelling above ~100B records where RAM cost would otherwise dominate</strong>. Below that threshold, paying for RAM provides 100x better index latency than NVMe index, which is worth the cost for latency-critical workloads.</p>
+    </div>
+
+    <div class="callout lightning">
+      <div class="callout-label">⚡ L7/L8 Differentiator</div>
+      <p>The hyperscale insight is that Aerospike's per-node storage architecture has a fundamental ceiling: the 4,096-partition scheme means that beyond ~200 nodes, the partition-per-node ratio falls so low that any single large migration event triggers a major data movement percentage across the cluster. This is the architectural limit that drives organizations like large telcos to run multiple independent Aerospike clusters with application-layer routing, rather than a single massive cluster.</p>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>At true hyperscale (100+ nodes, 10B+ records), the build-vs-buy question for Aerospike's workloads becomes serious — Google's Bigtable/Spanner solve the same problems with different trade-offs, and the economic crossover where building a custom storage system beats Aerospike licensing typically occurs around $10M+/year in Aerospike costs.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PILLAR 8 ═══════ -->
+<div class="pillar p8" id="p8">
+  <div class="pillar-header">
+    <div class="pillar-icon">🎯</div>
+    <div>
+      <div class="pillar-title">Pillar 8 — Interview Simulation</div>
+      <div class="pillar-subtitle">Staff-level design problem, model answer, L8 critique, and 10 rapid-fire questions</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🎤 Step 1: The Design Problem</h2>
+    <div class="scenario">
+      <div class="scenario-label">Staff-Level System Design Prompt</div>
+      <h4>Design a global real-time fraud detection system for a payments network processing 500 million transactions per day</h4>
+      <p>You are the Staff Engineer responsible for designing the data storage and real-time lookup infrastructure for a global payment network's fraud detection system. The system must: (1) for every payment authorization request, perform a real-time risk lookup in under 5ms to decide approve/deny; (2) maintain a continuously updated fraud model with tens of thousands of features per entity (card number, IP, device fingerprint, merchant, user account); (3) serve 6,000 transactions per second peak (with 3× peak factor = 18,000 TPS); (4) operate across US and EU regions for data residency compliance; (5) maintain a 72-hour rolling window of transaction history per entity for velocity checking. Design the data storage layer.</p>
+    </div>
+
+    <h2 class="sec">💪 Step 2: Strong Candidate Answer (L7/L8)</h2>
+
+    <div class="highlight-box">
+      <h4>🔍 Clarifying Questions</h4>
+      <ul class="arrow-list">
+        <li>"What's the read:write ratio? For fraud detection, every payment is both a read (feature lookup) and a write (update velocity counters). I'm assuming ~1:1 ratio — 18K reads/sec and 18K writes/sec at peak."</li>
+        <li>"What's the feature store data model? Thousands of features per entity sounds like it could be large records (10KB–100KB). This significantly affects storage sizing."</li>
+        <li>"Is the fraud model itself real-time (trained continuously) or batch (updated hourly/daily)? This determines whether I need streaming writes to the feature store or bulk batch updates."</li>
+        <li>"What's the SLA for false negatives vs false positives? This affects consistency model choice — strong consistency (no stale reads) prevents approving a transaction that should be denied based on very recent activity."</li>
+        <li>"For the 5ms budget: what's the network round-trip between the payment processor and my storage layer? If we're talking cross-continental latency, 5ms is already consumed by the network, leaving 0ms for storage."</li>
+      </ul>
+    </div>
+
+    <div class="highlight-box">
+      <h4>📋 Stated Assumptions</h4>
+      <ul class="arrow-list">
+        <li>Feature record size: 50KB average (rich behavioral features, transaction history summaries).</li>
+        <li>Number of entities: 500M cards + 100M devices + 50M merchants = ~650M entity records.</li>
+        <li>Read/write ratio: 1:1 for authorization path (every auth = 1 read + 1 write for velocity update).</li>
+        <li>Consistency requirement: strong consistency (SC mode) for velocity counters — cannot allow double-spend via stale counter reads.</li>
+        <li>5ms SLA applies within a single region (network to storage sub-1ms on LAN).</li>
+      </ul>
+    </div>
+
+    <div class="callout calc">
+      <div class="callout-label">📐 Back-of-Envelope</div>
+      <p>Storage: 650M entities × 50KB = 32.5TB. With RF=2: 65TB. Per-node (8 × 8TB NVMe = 64TB): ~2 nodes for storage. RAM for index: 650M × 64B = 42GB. With RF=2: 84GB across cluster. Per-node (128GB RAM): 1 node sufficient for index. Throughput: 18K reads/sec + 18K writes/sec = 36K ops/sec. Per-node capacity: ~500K ops/sec. Even 1 node handles throughput. <strong>With RF=2, minimum 2 nodes for HA. Recommend 6 nodes with 3× headroom for peak spikes, maintenance, and migration headroom.</strong></p>
+    </div>
+
+    <h3 class="subsec">High-Level Architecture</h3>
+    <div class="ascii">┌───────────────────────────────────────────────────────────────────────┐
+│                  FRAUD DETECTION DATA ARCHITECTURE                     │
+└───────────────────────────────────────────────────────────────────────┘
+
+                          PAYMENT NETWORK
+                               │
+                               ▼
+                     ┌─────────────────┐
+                     │ API Gateway      │
+                     │ (Fraud Score API)│
+                     └────────┬────────┘
+                              │ &lt;5ms SLA
+              ┌───────────────┴──────────────┐
+              │  FRAUD SCORING SERVICE       │
+              │  - ML model inference        │
+              │  - Feature assembly          │
+              │  - Decision engine           │
+              └──┬────────────────────────┬──┘
+                 │ Reads                  │ Writes
+          ┌──────▼──────┐          ┌──────▼──────────────────┐
+          │  AEROSPIKE   │          │   KAFKA                 │
+          │  (Feature    │          │   (Transaction Events)   │
+          │   Store)     │          │   → Feature Updater     │
+          │              │          │     (updates Aerospike) │
+          │ Namespace 1: │          └─────────────────────────┘
+          │ card_features│
+          │ (SC mode)    │  DUAL REGION (Active-Active XDR)
+          │              │  US-EAST ←──XDR──► EU-WEST
+          │ Namespace 2: │  (US data stays US, EU data stays EU)
+          │ device_feat  │  XDR filter: US records → US, EU records → EU
+          │ (AP mode)    │
+          └─────────────┘
+
+  3 NAMESPACES DESIGN:
+  ─────────────────
+  velocity_counters: SC mode, commit-all, TTL=72h, small records (100B)
+    → card:txn_count_1h, txn_count_24h, txn_amount_24h, decline_count_7d
+  entity_features:   SC mode, commit-master, TTL=90d, medium records (50KB)
+    → behavioral features, segment memberships, risk scores
+  session_context:   AP mode, commit-master, TTL=24h, small records (1KB)
+    → IP reputation, device fingerprint, geolocation context</div>
+
+    <h3 class="subsec">Key Design Decisions</h3>
+    <ul class="arrow-list">
+      <li><strong>Namespace per data criticality, not per entity type</strong>: Velocity counters (which determine approve/deny) use SC mode + commit-all for zero data loss. Feature records (which enrich the ML model input but don't directly make the final decision) use SC mode + commit-master for lower write latency. Session context (IP reputation, device fingerprint) uses AP mode — losing one counter update here is acceptable.</li>
+      <li><strong>Aerospike's operate() for atomic counter updates</strong>: Velocity counters are updated atomically using Aerospike's operate() API: a single RPC atomically reads the current value, increments it, and returns the new value. This prevents the read-modify-write race condition that would allow two concurrent transactions from the same card to each read "count=4" and both write "count=5" instead of one writing "count=5" and one writing "count=6."</li>
+      <li><strong>TTL for automatic 72-hour window</strong>: Rather than implementing a background job to delete old velocity counter records, each record has a 72-hour TTL set at creation time. Aerospike's TTL management automatically expires and evicts old records, simplifying the operational model significantly.</li>
+      <li><strong>Data residency via namespace routing</strong>: EU transactions set a <code>region:EU</code> tag. Application routing layer reads this tag and directs writes to the EU namespace (on the EU cluster). XDR is configured to NOT replicate EU namespace to US cluster. US namespace XDR does NOT replicate to EU. This satisfies GDPR requirements without complex external routing infrastructure.</li>
+    </ul>
+
+    <h2 class="sec">🔍 Step 3: Interviewer Critique</h2>
+
+    <div class="critique-box good">
+      <div class="cb-label">✅ What Was Done Well</div>
+      <p>Excellent clarifying questions that changed the design: asking about consistency requirements (led to SC mode choice for counters), record size (drove the sizing math), and the 5ms SLA interpretation (correctly scoped to LAN, not WAN). The namespace-per-criticality pattern is a sophisticated Aerospike design pattern that demonstrates platform depth. The atomic operate() for counter updates shows understanding of Aerospike's concurrency model. The 3-namespace design is elegant — different consistency/durability per business requirement on the same physical cluster.</p>
+    </div>
+
+    <div class="critique-box bad">
+      <div class="cb-label">❌ What Was Missed</div>
+      <p><strong>Cold start / warm-up not addressed.</strong> When the Aerospike cluster restarts after a failure (disaster recovery scenario), the feature store needs to be populated. At 32TB of data, restart from scratch would leave the fraud system running without behavioral features for hours. The answer should have mentioned Persisted Index (5.2+) for sub-2-minute index rebuild, plus a warm-up strategy for the feature data itself (XDR from the other region's active cluster). <strong>Defragmentation pressure at high delete rate not addressed.</strong> 72-hour TTL on velocity counters means 500M transactions/day creates 500M record deletions/day (when TTL expires). At this deletion rate, defragmentation may struggle to keep up, requiring careful tuning of defrag-lwm-pct and defrag-sleep. <strong>Multi-record transaction use case not identified.</strong> A bank transfer (fraud check + authorization + balance update) may require the MRT (v7.0+) feature — this was not mentioned despite being highly relevant for a payments use case.</p>
+    </div>
+
+    <div class="critique-box upgrade">
+      <div class="cb-label">⚡ What an L8 Answer Would Include</div>
+      <p><strong>Defragmentation quantification</strong>: 500M TTL expirations/day = 5,787/second. At 100 bytes/record × 5,787/sec = 578KB/second of dead record space accumulating. At 50% live density threshold, defragmentation must process 1.15MB/sec of SSD I/O purely for expired record reclamation. This must be budgeted against the available SSD I/O bandwidth to ensure defragmentation doesn't create write stalls. <strong>Aerospike v7.0 MRT for payment atomicity</strong>: A complete payment authorization is actually a 3-record atomic operation: (1) decrement available balance in <code>accounts</code> namespace, (2) increment merchant's pending balance, (3) mark the transaction as authorized in the <code>transactions</code> namespace. This REQUIRES MRT in v7.0+ — without it, a crash between step 2 and 3 creates a partially-complete authorization. An L8 candidate explicitly identifies this and designs the MRT transaction scope. <strong>The read-before-write problem at scale</strong>: For ML feature enrichment, the scoring service must read the entity feature record, score it, and potentially update it — a read-modify-write that is 3× the cost of a pure read. At 18K TPS, this is 18K × 3 = 54K Aerospike operations/second just for the enrichment path. This changes the sizing math and was not acknowledged in the L7 answer.</p>
+    </div>
+
+    <h2 class="sec">⚡ Step 4: 10 Rapid-Fire Questions</h2>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">1</div>What happens to data in Aerospike's write buffer (WBLOCK) if the node crashes before it is flushed to SSD?</div>
+      <div class="q-body"><p>Data in the in-memory WBLOCK at crash time is permanently lost — Aerospike's append-only write model stages writes in a RAM buffer before flushing to SSD, and a crash clears that RAM. With RF=2 and commit-master policy, the replica already has a copy of all previously acknowledged writes, so data loss is limited to the current WBLOCK contents (typically &lt;100ms of writes). With commit-all policy, all acknowledged writes are confirmed on all replicas before acknowledgment, so a master crash loses nothing that was acknowledged to the client — only writes that were in-flight at crash time (never acknowledged) are lost. The risk is quantifiable: WBLOCK_size / write_bandwidth = data loss window. At 128KB WBLOCK and 100MB/s write rate, the data loss window is ~1.28ms of writes.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">2</div>Explain Aerospike's partition map and why having 4096 partitions is a specific design choice, not an arbitrary number.</div>
+      <div class="q-body"><p>4096 is chosen as a power-of-two value large enough to ensure fine-grained, even distribution across a reasonable cluster size (up to ~200 nodes before granularity becomes limiting) while small enough that the partition map (4096 entries × a few bytes each) fits in a single network packet for gossip distribution. Using 4096 means the first 12 bits of the 20-byte RIPEMD-160 digest determine the partition (2^12 = 4096), making the partition assignment a simple bit-shift — no modulo operation. At 200 nodes, 4096/200 = ~20 partitions per node, still providing meaningful load distribution granularity. Below ~4 nodes, some nodes hold more than 1000 partitions, which is fine. The choice is a deliberate balance between distribution granularity and gossip overhead. Changing this number requires a full cluster rebuild — it is not runtime-configurable.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">3</div>You have a high-value record that is read 10 million times per second across your cluster but only written 10 times per second. How do you prevent this record's master node from becoming a bottleneck?</div>
+      <div class="q-body"><p>This is the hot record / hot partition problem. The partition containing this record's master will handle all 10M reads/sec regardless of cluster size — adding more nodes doesn't help because you can't distribute a single record's reads across nodes in normal Aerospike operation. Solutions: (1) Application-layer caching (memcached/local process cache): cache the record in the application for ~100ms; at 10M reads/sec with 10 writes/sec, the record changes less than once per million reads — stale cache tolerance is near-perfect here. (2) Enable AP read from replica: in AP mode, configure reads to be served by any replica — this distributes 10M reads across RF nodes instead of concentrating them on the master. (3) Record sharding: split the record into N copies (e.g., <code>config:global:replica_0</code> through <code>config:global:replica_7</code>), randomly select a copy to read — write to all N copies. This distributes reads across N different partitions/nodes. Technique 3 is the most robust for true hyperscale but requires application complexity.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">4</div>What is the Aerospike Defragmenter, why is it necessary, and what happens if it falls behind?</div>
+      <div class="q-body"><p>The Defragmenter is a background process required by Aerospike's append-only write model. Because Aerospike never overwrites data in place (always appends new versions to the end of current write blocks), old/deleted/expired record versions accumulate as dead space on SSD. The Defragmenter continuously scans SSD extents, identifies those with low live-record density (below <code>defrag-lwm-pct</code>, default 50%), reads the live records out, rewrites them to new extents, and marks the old extent as free. If the Defragmenter falls behind — which happens when write/delete rate exceeds defragmentation throughput — disk utilization climbs toward the <code>stop-writes-pct</code> threshold (default 90% full). At that threshold, Aerospike stops accepting writes entirely, causing immediate service outage for write traffic. The recovery is to wait for defragmentation to reclaim space, which can take minutes to hours depending on the backlog. Prevention: tune <code>defrag-sleep</code> lower (more aggressive defragmentation), ensure sufficient SSD I/O bandwidth headroom, and alert at 70% disk utilization before hitting the 90% stop-writes threshold.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">5</div>How does Aerospike's strong consistency mode (SC mode) work, and what is the "regime" concept?</div>
+      <div class="q-body"><p>SC mode uses a concept of "regimes" — a cluster generation counter that increments on each cluster topology change. Every write in SC mode is tagged with the current regime number. When a network partition occurs and the cluster splits, both halves enter different regimes (they see different topology). The majority side's regime is authoritative; the minority side's regime is invalid. When the partition heals, nodes in the lower (minority) regime must catch up: they replay the difference between their regime's writes and the majority side's writes using the regime log. This ensures that any write made on the minority side during the partition (in a regime that was later invalidated) is either reconciled or rejected. The key insight: in SC mode, Aerospike does NOT use Last-Write-Wins for conflict resolution — it uses regime ordering to determine which writes are authoritative. A write from the minority regime is not "newer" just because its timestamp is later; it is invalid because its regime was invalidated by the majority cluster's continued operation. This is fundamentally different from AP mode's LWW behavior and is the mechanism that provides linearizability.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">6</div>Why does Aerospike use RIPEMD-160 for key hashing instead of SHA-256 or MD5?</div>
+      <div class="q-body"><p>RIPEMD-160 produces a 20-byte (160-bit) digest, which is smaller than SHA-256 (32 bytes) while providing essentially the same distribution uniformity for a non-cryptographic use case (uniform hash distribution, not collision resistance for adversarial inputs). Compared to MD5 (16 bytes), RIPEMD-160 provides better collision resistance and is still considered cryptographically sound for non-adversarial hashing. The critical constraint: the Primary Index entry is exactly 64 bytes (one CPU cache line). Using RIPEMD-160's 20-byte digest leaves room for 44 bytes of metadata (generation, TTL, set ID, device offset, etc.) within the 64-byte budget. If SHA-256 (32 bytes) were used, only 32 bytes would remain for metadata — insufficient for Aerospike's per-record metadata needs. The 64-byte cache-line alignment is not accidental: it ensures every primary index lookup is a single L1 cache line fetch, minimizing CPU cache misses for index operations and contributing to the sub-100ns index lookup performance.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">7</div>Describe Aerospike's approach to multi-record transactions in v7.0+ and what trade-offs it introduces.</div>
+      <div class="q-body"><p>Aerospike 7.0 introduced Multi-Record Transactions (MRT) using a two-phase commit protocol. In Phase 1 (prepare), the transaction coordinator (a special transaction object in the client library) sends lock requests to all partitions involved in the transaction; each partition master acquires a provisional lock on the targeted records and returns a "prepared" acknowledgment. In Phase 2 (commit), the coordinator sends commit messages to all partition masters, which atomically apply their changes and release locks. If any participant fails to prepare in Phase 1, the coordinator sends abort messages and all provisional changes are rolled back. Trade-offs: (1) Latency: MRT requires 2 network round trips (prepare + commit) instead of 1, roughly doubling transaction latency compared to single-record operations. (2) Lock contention: records under provisional lock in Phase 1 are not accessible to other transactions, creating potential contention on hot records. (3) Distributed transaction coordination is vulnerable to coordinator failure — if the client crashes mid-transaction, the locks must time out before other transactions can proceed (default lock timeout: several seconds). (4) Cross-partition transactions do not benefit from Aerospike's shared-nothing partition model — they inherently require coordination, limiting parallelism.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">8</div>Your Aerospike cluster's p99 latency suddenly spikes from 500μs to 50ms. Walk through your diagnosis process.</div>
+      <div class="q-body"><p>Step 1: Check if the spike is cluster-wide or single-node using <code>asadm -e "show latency"</code> per node. If single-node: that node is the problem. If cluster-wide: a systematic issue (network, load spike, cluster reformation). Step 2 (single-node): Check the node's SSD health — is defragmentation running aggressively? (<code>asinfo -v "stats" -h node</code>, look at <code>defrag_reads</code> rate). Is the SSD itself degraded? (<code>nvme smart-log /dev/nvme0</code> — check <code>media_errors</code> and <code>percentage_used</code>). Is memory pressure causing swap? (<code>free -m</code> — any swap usage at all is catastrophic for Aerospike latency). Step 3: Check transaction queue depth (<code>asinfo -v "queues:"</code>) — deep queues indicate CPU saturation. Step 4: Check disk fill percentage — are we above 80%? Heavy defragmentation at high fill causes I/O stall cycles. Common root causes in order of frequency: (1) SSD wear causing elevated read latency, (2) memory pressure/swap, (3) defragmentation I/O saturation, (4) network congestion between nodes causing replication delays (commit-all path). The resolution depends on root cause: SSD replacement, memory expansion, defrag parameter tuning, or network remediation respectively.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">9</div>Compare Aerospike's approach to eviction vs. TTL. When would you use each, and what are the failure modes?</div>
+      <div class="q-body"><p>TTL (Time-To-Live) is a per-record expiration time set at write time — the record expires and becomes invisible to reads after a specified number of seconds. TTL expiration is lazy (the record remains on disk until the eviction or defragmentation process removes it) but the Primary Index entry is invalidated at TTL expiry, making the record unreadable. TTL is deterministic: you know exactly when a record will expire. Eviction is a namespace-level policy that removes the oldest records (by TTL) when the namespace reaches its configured memory or storage threshold (<code>evict-used-pct</code>). Eviction is reactive — records are removed when resources are pressured, not on a fixed schedule. Failure modes: (1) TTL expiration without eviction enabled: on disk, expired records accumulate as dead space that the Defragmenter must reclaim. If record creation rate >> defragmentation rate, disk fills up. (2) Eviction with no TTL: eviction has no "oldest" concept without TTL — records without TTL are treated as having infinite TTL and will never be evicted (they are "zero TTL" records, immune to eviction by default, configurable via <code>evict-zero-ttl</code>). (3) TTL + eviction combined: if eviction fires before TTL expiration, it evicts data that the application expected to be available. Applications must be designed for this possibility.</p></div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-header"><div class="q-num">10</div>What is Aerospike's "rack-aware" feature, why does it matter for high availability, and how does it work?</div>
+      <div class="q-body"><p>Rack awareness is a placement policy that ensures replica partitions are always placed on nodes in different physical failure domains (racks, availability zones, or power domains). Without rack awareness, in a 6-node cluster across 2 racks, the default placement might put both the master and replica for a partition on nodes in the same rack — a single rack failure (power loss, top-of-rack switch failure) would then take both copies offline simultaneously, causing data unavailability. With rack awareness enabled, Aerospike's partition map calculation is constrained: for a partition with master on Rack A, the replica must be placed on a node in Rack B (or a different configured rack). This is configured via the <code>rack-id</code> parameter on each node — nodes with the same rack-id are considered to be in the same failure domain. The trade-off: rack awareness reduces the number of eligible nodes for replica placement, which can slow migration (replica must migrate to a specific rack) and may limit the effectiveness of load balancing if racks have unequal node counts. For truly high-availability production deployments with Aerospike, rack awareness is not optional — it transforms a "high availability unless your rack fails" system into a "high availability unless two racks fail simultaneously" system.</p></div>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>The L8 differentiator across all 10 questions is always the same pattern: <strong>quantify the trade-off, identify the failure mode, and know the operational lever that changes the behavior</strong> — not just knowing what the feature is, but understanding why it was designed that way and under what conditions it becomes a liability.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ MONITORING WALKTHROUGH ═══════ -->
+<div class="pillar p2" id="monitoring" style="margin-top:64px">
+  <div class="pillar-header">
+    <div class="pillar-icon">📊</div>
+    <div>
+      <div class="pillar-title">Aerospike Monitoring, Dashboard &amp; APM Walkthrough</div>
+      <div class="pillar-subtitle">Complete guide: AMC setup, Prometheus + Grafana, interpreting all metrics, configuring alerts</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h2 class="sec">🛠️ Part 1: Monitoring Architecture Options</h2>
+
+    <div class="apm-section">
+      <div class="apm-section-header">📦 Option 1: Aerospike Monitoring Console (AMC) — Built-in</div>
+      <div class="apm-section-body">
+        <p>AMC is Aerospike's built-in web-based monitoring console, available at http://&lt;node&gt;:8080. It provides real-time cluster health visualization without any additional tooling. Configuration:</p>
+        <div class="code-block">
+<span class="comment"># /etc/aerospike/aerospike.conf — enable HTTP monitoring endpoint</span>
+<span class="key">service</span> {
+    <span class="key">node-id</span>   <span class="val">a1</span>
+    <span class="key">pidfile</span>   <span class="str">/var/run/aerospike/asd.pid</span>
+}
+
+<span class="comment"># AMC uses the info protocol on port 3003</span>
+<span class="comment"># Access: http://host:8080 → enter cluster node address → connect</span>
+
+<span class="comment"># Prometheus exporter (newer deployments)</span>
+<span class="key">export</span> AEROSPIKE_NODE=<span class="str">"192.168.1.10"</span>
+docker run -d \
+  -p <span class="num">9145</span>:9145 \
+  -e <span class="key">AEROSPIKE_DB_HOST</span>=<span class="val">$AEROSPIKE_NODE</span> \
+  aerospike/aerospike-prometheus-exporter:<span class="val">latest</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="apm-section">
+      <div class="apm-section-header">📊 Option 2: Prometheus + Grafana (Production-Recommended)</div>
+      <div class="apm-section-body">
+        <p>For production deployments, the Aerospike Prometheus Exporter + Grafana provides the most flexible and persistent monitoring. Configuration:</p>
+        <div class="code-block">
+<span class="comment"># aerospike-prometheus-exporter.yml</span>
+<span class="key">agent_bind_host</span>: <span class="str">"0.0.0.0"</span>
+<span class="key">agent_bind_port</span>: <span class="num">9145</span>
+<span class="key">agent_timeout</span>: <span class="num">10</span>
+
+<span class="key">db_host</span>: <span class="str">"127.0.0.1"</span>  <span class="comment"># local Aerospike node</span>
+<span class="key">db_port</span>: <span class="num">3000</span>
+
+<span class="comment"># Namespace-level metrics granularity</span>
+<span class="key">namespaces</span>:
+  - <span class="val">entities</span>
+  - <span class="val">velocity_counters</span>
+  - <span class="val">session_context</span>
+
+<span class="comment"># prometheus.yml — scrape config</span>
+<span class="key">scrape_configs</span>:
+  - <span class="key">job_name</span>: <span class="str">'aerospike'</span>
+    <span class="key">static_configs</span>:
+      - <span class="key">targets</span>: [<span class="str">'as-node-1:9145'</span>, <span class="str">'as-node-2:9145'</span>, <span class="str">'as-node-3:9145'</span>]
+    <span class="key">scrape_interval</span>: <span class="num">10s</span>  <span class="comment"># Aerospike metrics change rapidly</span>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="sec">📈 Part 2: Critical Metrics to Monitor</h2>
+
+    <div class="apm-section">
+      <div class="apm-section-header">🔑 Tier 1: Immediately Actionable (Page On-Call)</div>
+      <div class="apm-section-body">
+        <div class="tbl-wrap">
+          <table>
+            <tr><th>Metric</th><th>Prometheus Label</th><th>Alert Threshold</th><th>What It Means + Action</th></tr>
+            <tr>
+              <td><strong>Cluster Integrity</strong></td>
+              <td><code>aerospike_node_stats_cluster_size</code></td>
+              <td>&lt; expected node count for &gt;30s</td>
+              <td>A node left the cluster. Investigate node health immediately. If node count is still above replication factor, cluster is degraded but functional. If at or below RF, data availability is at risk.</td>
+            </tr>
+            <tr>
+              <td><strong>Stop Writes Threshold</strong></td>
+              <td><code>aerospike_namespace_storage_utilization_pct</code></td>
+              <td>&gt;80% (warning), &gt;87% (critical)</td>
+              <td>Aerospike stops accepting writes at 90% (stop-writes-pct). 87% gives ~3% headroom for defrag to catch up. At critical: immediately check defrag backlog and consider adding disk capacity or evicting data.</td>
+            </tr>
+            <tr>
+              <td><strong>Write Errors</strong></td>
+              <td><code>aerospike_node_stats_fail_write_count</code></td>
+              <td>Rate &gt; 0.01% of write TPS</td>
+              <td>Failed writes indicate server overload, disk full, or consistency violations. Any non-zero write error rate for SC namespaces is immediately alertable.</td>
+            </tr>
+            <tr>
+              <td><strong>Migration Pending</strong></td>
+              <td><code>aerospike_namespace_migrate_rx_partitions_remaining</code></td>
+              <td>Non-zero for &gt;30 minutes post-topology-change</td>
+              <td>Stuck migration means partition replication is incomplete — cluster is not at full durability. Investigate inter-node connectivity and migration throttle settings.</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="apm-section">
+      <div class="apm-section-header">📊 Tier 2: Performance Health (Slack Notification)</div>
+      <div class="apm-section-body">
+        <div class="tbl-wrap">
+          <table>
+            <tr><th>Metric</th><th>Prometheus Label</th><th>Alert Threshold</th><th>Interpretation</th></tr>
+            <tr>
+              <td><strong>Read Latency P99</strong></td>
+              <td><code>aerospike_node_stats_read_tps</code> + latency histogram</td>
+              <td>P99 &gt; 2ms for NVMe namespace</td>
+              <td>Read latency above 2ms on NVMe usually indicates: SSD degradation, memory pressure, or defrag I/O competition. Drill into per-node to isolate.</td>
+            </tr>
+            <tr>
+              <td><strong>Write Latency P99</strong></td>
+              <td><code>aerospike_node_stats_write_tps</code></td>
+              <td>P99 &gt; 5ms</td>
+              <td>High write latency indicates: write buffer flush delays (disk I/O saturation), replication delays (network), or transaction queue depth (CPU saturation).</td>
+            </tr>
+            <tr>
+              <td><strong>Transaction Queue Depth</strong></td>
+              <td><code>aerospike_node_stats_tsvc_queue</code></td>
+              <td>&gt; 100 pending transactions</td>
+              <td>Deep queues = CPU processing bottleneck. Transactions are queueing faster than they're being processed. Check CPU utilization and transaction-threads-per-queue config.</td>
+            </tr>
+            <tr>
+              <td><strong>Defrag Rate</strong></td>
+              <td><code>aerospike_namespace_defrag_reads</code></td>
+              <td>Rate declining while disk fill increasing</td>
+              <td>Defrag falling behind write rate. Reduce defrag-sleep or reduce write workload. If uncorrected, disk will hit stop-writes-pct.</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="apm-section">
+      <div class="apm-section-header">🔬 Part 3: Reading the Latency Histogram</div>
+      <div class="apm-section-body">
+        <p>Aerospike's latency output via <code>asinfo -v "latency:"</code> is critical for diagnosing performance issues:</p>
+        <div class="code-block">
+<span class="comment"># asinfo -v "latency:" output example</span>
+<span class="key">reads</span>:
+  <span class="comment"># Columns: time, ops/sec, pct &gt;1ms, pct &gt;8ms, pct &gt;64ms</span>
+  15:30:00, <span class="num">245123</span> ops/sec,  <span class="num">0.34</span>%, <span class="num">0.01</span>%, <span class="num">0.00</span>%   <span class="comment">← HEALTHY</span>
+  15:30:10, <span class="num">244876</span> ops/sec,  <span class="num">0.35</span>%, <span class="num">0.02</span>%, <span class="num">0.00</span>%   <span class="comment">← HEALTHY</span>
+  15:30:20,  <span class="num">98234</span> ops/sec, <span class="num">12.45</span>%, <span class="num">4.31</span>%, <span class="num">0.87</span>%   <span class="comment">← PROBLEM: 4.31% &gt;8ms</span>
+
+<span class="comment"># 15:30:20: TPS dropped by 60%, 4.31% of reads took >8ms
+# Diagnosis: SSD defrag burst (common at top of hour if hourly cleanup runs)
+# OR: migration started competing with reads for I/O bandwidth</span>
+
+<span class="key">writes_master</span>:
+  15:30:00, <span class="num">245100</span> ops/sec,  <span class="num">0.22</span>%, <span class="num">0.00</span>%, <span class="num">0.00</span>%
+  15:30:20,  <span class="num">98200</span> ops/sec, <span class="num">10.11</span>%, <span class="num">3.20</span>%, <span class="num">0.15</span>%
+
+<span class="comment"># Both reads AND writes degrade simultaneously:
+# → SSD I/O is the bottleneck (not network, not CPU alone)
+# If only writes degrade with reads fine:
+# → Replication network congestion (commit-all path slow)</span>
+        </div>
+        <p><strong>How to read the latency histogram:</strong></p>
+        <ul class="arrow-list">
+          <li><strong>&gt;1ms column</strong>: The fraction of operations exceeding 1ms. For NVMe-backed namespaces, &gt;2% consistently indicates something is wrong. For RAM-backed namespaces, &gt;0.1% is concerning.</li>
+          <li><strong>&gt;8ms column</strong>: Any non-trivial percentage here (&gt;0.1%) is alarming for production Aerospike — 8ms is 16× the expected 500μs latency. This indicates severe I/O pressure or a node-level problem.</li>
+          <li><strong>&gt;64ms column</strong>: Any non-zero value here is a critical alert — these are transactions experiencing 64× their expected latency. Likely causes: disk fault, swap usage, or OS-level I/O starvation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="apm-section">
+      <div class="apm-section-header">📐 Part 4: Building a Production Grafana Dashboard</div>
+      <div class="apm-section-body">
+        <p>Essential panels for an Aerospike production dashboard:</p>
+        <div class="code-block">
+<span class="comment">## Panel 1: Cluster Health Overview</span>
+<span class="comment">## Single stat: "Nodes in cluster / expected nodes"</span>
+<span class="key">Query</span>: count(up{job=<span class="str">"aerospike"</span>} == 1)
+<span class="key">Thresholds</span>: green=6 (expected), yellow=5, red=4
+<span class="key">Read</span>: <span class="num">6</span>/6 = everything healthy. 5/6 = one node down but resilient. &lt;4 = critical.
+
+<span class="comment">## Panel 2: Read/Write TPS (time series)</span>
+<span class="key">Read TPS</span>: rate(aerospike_node_stats_stat_read_reqs{node="$node"}[1m])
+<span class="key">Write TPS</span>: rate(aerospike_node_stats_stat_write_reqs{node="$node"}[1m])
+<span class="key">Read</span>: Sudden drops = node failures or circuit breaker tripping.
+       Gradual decline = traffic routing away from this node.
+
+<span class="comment">## Panel 3: Disk Utilization by Namespace</span>
+<span class="key">Query</span>: aerospike_namespace_storage_utilization_pct{namespace="$ns"}
+<span class="key">Thresholds</span>: green=&lt;70%, yellow=70-80%, red=&gt;80%
+<span class="key">Read</span>: Watch trend, not just current value. Rising at 1%/hour = disk full in ~30 hours.
+
+<span class="comment">## Panel 4: Memory Utilization</span>
+<span class="key">Used Memory</span>: aerospike_namespace_memory_used_bytes / aerospike_namespace_memory_size_bytes
+<span class="key">Read</span>: Above 90% = eviction may have started. Check evicted_objects counter.
+
+<span class="comment">## Panel 5: Latency Distribution (heatmap)</span>
+<span class="key">Query</span>: rate(aerospike_node_stats_read_tps[1m]) with latency buckets
+<span class="comment"># Heatmap shows latency percentiles over time</span>
+<span class="comment"># A "heat band" appearing at 8ms+ bucket = defrag event</span>
+<span class="comment"># A persistent heat band at 64ms = SSD degradation</span>
+
+<span class="comment">## Panel 6: Migration Status</span>
+<span class="key">Query</span>: sum(aerospike_namespace_migrate_rx_partitions_remaining)
+<span class="key">Read</span>: Non-zero after a cluster change = migration in progress.
+       Should reach zero within minutes for small clusters.
+       If non-zero for hours = migration stalled.
+
+<span class="comment">## Panel 7: Defragmentation Rate</span>
+<span class="key">Query</span>: rate(aerospike_namespace_defrag_reads[5m])
+<span class="key">Read</span>: Should be non-zero (defrag actively running) but not excessive.
+       Spikes in defrag reads = high delete/expiry rate creating dead space.
+       Zero defrag reads = either defrag is suspended or namespace is perfect (rare).
+        </div>
+      </div>
+    </div>
+
+    <div class="apm-section">
+      <div class="apm-section-header">🔔 Part 5: End-to-End Monitoring Simulation</div>
+      <div class="apm-section-body">
+        <div class="scenario">
+          <div class="scenario-label">Incident Simulation: Silent Data Loss via Disk Fill</div>
+          <h4>How Aerospike silently stops accepting writes when disk fills, and how monitoring catches it</h4>
+          <p><strong>T-60 minutes:</strong> Disk utilization at 78%. Normal. No alerts firing. Engineers unaware.</p>
+          <p><strong>T-30 minutes:</strong> A new data pipeline goes live, doubling the write rate for the <code>entity_features</code> namespace. Disk utilization rising at 0.5%/minute. The Tier 2 alert fires at 80% (<strong>Slack notification only</strong>): "Aerospike namespace entity_features disk utilization at 80.3% — rising. Defrag rate insufficient."</p>
+          <p><strong>T-15 minutes:</strong> Disk utilization hits 87%. The Tier 1 critical alert fires: "CRITICAL: Aerospike entity_features approaching stop-writes threshold (87%). Immediate action required." On-call engineer is paged. The engineer checks <code>asadm -e "show stat namespace"</code>: defrag_reads rate is 50K/sec but disk is filling at 200K records/sec of new writes. Defrag is losing the race.</p>
+          <p><strong>T-0:</strong> Disk hits 90%. Aerospike's <code>stop-writes-pct</code> threshold is crossed. The node stops accepting writes for the <code>entity_features</code> namespace. Clients receive <code>AEROSPIKE_ERR_DEVICE_OVERLOAD</code> (or <code>AEROSPIKE_ERR_FULL</code> in older versions). Application error rate spikes. Fraud detection model feature updates start failing — the system continues to score fraud based on increasingly stale features.</p>
+          <p><strong>Diagnosis using Grafana:</strong> Panel 3 (disk utilization) shows the hockey-stick rise starting at T-60. Panel 2 (write TPS) shows a step-change at T-30 (new pipeline). Panel 7 (defrag rate) shows defrag at ~25% of the write rate — completely unable to keep up. The root cause is the new pipeline, not a defrag issue. <strong>Fix:</strong> Rate-limit the new pipeline, or scale horizontal by adding a new node (which triggers migration and distributes the disk load). Panel 6 (migration status) would show new migration in progress after adding the node.</p>
+          <p><strong>Key lesson:</strong> The 80% threshold alert at T-30 gave 30 minutes of warning. Without it, the on-call would have seen the issue only at T-0 when writes started failing — at that point, recovery is reactive. The proactive alert enables preventive action. This is why the Day 1 monitoring setup is non-optional.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="key-takeaway">
+      <div class="kt-icon">🔑</div>
+      <p>The most critical monitoring insight for Aerospike: disk fill is a <strong>silent, predictable, preventable failure mode</strong> that causes hard write failures with no graceful degradation — alerting at 80% disk utilization (not 90%) is the only way to have response time before the system stops accepting writes entirely.</p>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div style="margin-top:64px;padding:32px;background:var(--bg2);border:1px solid var(--border);border-radius:16px;text-align:center;">
+  <div style="font-size:24px;margin-bottom:12px;">🎯</div>
+  <h3 style="color:#fff;font-size:20px;font-weight:700;margin-bottom:12px;">Ready for the Interview</h3>
+  <p style="color:var(--text2);max-width:600px;margin:0 auto 16px;">This guide covers all 8 pillars at L7/L8 depth including Aerospike v7.x MRT, All-Flash, and Persisted Index. The key signal: always connect architectural decisions to their physical constraints and quantify the trade-offs.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
+    <span class="pill orange">HMA: RAM Index + NVMe Data</span>
+    <span class="pill teal">Per-Namespace CAP Choice</span>
+    <span class="pill amber">4096-Partition Consistent Hash</span>
+    <span class="pill blue">Append-Only Write + Defragmenter</span>
+    <span class="pill green">v7.0 Multi-Record Transactions</span>
+  </div>
+</div>
+
+</div><!-- /content -->
+</body>
+</html>
