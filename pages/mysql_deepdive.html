@@ -1,0 +1,1763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MySQL Deep Dive — Staff/Principal Engineer Interview Guide</title>
+<style>
+  :root {
+    --primary: #1a56db;
+    --primary-dark: #1e3a8a;
+    --secondary: #7c3aed;
+    --accent: #059669;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --surface: #f8fafc;
+    --surface2: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #475569;
+    --code-bg: #0f172a;
+    --code-text: #e2e8f0;
+    --highlight: #fef3c7;
+    --l8-bg: #ede9fe;
+    --l8-border: #7c3aed;
+    --mistake-bg: #fff1f2;
+    --mistake-border: #f43f5e;
+    --boe-bg: #ecfdf5;
+    --boe-border: #10b981;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #fff;
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  /* ── COVER PAGE ── */
+  .cover {
+    background: linear-gradient(135deg, #1e3a8a 0%, #1a56db 40%, #7c3aed 100%);
+    color: white;
+    padding: 72px 64px;
+    min-height: 220px;
+  }
+  .cover .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 100px;
+    padding: 6px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .cover h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+  .cover .subtitle {
+    font-size: 18px;
+    opacity: 0.85;
+    margin-bottom: 32px;
+    max-width: 680px;
+  }
+  .cover .meta {
+    display: flex;
+    gap: 32px;
+    font-size: 13px;
+    opacity: 0.7;
+  }
+  .cover .meta span { display: flex; align-items: center; gap: 6px; }
+
+  /* ── TABLE OF CONTENTS ── */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 40px;
+    margin: 40px 64px;
+  }
+  .toc h2 { font-size: 20px; color: var(--primary-dark); margin-bottom: 20px; }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 40px;
+  }
+  .toc-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 14px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .toc-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* ── PILLAR SECTIONS ── */
+  .pillar {
+    margin: 0 64px 72px;
+    padding-top: 48px;
+    border-top: 3px solid var(--border);
+  }
+  .pillar:first-of-type { border-top: none; }
+
+  .pillar-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 36px;
+  }
+  .pillar-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color: white;
+    font-size: 22px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .pillar-title-block h2 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--primary-dark);
+    letter-spacing: -0.02em;
+  }
+  .pillar-title-block p {
+    font-size: 15px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── TYPOGRAPHY ── */
+  h3 {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin: 32px 0 12px;
+    padding-left: 14px;
+    border-left: 4px solid var(--primary);
+  }
+  h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 20px 0 8px;
+  }
+  p { margin-bottom: 14px; }
+  ul, ol { margin: 8px 0 16px 24px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--primary-dark); }
+
+  /* ── CODE BLOCKS ── */
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 10px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 16px 0 20px;
+    border: 1px solid #334155;
+  }
+  code {
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    background: #f1f5f9;
+    color: var(--secondary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0 20px;
+    border-left: 4px solid;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+  .callout-body { flex: 1; }
+  .callout-body strong { display: block; margin-bottom: 4px; font-size: 14px; }
+  .callout-body p { margin: 0; font-size: 14px; }
+
+  .callout-mistake {
+    background: var(--mistake-bg);
+    border-color: var(--mistake-border);
+    color: #881337;
+  }
+  .callout-l8 {
+    background: var(--l8-bg);
+    border-color: var(--l8-border);
+    color: #4c1d95;
+  }
+  .callout-boe {
+    background: var(--boe-bg);
+    border-color: var(--boe-border);
+    color: #064e3b;
+  }
+  .callout-tip {
+    background: #eff6ff;
+    border-color: var(--primary);
+    color: #1e3a8a;
+  }
+  .callout-warning {
+    background: #fffbeb;
+    border-color: var(--warning);
+    color: #78350f;
+  }
+
+  /* ── TABLES ── */
+  .table-wrap { overflow-x: auto; margin: 16px 0 24px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead tr { background: var(--primary-dark); color: white; }
+  thead th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  tbody tr:nth-child(even) { background: var(--surface); }
+  tbody tr:hover { background: var(--highlight); }
+  tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .badge-green { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-red { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-yellow { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .badge-blue { background: #dbeafe; color: #1e3a8a; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+
+  /* ── ASCII DIAGRAMS ── */
+  .diagram {
+    background: #0f172a;
+    color: #94a3b8;
+    border-radius: 10px;
+    padding: 24px 28px;
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 16px 0 20px;
+    border: 1px solid #1e293b;
+  }
+  .diagram .highlight { color: #7dd3fc; }
+  .diagram .green { color: #86efac; }
+  .diagram .yellow { color: #fde68a; }
+  .diagram .red { color: #fca5a5; }
+  .diagram .purple { color: #c4b5fd; }
+
+  /* ── KEY TAKEAWAY ── */
+  .key-takeaway {
+    background: linear-gradient(90deg, #1e3a8a 0%, #1a56db 100%);
+    color: white;
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin: 32px 0 8px;
+    font-size: 15px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .key-takeaway .kt-icon { font-size: 22px; }
+
+  /* ── INFO CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 16px 0 24px;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    background: var(--surface);
+  }
+  .card h4 { margin-top: 0; color: var(--primary); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 50%, transparent 100%);
+    margin: 40px 0;
+  }
+
+  /* ── INTERVIEW SIM ── */
+  .interview-q {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .interview-q .q-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px; height: 28px;
+    background: var(--primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .interview-q .q-text { font-weight: 600; font-size: 15px; margin-bottom: 10px; }
+  .interview-q .a-text { font-size: 14px; color: var(--text-muted); }
+
+  /* ── FOOTER ── */
+  .footer {
+    background: var(--primary-dark);
+    color: rgba(255,255,255,0.7);
+    text-align: center;
+    padding: 32px;
+    font-size: 13px;
+    margin-top: 80px;
+  }
+
+  /* ── PRINT ── */
+  @media print {
+    .pillar { page-break-before: always; margin: 0 40px 40px; padding-top: 24px; }
+    .cover { padding: 48px 40px; }
+    .toc { margin: 20px 40px; }
+    pre, .diagram { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="badge">Staff / Principal / Distinguished Engineer Interview Prep</div>
+  <h1>MySQL Deep Dive<br>Complete L6 → L8 Guide</h1>
+  <p class="subtitle">A progressive, first-principles exploration across 8 pillars — from core internals to Google-scale architecture — structured for Senior Staff Engineer interview excellence.</p>
+  <div class="meta">
+    <span>🏢 Google L7/L8 Level</span>
+    <span>🗓️ Covers MySQL 5.7 through 9.x (2025)</span>
+    <span>📚 25+ Years Production Wisdom</span>
+  </div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+  <h2>📋 Table of Contents</h2>
+  <div class="toc-grid">
+    <a class="toc-item" href="#p1"><span class="toc-num">1</span>Core Concepts &amp; Mental Models</a>
+    <a class="toc-item" href="#p5"><span class="toc-num">5</span>Scaling Strategies</a>
+    <a class="toc-item" href="#p2"><span class="toc-num">2</span>Architecture Deep Dive</a>
+    <a class="toc-item" href="#p6"><span class="toc-num">6</span>Real-World Engineering Decisions</a>
+    <a class="toc-item" href="#p3"><span class="toc-num">3</span>Trade-offs &amp; Design Decisions</a>
+    <a class="toc-item" href="#p7"><span class="toc-num">7</span>Google-Scale &amp; Beyond</a>
+    <a class="toc-item" href="#p4"><span class="toc-num">4</span>Failure Modes &amp; Resilience</a>
+    <a class="toc-item" href="#p8"><span class="toc-num">8</span>Interview Simulation</a>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 1 — CORE CONCEPTS & MENTAL MODELS                       -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p1">
+  <div class="pillar-header">
+    <div class="pillar-number">1</div>
+    <div class="pillar-title-block">
+      <h2>🧠 Core Concepts &amp; Mental Models</h2>
+      <p>What MySQL is, why it exists, and the foundational invariants it guarantees</p>
+    </div>
+  </div>
+
+  <h3>What Problem Does MySQL Solve?</h3>
+  <p>Before relational databases, applications stored data in flat files — text records, binary blobs, or proprietary hierarchical file systems. Retrieving related information required the application programmer to write custom navigation code, maintain explicit pointers between records, handle file locking manually, and re-implement filtering, sorting, and aggregation from scratch every time. If two processes tried to write simultaneously, silent data corruption was the norm rather than the exception. There was no concept of "undo" — a half-finished write was permanent.</p>
+  <p>Edgar Codd's 1970 relational model changed everything: instead of pointer-based navigation, data would be organized into normalized tables with mathematical set-theoretic operations (selection, projection, join) expressed in a declarative language. The database engine — not the application developer — would be responsible for figuring out <em>how</em> to execute the query efficiently. MySQL, born in 1995 by Michael Widenius and David Axmark at TcX, brought this relational model to the commodity hardware world at a time when Oracle and DB2 required enterprise-grade budgets. The LAMP stack (Linux, Apache, MySQL, PHP) democratized web-scale data storage and made MySQL the most widely deployed database in the world by the early 2000s.</p>
+
+  <h3>Core Abstraction: The Transactional Table</h3>
+  <p>MySQL's core abstraction is the <strong>transactional table</strong>: a persistent, ordered, two-dimensional structure where rows conform to a typed schema, every row is uniquely addressable via a primary key, and groups of mutations can be applied atomically. The power of this abstraction is precisely its <em>constraint</em> — by demanding that all data fit into rows and columns with declared types, the engine can build secondary indexes, gather statistics, produce query plans, and offer integrity constraints that would be impossible or prohibitively expensive on schema-less stores. The SQL query language then allows you to express relationships between tables using joins, rather than embedding pointer chasing in application code — this separation of <em>what</em> from <em>how</em> is what gives relational databases their longevity.</p>
+
+  <h3>InnoDB: The Default Storage Engine (MySQL 5.5+)</h3>
+  <p>Since MySQL 5.5, InnoDB is the default and strongly recommended storage engine. Earlier versions used MyISAM, which did not support transactions, had table-level locking, and had no crash recovery — it would silently corrupt data on an unclean shutdown. InnoDB replaced this with a fully ACID-compliant engine based on B+ trees for clustered primary key storage and a Write-Ahead Log (WAL) for crash recovery. MySQL 8.0 (GA 2018) and the ongoing 8.4 LTS / 9.x Innovation series continue to ship InnoDB as the only recommended engine for transactional workloads.</p>
+
+  <div class="callout callout-tip">
+    <div class="callout-icon">💡</div>
+    <div class="callout-body">
+      <strong>MySQL Version Landscape (2025)</strong>
+      <p><strong>MySQL 5.7</strong> — EOL October 2023. Do not use in production.<br>
+      <strong>MySQL 8.0</strong> — LTS until April 2026, Extended Support to 2032. The baseline for serious production.<br>
+      <strong>MySQL 8.4</strong> (LTS, 2024) — First true LTS under new release naming. Removes deprecated features (sha256_password, old GROUP BY behavior).<br>
+      <strong>MySQL 9.x Innovation</strong> — Rapid-release track (9.0, 9.1, 9.2). Includes JavaScript stored programs (GraalVM), vector search (9.0+), EXPLAIN in JSON enhancements, improved invisible columns, and faster DDL. Production deployments that need stability should stick to 8.4 LTS.</p>
+    </div>
+  </div>
+
+  <h3>The 5 Fundamental Guarantees (ACID)</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>⚛️ Atomicity</h4>
+      <p>Every statement in a transaction either commits entirely or is rolled back entirely. InnoDB achieves this through its <strong>undo log</strong> — before any row is modified, the original version is written to undo space. If the transaction aborts, InnoDB walks the undo chain and reverses every change. There is no partial commit.</p>
+    </div>
+    <div class="card">
+      <h4>🔒 Consistency</h4>
+      <p>A transaction moves the database from one valid state to another, with all integrity constraints (NOT NULL, UNIQUE, FOREIGN KEY, CHECK) satisfied at commit time. Consistency is the responsibility of <em>both</em> the engine and the application — the engine enforces declared constraints, but business-logic consistency is the application's job.</p>
+    </div>
+    <div class="card">
+      <h4>🚧 Isolation</h4>
+      <p>Concurrent transactions appear to execute serially. InnoDB implements isolation via <strong>MVCC (Multi-Version Concurrency Control)</strong> — readers see a snapshot of the database as it existed at their transaction start, without taking locks on rows they only read. This is what allows high read concurrency without blocking writers. The isolation level (READ COMMITTED, REPEATABLE READ, SERIALIZABLE) controls which anomalies are permitted.</p>
+    </div>
+    <div class="card">
+      <h4>💾 Durability</h4>
+      <p>Once a transaction commits, it survives crashes. InnoDB achieves this via the <strong>redo log</strong> (WAL) — every modification is first written sequentially to the redo log and flushed to disk before the commit acknowledgment is returned to the client. Even if the data pages are still in the buffer pool (not yet written to .ibd files), the redo log allows full recovery on restart.</p>
+    </div>
+    <div class="card">
+      <h4>❌ What MySQL Does NOT Guarantee</h4>
+      <p><strong>Automatic horizontal partitioning</strong> — MySQL is a single-node engine by default. Sharding must be done at the application or proxy layer.<br>
+      <strong>Automatic HA failover</strong> — requires MySQL Group Replication, InnoDB Cluster, or orchestrator.<br>
+      <strong>Global linearizability across shards</strong> — distributed transactions (XA) exist but are slow and rarely used.</p>
+    </div>
+  </div>
+
+  <h3>Critical Invariants for Correctness</h3>
+  <ul>
+    <li><strong>Primary key uniqueness:</strong> Every InnoDB table has a clustered index organized by primary key. If you define no explicit PK, InnoDB silently generates a hidden 6-byte row ID. Duplicate PKs are impossible at the storage engine level — InnoDB rejects the insert with ER_DUP_ENTRY. This invariant underlies all MVCC, row-level locking, and online schema change assumptions.</li>
+    <li><strong>Write-ahead logging:</strong> Redo log records must be on durable storage before any corresponding data page is declared committed. Violating this invariant (e.g., with <code>innodb_flush_log_at_trx_commit=0</code>) trades durability for throughput — commits can be lost on OS crash.</li>
+    <li><strong>MVCC read view consistency:</strong> A <code>REPEATABLE READ</code> transaction creates a read-view at its first <code>SELECT</code>. All subsequent reads in that transaction use the same snapshot. Rows committed after the read-view was established are invisible to the transaction. This invariant must hold even as other transactions are committing concurrently — InnoDB's purge thread must not remove undo records needed by any active read view.</li>
+    <li><strong>Double-write buffer correctness:</strong> InnoDB's page size (16 KB default) is larger than OS/disk page sizes (typically 4 KB). A crash mid-write could leave a "torn page." The double-write buffer writes a full copy of pages to a dedicated area before writing to the actual tablespace. This invariant ensures crash recovery always has a clean page to start from.</li>
+    <li><strong>Foreign key cascade order:</strong> When cascades are defined, the engine processes them depth-first before returning to the parent. Circular foreign key chains will deadlock.</li>
+  </ul>
+
+  <h3>Mental Model: How MySQL Layers Interact</h3>
+  <div class="diagram">
+<pre>
+┌─────────────────────────────────────────────────────────────────────┐
+│                        CLIENT APPLICATION                           │
+│               (JDBC / mysql-connector / ProxySQL)                   │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │  SQL Text over MySQL Protocol (port 3306)
+┌────────────────────────────▼────────────────────────────────────────┐
+│                      CONNECTION LAYER                               │
+│   Thread pool · Authentication · TLS · Privilege check             │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────────┐
+│                        SQL LAYER                                    │
+│  Parser → Analyzer → Optimizer → Execution Engine                  │
+│  ┌─────────────┐  ┌──────────┐  ┌──────────────────────────────┐  │
+│  │   Parser    │→ │Optimizer │→ │ Execution Plan (iterator tree)│  │
+│  │(AST + Cache)│  │(Cost-CBO)│  │ Full scan / Index scan / Join │  │
+│  └─────────────┘  └──────────┘  └──────────────────────────────┘  │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │  Handler API (abstract storage interface)
+┌────────────────────────────▼────────────────────────────────────────┐
+│                   STORAGE ENGINE (InnoDB)                          │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                   BUFFER POOL (RAM)                          │  │
+│  │   Data Pages (16 KB) · Index Pages · Undo Segments          │  │
+│  │   LRU + Young/Old sublists · Dirty page tracking            │  │
+│  └───────────────────────┬──────────────────────────────────────┘  │
+│                          │ Page flush (checkpointing)               │
+│  ┌──────────────────┐   ┌▼──────────────────────────────────────┐  │
+│  │  REDO LOG (WAL)  │   │        TABLESPACE (.ibd files)        │  │
+│  │  Sequential      │   │  Clustered B+Tree (PK) + Secondary    │  │
+│  │  ib_logfile0/1   │   │  Indexes · BLOB/TEXT overflow pages   │  │
+│  │  (or #innodb_redo│   │  System tablespace · Temp tablespace  │  │
+│  │   in 8.0+)       │   └───────────────────────────────────────┘  │
+│  └──────────────────┘                                               │
+│  ┌──────────────────┐   ┌──────────────────────────────────────┐   │
+│  │  UNDO LOG        │   │     DOUBLE-WRITE BUFFER              │   │
+│  │  (MVCC history)  │   │   (torn page protection)             │   │
+│  └──────────────────┘   └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> MySQL's power comes from cleanly separating the SQL layer (parsing, optimization, execution planning) from the storage engine (InnoDB) via the Handler API. This means the optimizer can be evolved independently of durability mechanisms — and is why InnoDB's MVCC can provide non-blocking reads while the WAL guarantees crash safety, all without the SQL layer needing to understand either.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 2 — ARCHITECTURE DEEP DIVE                               -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p2">
+  <div class="pillar-header">
+    <div class="pillar-number">2</div>
+    <div class="pillar-title-block">
+      <h2>🏗️ Architecture Deep Dive</h2>
+      <p>Every internal component, write/read paths, data layout, and latency sources</p>
+    </div>
+  </div>
+
+  <h3>Internal Components and Responsibilities</h3>
+
+  <h4>Connection Manager &amp; Thread Pool</h4>
+  <p>Every client connection maps to a server thread (or a thread-pool worker in MySQL Enterprise / Percona Thread Pool plugin). The connection manager handles TCP accept, TLS handshake, authentication (caching_sha2_password in 8.0+, which replaced the deprecated sha256_password in 8.4), and privilege validation. Connection overhead is significant — each thread uses ~256 KB stack space plus per-thread buffers (<code>sort_buffer_size</code>, <code>join_buffer_size</code>, <code>read_buffer_size</code>). At 10,000 concurrent connections, this alone consumes 2.5 GB. This is why connection pooling via ProxySQL, PgBouncer, or the application layer is non-negotiable at scale.</p>
+
+  <h4>Query Cache (REMOVED in MySQL 8.0)</h4>
+  <p>MySQL 5.7 had a query cache that stored full result sets keyed by query text. It was a notorious performance anti-pattern: a global mutex serialized all cache lookups and invalidations. Any write to a table invalidated all cached results for that table, causing cache churn under mixed read/write workloads. MySQL 8.0 removed it entirely. Staff-level candidates should know this — mentioning query cache as a performance optimization for MySQL 8.0 is a red flag.</p>
+
+  <div class="callout callout-mistake">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-body">
+      <strong>Common Interview Mistake</strong>
+      <p>Recommending "enable the query cache for read-heavy workloads" in 2024/2025. The query cache was removed in MySQL 8.0. Modern caching belongs at the application layer (Redis/Memcached) or via ProxySQL query mirroring.</p>
+    </div>
+  </div>
+
+  <h4>Parser, Analyzer, Optimizer</h4>
+  <p>The <strong>Parser</strong> tokenizes SQL text into an Abstract Syntax Tree (AST). MySQL 8.0 rewrote the parser using a proper LALR(1) grammar (the old yacc-based parser had notorious ambiguities). The <strong>Analyzer</strong> resolves table and column names, validates privileges, and infers types. The <strong>Optimizer</strong> is a cost-based optimizer (CBO) that enumerates possible query execution plans by considering available indexes, table statistics (from <code>ANALYZE TABLE</code> or auto-refresh), and join orders, then assigns a cost estimate to each. MySQL 8.0's optimizer gained <strong>hash joins</strong> (previously only nested-loop), <strong>invisible indexes</strong> (you can mark an index invisible so the optimizer ignores it, useful for safe index removal), <strong>skip scan optimization</strong>, and improved subquery decorrelation. MySQL 8.0.18+ added the <strong>hash join</strong> that spills to disk when the join buffer fills — a critical fix for analytical queries.</p>
+
+  <h4>Execution Engine (Iterator Model)</h4>
+  <p>MySQL uses a <strong>Volcano/Iterator model</strong> for query execution: the execution plan is a tree of iterator nodes, each implementing a <code>GetNext()</code> call. The root node drives the tree by repeatedly calling <code>GetNext()</code> on its children. This model has excellent composability but suffers from per-row function call overhead and poor CPU cache behavior on large result sets. MySQL 8.0 introduced a <strong>Hypergraph join optimizer</strong> (experimental in 8.0, graduated in 8.4) that replaces the old plan-enumeration with a dynamic programming approach on a hypergraph representation of join predicates, producing dramatically better plans for complex multi-table joins. MySQL 9.x continues improving this.</p>
+
+  <h4>InnoDB Buffer Pool</h4>
+  <p>The buffer pool is the central performance component of InnoDB — it is the in-memory cache for data pages, index pages, and undo pages. Its target size is controlled by <code>innodb_buffer_pool_size</code>; the rule of thumb is 70–80% of available RAM on a dedicated DB server. InnoDB uses a <strong>modified LRU</strong>: the LRU list is split into a "young" sublist (recently accessed, ~5/8 of pool) and an "old" sublist (the remaining ~3/8). New pages enter at the boundary, not the head of young. This prevents a full table scan from flushing frequently-used hot pages out of the young list. In MySQL 8.0, the buffer pool supports multiple instances (<code>innodb_buffer_pool_instances</code>, typically 8) to reduce mutex contention under high concurrency.</p>
+
+  <h4>Redo Log (WAL)</h4>
+  <p>The redo log is a fixed-size circular ring of sequential write operations. In MySQL &lt; 8.0, it consisted of two files: <code>ib_logfile0</code> and <code>ib_logfile1</code>. In MySQL 8.0.30+, the redo log became a set of dynamically sized files in the <code>#innodb_redo</code> directory — you can now resize the redo log without restart. The redo log stores <strong>physical-logical</strong> log records: they describe changes at the page+offset level, not SQL level. On crash recovery, InnoDB replays all redo records forward (roll-forward), then uses the undo log to roll back any uncommitted transactions. Log sequence numbers (LSNs) are the fundamental clock of InnoDB — everything is ordered by LSN.</p>
+  <p>The critical setting is <code>innodb_flush_log_at_trx_commit</code>:</p>
+  <ul>
+    <li><strong>1 (default/safe):</strong> Redo log is flushed and synced to disk on every transaction commit. Full ACID durability. ~200–2000 IOPS consumed depending on workload.</li>
+    <li><strong>2:</strong> Redo log is written to OS page cache on commit, but flushed to disk only once per second. Survives MySQL crash, NOT OS crash. Doubles write throughput in many benchmarks.</li>
+    <li><strong>0:</strong> Written to OS page cache once per second. Survives neither MySQL nor OS crash gracefully — up to 1 second of commits can be lost. Only for staging/test.</li>
+  </ul>
+
+  <div class="callout callout-l8">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-body">
+      <strong>L7/L8 Differentiator: Group Commit</strong>
+      <p>InnoDB implements <strong>binlog group commit</strong> (BGC) to amortize the fsync cost across multiple concurrent transactions. When Transaction T1 reaches the commit stage, rather than fsync immediately, it waits a configurable delay (<code>binlog_group_commit_sync_delay</code> microseconds) for other transactions to queue up, then flushes all of them in a single disk sync. This turns N individual fsyncs into 1, dramatically improving throughput for write-heavy workloads. The three stages of BGC are: Flush (write to OS buffer), Sync (fsync to disk), Commit (update InnoDB transaction state). Knowing this mechanism separates Staff from Senior candidates.</p>
+    </div>
+  </div>
+
+  <h3>Full Write Path: INSERT INTO orders (...)</h3>
+  <div class="diagram">
+<pre>
+Client                  MySQL SQL Layer              InnoDB
+  │                          │                          │
+  │──── INSERT INTO ────────▶│                          │
+  │                          │── Parse + Analyze ──▶   │
+  │                          │── Optimizer             │
+  │                          │── ha_write_row() ──────▶│
+  │                          │                    ┌────┴──────────────────┐
+  │                          │                    │ 1. Acquire row lock    │
+  │                          │                    │    (X lock on PK)      │
+  │                          │                    │                        │
+  │                          │                    │ 2. Write UNDO record   │
+  │                          │                    │    (for rollback/MVCC) │
+  │                          │                    │                        │
+  │                          │                    │ 3. Modify B+Tree page  │
+  │                          │                    │    in Buffer Pool      │
+  │                          │                    │    (page becomes dirty)│
+  │                          │                    │                        │
+  │                          │                    │ 4. Write REDO record   │
+  │                          │                    │    to redo log buffer  │
+  │                          │                    │                        │
+  │                          │                    │ 5. COMMIT:             │
+  │                          │                    │    Flush redo log      │
+  │                          │                    │    buffer to disk      │
+  │                          │                    │    (fsync if =1)       │
+  │                          │                    │                        │
+  │                          │                    │ 6. Write to binlog     │
+  │                          │                    │    (if enabled)        │
+  │                          │                    │                        │
+  │                          │                    │ 7. Release row lock    │
+  │                          │                    └────────────────────────┘
+  │◀──── OK (2 ms) ──────────│
+  │
+  │  [Background: Dirty page flushed to .ibd at checkpoint time]
+  │  [Redo log records eligible for reclaim after checkpoint]
+</pre>
+  </div>
+
+  <h3>Full Read Path: SELECT * FROM orders WHERE id = 42</h3>
+  <div class="diagram">
+<pre>
+Client                   MySQL SQL Layer              InnoDB
+  │                           │                          │
+  │──── SELECT id=42 ────────▶│                          │
+  │                           │── Parse/Cache check     │
+  │                           │── Optimizer: PK lookup  │
+  │                           │── ha_index_read() ─────▶│
+  │                           │                    ┌────┴──────────────────┐
+  │                           │                    │ 1. Compute page addr   │
+  │                           │                    │    from PK (B+Tree)    │
+  │                           │                    │                        │
+  │                           │                    │ 2. Check Buffer Pool   │
+  │                           │                    │    ┌──────────────┐    │
+  │                           │                    │    │ CACHE HIT?   │    │
+  │                           │                    │    │ Yes: return  │    │
+  │                           │                    │    │ No: read ibd │    │
+  │                           │                    │    └──────────────┘    │
+  │                           │                    │                        │
+  │                           │                    │ 3. MVCC Visibility     │
+  │                           │                    │    Check read_view     │
+  │                           │                    │    Is this row version │
+  │                           │                    │    visible to tx_id?   │
+  │                           │                    │    If no: walk undo    │
+  │                           │                    │    chain for older ver │
+  │                           │                    │                        │
+  │                           │                    │ 4. Return row data     │
+  │                           │                    └────────────────────────┘
+  │◀──── Row data (0.1 ms) ───│
+  │
+  │  Note: No locks taken for REPEATABLE READ SELECT
+  │  Secondary index lookup adds one extra B+Tree traversal (index lookup →
+  │  primary key → clustered index lookup = "double lookup")
+</pre>
+  </div>
+
+  <h3>Table Creation: Complete Example with All Indexes</h3>
+  <p>This is a production-realistic example demonstrating <strong>character set and collation choices</strong>, <strong>primary key design</strong>, <strong>secondary indexes</strong>, <strong>covering indexes</strong>, <strong>partial indexes</strong>, <strong>full-text indexes</strong>, <strong>spatial indexes</strong>, and <strong>table partitioning</strong> — and explaining exactly how each choice affects query performance.</p>
+
+  <pre><code>-- ============================================================
+-- Production-realistic table for an e-commerce order system
+-- MySQL 8.0+ with InnoDB, demonstrating ALL index types
+-- ============================================================
+
+CREATE TABLE orders (
+    -- PRIMARY KEY: Auto-increment BIGINT is the gold standard for InnoDB clustered index.
+    -- Using UUID as PK causes random page splits (B+Tree hot-spot fragmentation),
+    -- up to 50% buffer pool waste, and 2-3x slower inserts at high write rates.
+    -- UUID_TO_BIN(UUID(), 1) (time-ordered) is acceptable; raw UUID text is not.
+    order_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+    -- Store user IDs as BIGINT UNSIGNED — allows 1.8×10^19 values without negative confusion.
+    -- NOT NULL enforced — NULL in join conditions silently drops rows, leading to subtle bugs.
+    user_id         BIGINT UNSIGNED NOT NULL,
+
+    -- VARCHAR vs CHAR: Use CHAR(N) only for fixed-length strings (status codes, ISO codes).
+    -- VARCHAR(N) stores length prefix + actual bytes. No padding wastage.
+    -- STATUS: a fixed-vocabulary field — ENUM is more storage-efficient (1-2 bytes) and
+    -- self-documenting, but harder to migrate (ALTER TABLE required to add a value).
+    -- VARCHAR(20) with CHECK constraint is more flexible but uses more space.
+    status          ENUM('pending','confirmed','shipped','delivered','cancelled','refunded')
+                    NOT NULL DEFAULT 'pending',
+
+    -- DECIMAL for currency: FLOAT and DOUBLE are binary floating-point and cannot represent
+    -- 0.1 exactly — accumulating rounding errors cause financial calculation bugs.
+    -- DECIMAL(12,2) stores up to 9,999,999,999.99 exactly, using ~6 bytes.
+    total_amount    DECIMAL(12, 2) NOT NULL,
+
+    -- CHARACTER SET utf8mb4: The ONLY correct choice for modern applications.
+    -- MySQL's legacy 'utf8' is actually utf8mb3 and cannot store 4-byte Unicode
+    -- (emoji, many CJK characters) — silently truncating data. utf8mb4 is true UTF-8.
+    -- COLLATE utf8mb4_unicode_ci: case-insensitive, accent-insensitive comparison.
+    -- utf8mb4_bin: byte-for-byte comparison (case-sensitive, accent-sensitive) —
+    -- use for passwords, tokens, or where 'a' ≠ 'A' matters.
+    -- utf8mb4_0900_ai_ci (MySQL 8.0+): UCA 9.0.0, faster than unicode_ci, recommended default.
+    shipping_addr   TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+
+    -- DATETIME vs TIMESTAMP:
+    -- TIMESTAMP: stored as UTC epoch (4 bytes), auto-converts to session time zone.
+    --   Range: 1970-01-01 to 2038-01-19 (Year 2038 Problem! Avoid for new tables).
+    -- DATETIME: stored as-is (5 bytes), no timezone conversion, range 1000–9999.
+    -- Use DATETIME for most purposes. Use TIMESTAMP only if you need timezone-aware auto-conversion.
+    created_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                    ON UPDATE CURRENT_TIMESTAMP(6),
+
+    -- TINYINT(1) as boolean: MySQL has no native BOOLEAN type.
+    -- BIT(1) also works but is trickier in ORMs.
+    is_express      TINYINT(1) NOT NULL DEFAULT 0,
+
+    -- JSON column (MySQL 5.7.8+): stored as binary JSON, not text.
+    -- Queries on JSON fields use generated columns + indexes (see below).
+    -- Do NOT store JSON that you need to query frequently — normalize it.
+    metadata        JSON,
+
+    -- GEOMETRY type for spatial data (requires SPATIAL INDEX below).
+    -- Stored in WKB (Well-Known Binary) format internally.
+    delivery_point  POINT SRID 4326,  -- WGS84 coordinate system
+
+    -- Full-text search column
+    notes           TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+
+    -- ── PRIMARY KEY ──────────────────────────────────────────────────
+    -- InnoDB organizes ALL data in the clustered B+Tree ordered by PK.
+    -- Row data physically lives at PK leaf nodes. This means:
+    --   • PK range scans are pure sequential I/O (very fast).
+    --   • Secondary indexes store the PK value as the row locator
+    --     (not a physical row pointer), so secondary index lookup
+    --     requires TWO B+Tree traversals: secondary → PK → row data.
+    PRIMARY KEY (order_id),
+
+    -- ── UNIQUE KEY ────────────────────────────────────────────────────
+    -- Enforces uniqueness AND creates an index usable for lookups.
+    -- Internally identical to a non-unique index with a uniqueness check.
+    -- Null values in UNIQUE constraints: MySQL allows multiple NULLs
+    -- (NULL ≠ NULL per SQL standard), unlike some other databases.
+    UNIQUE KEY uq_order_external_ref (user_id, created_at),
+
+    -- ── COMPOSITE INDEX for common query pattern ─────────────────────
+    -- Query: SELECT * FROM orders WHERE user_id=? AND status=? ORDER BY created_at
+    -- Index (user_id, status, created_at) covers the WHERE and ORDER BY.
+    -- "Leftmost prefix rule": the index is only used if the query filters
+    -- on user_id first. A query filtering only on status CANNOT use this index.
+    -- Column order matters: high-cardinality first (user_id) for better selectivity.
+    KEY idx_user_status_time (user_id, status, created_at),
+
+    -- ── COVERING INDEX ────────────────────────────────────────────────
+    -- A covering index includes ALL columns needed by the query in the index itself,
+    -- so InnoDB can return results without the "double lookup" to the clustered index.
+    -- This query: SELECT order_id, total_amount FROM orders WHERE user_id=? AND status='pending'
+    --             can be answered entirely from this index leaf nodes.
+    KEY idx_covering_user_amount (user_id, status, total_amount, order_id),
+
+    -- ── PARTIAL (PREFIX) INDEX ────────────────────────────────────────
+    -- For long VARCHAR/TEXT columns, you cannot index the full value (max key length 3072 bytes).
+    -- Index the first N characters. Choose N to maximize selectivity while minimizing size.
+    -- Downside: Cannot be a covering index. Range scans stop at the prefix.
+    -- MySQL 8.0 functional indexes (below) are usually better.
+    -- KEY idx_addr_prefix (shipping_addr(50)),  -- commented: using functional instead
+
+    -- ── FUNCTIONAL (EXPRESSION) INDEX (MySQL 8.0+) ───────────────────
+    -- Index the result of an expression. Internally creates a hidden generated column.
+    -- The query optimizer uses this only if the query expression EXACTLY matches.
+    -- Use case: case-insensitive unique email addresses.
+    KEY idx_notes_lower ((LOWER(LEFT(notes, 100)))),
+
+    -- ── JSON GENERATED COLUMN + INDEX (MySQL 5.7.6+) ─────────────────
+    -- You cannot index JSON columns directly. The pattern:
+    --   1. Add a generated column that extracts a scalar from the JSON.
+    --   2. Index the generated column.
+    -- VIRTUAL generated columns compute on read (no storage). STORED compute on write (adds storage).
+    -- For indexing, use STORED (indexes require the column to be stored or virtual with limitations).
+    -- Note: In 8.0.13+, you can use functional indexes ((metadata->>'$.priority')) directly.
+
+    -- ── FULL-TEXT INDEX (InnoDB, MySQL 5.6+) ──────────────────────────
+    -- Enables MATCH(col) AGAINST('search term' IN BOOLEAN MODE) queries.
+    -- InnoDB FTS uses an inverted index stored in 6 auxiliary tables.
+    -- Not suitable for real-time search at scale — use Elasticsearch for that.
+    -- ft_min_token_size=2 (default 3) affects which words are indexed.
+    FULLTEXT KEY ftidx_notes (notes),
+
+    -- ── SPATIAL INDEX ─────────────────────────────────────────────────
+    -- Enables fast geospatial queries: ST_Distance, ST_Within, ST_Contains.
+    -- Uses R-Tree internally. Requires NOT NULL and SRID declaration.
+    SPATIAL KEY spatial_delivery (delivery_point)
+
+) ENGINE=InnoDB
+  -- ── CHARSET / COLLATION ────────────────────────────────────────────
+  -- Table-level default applies to all columns that don't specify their own.
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_0900_ai_ci
+  -- ── ROW FORMAT ─────────────────────────────────────────────────────
+  -- DYNAMIC (default in 8.0): Long VARCHAR/BLOB/TEXT columns are stored off-page
+  --   (in overflow pages) when they don't fit on the B+Tree leaf page.
+  --   On-page stores only a 20-byte pointer. Best for rows with variable-length columns.
+  -- COMPRESSED: Like DYNAMIC but compresses off-page data using zlib.
+  --   Reduces I/O for read-heavy workloads but adds CPU cost on writes.
+  --   KEY_BLOCK_SIZE=8 (8KB compressed pages). Not compatible with innodb_page_size=32K/64K.
+  -- COMPACT: Legacy format, slightly more compact for short rows.
+  -- REDUNDANT: Very old format, most storage overhead. Never use.
+  ROW_FORMAT=DYNAMIC
+  -- ── AUTO_INCREMENT ─────────────────────────────────────────────────
+  AUTO_INCREMENT=1
+  COMMENT='Core order entity table — partitioned by created_at for archival'
+
+-- ── TABLE PARTITIONING ────────────────────────────────────────────────
+-- Partitioning physically divides the table into sub-files by a partition key.
+-- Benefits: partition pruning (the optimizer skips irrelevant partitions entirely),
+--           faster DROP/TRUNCATE of old data (just DROP PARTITION vs DELETE + purge),
+--           parallel maintenance (OPTIMIZE TABLE per partition).
+-- RANGE partitioning by created_at: natural for time-series order data.
+-- IMPORTANT: The partition key MUST be part of every unique key and primary key
+--            (MySQL requirement). This forces composite PKs for partitioned tables.
+PARTITION BY RANGE (UNIX_TIMESTAMP(created_at)) (
+    PARTITION p2022 VALUES LESS THAN (UNIX_TIMESTAMP('2023-01-01')),
+    PARTITION p2023 VALUES LESS THAN (UNIX_TIMESTAMP('2024-01-01')),
+    PARTITION p2024 VALUES LESS THAN (UNIX_TIMESTAMP('2025-01-01')),
+    PARTITION p2025 VALUES LESS THAN (UNIX_TIMESTAMP('2026-01-01')),
+    PARTITION pfuture VALUES LESS THAN MAXVALUE
+);
+
+-- ── GENERATED COLUMN FOR JSON INDEXING ────────────────────────────────
+-- Add after table creation (or inline in CREATE TABLE):
+ALTER TABLE orders
+  ADD COLUMN priority TINYINT GENERATED ALWAYS AS
+    (CAST(metadata->>'$.priority' AS UNSIGNED)) VIRTUAL,
+  ADD KEY idx_priority (priority);
+</code></pre>
+
+  <h3>How Row Format Affects Query Performance</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Row Format</th><th>Large Column Handling</th><th>Read Performance</th><th>Write Performance</th><th>Space</th><th>Best For</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>DYNAMIC</strong></td>
+          <td>Off-page storage for VARCHAR/BLOB &gt;40 bytes, 20-byte pointer on page</td>
+          <td>Good (minimal page reads for short rows)</td>
+          <td>Excellent</td>
+          <td>Medium</td>
+          <td><span class="badge-green">DEFAULT</span> Mixed workloads</td>
+        </tr>
+        <tr>
+          <td><strong>COMPRESSED</strong></td>
+          <td>Same as DYNAMIC + zlib compression</td>
+          <td>Good on I/O-bound systems; slower on CPU-bound</td>
+          <td>Slower (2x CPU for compression)</td>
+          <td>Low (30–70% reduction typical)</td>
+          <td>Read-heavy, large text/blob columns, SSD not available</td>
+        </tr>
+        <tr>
+          <td><strong>COMPACT</strong></td>
+          <td>Off-page only for very long values; stores more inline</td>
+          <td>Slightly better for wide rows</td>
+          <td>Slightly slower</td>
+          <td>Slightly lower than DYNAMIC</td>
+          <td>Legacy; rarely chosen for new tables</td>
+        </tr>
+        <tr>
+          <td><strong>REDUNDANT</strong></td>
+          <td>Stores full prefix inline always</td>
+          <td>Slightly better for prefix-heavy queries</td>
+          <td>Worst (stores duplicate info)</td>
+          <td>Highest</td>
+          <td><span class="badge-red">AVOID</span> MySQL 4.x legacy only</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>On-Disk Data Layout: InnoDB B+Tree Pages</h3>
+  <div class="diagram">
+<pre>
+  InnoDB Tablespace File (.ibd) — 16 KB pages (default)
+  ┌──────────────────────────────────────────────────────────┐
+  │  SEGMENT 0 (System / Root pages)                        │
+  │  ┌────────────────────────────────────────────────────┐ │
+  │  │  FSP Header · IBUF Bitmap · SYS page               │ │
+  │  └────────────────────────────────────────────────────┘ │
+  │                                                          │
+  │  B+TREE CLUSTERED INDEX (Primary Key = order_id)        │
+  │                                                          │
+  │          ┌──── ROOT PAGE (page 3) ────┐                 │
+  │          │  [50] [200] [700] [1200]   │  ← Internal node│
+  │          └──┬──────┬──────┬──────┬───┘    stores key +  │
+  │             │      │      │      │        child page ptr │
+  │    ┌────────┘  ┌───┘  ┌───┘  ┌──┘                       │
+  │    ▼           ▼      ▼      ▼                           │
+  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐                   │
+  │  │LEAF  │→│LEAF  │→│LEAF  │→│LEAF  │ ← Doubly-linked   │
+  │  │1..49 │ │50..  │ │200.. │ │700.. │   list of leaf     │
+  │  │      │ │199   │ │699   │ │1199  │   pages            │
+  │  │Row   │ │Row   │ │Row   │ │Row   │                    │
+  │  │data  │ │data  │ │data  │ │data  │                    │
+  │  │(full │ │(full │ │(full │ │(full │                    │
+  │  │row)  │ │row)  │ │row)  │ │row)  │                    │
+  │  └──────┘ └──────┘ └──────┘ └──────┘                   │
+  │                                                          │
+  │  B+TREE SECONDARY INDEX (user_id, status, created_at)   │
+  │  ← Leaf nodes store (user_id, status, created_at, PK)   │
+  │    NOT the full row. Secondary lookup → PK → clustered   │
+  │    index = 2 B+Tree traversals.                         │
+  └──────────────────────────────────────────────────────────┘
+
+  16 KB Page Internal Layout:
+  ┌──────────────────────────────────────────────────────────┐
+  │ FIL Header (38 bytes): page type, LSN, checksum, space_id│
+  │ INDEX Header (36 bytes): level, #records, heap top ptr   │
+  │ FSEG Header (20 bytes): file segment info                │
+  │ Infimum + Supremum records (virtual boundary records)    │
+  │ ─────────────────────────────────────────────────────── │
+  │ User Records (variable length, grow from infimum→end)   │
+  │ Free Space (grows from end toward records)               │
+  │ Page Directory (slots pointing to records, binary search)│
+  │ FIL Trailer (8 bytes): checksum for corruption detection │
+  └──────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+
+  <div class="callout callout-boe">
+    <div class="callout-icon">📐</div>
+    <div class="callout-body">
+      <strong>Back-of-Envelope: Buffer Pool Hit Rate</strong>
+      <p>A page is 16 KB. A buffer pool of 10 GB holds ~655,000 pages. If your "hot" working set (frequently accessed rows) is &lt; 10 GB, you can achieve ~99%+ buffer pool hit rate. A cache miss requires a random disk read: 0.1 ms on NVMe SSD vs 5–10 ms on HDD. At 10,000 QPS with 1% miss rate = 100 disk reads/sec. On HDD, this alone limits throughput. Design your buffer pool to hold the working set, not the full dataset.</p>
+    </div>
+  </div>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> InnoDB's clustered B+Tree architecture means your primary key IS your data storage order — choosing a monotonically increasing PK (AUTO_INCREMENT) ensures sequential inserts go to the rightmost leaf page, avoiding the catastrophic random-write pattern that UUIDs create at high insert rates.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 3 — TRADE-OFFS & DESIGN DECISIONS                       -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p3">
+  <div class="pillar-header">
+    <div class="pillar-number">3</div>
+    <div class="pillar-title-block">
+      <h2>⚖️ Trade-offs &amp; Design Decisions</h2>
+      <p>CAP, PACELC, consistency models, durability vs performance knobs</p>
+    </div>
+  </div>
+
+  <h3>CAP Theorem Positioning</h3>
+  <p>MySQL in its default single-primary configuration is a <strong>CP system</strong>: it prioritizes Consistency and Partition tolerance over Availability. When a primary crashes during a network partition, MySQL Group Replication (or InnoDB Cluster) will <em>refuse to accept writes</em> until a majority quorum elects a new primary — sacrificing availability to ensure no split-brain. However, this characterization is nuanced: during normal operation (no partition), MySQL offers both consistency and availability. The "P" in CAP is not optional for any distributed system, so the real choice is C vs A under partition.</p>
+  <p>With <strong>MySQL Replication (async)</strong>, the picture changes: the primary accepts writes even if replicas are unreachable, but replicas might lag or diverge — this is closer to AP. Promoting a lagging replica during a partition creates an inconsistent state. This is why semi-synchronous replication (or Group Replication with majority acknowledgment) is critical for CP guarantees.</p>
+
+  <h3>PACELC Analysis</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Scenario</th><th>Partition behavior</th><th>Else (no partition): Latency vs Consistency</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Single node</td>
+          <td>N/A</td>
+          <td>Low latency (sub-ms local), strong consistency</td>
+        </tr>
+        <tr>
+          <td>Async replication (default)</td>
+          <td>AP: primary stays up, replicas diverge</td>
+          <td>Low latency write (no wait for replica ACK), eventual consistency</td>
+        </tr>
+        <tr>
+          <td>Semi-sync replication (lossless)</td>
+          <td>Primary blocks if no replica ACKs in timeout</td>
+          <td>Higher latency (adds 1 round-trip to replica), strong write durability</td>
+        </tr>
+        <tr>
+          <td>Group Replication (single primary)</td>
+          <td>CP: minority members stop accepting writes</td>
+          <td>Higher latency (Paxos round-trip for certification), strong consistency</td>
+        </tr>
+        <tr>
+          <td>Group Replication (multi-primary)</td>
+          <td>Partial availability (conflicting writers may stall)</td>
+          <td>Conflict detection latency; not recommended except for very specific workloads</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Isolation Levels: What They Guarantee and When to Use Each</h3>
+  <p>MySQL InnoDB's default isolation level is <strong>REPEATABLE READ</strong>, which is more conservative than most other databases (PostgreSQL defaults to READ COMMITTED). Understanding the exact anomalies each level prevents is critical for Staff-level interviews.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Isolation Level</th><th>Dirty Read</th><th>Non-Repeatable Read</th><th>Phantom Read</th><th>Lost Update</th><th>InnoDB Mechanism</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>READ UNCOMMITTED</strong></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td>No locking, no MVCC snapshot. Reads dirty pages.</td>
+        </tr>
+        <tr>
+          <td><strong>READ COMMITTED</strong></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td><span class="badge-red">Possible</span></td>
+          <td>Fresh MVCC snapshot per statement. No gap locks. Best for OLTP with many short reads.</td>
+        </tr>
+        <tr>
+          <td><strong>REPEATABLE READ</strong> (default)</td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-green">Prevented*</span></td>
+          <td><span class="badge-red">Possible†</span></td>
+          <td>MVCC snapshot at transaction start + gap locks for range queries. *Phantoms prevented by gap locks in InnoDB (stronger than SQL standard requires).</td>
+        </tr>
+        <tr>
+          <td><strong>SERIALIZABLE</strong></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td><span class="badge-green">Prevented</span></td>
+          <td>All SELECTs converted to locking reads (LOCK IN SHARE MODE). Extreme contention. Rarely used.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-l8">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-body">
+      <strong>L7/L8 Differentiator: Gap Locks and Next-Key Locks</strong>
+      <p>InnoDB's REPEATABLE READ implementation uses <strong>next-key locks</strong> (a combination of a record lock + gap lock) to prevent phantom reads. A gap lock on the gap before a record prevents any other transaction from inserting into that gap. This is more expensive than READ COMMITTED (which uses no gap locks) and is the most common source of deadlocks in InnoDB. If your application has deadlock problems, consider switching to READ COMMITTED — you lose the phantom-prevention guarantee but eliminate gap lock deadlocks. Be able to explain exactly what a gap lock protects vs what it prevents.</p>
+    </div>
+  </div>
+
+  <h3>Durability vs Performance Knobs</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Setting</th><th>Safe Value</th><th>Performance Value</th><th>Risk</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>innodb_flush_log_at_trx_commit</code></td>
+          <td>1 (fsync on every commit)</td>
+          <td>2 (fsync once/second)</td>
+          <td>Up to 1 second of commits lost on OS crash</td>
+        </tr>
+        <tr>
+          <td><code>sync_binlog</code></td>
+          <td>1 (sync on every transaction)</td>
+          <td>0 (OS controls sync)</td>
+          <td>Binlog diverges from InnoDB on OS crash → replica inconsistency</td>
+        </tr>
+        <tr>
+          <td><code>innodb_doublewrite</code></td>
+          <td>ON (default)</td>
+          <td>OFF (NVMe with atomic writes)</td>
+          <td>Torn page risk on crash (use only with O_DIRECT + atomic writes)</td>
+        </tr>
+        <tr>
+          <td><code>innodb_buffer_pool_size</code></td>
+          <td>70–80% of RAM</td>
+          <td>Larger = better</td>
+          <td>OOM kill if set too high; leave room for OS, per-thread buffers</td>
+        </tr>
+        <tr>
+          <td><code>innodb_io_capacity</code></td>
+          <td>200 (HDD)</td>
+          <td>2000–20000 (NVMe SSD)</td>
+          <td>Too low = dirty pages pile up, buffer pool stalls on flush</td>
+        </tr>
+        <tr>
+          <td><code>innodb_flush_method</code></td>
+          <td>O_DIRECT (avoids double buffering)</td>
+          <td>O_DIRECT_NO_FSYNC (NVMe)</td>
+          <td>Subtle data loss on some hardware without battery-backed cache</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> The default MySQL configuration is optimized for safety, not performance — <code>innodb_flush_log_at_trx_commit=1</code> + <code>sync_binlog=1</code> is the "Gold Standard" (fully durable) and the correct production default; any deviation is a deliberate trade of durability for throughput and should be a documented operational decision.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 4 — FAILURE MODES & RESILIENCE                          -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p4">
+  <div class="pillar-header">
+    <div class="pillar-number">4</div>
+    <div class="pillar-title-block">
+      <h2>💥 Failure Modes &amp; Resilience</h2>
+      <p>Detection, automatic recovery, data loss risk, and manual intervention for every failure class</p>
+    </div>
+  </div>
+
+  <h3>Failure Scenario Deep-Dives</h3>
+
+  <h4>1. Single Node Crash — Primary</h4>
+  <p><strong>(a) Detection:</strong> In InnoDB Cluster / Group Replication, nodes exchange heartbeats every <code>group_replication_member_expel_timeout</code> seconds (default 5 seconds). When the primary stops responding, surviving members mark it as <code>UNREACHABLE</code>. After a configurable delay, an automatic primary election (single-leader Paxos variant) occurs.</p>
+  <p><strong>(b) Automatic Recovery:</strong> With <code>group_replication_single_primary_mode=ON</code> and MySQL Router, failover to the replica with the most up-to-date binary log happens automatically, typically within 10–30 seconds. MySQL 8.0's Group Replication includes a distributed recovery mechanism so newly promoted members automatically receive missing transactions.</p>
+  <p><strong>(c) Data Loss Risk:</strong> With lossless semi-sync or Group Replication: zero data loss — the primary only commits after at least one replica acknowledged the transaction. With async replication: potential loss of recently committed transactions that hadn't replicated yet (replication lag window).</p>
+  <p><strong>(d) Manual Action:</strong> Verify new primary identity, update application connection strings if not using MySQL Router, check for errant transactions on replicas (<code>GTID_EXECUTED</code> discrepancy), and investigate crash root cause before allowing old primary to rejoin.</p>
+
+  <h4>2. Simultaneous Minority Node Failures</h4>
+  <p>In a 5-node Group Replication cluster, losing 2 nodes simultaneously still leaves a majority (3 of 5). The cluster continues operating, and the failed nodes are expelled after the expel timeout. When they rejoin, they receive missing transactions via distributed recovery (from a donor node's binary log or a backup). No manual intervention required unless all 5 nodes are on the same rack/AZ (a common anti-pattern) — place nodes across failure domains.</p>
+
+  <h4>3. Network Partition — One Side Has Quorum</h4>
+  <p>In a 3-node cluster split into {Primary + 1 replica} vs {1 replica}: the majority partition (2 nodes) continues writing, the minority (1 node) blocks writes and enters <code>ERROR</code> state. This is correct CP behavior. When the partition heals, the minority node receives missing transactions via distributed recovery. The risk: if application servers are connected to the minority node, they receive connection errors during the partition — ensure all writes route through MySQL Router, which tracks which partition has the primary.</p>
+
+  <h4>4. Network Partition — Even Split (No Quorum)</h4>
+  <p>In a 2-node setup (never recommended), a partition gives each side 1 node — neither has quorum. Both sides stop accepting writes (CP guarantee). This is catastrophic for availability. The solution is always odd-number cluster sizes (3, 5, 7) or adding a MySQL Router configured as an arbitrator/witness node. A common 3-AZ deployment: 1 primary + 1 replica in AZ-A, 1 replica in AZ-B, 1 replica in AZ-C. Even if AZ-A is completely lost, AZs B+C have quorum.</p>
+
+  <div class="callout callout-mistake">
+    <div class="callout-icon">🔥</div>
+    <div class="callout-body">
+      <strong>Common Interview Mistake</strong>
+      <p>Proposing a 2-node MySQL setup for HA. Without a third node/arbiter, any partition leaves both sides without quorum, halting all writes. Even a third lightweight "witness" node (Group Replication supports this in 8.0.17+) can break the tie.</p>
+    </div>
+  </div>
+
+  <h4>5. Split-Brain: Two Nodes Both Believe They Are Primary</h4>
+  <p>In classic async replication, a network partition can cause a replica to be promoted while the original primary is still alive but partitioned. Both accept writes. When the partition heals, you have two diverged binlog histories — a true split-brain. Recovery requires: identify the authoritative primary (the one that received more "real" traffic), dump the other's unique transactions, decide to discard or merge them, then re-establish replication. With Group Replication (Paxos-based), split-brain is architecturally impossible — the protocol guarantees at most one primary at any time.</p>
+
+  <h4>6. Slow / Degraded Node</h4>
+  <p><strong>(a) Detection:</strong> <code>Seconds_Behind_Master</code> in <code>SHOW REPLICA STATUS</code> measures replication lag. MySQL 8.0.22+ replaced this with <code>SHOW REPLICA STATUS</code> (replacing SLAVE), and the Performance Schema <code>replication_applier_status_by_worker</code> table gives per-worker lag. ProxySQL monitors lag and removes backends exceeding a threshold.</p>
+  <p><strong>(b) Automatic:</strong> MySQL Router health checks will stop routing read traffic to a replica whose lag exceeds <code>max_replication_lag</code>. Group Replication has flow control — if a member's applier queue grows beyond <code>group_replication_flow_control_applier_threshold</code> (default 25,000 transactions), the group throttles new commits globally to let the slow member catch up. This is often the cause of mysterious latency spikes in Group Replication clusters.</p>
+  <p><strong>(c) Risk:</strong> Reads from a lagging replica return stale data — applications must tolerate this or use <code>SELECT ... FOR UPDATE</code> on the primary for consistency-sensitive reads.</p>
+
+  <h4>7. Disk Corruption / Partial Write</h4>
+  <p>InnoDB detects corrupt pages via the FIL trailer checksum on every page read. A corrupt page triggers an assertion and mysqld crash with error <code>[ERROR] InnoDB: Database page corruption on disk or a failed file read</code>. Recovery options: (a) restore from backup + apply binary logs, (b) use <code>innodb_force_recovery</code> levels 1–6 to start the server in degraded mode and dump recoverable data. The double-write buffer protects against torn pages (partial 16 KB write during crash) — if a page is corrupt, InnoDB first checks the double-write buffer for a clean copy before attempting to use the corrupt page.</p>
+
+  <h4>8. Clock Skew Between Nodes</h4>
+  <p>MySQL Group Replication uses logical clocks (transaction GTIDs and Paxos sequence numbers), not wall clock time, for ordering. Clock skew does NOT cause data corruption. However, TIMESTAMP columns and <code>CURRENT_TIMESTAMP</code> defaults use wall clock time — rows inserted on a node with a 30-second-forward clock will appear to have future timestamps on the primary. Use NTP/Chrony to keep clock drift under 100 ms. For MySQL Cluster (NDB), tighter clock synchronization is required as NDB uses real-time clocks for some operations.</p>
+
+  <h4>9. Thundering Herd After Recovery</h4>
+  <p>When a primary recovers after an extended outage, all application connection pools attempt to reconnect simultaneously, generating a burst of connections that can overwhelm the connection manager (max_connections, thread creation overhead). Mitigations: (a) MySQL Thread Pool Plugin (Enterprise) queues excess connections; (b) ProxySQL connection multiplexing absorbs the burst at the proxy layer; (c) Application connection pools with exponential backoff + jitter on reconnect; (d) Pre-warming the buffer pool with <code>innodb_buffer_pool_dump_pct=100</code> / <code>innodb_buffer_pool_load_at_startup=ON</code> (available since 5.7) to restore the warm cache state before accepting full traffic.</p>
+
+  <h4>10. Cascading Failures</h4>
+  <p>The classic MySQL cascade: (1) One slow query holds a large transaction open → (2) long-running transaction holds row locks → (3) other transactions queue waiting for locks → (4) connection count grows → (5) <code>max_connections</code> exceeded → (6) new connections rejected → (7) load balancer marks MySQL as down → (8) traffic redirected to a replica that isn't configured for writes. Prevention: <code>max_execution_time</code> (MySQL 8.0) kills queries exceeding N milliseconds; <code>innodb_lock_wait_timeout</code> limits how long a transaction waits for a lock before aborting; circuit breakers at the application layer; ProxySQL connection limits per hostgroup.</p>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> MySQL's crash safety comes from a three-layer defense — the redo log (guarantees durability), the double-write buffer (protects against torn pages), and MVCC undo logs (enables rollback and recovery) — together these ensure that no single failure mode can leave the database in an unrecoverable state, provided you haven't disabled them for performance.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 5 — SCALING STRATEGIES                                   -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p5">
+  <div class="pillar-header">
+    <div class="pillar-number">5</div>
+    <div class="pillar-title-block">
+      <h2>📈 Scaling Strategies</h2>
+      <p>Vertical, horizontal, replication, sharding, cross-region — and when each breaks</p>
+    </div>
+  </div>
+
+  <h3>Vertical Scaling: How Far and What Breaks First</h3>
+  <p>A single well-tuned MySQL instance on modern hardware can handle impressive loads: on a 128-core, 4 TB RAM, NVMe SSD server, you can run a buffer pool of 3 TB+, handle 500,000+ read QPS on hot data, and sustain 50,000+ write TPS for simple INSERTs. Vertical scaling is the correct first move — it is operationally simpler, avoids the consistency complications of distribution, and modern cloud instances (AWS r6i.32xlarge, Google n2-highmem-128) are extremely powerful.</p>
+  <p>What breaks first, in order:</p>
+  <ol>
+    <li><strong>Single-threaded bottlenecks in the SQL layer:</strong> The optimizer, DDL operations, and InnoDB's purge thread have single-threaded components. At very high QPS, the mutex contention on these paths limits throughput regardless of core count. MySQL 8.0 dramatically improved parallel DDL and parallel read operations, but some paths remain.</li>
+    <li><strong>InnoDB redo log throughput:</strong> The redo log group commit can sustain ~200,000 TPS on NVMe, but WAL serialization is a fundamental ceiling. Async Group Replication can help distribute this.</li>
+    <li><strong>NUMA effects:</strong> On multi-socket servers, memory latency varies by NUMA node. MySQL is not NUMA-aware by default — setting <code>numactl --interleave=all</code> prevents one socket's memory from being hot while the other is cold.</li>
+    <li><strong>Connection handling:</strong> At 10,000+ concurrent connections, the thread-per-connection model consumes significant RAM and CPU for context switching. Switch to the Thread Pool plugin.</li>
+  </ol>
+
+  <div class="callout callout-boe">
+    <div class="callout-icon">📐</div>
+    <div class="callout-body">
+      <strong>Back-of-Envelope: Vertical Limit</strong>
+      <p>A single MySQL node on a 96 vCPU, 768 GB RAM server (e.g., AWS r6i.24xlarge, ~$5/hr) with NVMe storage can realistically serve: ~300K simple SELECT/s, ~30K INSERT/s (sync_binlog=1), ~1M+ QPS with a ProxySQL cache in front. The cost-efficiency breakpoint is usually around 100K–200K total QPS — above that, read replicas or application-level caching are cheaper per QPS than further vertical scaling.</p>
+    </div>
+  </div>
+
+  <h3>Horizontal Scaling: Read Replicas</h3>
+  <p>MySQL's primary horizontal scaling mechanism is read replicas via asynchronous or semi-synchronous binary log replication. The primary writes to the binary log (binlog) in a logical format (row-based, statement-based, or mixed). Replicas connect, receive binlog events, and apply them via an SQL thread. In MySQL 8.0.22+, the Multithreaded Replica (MTR) can apply transactions in parallel using <code>replica_parallel_workers</code> threads, dramatically reducing replication lag on write-heavy primaries.</p>
+  <div class="diagram">
+<pre>
+┌─────────────────────────────────────────────────────────────────┐
+│                    MYSQL REPLICATION TOPOLOGY                   │
+│                                                                 │
+│   Application Servers                                           │
+│   ┌───────┐  ┌───────┐  ┌───────┐                             │
+│   │App  1 │  │App  2 │  │App  3 │                             │
+│   └───┬───┘  └───┬───┘  └───┬───┘                             │
+│       │          │          │                                   │
+│       └──────────▼──────────┘                                   │
+│                  │ SQL Queries                                   │
+│         ┌────────▼────────┐                                     │
+│         │   ProxySQL      │  ← routes writes to primary,       │
+│         │   (Query Router)│    reads to replicas,              │
+│         └──────┬──────────┘    monitors lag                    │
+│                │                                                │
+│         ┌──────▼──────────────────────────────────┐            │
+│         │            PRIMARY (R/W)                 │            │
+│         │  Binlog: mysql-bin.000001, pos 1234567   │            │
+│         └──────┬──────────────────────────────────┘            │
+│                │ Async Replication (or Semi-Sync)               │
+│     ┌──────────┼────────────────────────────┐                  │
+│     │          │                            │                   │
+│  ┌──▼────┐  ┌──▼────┐  ┌─────────────────┐ │                  │
+│  │Replica│  │Replica│  │  Replica (Delay)│ │                  │
+│  │ R/O   │  │ R/O   │  │ CHANGE MASTER   │ │                  │
+│  │       │  │       │  │ DELAY=3600      │ │                  │
+│  │lag:   │  │lag:   │  │ (recovery DR)   │ │                  │
+│  │0.1s   │  │0.3s   │  └─────────────────┘ │                  │
+│  └───────┘  └───────┘                       │                  │
+│                                              │                  │
+│  [GTID-based replication in 8.0+]            │                  │
+│  Global Transaction IDs eliminate binlog     │                  │
+│  position tracking, enabling safe failover   │                  │
+└──────────────────────────────────────────────┘                  │
+</pre>
+  </div>
+
+  <h3>Sharding: Range vs Hash vs Directory</h3>
+  <p><strong>Range sharding</strong> assigns rows to shards based on ranges of the shard key (e.g., user_id 1–1M on shard 0, 1M–2M on shard 1). This supports range queries efficiently — a query for user_id between 500K and 600K hits only one shard. The problem is hotspots: if new users are created with sequential IDs, all new writes go to the last shard. Also, organic growth causes uneven shard sizes over time.</p>
+  <p><strong>Hash sharding</strong> applies a hash function to the shard key: <code>shard_id = hash(user_id) % N</code>. This distributes writes uniformly, but range queries must fan out to ALL shards — a query for users with activity in the last 7 days requires N parallel queries. Resharding (changing N) requires moving ~1/N of data per shard, which is operationally expensive.</p>
+  <p><strong>Consistent hashing</strong> (a variant of hash sharding) places both shards and keys on a ring. Adding a shard only requires moving data from its neighbors, not all data. Used by Vitess (Google's MySQL sharding layer) and Pinterest's MySQL infrastructure.</p>
+  <p><strong>Directory-based sharding</strong> uses a separate lookup table (the "directory") mapping shard key → shard. Maximum flexibility but the directory is a single point of failure and adds a round trip to every query. Used when sharding logic is complex and non-uniform.</p>
+
+  <div class="callout callout-l8">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-body">
+      <strong>L7/L8 Differentiator: Vitess</strong>
+      <p>Vitess (open-sourced by YouTube, graduated as CNCF project) is the production-grade solution for MySQL horizontal sharding at Google/YouTube scale. It provides: transparent connection pooling (1 connection per shard to MySQL, thousands of app-to-Vitess connections), online resharding without downtime using MoveTables + SwitchTraffic, a VTGate query router that parses SQL and routes to the correct shard, VTTablet as a sidecar managing per-shard MySQL, and built-in support for cross-shard queries. If asked about scaling MySQL to 1B users, Vitess is the answer.</p>
+    </div>
+  </div>
+
+  <h3>Cross-Region Replication</h3>
+  <p><strong>Active-passive:</strong> One region is the primary writer; all other regions are replicas. Lowest complexity, reads can be served locally (with eventual consistency lag). Writes from other regions incur a WAN round trip to reach the primary. Failover to another region requires promoting a replica and accepting potential data loss = replication lag at failover time.</p>
+  <p><strong>Active-active:</strong> Multiple regions accept writes simultaneously. Requires conflict detection and resolution. MySQL's binlog replication does not natively resolve write conflicts between two simultaneous primaries — you need application-level conflict handling or a database that supports it natively (CockroachDB, Google Spanner). Vitess supports a form of active-active for non-conflicting write patterns (different users writing to different shards), but true concurrent write-same-row conflicts require application logic.</p>
+  <p>The fundamental challenge is cross-region replication lag: a US-East to US-West WAN round trip is ~65 ms. If you require read-your-writes consistency across regions, the client must either (a) always read from the primary region, defeating the purpose, or (b) use session tokens that track the minimum LSN the client has seen, and the local replica must catch up to that LSN before serving the read (this is what Spanner's bounded staleness reads implement).</p>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> MySQL scales reads trivially via async replicas, but write scaling requires either vertical limits, sharding (with significant application complexity), or migration to a distributed SQL system (Vitess, PlanetScale, TiDB) — understanding this write-scaling boundary and when to cross it is what separates a Senior from a Staff engineer.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 6 — REAL-WORLD ENGINEERING DECISIONS                    -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p6">
+  <div class="pillar-header">
+    <div class="pillar-number">6</div>
+    <div class="pillar-title-block">
+      <h2>🏭 Real-World Engineering Decisions</h2>
+      <p>Production examples, anti-patterns, decision matrices, and Day-1 monitoring</p>
+    </div>
+  </div>
+
+  <h3>Real-World Production Case Studies</h3>
+
+  <h4>1. GitHub — MySQL at the Heart of Code Collaboration</h4>
+  <p>GitHub serves ~100M developers on MySQL. Their key architectural decisions: (a) <strong>Vitess for horizontal sharding</strong> — they began their Vitess migration in 2018, sharding the primary <code>github</code> database (which had grown to hundreds of gigabytes of hot data) to enable online schema changes without the 4+ hour table locks of pt-online-schema-change on large tables; (b) <strong>Semi-synchronous replication</strong> with <code>rpl_semi_sync_source_wait_for_replica_count=1</code> to guarantee zero RPO on failover; (c) <strong>Orchestrator</strong> (now owned by GitHub) for automatic topology management and failover. Their war stories involve accidental replication loops, GTID inconsistencies during large-scale resharding, and the operational complexity of maintaining thousands of MySQL instances.</p>
+
+  <h4>2. Shopify — MySQL for E-Commerce at Black Friday Scale</h4>
+  <p>Shopify processes millions of transactions per second during Black Friday on MySQL. Key decisions: (a) <strong>Per-merchant MySQL "pods"</strong> — rather than one massive database, each merchant group gets a dedicated MySQL cluster (a "pod"). This provides natural tenant isolation, eliminates noisy-neighbor problems, and allows the hottest merchants to get dedicated hardware. (b) <strong>Read-replica scaling per pod</strong> — during traffic spikes, additional read replicas can be spun up and added to the replica pool within minutes using automated provisioning. (c) <strong>Vitess for intra-pod sharding</strong> as the largest merchants outgrew single-node limits. The fundamental insight: multi-tenancy via pod isolation is operationally simpler and more resilient than complex per-query isolation mechanisms.</p>
+
+  <h4>3. Facebook/Meta — Myrocks (MySQL + RocksDB)</h4>
+  <p>Meta introduced <strong>MyRocks</strong>, a MySQL storage engine built on RocksDB (a Log-Structured Merge-tree: LSM-tree). The motivation: InnoDB's B+Tree has 2:1 space amplification (roughly) and high write amplification for update-heavy workloads. RocksDB's LSM-tree offers ~10:1 compression ratio and lower write amplification for workloads that are write-heavy with mostly sequential access. MyRocks powers a significant fraction of Meta's MySQL fleet, reducing storage costs by ~50% and achieving the same throughput at lower IOPS. The trade-off: RocksDB has higher read amplification (must check multiple levels of compacted SSTables) and is more operationally complex. Meta's scale made the storage savings worth it.</p>
+
+  <h3>When NOT to Use MySQL</h3>
+  <ul>
+    <li><strong>Document store workloads:</strong> If your data is deeply nested JSON with highly variable schemas and you query by arbitrary nested fields, MySQL's JSON support (added in 5.7) adds overhead compared to a native document store like MongoDB or Firestore. The relational model's strength (joins, constraints, ACID) becomes a burden when your schema changes weekly.</li>
+    <li><strong>Time-series data at high ingestion rate:</strong> Inserting 1M metrics/second into a MySQL table will exhaust InnoDB's write throughput even on NVMe. TimescaleDB (PostgreSQL extension), InfluxDB, or Cassandra (for wide rows) are better fits. MySQL's lack of native time-series compression and partial aggregation makes OLAP on time-series expensive.</li>
+    <li><strong>Full-text search at scale:</strong> MySQL's built-in FULLTEXT index does not support fuzzy matching, relevance tuning, or the query scale of Elasticsearch. Using MySQL as a search engine for more than simple keyword queries is a common anti-pattern that kills performance.</li>
+    <li><strong>Graph queries (many-hop relationships):</strong> Finding the 3rd-degree connections of a user requires recursive CTEs in MySQL 8.0 or application-side traversal — both are painfully slow compared to a native graph database (Neo4j) for deeply recursive queries.</li>
+    <li><strong>Multi-petabyte analytical workloads:</strong> MySQL is an OLTP database. Running BI queries that aggregate billions of rows will block concurrent OLTP queries. Use BigQuery, Redshift, Snowflake, or ClickHouse for analytical workloads, and replicate data there via CDC (Debezium).</li>
+  </ul>
+
+  <h3>Decision Matrix: MySQL vs Alternatives</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Dimension</th><th>MySQL (InnoDB)</th><th>PostgreSQL</th><th>MongoDB</th><th>Cassandra</th><th>Google Spanner</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>ACID Transactions</strong></td><td><span class="badge-green">Full ACID</span></td><td><span class="badge-green">Full ACID</span></td><td><span class="badge-yellow">Single-doc atomic</span></td><td><span class="badge-red">None (LWT for CAS)</span></td><td><span class="badge-green">External consistency</span></td></tr>
+        <tr><td><strong>Read Latency (p99)</strong></td><td>1–5 ms (local)</td><td>1–5 ms (local)</td><td>1–3 ms (local)</td><td>1–5 ms (any node)</td><td>10–50 ms (global)</td></tr>
+        <tr><td><strong>Write Scalability</strong></td><td><span class="badge-red">Single primary</span></td><td><span class="badge-red">Single primary</span></td><td><span class="badge-yellow">Sharded</span></td><td><span class="badge-green">Masterless</span></td><td><span class="badge-green">Global distributed</span></td></tr>
+        <tr><td><strong>Schema Flexibility</strong></td><td>Rigid (DDL needed)</td><td>Rigid (DDL needed)</td><td>Flexible</td><td>Denormalized wide rows</td><td>Rigid</td></tr>
+        <tr><td><strong>Ecosystem/Tooling</strong></td><td><span class="badge-green">Excellent</span></td><td><span class="badge-green">Excellent</span></td><td>Good</td><td>Moderate</td><td>Google-only</td></tr>
+        <tr><td><strong>Operational Complexity</strong></td><td>Low (managed RDS)</td><td>Low (managed)</td><td>Medium</td><td>High</td><td>Low (fully managed)</td></tr>
+        <tr><td><strong>Cost at Scale</strong></td><td>Low (commodity)</td><td>Low (commodity)</td><td>Medium</td><td>Medium</td><td>Very High</td></tr>
+        <tr><td><strong>Geo-distribution</strong></td><td>Complex (Vitess)</td><td>Complex</td><td>Built-in</td><td>Built-in</td><td><span class="badge-green">Native</span></td></tr>
+        <tr><td><strong>Best Workload</strong></td><td>OLTP, relational</td><td>OLTP + analytical</td><td>Documents, IoT</td><td>Write-heavy, timeseries</td><td>Global OLTP</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Day-1 Monitoring Setup</h3>
+  <p>A Staff engineer should immediately set up the following metrics and alerts on a new MySQL deployment:</p>
+  <ul>
+    <li><strong>Replication lag</strong> (<code>Seconds_Behind_Source</code>) — alert at 30 seconds, critical at 5 minutes. Lag means reads are stale and failover will lose data.</li>
+    <li><strong>Buffer pool hit rate</strong> (<code>Innodb_buffer_pool_reads / Innodb_buffer_pool_read_requests</code>) — alert if hit rate drops below 99%. Below 95% means the working set exceeds the buffer pool.</li>
+    <li><strong>Slow query log</strong> — <code>long_query_time=1</code> (1 second), with <code>log_queries_not_using_indexes=ON</code>. The slow query log is the single highest-value operational tool.</li>
+    <li><strong>InnoDB row lock waits and deadlock count</strong> (<code>Innodb_row_lock_waits</code>, <code>Innodb_deadlocks</code>) — spikes indicate application transaction contention or missing indexes.</li>
+    <li><strong>Connection utilization</strong> (<code>Threads_connected / max_connections</code>) — alert at 80%. At 100%, new connections are rejected.</li>
+    <li><strong>Redo log utilization</strong> — <code>innodb_redo_log_enabled</code> and redo log free space (MySQL 8.0.30+ exposes <code>Innodb_redo_log_capacity_resized</code>). If redo log is nearly full, checkpointing stalls all writes.</li>
+    <li><strong>Disk space</strong> — InnoDB tablespace files grow monotonically by default. Alert at 80% disk usage. Shrinking tablespace requires <code>OPTIMIZE TABLE</code> or <code>ALTER TABLE ... FORCE</code>, both of which rebuild the table.</li>
+    <li><strong>GTID inconsistency alerts</strong> — if <code>gtid_executed</code> on a replica diverges from the primary, automatic failover can cause data loss or errors.</li>
+  </ul>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> MySQL is the right choice for relational, transactional workloads where schema is relatively stable and the primary bottleneck is read scaling — where it breaks down is global write distribution, highly variable schemas, and analytical queries over billions of rows; knowing this boundary precisely is what makes the difference between correct and incorrect technology selection.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 7 — GOOGLE-SCALE & BEYOND                               -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p7">
+  <div class="pillar-header">
+    <div class="pillar-number">7</div>
+    <div class="pillar-title-block">
+      <h2>🌐 Google-Scale &amp; Beyond</h2>
+      <p>What breaks at 1B users, how hyperscalers differ, and what a "MySQL-Spanner" would look like</p>
+    </div>
+  </div>
+
+  <h3>What Breaks at Each Scale Tier</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Scale</th><th>Users</th><th>What Breaks</th><th>Architectural Response</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tier 1</td>
+          <td>1K–100K users</td>
+          <td>Nothing. Single node handles this easily.</td>
+          <td>Single MySQL + backups. Focus on schema design and indexes.</td>
+        </tr>
+        <tr>
+          <td>Tier 2</td>
+          <td>100K–1M users</td>
+          <td>Read QPS starts to stress single node. Slow queries become visible.</td>
+          <td>Add 1–2 read replicas. Optimize slow queries. Enable slow query log. Application caching (Redis).</td>
+        </tr>
+        <tr>
+          <td>Tier 3</td>
+          <td>1M–10M users</td>
+          <td>Replication lag grows under write load. Connection limits hit. Hot tables become contention points.</td>
+          <td>Multiple read replicas with ProxySQL. Dedicated replica for analytics (read via binlog). Connection pooling mandatory. Start vertically scaling primary.</td>
+        </tr>
+        <tr>
+          <td>Tier 4</td>
+          <td>10M–100M users</td>
+          <td>Single-primary write throughput ceiling reached. DDL operations (schema changes) take hours and block reads. Tablespaces reach terabyte scale.</td>
+          <td>Vitess for horizontal sharding. pt-online-schema-change or gh-ost for zero-downtime DDL. Separate OLAP to data warehouse. Multi-region replicas for geo-local reads.</td>
+        </tr>
+        <tr>
+          <td>Tier 5</td>
+          <td>100M–1B+ users</td>
+          <td>Global latency from single write region. Data residency regulations require data in specific geographic regions. Cross-shard transactions needed.</td>
+          <td>Multi-region active-active (application-level conflict resolution or migration to Spanner/CockroachDB). Cell-based architecture (one full MySQL cluster per geographic cell). MySQL replaced by Spanner for global transactional workloads.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>How Google Solved These Problems</h3>
+  <p>Google ran MySQL internally at massive scale before Spanner existed. The lessons from that era shaped Spanner's design. Key Google-internal approaches to MySQL at scale included:</p>
+  <p><strong>Cell-based architecture:</strong> Rather than one global MySQL cluster, Google decomposed services into "cells" — independent units of MySQL primary + replicas serving a geographic subset of users. Cell assignment is done at the request routing layer (based on user ID hash or geographic lookup). Cross-cell operations (user-to-user interactions spanning cells) are handled at the application layer with eventual consistency. Each cell is small enough to be fully replicated across availability zones within a region, and the cell boundary limits blast radius.</p>
+  <p><strong>Two-phase commit avoidance:</strong> Google found that distributed 2PC (MySQL's XA transactions) had unacceptably high latency and coordinator failure rates. Instead, they designed APIs to avoid cross-shard transactions by collocating related data on the same shard (e.g., all data for user X, including their orders and preferences, lives on the same MySQL shard). When a cross-shard operation was unavoidable, they used compensating transactions and idempotent operations rather than distributed locking.</p>
+  <p><strong>Spanner as the evolutionary next step:</strong> Google Spanner (2012) addressed the fundamental limitations of sharded MySQL: external consistency (reads reflect all writes committed before them, globally), automatic resharding, no single write bottleneck, and native geo-distribution. Spanner uses TrueTime (GPS + atomic clocks) to achieve external consistency with bounded uncertainty. The key insight is that MySQL's fundamental limitation (single primary per shard, no global ordering of transactions) requires either accepting consistency compromises or adding infrastructure that essentially reimplements a distributed consensus protocol — at which point you're building Spanner.</p>
+
+  <h3>What a "MySQL-Spanner" Would Require</h3>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🕐 Global Transaction Ordering</h4>
+      <p>MySQL uses monotonic auto-increment IDs per shard. A global ordering requires TrueTime-like infrastructure (GPS/atomic clock synchronization) or a Paxos-based timestamp allocator. Without this, cross-shard reads cannot be made consistent without round trips to every shard.</p>
+    </div>
+    <div class="card">
+      <h4>🔄 Automatic Resharding</h4>
+      <p>MySQL + Vitess supports online resharding via MoveTables, but it requires manual orchestration. Spanner automatically splits and merges tablets based on data size and hotspot detection. This requires the storage layer to be range-partitioned with dynamic boundaries, which InnoDB's tablespace model doesn't natively support.</p>
+    </div>
+    <div class="card">
+      <h4>🌍 Multi-Region ACID</h4>
+      <p>Achieving ACID across regions requires a consensus protocol (Paxos/Raft) that spans WAN links. The inherent latency floor is the speed of light between data centers (~65 ms US cross-country). MySQL's two-phase commit over WAN is too slow and fragile for high-throughput transactional workloads.</p>
+    </div>
+    <div class="card">
+      <h4>📊 Disaggregated Storage</h4>
+      <p>Amazon Aurora solved one piece of this: separating the MySQL compute layer from a distributed storage layer (6-way replication across 3 AZs). This allows read replicas to share the same storage without replication lag. A MySQL-Spanner would similarly separate the InnoDB buffer management from a globally consistent distributed store.</p>
+    </div>
+  </div>
+
+  <h3>Multi-Tenancy: Noisy Neighbor Isolation</h3>
+  <p>MySQL lacks native multi-tenant resource isolation — all schemas on a single MySQL instance share the buffer pool, redo log I/O budget, and connection limit. At Google/Shopify scale, the isolation strategies are:</p>
+  <ul>
+    <li><strong>Physical isolation (separate instances/clusters per tenant):</strong> The strongest isolation; used by Shopify's pod architecture. Each pod gets its own MySQL cluster, so Tenant A's long-running query cannot starve Tenant B's connections. Operationally expensive — managing 10,000 MySQL instances requires heavy automation.</li>
+    <li><strong>ProxySQL + resource groups (MySQL 8.0):</strong> ProxySQL can limit connections per tenant. MySQL 8.0's Resource Groups (<code>CREATE RESOURCE GROUP tenant_a TYPE=USER VCPU_IDS=0-3 THREAD_PRIORITY=5</code>) can pin tenant query threads to specific CPU cores and set thread priorities. This provides soft isolation without physical separation.</li>
+    <li><strong>Schema-per-tenant:</strong> Each tenant gets a separate schema within a shared MySQL instance. Easier to manage than separate instances, but no isolation of I/O or memory. Suitable for thousands of small tenants but not for large tenants with heavy workloads.</li>
+  </ul>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> At Google scale, MySQL is not abandoned — it's architecturally contained via cell-based isolation and Vitess sharding for services that fit the relational model, while new globally-distributed transactional workloads are built on Spanner from the start; the engineering judgment of knowing which problems require MySQL-class ACID and which require Spanner-class global consistency is a core L8 competency.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- PILLAR 8 — INTERVIEW SIMULATION                                 -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div class="pillar" id="p8">
+  <div class="pillar-header">
+    <div class="pillar-number">8</div>
+    <div class="pillar-title-block">
+      <h2>🎯 Interview Simulation</h2>
+      <p>Staff-level design problem, strong candidate answer, interviewer critique, and 10 rapid-fire questions</p>
+    </div>
+  </div>
+
+  <h3>Step 1: The Design Problem</h3>
+  <div class="callout callout-tip">
+    <div class="callout-icon">📋</div>
+    <div class="callout-body">
+      <strong>Design Problem: Real-Time Leaderboard for a Global Gaming Platform</strong>
+      <p>You're designing the backend database infrastructure for a mobile game that needs to support real-time leaderboards. The game has 200 million registered users. Each game session records a score. The leaderboard shows: (a) global top 1000 players, (b) friends leaderboard (a user's friends ranked by score), (c) country leaderboard (top 100 per country), all updated within a few seconds of a score submission. The system must handle 50,000 score updates per second globally. Players are in every country. Some countries (Germany, Russia) have data residency requirements — their users' data cannot leave the country. The system needs to be available 24/7 with zero downtime for game balance patches that update scoring formulas (requiring a full leaderboard recomputation). How would you design the MySQL schema and infrastructure for this?</p>
+    </div>
+  </div>
+
+  <h3>Step 2: Strong Candidate Answer (L7/L8 Level)</h3>
+
+  <h4>Clarifying Questions I Would Ask</h4>
+  <ul>
+    <li>What is the read:write ratio for leaderboard reads vs score writes? (If 1000 users read the leaderboard for every score update, the read optimization matters more than write optimization.)</li>
+    <li>Does "friends leaderboard" require real-time (within seconds) or near-real-time (within minutes) updates? Friends lists can be large — up to how many friends?</li>
+    <li>How are "global top 1000" defined — all-time high score, score in the last 24h, current season? This dramatically changes the data model.</li>
+    <li>What does "game balance patch" mean for the data model? Does recalculating a scoring formula require touching all 200M users, or just applying a multiplier to stored raw scores?</li>
+    <li>What consistency model is acceptable? Can a user see their own score update reflected immediately in their view (read-your-writes), or is eventual consistency okay?</li>
+    <li>What are the SLAs? Leaderboard read p99 latency target? Score update p99?</li>
+  </ul>
+
+  <h4>Stated Assumptions</h4>
+  <p>Read-heavy system: 100 reads per write. "Current season" leaderboard (time-bounded, not all-time — this allows truncation). Friends ≤ 500. Read-your-writes consistency for personal score, eventual consistency for leaderboard ranks. p99 leaderboard read &lt; 100 ms. 200M users, 50K writes/second peak.</p>
+
+  <h4>High-Level Design</h4>
+  <div class="diagram">
+<pre>
+  Score Submission         Leaderboard Read
+        │                        │
+  ┌─────▼──────┐         ┌───────▼────────┐
+  │ API Gateway│         │  CDN / Cache   │
+  └─────┬──────┘         │  (top-1000     │
+        │                │  cached 5s)    │
+  ┌─────▼──────┐         └───────┬────────┘
+  │  Score     │                 │ miss
+  │  Service   │         ┌───────▼────────┐
+  │  (stateless│         │  Leaderboard   │
+  │  workers)  │         │  Service       │
+  └─────┬──────┘         └───────┬────────┘
+        │ write                  │ read
+        │                        │
+  ┌─────▼────────────────────────▼────────┐
+  │                                        │
+  │  MySQL Layer (Vitess sharded)          │
+  │                                        │
+  │  Shard 0..N (by user_id consistent    │
+  │  hash): user_scores table              │
+  │                                        │
+  │  Scores Region MySQL (GDPR):          │
+  │  DE cell, RU cell (data residency)    │
+  │                                        │
+  └────────────────────────┬──────────────┘
+                           │ CDC (Debezium)
+  ┌────────────────────────▼──────────────┐
+  │  Redis Sorted Sets (leaderboards)      │
+  │  ZADD global_lb {score} {user_id}     │
+  │  ZADD country:DE_lb {score} {user_id} │
+  │  ZRANGE ... WITHSCORES for read       │
+  └────────────────────────────────────────┘
+</pre>
+  </div>
+
+  <h4>MySQL Schema Deep Dive</h4>
+  <pre><code>-- Sharded by user_id via Vitess
+-- Each shard has this schema
+
+CREATE TABLE user_scores (
+    user_id     BIGINT UNSIGNED NOT NULL,
+    season_id   SMALLINT UNSIGNED NOT NULL,
+    score       INT UNSIGNED NOT NULL DEFAULT 0,
+    raw_score   INT UNSIGNED NOT NULL DEFAULT 0,  -- pre-formula score
+    country     CHAR(2) NOT NULL,
+    updated_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (user_id, season_id),
+    KEY idx_country_score (country, score, user_id)  -- covering for country leaderboard
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  PARTITION BY HASH(user_id) PARTITIONS 16;
+
+-- Friends table (also sharded by user_id)
+CREATE TABLE user_friends (
+    user_id     BIGINT UNSIGNED NOT NULL,
+    friend_id   BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (user_id, friend_id),
+    KEY idx_friend (friend_id, user_id)
+) ENGINE=InnoDB;
+
+-- Score update as upsert (atomically increment raw_score, recompute score)
+INSERT INTO user_scores (user_id, season_id, raw_score, score, country)
+  VALUES (?, ?, ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    raw_score = raw_score + VALUES(raw_score),
+    score = FLOOR((raw_score + VALUES(raw_score)) * @formula_multiplier),
+    updated_at = NOW(6);
+</code></pre>
+
+  <h4>Game Balance Patch — Zero Downtime Recomputation</h4>
+  <p>Store <code>raw_score</code> (unmodified) separately from <code>score</code> (formula-applied). On a formula change: (1) deploy new formula_multiplier as a config value, (2) run a background job doing batched <code>UPDATE user_scores SET score = FLOOR(raw_score * new_multiplier) WHERE user_id BETWEEN ? AND ? AND season_id = ?</code> in small chunks (1000 rows) with sleep between batches to avoid replication lag, (3) update Redis sorted sets via CDC as each batch commits. No table lock required, no downtime.</p>
+
+  <div class="callout callout-boe">
+    <div class="callout-icon">📐</div>
+    <div class="callout-body">
+      <strong>Back-of-Envelope: Vitess Shard Count</strong>
+      <p>50,000 writes/second. A single MySQL shard on NVMe can handle ~5,000–10,000 simple upsert/second (with sync_binlog=1, InnoDB overhead). So we need 5–10 shards minimum. For headroom + balanced distribution, use 16 shards (power of 2 simplifies consistent hashing). At 200M users / 16 shards = 12.5M users/shard. Each user_scores row ≈ 40 bytes → 12.5M rows × 40 bytes = 500 MB per shard, well within buffer pool of a 32 GB instance. Friends table: avg 100 friends × 200M users = 20B rows total / 16 shards = 1.25B rows/shard — this is where NoSQL (Cassandra) is often a better fit for the friendship graph.</p>
+    </div>
+  </div>
+
+  <h3>Step 3: Interviewer Critique</h3>
+  <h4>What This Answer Did Well</h4>
+  <ul>
+    <li>Asked clarifying questions before designing — demonstrates that they don't jump to solutions without understanding constraints. This alone distinguishes an L7 candidate.</li>
+    <li>Correctly identified that a pure MySQL solution is insufficient — Redis sorted sets for leaderboard reads is the right architectural choice, and using MySQL as the source of truth + CDC fan-out is the right pattern.</li>
+    <li>Addressed data residency proactively by proposing regional MySQL cells.</li>
+    <li>The zero-downtime formula patch via raw_score vs score separation is a clever and practical solution.</li>
+    <li>Back-of-envelope calculations grounded the shard count in real numbers.</li>
+  </ul>
+
+  <h4>What Was Missed or Glossed Over</h4>
+  <ul>
+    <li><strong>Friends leaderboard scalability:</strong> Fetching the top score among a user's 500 friends requires querying 500 user_ids across potentially multiple shards. A fan-out query to 16 shards to aggregate 500 scores is expensive at 50K reads/second. The better approach: maintain a pre-computed friends leaderboard per user, updated via CDC + event-driven writes. This is an L8 differentiation point.</li>
+    <li><strong>Data residency for friends:</strong> If a German user has a friend in the US, the German user's friends leaderboard involves querying a US shard, which may violate data residency. This edge case was not addressed.</li>
+    <li><strong>MySQL replication lag and CDC latency:</strong> "Updated within a few seconds" is the SLA. The CDC pipeline (Debezium → Kafka → Redis updater) adds latency. Need to characterize this: Debezium reads binlog in near-real-time (~100 ms lag), Kafka adds ~50 ms, Redis write is ~1 ms. Total: ~200 ms P50. This is within the seconds SLA but should be explicitly measured and monitored.</li>
+    <li><strong>Hot user problem:</strong> A viral influencer with millions of followers would have their score update trigger millions of friends leaderboard updates. Needs rate limiting, delta compression, or a different fan-out strategy.</li>
+  </ul>
+
+  <h4>What an L8 Answer Would Include That L7 Didn't</h4>
+  <ul>
+    <li>A discussion of the data residency challenge for cross-border friendships and a proposed solution (e.g., aggregate friend scores at the application layer with an explicit data-sharing consent model, or shadow-replication anonymized score data for leaderboard purposes while keeping PII in the home region).</li>
+    <li>Explicit discussion of the consistency model for friends leaderboard: "A user will see their friends leaderboard as eventually consistent with up to ~5 second lag. We accept this trade-off to avoid cross-shard distributed reads. We display the 'last updated' timestamp to set user expectations."</li>
+    <li>A schema versioning strategy: as the game evolves, the score formula changes, the friends model changes. How do you handle migrations on 200M-row tables across 16 Vitess shards? Answer: Vitess online schema change (vttablet runs the same gh-ost-based migration per shard, in parallel, tracked centrally).</li>
+    <li>Operational runbooks: how to handle a shard failure during peak event, what the RTO/RPO targets are, and how the Redis leaderboard is re-seeded from MySQL if Redis is lost.</li>
+  </ul>
+
+  <h3>Step 4: 10 Rapid-Fire Questions</h3>
+
+  <div class="interview-q">
+    <div class="q-num">1</div>
+    <div class="q-text">Explain MVCC in InnoDB and why it doesn't require readers to take locks.</div>
+    <div class="a-text">InnoDB maintains multiple versions of each row using the undo log. When a transaction starts, it receives a read-view — a snapshot of which transaction IDs were active and committed at that moment. When reading a row, if the row's latest version was created by a transaction not visible in the read-view, InnoDB follows the DB_ROLL_PTR (undo log pointer) to find an older version that is visible. This entire operation reads from the undo log without acquiring any row locks, allowing readers and writers to proceed concurrently. The purge thread periodically removes undo records that are no longer needed by any active read-view.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">2</div>
+    <div class="q-text">You have a 500 GB MySQL table. You need to add a NOT NULL column with a default value. How do you do it without downtime?</div>
+    <div class="a-text">In MySQL 8.0+, adding a NOT NULL column with a constant DEFAULT is an instant metadata-only operation — InnoDB stores the default value in the data dictionary rather than rewriting all rows. To verify: check <code>ALGORITHM=INSTANT</code> in <code>EXPLAIN ALTER TABLE</code>. For MySQL 5.7 or complex column types, use gh-ost or pt-online-schema-change: they create a shadow table, replay writes via triggers/binlog, then do an atomic RENAME TABLE swap. The downtime is a single table rename (sub-second). For Vitess-managed tables, use Vitess OnlineDDL which handles the per-shard orchestration centrally.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">3</div>
+    <div class="q-text">What is a covering index and how does it eliminate the "double lookup" problem?</div>
+    <div class="a-text">A covering index is a secondary index that includes ALL columns referenced by a query — both in the WHERE clause and in the SELECT list. InnoDB secondary indexes store (indexed columns, primary key) at leaf nodes. Without a covering index, the engine uses the secondary index to find the PK, then does a second B+Tree traversal of the clustered index to fetch remaining columns ("double lookup"). With a covering index, the query is satisfied entirely from the secondary index's leaf nodes, eliminating the second traversal. EXPLAIN shows "Using index" in the Extra column when a covering index is used. This can reduce query time by 5–10x for large tables.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">4</div>
+    <div class="q-text">Why is AUTO_INCREMENT with InnoDB better than UUID as a primary key for write-heavy workloads?</div>
+    <div class="a-text">InnoDB's clustered index is a B+Tree ordered by PK. Auto-increment PKs are monotonically increasing, so new rows always insert at the rightmost leaf page — sequential writes, minimal page splits, near-100% page fill factor. UUIDs are random (version 4), causing inserts to land in random B+Tree positions, triggering page splits on every other insert, fragmenting the tree, thrashing the buffer pool with random pages, and consuming 2–3x more I/O. At 10,000 inserts/second, random UUID inserts can reduce throughput by 5–10x compared to sequential auto-increment. UUID version 7 (time-ordered) is acceptable as it preserves monotonic insert order.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">5</div>
+    <div class="q-text">What is a gap lock, when does InnoDB use it, and why can it cause deadlocks?</div>
+    <div class="a-text">A gap lock is an exclusive lock on the gap before a record (not the record itself) — it prevents other transactions from inserting into that gap. InnoDB uses gap locks in REPEATABLE READ isolation level when executing range queries or queries that could produce phantom reads. Example: <code>SELECT * FROM t WHERE id BETWEEN 5 AND 10 FOR UPDATE</code> locks the gap between 5 and 10, preventing concurrent inserts of id=7. Deadlocks arise when two transactions both hold gap locks that overlap with each other's intended inserts. Switching to READ COMMITTED eliminates gap locks (uses record locks only), removing most deadlock scenarios but allowing phantom reads.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">6</div>
+    <div class="q-text">Explain GTIDs and why they matter for replication management.</div>
+    <div class="a-text">A GTID (Global Transaction Identifier) is a unique ID assigned to every committed transaction: format is <code>source_uuid:transaction_id</code>. Every MySQL server maintains a <code>gtid_executed</code> set — the set of all GTIDs committed on it. With GTID-based replication, a replica doesn't track a binary log filename+position; instead, it tells the primary "give me all transactions NOT in my gtid_executed set." This makes failover trivial: promote any replica and point other replicas to it — they automatically find the correct resume point by comparing GTID sets. Without GTIDs (position-based replication), failover requires manually calculating the new binlog position, which is error-prone and a major source of replication breakage.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">7</div>
+    <div class="q-text">What is InnoDB's deadlock detection mechanism, and how should applications handle deadlocks?</div>
+    <div class="a-text">InnoDB continuously maintains a wait-for graph: when Transaction A waits for a lock held by Transaction B, an edge A→B is added. InnoDB runs a background deadlock detector that looks for cycles in this graph. When a cycle is found, InnoDB chooses the transaction with the least undo log (cheapest to roll back) as the victim, rolls it back, and returns error 1213 (ER_LOCK_DEADLOCK) to the client. Applications should always wrap write transactions in a retry loop with deadlock handling: catch error 1213, sleep briefly (with jitter to avoid retry storms), and retry the full transaction. Never retry inside the transaction — InnoDB has already rolled it back. Reducing deadlock frequency: access tables in consistent order, keep transactions short, and use SELECT ... FOR UPDATE only when necessary.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">8</div>
+    <div class="q-text">How does MySQL Group Replication ensure that all members commit the same transactions in the same order?</div>
+    <div class="a-text">Group Replication uses a multi-master variant of Paxos (called XCom - eXtended Communication) for consensus. When a transaction commits, it enters a certification phase: the write set (set of rows modified, represented as their primary keys) is broadcast to all group members. Each member independently checks if the write set conflicts with any transaction that has been certified since the transaction's snapshot — a conflict means another concurrent transaction modified the same rows. If no conflict, the transaction is certified and committed in the same global order on all members. If there's a conflict, the later-certified transaction is rolled back. This certification ensures linearizability without requiring a two-phase commit with a central coordinator.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">9</div>
+    <div class="q-text">Your MySQL primary has <code>innodb_flush_log_at_trx_commit=1</code> and is write-bound at 8,000 TPS. How do you improve throughput without sacrificing durability?</div>
+    <div class="a-text">The bottleneck is likely the fsync rate per transaction. Solutions without sacrificing durability: (1) <strong>Group Commit tuning</strong>: increase <code>binlog_group_commit_sync_delay</code> (e.g., 100–1000 microseconds) to batch more transactions per fsync — this trades latency for throughput; (2) <strong>Faster storage</strong>: NVMe SSDs with hardware write cache and power-loss protection (Intel Optane or AWS io2 Block Express) sustain much higher fsync IOPS; (3) <strong>Separate redo log device</strong>: put the redo log files on a dedicated NVMe (sequential write IOPS are the binding constraint); (4) <strong>Binlog group commit</strong>: ensure <code>binlog_order_commits=1</code> (default) to enable proper group commit across binlog and InnoDB; (5) <strong>Vertical scaling</strong> to a memory-optimized instance with more IOPS headroom.</div>
+  </div>
+
+  <div class="interview-q">
+    <div class="q-num">10</div>
+    <div class="q-text">Explain the difference between MyISAM and InnoDB and why you would never use MyISAM in production today.</div>
+    <div class="a-text">MyISAM uses table-level locking — any write (INSERT, UPDATE, DELETE) takes an exclusive lock on the entire table, blocking all concurrent reads and writes. InnoDB uses row-level locking via MVCC, allowing concurrent readers never to block writers and vice versa. MyISAM has no transaction support (no commit/rollback) and no crash recovery — an unclean shutdown leaves the table in a corrupt, unrecoverable state. InnoDB provides full ACID, crash recovery via redo log, and row-level locking. There is no workload in 2024 for which MyISAM is the correct choice: its read performance advantage (no MVCC overhead) is negligible on modern hardware, and its lack of crash safety makes it dangerous for any persistent data. MySQL 8.0 removed MyISAM as the default and deprecated it for most uses.</div>
+  </div>
+
+  <div class="key-takeaway">
+    <span class="kt-icon">🎯</span>
+    <strong>Key Takeaway:</strong> A strong L7/L8 interview performance requires not just knowing MySQL's internals but demonstrating the engineering judgment to know when MySQL's design constraints (single-primary write scaling, no native geo-distribution) are acceptable trade-offs vs when they are blockers that demand a different technology — and having concrete architectural patterns (Vitess, cell-based design, CDC fan-out, Redis for derived views) ready to address each constraint.
+  </div>
+</div>
+
+<!-- END-TO-END SIMULATION SECTION -->
+<div class="pillar" id="e2e" style="background: var(--surface); border-radius: 16px; padding: 40px; margin: 40px 64px;">
+  <div class="pillar-header">
+    <div class="pillar-number" style="background: linear-gradient(135deg, #059669, #047857);">★</div>
+    <div class="pillar-title-block">
+      <h2>🔬 End-to-End Real-World Simulation</h2>
+      <p>Full production scenario: Multi-tenant SaaS platform migrating from single MySQL node to Vitess at 10M+ users</p>
+    </div>
+  </div>
+
+  <h3>The Problem</h3>
+  <p>Imagine you're the Staff Engineer at a B2B SaaS company ("TaskFlow") that has grown from 50K to 12M users over 3 years. The entire product runs on a single MySQL 8.0 primary + 2 read replicas on AWS RDS db.r6g.8xlarge (32 vCPU, 256 GB RAM). Current state: 180 GB of hot data in the buffer pool, write load at 22,000 TPS during business hours, replication lag on replicas is 8–15 seconds during peak, and schema migrations require 4–6 hours of maintenance windows. SLO: 99.95% availability with &lt;50ms API p99. The current setup is breaking.</p>
+
+  <h3>Phase 1: Diagnosis</h3>
+  <pre><code>-- Find top locking queries:
+SELECT r.trx_id waiting_trx_id, r.trx_query waiting_query,
+       b.trx_id blocking_trx_id, b.trx_query blocking_query,
+       TIMEDIFF(NOW(), r.trx_wait_started) wait_time
+FROM information_schema.innodb_lock_waits w
+JOIN information_schema.innodb_trx b ON b.trx_id = w.blocking_trx_id
+JOIN information_schema.innodb_trx r ON r.trx_id = w.requesting_trx_id
+ORDER BY wait_time DESC LIMIT 20;
+
+-- Find tables causing replication lag:
+SELECT table_schema, table_name,
+       data_length/1024/1024 AS data_mb,
+       index_length/1024/1024 AS index_mb,
+       table_rows
+FROM information_schema.tables
+ORDER BY data_length + index_length DESC LIMIT 20;
+
+-- Check slow query patterns:
+SELECT query_time, lock_time, rows_examined, rows_sent, sql_text
+FROM mysql.slow_log
+WHERE start_time > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+ORDER BY query_time DESC LIMIT 50;
+</code></pre>
+
+  <p><strong>Findings:</strong> The <code>task_events</code> table (2.1 billion rows, 280 GB) is the bottleneck — it receives 18,000 of the 22,000 TPS. Full-table scans from reporting queries hold IX locks that cascade into row lock contention. Schema: <code>task_events(event_id BIGINT PK, org_id BIGINT, user_id BIGINT, task_id BIGINT, event_type ENUM, payload JSON, created_at DATETIME)</code>.</p>
+
+  <h3>Phase 2: Immediate Mitigations (Week 1–2)</h3>
+  <ul>
+    <li><strong>Separate analytics replica:</strong> Add a 3rd replica with <code>replica_parallel_workers=16</code> and <code>replica_parallel_type=LOGICAL_CLOCK</code> for reduced lag. Route all reporting queries to this replica via ProxySQL rule: <code>rule: SELECT.*report → replica_analytics</code></li>
+    <li><strong>Add missing composite index:</strong> <code>ALTER TABLE task_events ADD KEY idx_org_time (org_id, created_at, event_type) USING btree, ALGORITHM=INPLACE, LOCK=NONE</code>. This alone drops the reporting query from 45 seconds to 200 ms by enabling partition pruning by org_id.</li>
+    <li><strong>Kill long-running transactions:</strong> Set <code>max_execution_time=30000</code> (30 seconds) globally. This prevents the reporting queries from holding locks for hours.</li>
+    <li><strong>Enable slow query log on analytics replica:</strong> Identify the 5 most expensive queries, add covering indexes.</li>
+  </ul>
+
+  <h3>Phase 3: Partitioning the task_events Table (Month 1–2)</h3>
+  <p>The 2.1 billion row table needs partitioning. But you cannot ADD PARTITION to an existing table non-disruptively (requires full table rebuild). Strategy using gh-ost:</p>
+  <pre><code>-- Step 1: Create partitioned shadow table
+CREATE TABLE task_events_new (
+    event_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    org_id      BIGINT UNSIGNED NOT NULL,
+    user_id     BIGINT UNSIGNED NOT NULL,
+    task_id     BIGINT UNSIGNED NOT NULL,
+    event_type  ENUM('created','updated','deleted','assigned','commented') NOT NULL,
+    payload     JSON,
+    created_at  DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (event_id, created_at),  -- partition key must be in PK
+    KEY idx_org_time (org_id, created_at, event_type),
+    KEY idx_user_time (user_id, created_at)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  ROW_FORMAT=COMPRESSED  -- 40-50% size reduction for this JSON-heavy table
+  KEY_BLOCK_SIZE=8
+PARTITION BY RANGE (UNIX_TIMESTAMP(created_at)) (
+    PARTITION p_before_2023 VALUES LESS THAN (UNIX_TIMESTAMP('2023-01-01')),
+    PARTITION p_2023_q1 VALUES LESS THAN (UNIX_TIMESTAMP('2023-04-01')),
+    PARTITION p_2023_q2 VALUES LESS THAN (UNIX_TIMESTAMP('2023-07-01')),
+    PARTITION p_2023_q3 VALUES LESS THAN (UNIX_TIMESTAMP('2023-10-01')),
+    PARTITION p_2023_q4 VALUES LESS THAN (UNIX_TIMESTAMP('2024-01-01')),
+    -- ... quarterly partitions going forward
+    PARTITION p_future VALUES LESS THAN MAXVALUE
+);
+
+-- Step 2: Use gh-ost for online migration (no table lock):
+-- gh-ost copies data in batches, replays new writes via binlog,
+-- then does an atomic RENAME TABLE swap at completion.
+-- gh-ost --user=admin --password=... --host=primary
+--   --database=taskflow --table=task_events
+--   --alter="ENGINE=InnoDB ROW_FORMAT=COMPRESSED ..."
+--   --execute
+</code></pre>
+
+  <p><strong>Result:</strong> After migration, quarterly partitions for data older than 1 year can be <code>ALTER TABLE task_events DROP PARTITION p_before_2023</code> — a near-instantaneous operation that removes 900 million rows and reclaims 130 GB of space, compared to a <code>DELETE</code> that would take weeks and generate enormous undo log pressure.</p>
+
+  <h3>Phase 4: Vitess Migration (Month 3–6)</h3>
+  <p>With 12M users growing at 100K/month, the single primary will be exhausted within 6 months even with optimizations. Decision: migrate to Vitess with 8 shards on org_id (the natural tenant boundary — most queries filter by org_id).</p>
+
+  <h4>Challenges and Trade-offs</h4>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Challenge</th><th>Problem</th><th>Solution</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Cross-shard queries</td>
+          <td>Queries joining user table (sharded by user_id) with task_events (sharded by org_id) require scatter-gather</td>
+          <td>Denormalize: store user_email in task_events instead of joining; or use Vitess lookup vindexes</td>
+          <td>Data duplication; update anomalies if email changes</td>
+        </tr>
+        <tr>
+          <td>Global auto_increment</td>
+          <td>AUTO_INCREMENT is per-shard; same event_id can appear in two shards</td>
+          <td>Switch to ULIDs or UUIDv7 (time-ordered) — globally unique without coordination</td>
+          <td>Slightly larger primary key; slightly slower inserts vs monotonic int</td>
+        </tr>
+        <tr>
+          <td>Schema migrations</td>
+          <td>Running gh-ost on 8 shards simultaneously is complex</td>
+          <td>Vitess Online DDL: VTTablet runs DDL per shard, Vitess tracks progress centrally; <code>vtctlclient ApplySchema --sql="ALTER TABLE..."</code></td>
+          <td>Migration takes longer (serial per shard) but zero downtime</td>
+        </tr>
+        <tr>
+          <td>Org hotspots</td>
+          <td>A large enterprise org with 100K users could put 20% of writes on one shard</td>
+          <td>Vitess MoveTables: move that org's tables to a dedicated shard; custom vindex that maps hot org_ids to isolated shards</td>
+          <td>Operational complexity; non-uniform shard sizing</td>
+        </tr>
+        <tr>
+          <td>ACID across shards</td>
+          <td>A task_event that affects two orgs (cross-org sharing feature) needs atomicity across two shards</td>
+          <td>Redesign the data model to avoid cross-shard writes; if unavoidable, use Vitess two-phase commit (experimental) or sagas with compensating transactions</td>
+          <td>Sagas add application complexity; distributed 2PC is slow and has failure modes</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-l8">
+    <div class="callout-icon">⚡</div>
+    <div class="callout-body">
+      <strong>L7/L8 Differentiator: The Key Insight About Cross-Shard Transactions</strong>
+      <p>The most important engineering decision in this migration is <strong>shard key selection to minimize cross-shard transactions</strong>. Sharding on <code>org_id</code> is correct for TaskFlow because the dominant access pattern is within an organization. If you had sharded by <code>user_id</code>, a query to find all tasks in organization #5 would scatter to all 8 shards. The principle: shard on the entity that owns the most transactions and co-locate related entities on the same shard. This is equivalent to the DDD concept of choosing the correct aggregate root — and it's why data modeling discussions belong in the sharding conversation, not after it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <p>MySQL Deep Dive — Staff/Principal/Distinguished Engineer Interview Guide</p>
+  <p style="margin-top: 8px; opacity: 0.6;">Covers MySQL 5.7 through MySQL 9.x (Innovation Track) · InnoDB Architecture · Vitess · Group Replication · MVCC · B+Tree Internals</p>
+</div>
+
+</body>
+</html>
