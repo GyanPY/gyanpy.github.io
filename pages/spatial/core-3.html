@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spatial Data Internals · GeoHash & S2 Geometry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --geo: #7ee787;
+    --s2: #d2a8ff;
+    --warn: #F5A623;
+    --danger: #FF6B6B;
+    --lean: #FFD700;
+    --code-bg: #010409;
+    --sidebar-w: 290px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 300;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.55s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  /* PROGRESS */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--geo), var(--s2), var(--accent));
+    z-index: 9999; transition: width 0.1s linear;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed; top: 0; left: 0; width: var(--sidebar-w);
+    height: 100vh; background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 22px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    position: relative; overflow: hidden;
+  }
+
+  .sidebar-header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--geo), var(--s2), transparent);
+  }
+
+  .sb-eyebrow {
+    display: flex; gap: 6px; align-items: center; margin-bottom: 8px;
+  }
+
+  .sb-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+  }
+
+  .sb-badge.geo { color: var(--geo); background: rgba(126,231,135,0.1); border: 1px solid rgba(126,231,135,0.25); }
+  .sb-badge.s2  { color: var(--s2);  background: rgba(210,168,255,0.1); border: 1px solid rgba(210,168,255,0.25); }
+
+  .sb-title { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .sb-sub   { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-muted); }
+
+  #sidebar-search {
+    margin: 11px 14px;
+    padding: 7px 12px;
+    background: var(--code-bg);
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; width: calc(100% - 28px); outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #sidebar-search:focus { border-color: var(--accent); }
+  #sidebar-search::placeholder { color: var(--text-muted); }
+
+  nav ul { list-style: none; padding: 6px 0 16px; }
+
+  nav li a {
+    display: block; padding: 6px 20px;
+    color: var(--text-muted); text-decoration: none;
+    font-size: 12.5px; font-family: 'Source Serif 4', serif;
+    transition: all 0.15s; border-left: 2px solid transparent;
+    line-height: 1.4;
+  }
+
+  nav li a:hover { color: var(--text); background: rgba(88,166,255,0.05); border-left-color: var(--accent); }
+  nav li a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,0.07); }
+  nav li a.active.geo-link { color: var(--geo); border-left-color: var(--geo); background: rgba(126,231,135,0.06); }
+  nav li a.active.s2-link  { color: var(--s2);  border-left-color: var(--s2);  background: rgba(210,168,255,0.06); }
+
+  nav li.nav-sub  a { padding-left: 34px; font-size: 11.5px; }
+  nav li.nav-sub2 a { padding-left: 48px; font-size: 11px; color: rgba(139,148,158,0.65); }
+
+  .nav-section-label {
+    display: block; padding: 13px 20px 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  .nav-section-label.geo { color: var(--geo); }
+  .nav-section-label.s2  { color: var(--s2); }
+
+  /* HAMBURGER */
+  #hamburger {
+    display: none; position: fixed; top: 12px; left: 12px;
+    z-index: 200; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+    cursor: pointer; color: var(--text); font-size: 16px;
+    align-items: center; justify-content: center;
+  }
+
+  /* MAIN */
+  main {
+    margin-left: var(--sidebar-w);
+    max-width: 920px;
+    padding: 56px 64px 140px;
+  }
+
+  /* HERO */
+  .hero {
+    margin-bottom: 60px; padding: 44px 0 40px;
+    border-bottom: 1px solid var(--border);
+    position: relative; overflow: hidden;
+  }
+
+  .hero::before {
+    content: '⬡';
+    position: absolute; top: -10px; right: -20px;
+    font-size: 220px; line-height: 1;
+    color: rgba(126,231,135,0.03);
+    pointer-events: none; user-select: none;
+  }
+
+  .hero-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+
+  .h-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 3px;
+  }
+
+  .h-badge.geo { color: var(--geo); background: rgba(126,231,135,0.1); border: 1px solid rgba(126,231,135,0.3); }
+  .h-badge.s2  { color: var(--s2);  background: rgba(210,168,255,0.1); border: 1px solid rgba(210,168,255,0.3); }
+  .h-badge.num { color: var(--text-muted); font-size: 10px; }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 46px; font-weight: 900; line-height: 1.1;
+    color: var(--text); margin-bottom: 10px;
+  }
+
+  .hero h1 .geo-text { color: var(--geo); }
+  .hero h1 .s2-text  { color: var(--s2); }
+
+  .hero-sub {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px; font-weight: 400; font-style: italic;
+    color: var(--text-muted); margin-bottom: 18px;
+  }
+
+  .hero p { font-size: 15px; color: var(--text-muted); max-width: 560px; line-height: 1.7; }
+
+  .hero-toc { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+
+  .toc-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 4px 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 100px; color: var(--text-muted); text-decoration: none;
+    transition: all 0.15s;
+  }
+
+  .toc-pill:hover.geo { border-color: var(--geo); color: var(--geo); }
+  .toc-pill:hover.s2  { border-color: var(--s2);  color: var(--s2); }
+
+  /* SECTION DIVIDERS */
+  .section-divider {
+    margin: 72px 0 38px; padding-top: 28px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+
+  .section-divider::before {
+    content: ''; position: absolute; top: -1px; left: 0;
+    width: 80px; height: 2px;
+  }
+
+  .section-divider.geo::before { background: var(--geo); }
+  .section-divider.s2::before  { background: var(--s2); }
+
+  .sec-num { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 6px; }
+  .sec-num.geo { color: var(--geo); }
+  .sec-num.s2  { color: var(--s2); }
+
+  .section-divider h2 { font-family: 'Playfair Display', serif; font-size: 34px; font-weight: 900; line-height: 1.15; margin-bottom: 6px; }
+
+  .section-divider .sec-desc { font-size: 14px; font-style: italic; color: var(--text-muted); }
+
+  /* VARIANT CARDS */
+  .variant-card {
+    display: flex; align-items: flex-start; gap: 18px;
+    padding: 22px; margin-bottom: 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; border-left: 4px solid var(--geo);
+    transition: box-shadow 0.2s;
+  }
+
+  .variant-card.s2 { border-left-color: var(--s2); }
+
+  .variant-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+  .v-letter {
+    font-family: 'Playfair Display', serif; font-size: 40px; font-weight: 900;
+    line-height: 1; flex-shrink: 0; opacity: 0.8;
+  }
+
+  .variant-card .v-letter { color: var(--geo); }
+  .variant-card.s2 .v-letter { color: var(--s2); }
+
+  .v-body h4 { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+  .v-body .one-liner { font-size: 13.5px; color: var(--text-muted); font-style: italic; margin: 0; line-height: 1.6; }
+
+  /* CONTENT BLOCKS */
+  .content-block { margin-bottom: 52px; }
+
+  h4.sub-title { font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 700; margin: 28px 0 12px; color: var(--text); }
+  h5.mini-title { font-family: 'Source Serif 4', serif; font-size: 12.5px; font-weight: 600; margin: 22px 0 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  h5.mini-title.geo { color: var(--geo); }
+  h5.mini-title.s2  { color: var(--s2); }
+  h5.mini-title.def { color: var(--accent); }
+
+  p { margin-bottom: 14px; }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 15px 20px; margin: 16px 0;
+  }
+
+  .callout.geo  { border-left-color: var(--geo); }
+  .callout.s2   { border-left-color: var(--s2); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.red  { border-left-color: var(--danger); }
+  .callout.lean { border-left-color: var(--lean); }
+
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 8px;
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 18px 0; border-radius: 8px; border: 1px solid var(--border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: linear-gradient(90deg, #1c2128, #161b22); }
+
+  th {
+    padding: 11px 16px; text-align: left;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+
+  th.geo-head { color: var(--geo); }
+  th.s2-head  { color: var(--s2); }
+  th.def-head { color: var(--accent); }
+
+  td { padding: 10px 16px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top; line-height: 1.55; }
+  tbody tr:nth-child(even) { background: rgba(22,27,34,0.4); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(88,166,255,0.03); }
+  td:first-child { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--geo); }
+
+  .td-s2  { color: var(--s2)  !important; }
+  .td-geo { color: var(--geo) !important; }
+  .td-warn{ color: var(--warn)!important; }
+
+  /* DIAGRAM BLOCKS */
+  .diagram-wrap {
+    position: relative; margin: 18px 0;
+    background: var(--code-bg);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+
+  .diagram-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; background: rgba(22,27,34,0.8);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diagram-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+  }
+
+  .diagram-label.geo { color: var(--geo); background: rgba(126,231,135,0.1); }
+  .diagram-label.s2  { color: var(--s2);  background: rgba(210,168,255,0.1); }
+  .diagram-label.def { color: var(--accent); background: rgba(88,166,255,0.1); }
+
+  .copy-btn {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 3px 10px; background: transparent;
+    border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--geo); color: var(--geo); }
+
+  pre {
+    padding: 18px 20px; overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.7;
+    color: #c9d1d9; white-space: pre;
+  }
+
+  /* STEP LIST */
+  .step-list { margin: 14px 0; }
+
+  .step-item {
+    display: flex; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid rgba(48,54,61,0.35);
+  }
+
+  .step-item:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    background: rgba(126,231,135,0.1);
+    border-radius: 50%; width: 26px; height: 26px; min-width: 26px;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 2px;
+  }
+
+  .step-num.geo { color: var(--geo); background: rgba(126,231,135,0.1); }
+  .step-num.s2  { color: var(--s2);  background: rgba(210,168,255,0.1); }
+  .step-num.def { color: var(--accent); background: rgba(88,166,255,0.1); }
+
+  .step-content { flex: 1; }
+  .step-content strong { display: block; font-size: 14px; color: var(--text); margin-bottom: 3px; font-family: 'Source Serif 4', serif; font-weight: 600; }
+  .step-content span { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+  .step-content code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--accent); background: rgba(88,166,255,0.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* PRECISION TABLE */
+  .prec-table td:first-child { color: var(--accent); }
+  .prec-table td:nth-child(2) { color: var(--geo); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+
+  /* CONCEPT GRID */
+  .concept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 14px; margin: 18px 0; }
+
+  .concept-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .concept-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+  .concept-card.geo:hover { border-color: var(--geo); }
+  .concept-card.s2:hover  { border-color: var(--s2); }
+
+  .cc-num { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; line-height: 1; margin-bottom: 10px; }
+  .cc-num.geo { color: rgba(126,231,135,0.2); }
+  .cc-num.s2  { color: rgba(210,168,255,0.2); }
+
+  .concept-card h5 { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 7px; }
+  .concept-card p  { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+
+  /* SMELL GRID */
+  .smell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+
+  .smell-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .smell-card.good { border-top: 2px solid var(--geo); }
+  .smell-card.bad  { border-top: 2px solid var(--danger); }
+
+  .smell-card h5 { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .smell-card.good h5 { color: var(--geo); }
+  .smell-card.bad  h5 { color: var(--danger); }
+
+  .smell-card ul { list-style: none; padding: 0; }
+  .smell-card ul li { font-size: 12.5px; padding: 4px 0 4px 22px; color: var(--text-muted); position: relative; }
+  .smell-card.good ul li::before { content: '✅'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+  .smell-card.bad  ul li::before { content: '❌'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+
+  /* GOTCHA */
+  .gotcha {
+    background: linear-gradient(135deg, rgba(255,107,107,0.07), rgba(245,166,35,0.04));
+    border: 1px solid rgba(255,107,107,0.25);
+    border-radius: 10px; padding: 18px 22px; margin: 20px 0;
+    position: relative;
+  }
+
+  .gotcha::before { content: '⚠️'; position: absolute; top: -12px; left: 18px; font-size: 18px; }
+
+  .gotcha-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--danger);
+    margin-bottom: 8px;
+  }
+
+  .gotcha p { font-size: 13.5px; color: var(--text-muted); margin: 0; line-height: 1.7; }
+  .gotcha p strong { color: var(--text); }
+
+  /* INSIGHT */
+  .insight {
+    background: linear-gradient(135deg, rgba(126,231,135,0.06), rgba(88,166,255,0.04));
+    border: 1px solid rgba(126,231,135,0.2);
+    border-radius: 10px; padding: 18px 22px; margin: 20px 0;
+    position: relative;
+  }
+
+  .insight::before { content: '💡'; position: absolute; top: -12px; left: 18px; font-size: 18px; }
+
+  .insight-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--geo);
+    margin-bottom: 8px;
+  }
+
+  .insight p { font-size: 13.5px; color: var(--text-muted); margin: 0; line-height: 1.7; }
+  .insight p strong { color: var(--text); }
+
+  /* DEEP Q&A */
+  .qa-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; margin: 20px 0;
+  }
+
+  .qa-question {
+    padding: 14px 20px; background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'Playfair Display', serif; font-size: 15px;
+    font-weight: 700; color: var(--text);
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+
+  .qa-question .q-icon {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    font-weight: 700; color: var(--warn);
+    background: rgba(245,166,35,0.1); padding: 3px 7px;
+    border-radius: 4px; flex-shrink: 0; margin-top: 2px;
+  }
+
+  .qa-answer { padding: 16px 20px; }
+
+  .qa-answer p { font-size: 13.5px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.75; }
+  .qa-answer p:last-child { margin-bottom: 0; }
+  .qa-answer strong { color: var(--text); }
+
+  /* SOUNDBITE */
+  .soundbite {
+    background: linear-gradient(135deg, rgba(210,168,255,0.07), rgba(126,231,135,0.04));
+    border: 1px solid rgba(210,168,255,0.2);
+    border-radius: 10px; padding: 20px 26px; margin: 24px 0;
+    position: relative;
+  }
+
+  .soundbite::before { content: '🔑'; position: absolute; top: -12px; left: 20px; font-size: 20px; }
+  .soundbite p { font-style: italic; color: var(--text); font-size: 14.5px; line-height: 1.8; margin: 0; }
+
+  /* COMPARISON SIDE-BY-SIDE */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+
+  .compare-col { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+
+  .compare-col .cc-header {
+    padding: 10px 16px; background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+
+  .compare-col.geo .cc-header { color: var(--geo); }
+  .compare-col.s2  .cc-header { color: var(--s2); }
+
+  .compare-col .cc-body { padding: 14px 16px; }
+  .compare-col .cc-body ul { list-style: none; padding: 0; }
+  .compare-col .cc-body ul li { font-size: 12.5px; padding: 4px 0 4px 16px; color: var(--text-muted); position: relative; }
+  .compare-col.geo .cc-body ul li::before { content: '▸'; position: absolute; left: 0; color: var(--geo); }
+  .compare-col.s2  .cc-body ul li::before { content: '▸'; position: absolute; left: 0; color: var(--s2); }
+
+  /* REAL WORLD */
+  .rw-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+
+  .rw-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 5px 13px; border-radius: 100px;
+  }
+
+  .rw-pill.geo { color: var(--geo); background: rgba(126,231,135,0.08); border: 1px solid rgba(126,231,135,0.2); }
+  .rw-pill.s2  { color: var(--s2);  background: rgba(210,168,255,0.08); border: 1px solid rgba(210,168,255,0.2); }
+
+  /* MONITORING */
+  .monitor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12px; margin: 16px 0; }
+
+  .monitor-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+  }
+
+  .monitor-card .m-icon { font-size: 18px; margin-bottom: 8px; }
+  .monitor-card h5 { font-family: 'Source Serif 4', serif; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+  .monitor-card p { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+
+  mark {
+    background: rgba(126,231,135,0.12); color: var(--geo);
+    padding: 1px 3px; border-radius: 3px;
+  }
+
+  mark.s2 { background: rgba(210,168,255,0.12); color: var(--s2); }
+  mark.w  { background: rgba(245,166,35,0.12);  color: var(--warn); }
+
+  /* BACK TO TOP */
+  #back-to-top {
+    position: fixed; bottom: 32px; right: 32px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-muted);
+    font-size: 18px; transition: all 0.2s;
+    opacity: 0; pointer-events: none; z-index: 50;
+  }
+
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--geo); color: var(--geo); transform: translateY(-2px); }
+
+  /* OVERLAY */
+  #sidebar-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 99;
+  }
+  #sidebar-overlay.visible { display: block; }
+
+  /* RESPONSIVE */
+  @media (max-width: 960px) {
+    #sidebar { transform: translateX(-100%); }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    main { margin-left: 0; padding: 56px 22px 100px; }
+    .hero h1 { font-size: 30px; }
+    .smell-grid, .compare-grid { grid-template-columns: 1fr; }
+    .concept-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<div id="sidebar-overlay"></div>
+<button id="hamburger" aria-label="Open navigation">☰</button>
+
+<aside id="sidebar" aria-label="Navigation">
+  <div class="sidebar-header">
+    <div class="sb-eyebrow">
+      <span class="sb-badge geo">GeoHash</span>
+      <span class="sb-badge s2">S2 Geometry</span>
+    </div>
+    <div class="sb-title">Spatial Data Internals</div>
+    <div class="sb-sub">Sections 2.4 – 2.5 · L6/L7 Guide</div>
+  </div>
+  <input id="sidebar-search" type="search" placeholder="Search sections…" aria-label="Search">
+  <nav>
+    <ul id="nav-list">
+
+      <li><span class="nav-section-label geo">2.4 — GeoHash</span></li>
+      <li><a href="#geohash" class="geo-link">GeoHash Overview</a></li>
+      <li class="nav-sub"><a href="#geo-what">A) What It Is</a></li>
+      <li class="nav-sub"><a href="#geo-mechanics">B) How It Works</a></li>
+      <li class="nav-sub2"><a href="#geo-encoding">Encoding Walkthrough</a></li>
+      <li class="nav-sub2"><a href="#geo-precision">Precision Levels</a></li>
+      <li class="nav-sub2"><a href="#geo-query">Query Walkthrough</a></li>
+      <li class="nav-sub"><a href="#geo-strengths">C) Strengths & Use Cases</a></li>
+      <li class="nav-sub"><a href="#geo-limits">D) Limitations & Failure Modes</a></li>
+      <li class="nav-sub"><a href="#geo-ops">E) Operational Considerations</a></li>
+      <li class="nav-sub"><a href="#geo-nuances">F) L6/L7 Nuances</a></li>
+
+      <li><span class="nav-section-label s2">2.5 — S2 Geometry</span></li>
+      <li><a href="#s2" class="s2-link">S2 Geometry Overview</a></li>
+      <li class="nav-sub"><a href="#s2-what">A) What It Is</a></li>
+      <li class="nav-sub"><a href="#s2-mechanics">B) How It Works</a></li>
+      <li class="nav-sub2"><a href="#s2-steps">Encoding Steps</a></li>
+      <li class="nav-sub2"><a href="#s2-hilbert">Hilbert vs Z-order</a></li>
+      <li class="nav-sub2"><a href="#s2-ops-list">S2 Operations</a></li>
+      <li class="nav-sub"><a href="#s2-strengths">C) Strengths & Use Cases</a></li>
+      <li class="nav-sub"><a href="#s2-limits">D) Limitations & Failure Modes</a></li>
+      <li class="nav-sub"><a href="#s2-ops">E) Operational Considerations</a></li>
+      <li class="nav-sub"><a href="#s2-nuances">F) L6/L7 Nuances</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<main>
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <div class="hero-eyebrow">
+      <span class="h-badge geo">GeoHash</span>
+      <span class="h-badge s2">S2 Geometry</span>
+      <span class="h-badge num">Sections 2.4 – 2.5</span>
+    </div>
+    <h1>Spatial <span class="geo-text">Indexing</span><br>Internals</h1>
+    <div class="hero-sub">GeoHash · S2 Geometry · L6/L7 Mastery</div>
+    <p>A deep technical reference covering how location data is encoded, indexed, and queried at scale — from GeoHash's prefix-based proximity to Google's Hilbert-curve cell system.</p>
+    <div class="hero-toc">
+      <a class="toc-pill geo" href="#geohash">2.4 GeoHash</a>
+      <a class="toc-pill geo" href="#geo-mechanics">Encoding Mechanics</a>
+      <a class="toc-pill geo" href="#geo-limits">Failure Modes</a>
+      <a class="toc-pill s2"  href="#s2">2.5 S2 Geometry</a>
+      <a class="toc-pill s2"  href="#s2-hilbert">Hilbert vs Z-order</a>
+      <a class="toc-pill s2"  href="#s2-nuances">L6/L7 Deep Dive</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.4 ═══════════════════════════════════ -->
+  <div class="section-divider geo" id="geohash">
+    <div class="sec-num geo">2.4</div>
+    <h2>GeoHash</h2>
+    <div class="sec-desc">Encoding lat/lng as strings where shared prefixes mean proximity</div>
+  </div>
+
+  <!-- A) What It Is -->
+  <div class="content-block" id="geo-what">
+    <div class="variant-card">
+      <div class="v-letter">A</div>
+      <div class="v-body">
+        <h4>What It Is — The Mental Model</h4>
+        <p class="one-liner">GeoHash encodes latitude/longitude into a single alphanumeric string where shared prefixes mean proximity — "dr5ru" and "dr5rv" are neighbors because they share "dr5r".</p>
+      </div>
+    </div>
+
+    <div class="callout geo">
+      <div class="callout-label">The Core Insight</div>
+      <p>By interleaving bits of latitude and longitude and encoding as base32, we convert <mark>2D coordinates to 1D strings</mark> where lexicographic proximity approximates spatial proximity. This means standard database indexes (B-trees on strings) become spatial indexes.</p>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-label">The Inventor's Problem</div>
+      <p>"I want to use my existing database infrastructure — standard indexes, range queries, caching — for spatial queries. I don't want to implement a custom spatial index."</p>
+    </div>
+  </div>
+
+  <!-- B) How It Works -->
+  <div class="content-block" id="geo-mechanics">
+    <div class="variant-card">
+      <div class="v-letter">B</div>
+      <div class="v-body">
+        <h4>How It Works — Mechanics Deep-Dive</h4>
+        <p class="one-liner">Interleaved binary encoding of latitude and longitude, base32-encoded into an alphanumeric string.</p>
+      </div>
+    </div>
+
+    <div id="geo-encoding">
+      <h5 class="mini-title geo">Step-by-Step Encoding</h5>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px;">Encoding the Eiffel Tower: <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--geo);">lat=48.8584, lng=2.2945</code></p>
+
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num geo">1</div>
+          <div class="step-content">
+            <strong>Binary latitude — bisection</strong>
+            <span>Range [-90, 90], midpoint 0. 48.8584 &gt; 0 → bit=1, new range [0,90]. Range [0,90], midpoint 45. 48.8584 &gt; 45 → bit=1, range [45,90]. Continue… bits: <code>1 1 0 0 0 1…</code></span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">2</div>
+          <div class="step-content">
+            <strong>Binary longitude — same process</strong>
+            <span>Range [-180, 180], midpoint 0. 2.2945 &gt; 0 → bit=1, range [0,180]. Range [0,180], midpoint 90. 2.2945 &lt; 90 → bit=0, range [0,90]. Continue… bits: <code>1 0 0 0 0 0…</code></span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">3</div>
+          <div class="step-content">
+            <strong>Interleave bits (lng-lat alternating)</strong>
+            <span><code>lng[0], lat[0], lng[1], lat[1]…</code> → <code>1, 1, 0, 1, 0, 0, 0, 0, 0, 1…</code></span>
+          </div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">4</div>
+          <div class="step-content">
+            <strong>Base32 encode — group 5 bits → character</strong>
+            <span><code>11010</code> = 26 = <code>'u'</code> · <code>00000</code> = 0 = <code>'0'</code> · Result: <code>"u09t…"</code></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout geo">
+        <div class="callout-label">Result</div>
+        <p>Eiffel Tower GeoHash (precision 8): <strong style="font-family:'JetBrains Mono',monospace;color:var(--geo);font-size:15px;">u09tunqu</strong></p>
+      </div>
+    </div>
+
+    <div id="geo-precision">
+      <h5 class="mini-title geo">Precision Levels</h5>
+      <div class="table-wrap">
+        <table class="prec-table">
+          <thead>
+            <tr>
+              <th class="geo-head">Length</th>
+              <th class="geo-head">Cell Size (approx)</th>
+              <th class="def-head">Use Case</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>5,000 km × 5,000 km</td><td>Continent</td></tr>
+            <tr><td>2</td><td>1,250 km × 625 km</td><td>Large country</td></tr>
+            <tr><td>3</td><td>156 km × 156 km</td><td>State / region</td></tr>
+            <tr><td>4</td><td>39 km × 20 km</td><td>City</td></tr>
+            <tr><td>5</td><td>4.9 km × 4.9 km</td><td>Neighborhood</td></tr>
+            <tr><td>6</td><td>1.2 km × 609 m</td><td>Few blocks</td></tr>
+            <tr><td>7</td><td>153 m × 153 m</td><td>Street</td></tr>
+            <tr><td>8</td><td>38 m × 19 m</td><td>Building</td></tr>
+            <tr><td>9</td><td>4.7 m × 4.7 m</td><td>Room</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="geo-query">
+      <h5 class="mini-title geo">Querying "Find Restaurants Within 1km"</h5>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num geo">1</div>
+          <div class="step-content"><strong>Compute user's GeoHash</strong><span><code>u09tunqu</code></span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">2</div>
+          <div class="step-content"><strong>Truncate to precision 6 (1.2km cells)</strong><span><code>u09tun</code></span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">3</div>
+          <div class="step-content"><strong>Find the 8 neighbors of <code>u09tun</code></strong><span><code>u09tum, u09tuk, u09tup,</code> etc.</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">4</div>
+          <div class="step-content"><strong>Query database with OR on prefixes</strong><span><code>WHERE geohash LIKE 'u09tun%' OR geohash LIKE 'u09tum%' OR …</code></span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num geo">5</div>
+          <div class="step-content"><strong>Post-filter</strong><span>Calculate actual Haversine distance, return only results truly within 1km</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C) Strengths -->
+  <div class="content-block" id="geo-strengths">
+    <div class="variant-card">
+      <div class="v-letter">C</div>
+      <div class="v-body">
+        <h4>Strengths & Ideal Use Cases</h4>
+        <p class="one-liner">Spatial queries on standard infrastructure — no custom indexes required.</p>
+      </div>
+    </div>
+
+    <div class="smell-grid">
+      <div class="smell-card good">
+        <h5>✅ WHERE IT SHINES</h5>
+        <ul>
+          <li>Existing relational databases (just add a string column)</li>
+          <li>Sharding (prefix-based partitioning is natural)</li>
+          <li>Caching (GeoHash is perfect cache key)</li>
+          <li>Simple proximity queries at fixed precision</li>
+          <li>High write throughput (update = just changing a string)</li>
+        </ul>
+      </div>
+      <div class="smell-card good">
+        <h5>✅ THE SWEET SPOT</h5>
+        <ul>
+          <li>Redis / Elasticsearch / DynamoDB (no custom indexes)</li>
+          <li>Need to shard by geography</li>
+          <li>Queries are "find in general area" not exact distances</li>
+          <li>High update volume (moving objects)</li>
+        </ul>
+      </div>
+    </div>
+
+    <h5 class="mini-title geo">Real-World Users</h5>
+    <div class="rw-grid">
+      <span class="rw-pill geo">MongoDB (uses GeoHash internally)</span>
+      <span class="rw-pill geo">Redis GEO commands (GEOADD, GEORADIUS)</span>
+      <span class="rw-pill geo">Elasticsearch geo_point</span>
+      <span class="rw-pill geo">Couchbase spatial views</span>
+    </div>
+  </div>
+
+  <!-- D) Limitations -->
+  <div class="content-block" id="geo-limits">
+    <div class="variant-card">
+      <div class="v-letter">D</div>
+      <div class="v-body">
+        <h4>Limitations & Failure Modes</h4>
+        <p class="one-liner">The boundary problem is fundamental and always requires neighbor queries — understanding this is the L6/L7 differentiator.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title" style="color:var(--danger);">The Critical Boundary Problem</h5>
+
+    <div class="diagram-wrap">
+      <div class="diagram-header">
+        <span class="diagram-label def">DIAGRAM — BOUNDARY PROBLEM</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre>┌────────┬────────┐
+│ u09tun │ u09tup │
+│        │   A    │  ← A and B are 50 meters apart
+├────────┼────────┤     but in different cells
+│ u09tuk │ u09tum │
+│   B    │        │
+└────────┴────────┘
+
+Prefix of A: u09tup
+Prefix of B: u09tuk
+Shared prefix: u09tu (5 chars)
+
+But points C and D might share "u09tun" 
+and be 1km apart (diagonal corners of cell)</pre>
+    </div>
+
+    <div class="callout red">
+      <div class="callout-label">Key Insight</div>
+      <p><mark class="w">Shared prefix means possible proximity, not certain proximity.</mark> And a different prefix means NOTHING — neighbors can have wildly different prefixes. You must always query neighboring cells.</p>
+    </div>
+
+    <h5 class="mini-title" style="color:var(--danger);">Where It Breaks Down</h5>
+
+    <div class="concept-grid">
+      <div class="concept-card geo">
+        <div class="cc-num geo">01</div>
+        <h5>Boundary Problem (Critical)</h5>
+        <p>Two points 10 meters apart across a cell boundary have completely different GeoHashes at that precision level. Must always query neighboring cells.</p>
+      </div>
+      <div class="concept-card geo">
+        <div class="cc-num geo">02</div>
+        <h5>Z-order Discontinuities</h5>
+        <p>GeoHash uses Z-order curve (Morton code). Z-order has "jumps" where sequential cells aren't spatial neighbors. Must always check all 8 neighbors.</p>
+      </div>
+      <div class="concept-card geo">
+        <div class="cc-num geo">03</div>
+        <h5>Precision Trade-off</h5>
+        <p>Too low → cells are huge, too many results. Too high → many cells to query for radius search. No "just right" for variable-radius queries.</p>
+      </div>
+      <div class="concept-card geo">
+        <div class="cc-num geo">04</div>
+        <h5>Earth Edge Cases</h5>
+        <p>Antimeridian (180°/−180°): Neighbors have completely different prefixes. Poles: Cell shapes become wedges, behavior is unpredictable.</p>
+      </div>
+    </div>
+
+    <div class="gotcha">
+      <div class="gotcha-label">⚠️ Gotcha Scenario</div>
+      <p>"Your 'find drivers within 2km' query uses <strong>GeoHash precision 6 (1.2km cells)</strong>. A user is at the corner of a cell. You query 9 cells (center + 8 neighbors). But <strong>2km radius can extend into cells beyond immediate neighbors!</strong> Your query misses valid drivers."</p>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-label">Common Mistake</div>
+      <p>Assuming GeoHash prefix equality means proximity. <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">"u09tun"</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">"u09tup"</code> might be neighbors. <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">"u09tun"</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">"gbpbp"</code> might ALSO be neighbors (across prime meridian edge case).</p>
+    </div>
+  </div>
+
+  <!-- E) Operational -->
+  <div class="content-block" id="geo-ops">
+    <div class="variant-card">
+      <div class="v-letter">E</div>
+      <div class="v-body">
+        <h4>Operational Considerations</h4>
+        <p class="one-liner">Tuning precision, monitoring post-filter ratios, and database indexing strategies.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title geo">Monitoring</h5>
+    <div class="monitor-grid">
+      <div class="monitor-card">
+        <div class="m-icon">📊</div>
+        <h5>Cell Population Histogram</h5>
+        <p>Detect hotspots — cells with disproportionate entity counts cause unbalanced shard load</p>
+      </div>
+      <div class="monitor-card">
+        <div class="m-icon">🔢</div>
+        <h5>Neighbor Query Overhead</h5>
+        <p>How many cells are queried per request? Spikes indicate precision mismatch with query radius</p>
+      </div>
+      <div class="monitor-card">
+        <div class="m-icon">🎯</div>
+        <h5>Post-Filter Ratio</h5>
+        <p>Results fetched vs. results returned. A high ratio (e.g. 100 fetched, 5 returned) means wrong precision level</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title geo">Tuning</h5>
+    <div class="callout geo">
+      <div class="callout-label">Precision Level</div>
+      <p>Balance cell count vs. result set size. For a 1km radius query, precision 6 (1.2km cells) is typically the sweet spot — 9 cells cover the area without massive over-fetch.</p>
+    </div>
+    <div class="callout geo">
+      <div class="callout-label">Neighbor Depth</div>
+      <p>Query 8 neighbors? 24? Depends on radius vs. cell size. If your search radius exceeds cell diagonal, extend to 24 (second ring of neighbors).</p>
+    </div>
+
+    <h5 class="mini-title geo">Database Optimization</h5>
+    <div class="concept-grid">
+      <div class="concept-card geo">
+        <div class="cc-num geo">▸</div>
+        <h5>B-tree on GeoHash string</h5>
+        <p>Prefix range queries (<code style="font-size:11px;">LIKE 'u09t%'</code>) use the B-tree efficiently. This is the core value proposition of GeoHash.</p>
+      </div>
+      <div class="concept-card geo">
+        <div class="cc-num geo">▸</div>
+        <h5>Composite Index</h5>
+        <p><code style="font-size:11px;">(GeoHash, entity_type)</code> for filtered queries — e.g. "find only restaurants near me, not all entities."</p>
+      </div>
+      <div class="concept-card geo">
+        <div class="cc-num geo">▸</div>
+        <h5>Multiple Precisions</h5>
+        <p>Store GeoHash at multiple precisions (e.g. 4, 6, 8) for different query types. Trade storage for query flexibility.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- F) L6/L7 Nuances -->
+  <div class="content-block" id="geo-nuances">
+    <div class="variant-card">
+      <div class="v-letter">F</div>
+      <div class="v-body">
+        <h4>The L6/L7 Nuances</h4>
+        <p class="one-liner">Deep questions and non-obvious insights that separate strong candidates from exceptional ones.</p>
+      </div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-question">
+        <span class="q-icon">L6/L7</span>
+        "If GeoHash has the boundary problem, why is it still so popular?"
+      </div>
+      <div class="qa-answer">
+        <p>"Because <strong>GeoHash's boundary problem is predictable and fixable</strong> — always query neighbors. The benefit is you get spatial indexing for FREE in any database that supports string indexes. The alternative is implementing a custom spatial index, which is complex, or using a specialized spatial database, which adds operational burden."</p>
+        <p>"For most applications, querying 9 cells instead of 1 is a tiny price for using standard infrastructure. The boundary problem becomes critical only when you need exact-distance queries or variable-radius searches — then GeoHash's limitations matter more."</p>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Non-Obvious Insight — The Real Power</div>
+      <p>"<strong>GeoHash's real power is as a sharding key.</strong> 'All data with GeoHash prefix u09' goes to shard 1. Geographic locality means queries typically hit one shard. This is why Redis, DynamoDB, and similar systems love GeoHash — it solves the distributed systems problem of <strong>'how do I partition spatial data'</strong> elegantly."</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.5 ═══════════════════════════════════ -->
+  <div class="section-divider s2" id="s2">
+    <div class="sec-num s2">2.5</div>
+    <h2>S2 Geometry <span style="font-size:20px;font-weight:400;color:var(--text-muted);font-style:italic;"> — Google's Approach</span></h2>
+    <div class="sec-desc">Cube projection + Hilbert curves for mathematically rigorous spherical indexing</div>
+  </div>
+
+  <!-- A) What It Is -->
+  <div class="content-block" id="s2-what">
+    <div class="variant-card s2">
+      <div class="v-letter">A</div>
+      <div class="v-body">
+        <h4>What It Is — The Mental Model</h4>
+        <p class="one-liner">S2 projects Earth onto a cube, then unfolds the cube into a Hilbert curve, creating a hierarchical cell system where every point on Earth has a 64-bit ID and nearby points have similar IDs.</p>
+      </div>
+    </div>
+
+    <div class="callout s2">
+      <div class="callout-label">The Core Insight</div>
+      <p>The Earth is a sphere, not a flat plane. S2 handles this properly. By projecting onto a cube and using <mark class="s2">Hilbert curves</mark>, S2 maintains <mark class="s2">consistent cell sizes</mark> across the entire planet and preserves locality better than Z-order (GeoHash).</p>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-label">The Inventor's Problem</div>
+      <p>"GeoHash distorts near poles, has discontinuities, and cell sizes vary wildly by latitude. We need a system that's mathematically rigorous for a spherical Earth at Google scale."</p>
+    </div>
+  </div>
+
+  <!-- B) How It Works -->
+  <div class="content-block" id="s2-mechanics">
+    <div class="variant-card s2">
+      <div class="v-letter">B</div>
+      <div class="v-body">
+        <h4>How It Works — Mechanics Deep-Dive</h4>
+        <p class="one-liner">Cube projection → face assignment → recursive subdivision → Hilbert ordering → 64-bit integer cell ID.</p>
+      </div>
+    </div>
+
+    <div id="s2-steps">
+      <h5 class="mini-title s2">Step-by-Step</h5>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num s2">1</div>
+          <div class="step-content"><strong>Cube projection</strong><span>Project Earth's sphere onto an enclosing cube (6 faces)</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num s2">2</div>
+          <div class="step-content"><strong>Face assignment</strong><span>Each point on Earth maps to one of the 6 cube faces (0–5)</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num s2">3</div>
+          <div class="step-content"><strong>Recursive subdivision</strong><span>Each face subdivides into 4 quadrants, recursively, up to level 30</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num s2">4</div>
+          <div class="step-content"><strong>Hilbert ordering</strong><span>Cells numbered using a Hilbert space-filling curve, not Z-order — preserving locality</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num s2">5</div>
+          <div class="step-content"><strong>Cell ID assigned</strong><span>64-bit integer: 3 bits face + up to 60 bits position along Hilbert curve</span></div>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label s2">S2 CELL ID STRUCTURE</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>S2 Cell ID structure (64 bits):
+┌──────────┬──────────────────────────────────────────────────────┐
+│ Face (3) │ Position along Hilbert curve (up to 60 bits)        │
+└──────────┴──────────────────────────────────────────────────────┘
+
+Level determines precision:
+- Level 0:  ~7,840 km² (1 face, huge)
+- Level 10: ~22 km²
+- Level 15: ~0.06 km² (few blocks)
+- Level 20: ~6 m² (room)
+- Level 30: ~1 cm² (max precision)</pre>
+      </div>
+    </div>
+
+    <div id="s2-hilbert">
+      <h5 class="mini-title s2">Why Hilbert Curve Instead of Z-order (GeoHash)?</h5>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label s2">DIAGRAM — HILBERT vs Z-ORDER</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Z-order (GeoHash uses this):        Hilbert curve (S2 uses this):
+┌───┬───┬───┬───┐                   ┌───┬───┬───┬───┐
+│ 0 │ 1 │ 4 │ 5 │                   │ 0 │ 1 │14 │15 │
+├───┼───┼───┼───┤                   ├───┼───┼───┼───┤
+│ 2 │ 3 │ 6 │ 7 │  Jump!            │ 3 │ 2 │13 │12 │  No jumps!
+├───┼───┼───┼───┤  3→4 are          ├───┼───┼───┼───┤  Every step
+│ 8 │ 9 │12 │13 │  neighbors in     │ 4 │ 7 │ 8 │11 │  is a neighbor
+├───┼───┼───┼───┤  1D but not 2D    ├───┼───┼───┼───┤
+│10 │11 │14 │15 │                   │ 5 │ 6 │ 9 │10 │
+└───┴───┴───┴───┘                   └───┴───┴───┴───┘
+
+In Z-order, querying "3 to 7" includes 4,5,6 which are far away!
+In Hilbert, querying "3 to 7" = {3,4,5,6,7} all spatially connected!</pre>
+      </div>
+
+      <div class="compare-grid">
+        <div class="compare-col geo">
+          <div class="cc-header">Z-ORDER (GeoHash)</div>
+          <div class="cc-body">
+            <ul>
+              <li>Has spatial "jumps" — 3→4 are 1D neighbors but spatially distant</li>
+              <li>Range queries include non-nearby cells</li>
+              <li>Requires checking all 8 neighbors always</li>
+              <li>2D proximity ≈ 1D proximity (approximate, with gaps)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="compare-col s2">
+          <div class="cc-header">HILBERT CURVE (S2)</div>
+          <div class="cc-body">
+            <ul>
+              <li>No spatial jumps — every sequential step is a spatial neighbor</li>
+              <li>Range queries return spatially coherent results</li>
+              <li>Better locality preservation for range scans</li>
+              <li>2D proximity ≈ 1D proximity (tighter mapping)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="s2-ops-list">
+      <h5 class="mini-title s2">S2 Core Operations</h5>
+      <div class="concept-grid">
+        <div class="concept-card s2">
+          <div class="cc-num s2">▸</div>
+          <h5>Point to Cell</h5>
+          <p><code style="font-size:11px;color:var(--s2);">(lat, lng) → S2CellId</code> at any desired level (0–30). Deterministic, reversible.</p>
+        </div>
+        <div class="concept-card s2">
+          <div class="cc-num s2">▸</div>
+          <h5>Covering</h5>
+          <p>For any shape (polygon, radius circle), compute minimal set of S2 cells that cover it. Sophisticated algorithm with configurable min/max level.</p>
+        </div>
+        <div class="concept-card s2">
+          <div class="cc-num s2">▸</div>
+          <h5>Range Query</h5>
+          <p>Cell IDs are integers → efficient range queries. <code style="font-size:11px;color:var(--s2);">WHERE cell_id BETWEEN a AND b</code> on B-tree index.</p>
+        </div>
+        <div class="concept-card s2">
+          <div class="cc-num s2">▸</div>
+          <h5>Neighbors</h5>
+          <p>Find adjacent cells — guaranteed to be spatially adjacent due to Hilbert ordering. No "fake" neighbors from curve jumps.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C) Strengths -->
+  <div class="content-block" id="s2-strengths">
+    <div class="variant-card s2">
+      <div class="v-letter">C</div>
+      <div class="v-body">
+        <h4>Strengths & Ideal Use Cases</h4>
+        <p class="one-liner">Global applications, arbitrary shape covering, and systems already integrated with Google's stack.</p>
+      </div>
+    </div>
+
+    <div class="smell-grid">
+      <div class="smell-card good">
+        <h5 style="color:var(--s2);">✅ WHERE IT SHINES</h5>
+        <ul>
+          <li>Spherical Earth accuracy (poles, antimeridian, int'l date line)</li>
+          <li>Better locality preservation (Hilbert &gt; Z-order)</li>
+          <li>Variable precision — choose any level 0–30</li>
+          <li>Region covering (cells covering arbitrary shapes)</li>
+          <li>Google-scale systems (built by Google for Google)</li>
+        </ul>
+      </div>
+      <div class="smell-card good">
+        <h5 style="color:var(--s2);">✅ THE SWEET SPOT</h5>
+        <ul>
+          <li>Global apps where consistency across latitudes matters</li>
+          <li>Need to cover complex regions (polygons, circles)</li>
+          <li>Range queries on cell IDs (Bigtable, Spanner)</li>
+          <li>Systems already using the Google stack</li>
+        </ul>
+      </div>
+    </div>
+
+    <h5 class="mini-title s2">Real-World Users</h5>
+    <div class="rw-grid">
+      <span class="rw-pill s2">Google Maps</span>
+      <span class="rw-pill s2">Google Earth</span>
+      <span class="rw-pill s2">Uber (partially)</span>
+      <span class="rw-pill s2">Tinder</span>
+      <span class="rw-pill s2">Foursquare / Swarm</span>
+      <span class="rw-pill s2">Google internal systems</span>
+    </div>
+  </div>
+
+  <!-- D) Limitations -->
+  <div class="content-block" id="s2-limits">
+    <div class="variant-card s2">
+      <div class="v-letter">D</div>
+      <div class="v-body">
+        <h4>Limitations & Failure Modes</h4>
+        <p class="one-liner">Complexity, square cells, and choosing the right covering level are the operational challenges.</p>
+      </div>
+    </div>
+
+    <div class="concept-grid">
+      <div class="concept-card s2">
+        <div class="cc-num s2">01</div>
+        <h5>Complexity</h5>
+        <p>More complex than GeoHash to understand and implement. Library required. Debugging 64-bit integer cell IDs is harder than reading alphanumeric GeoHashes.</p>
+      </div>
+      <div class="concept-card s2">
+        <div class="cc-num s2">02</div>
+        <h5>Square Cells</h5>
+        <p>S2 cells are distorted squares. Circles require many cells to cover. Hexagonal systems (H3) can be a better fit for some use cases.</p>
+      </div>
+      <div class="concept-card s2">
+        <div class="cc-num s2">03</div>
+        <h5>Cell Boundary Still Exists</h5>
+        <p>Hilbert reduces but doesn't eliminate boundary issues. Still need to handle neighbors for exact proximity queries.</p>
+      </div>
+    </div>
+
+    <div class="gotcha">
+      <div class="gotcha-label">⚠️ Gotcha Scenario — Covering Level Selection</div>
+      <p>"You compute an S2 covering for a <strong>1km radius circle</strong>. At level 15, you get 5–12 cells depending on position. Your database query becomes <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">WHERE cell_id IN (c1, c2, …, c12)</code>. If you use too fine a level, you get <strong>50+ cells</strong>. If too coarse, cells include too much area outside your circle. <strong>Choosing the right level requires understanding your query patterns.</strong>"</p>
+    </div>
+  </div>
+
+  <!-- E) Operational -->
+  <div class="content-block" id="s2-ops">
+    <div class="variant-card s2">
+      <div class="v-letter">E</div>
+      <div class="v-body">
+        <h4>Operational Considerations</h4>
+        <p class="one-liner">Covering size monitoring, level tuning, and integration patterns with Google infrastructure.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title s2">Monitoring</h5>
+    <div class="monitor-grid">
+      <div class="monitor-card">
+        <div class="m-icon">📐</div>
+        <h5>Covering Size Distribution</h5>
+        <p>Track cells per query. Outliers indicate complex shapes or suboptimal level choices</p>
+      </div>
+      <div class="monitor-card">
+        <div class="m-icon">🔬</div>
+        <h5>Level Distribution</h5>
+        <p>Are you using consistent levels? Mixed levels complicate index efficiency and query planning</p>
+      </div>
+      <div class="monitor-card">
+        <div class="m-icon">⚡</div>
+        <h5>Range Query Efficiency</h5>
+        <p>Sequential cell ID reads = fast. Scattered cell IDs = random I/O. Monitor index access patterns.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title s2">Tuning</h5>
+    <div class="callout s2">
+      <div class="callout-label">Min/Max Covering Levels</div>
+      <p>Set <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">min_level</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">max_level</code> on the covering algorithm to balance precision vs. cell count. For 1km radius queries, level 13–15 is typical.</p>
+    </div>
+    <div class="callout s2">
+      <div class="callout-label">GetCovering vs GetInteriorCovering</div>
+      <p>GetCovering: All cells that intersect the shape (over-estimates slightly). GetInteriorCovering: Only cells fully inside the shape (under-estimates). Choose based on whether false positives or false negatives are more costly.</p>
+    </div>
+
+    <h5 class="mini-title s2">Integration Patterns</h5>
+    <div class="concept-grid">
+      <div class="concept-card s2">
+        <div class="cc-num s2">▸</div>
+        <h5>Bigtable / Spanner</h5>
+        <p>S2 cell IDs as row keys. Range scans on integers are highly efficient. Geographic locality means physically co-located data.</p>
+      </div>
+      <div class="concept-card s2">
+        <div class="cc-num s2">▸</div>
+        <h5>PostgreSQL</h5>
+        <p>Store as <code style="font-size:11px;">int64</code>, use standard B-tree index. Range queries work natively without PostGIS extension.</p>
+      </div>
+      <div class="concept-card s2">
+        <div class="cc-num s2">▸</div>
+        <h5>Redis</h5>
+        <p>Sorted set with cell ID as score. <code style="font-size:11px;">ZRANGEBYSCORE</code> becomes a spatial range query. Elegant and fast.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- F) L6/L7 Nuances -->
+  <div class="content-block" id="s2-nuances">
+    <div class="variant-card s2">
+      <div class="v-letter">F</div>
+      <div class="v-body">
+        <h4>The L6/L7 Nuances</h4>
+        <p class="one-liner">The deep questions that test whether you truly understand S2 vs. GeoHash — and Google's engineering decisions.</p>
+      </div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-question">
+        <span class="q-icon">L6/L7</span>
+        "Why did Google create S2 when GeoHash already existed?"
+      </div>
+      <div class="qa-answer">
+        <p><strong>Three reasons:</strong></p>
+        <p><strong>(1) Spherical accuracy</strong> — GeoHash treats lat/lng as a flat grid, which severely distorts at high latitudes and has edge case nightmares at poles and the antimeridian. S2's cube projection handles the sphere properly.</p>
+        <p><strong>(2) Hilbert curve</strong> — S2 uses Hilbert instead of Z-order, giving better locality preservation. Fewer "jumps" means range queries on cell IDs return more spatially coherent results.</p>
+        <p><strong>(3) Covering</strong> — S2 has sophisticated algorithms to compute minimal cell sets covering any shape. GeoHash requires manual neighbor computation. For a system like Google Maps indexing every road segment on Earth, these differences compound massively.</p>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Non-Obvious Insight — Hierarchical Bit Operations</div>
+      <p>"<strong>S2's cell ID is structured so that parent-child relationships are simple bit operations.</strong> Cell ID 'X' at level N has children 'X×4', 'X×4+1', 'X×4+2', 'X×4+3' at level N+1. This makes hierarchical queries trivial — <strong>'find all POIs in California'</strong> can be expressed as range queries on cell ID ranges, with no custom spatial logic needed."</p>
+    </div>
+
+    <div class="soundbite">
+      <p>"The GeoHash vs. S2 choice comes down to <mark>operational simplicity vs. mathematical correctness</mark>. GeoHash gives you spatial indexing for free in any database that supports strings — the boundary problem is a small, predictable tax. S2 is the right choice when you need <mark class="s2">global accuracy, arbitrary shape covering, or are already on Google infrastructure</mark> — its Hilbert curve and cube projection eliminate entire classes of edge cases that bite you at scale."</p>
+    </div>
+  </div>
+
+</main>
+
+<button id="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+window.addEventListener('scroll', () => {
+  const scrolled = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+  document.getElementById('progress-bar').style.width = scrolled + '%';
+  document.getElementById('back-to-top').classList.toggle('visible', window.scrollY > 300);
+  updateActiveNav();
+});
+
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id]');
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 130) current = s.id; });
+  document.querySelectorAll('#nav-list a').forEach(a => {
+    const href = a.getAttribute('href');
+    const isActive = href && href === '#' + current;
+    a.classList.toggle('active', isActive);
+  });
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.diagram-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied ✓'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+document.getElementById('sidebar-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#nav-list li').forEach(li => {
+    const text = li.textContent.toLowerCase();
+    li.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+});
+
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+document.getElementById('hamburger').addEventListener('click', () => {
+  sidebar.classList.toggle('open'); overlay.classList.toggle('visible');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open'); overlay.classList.remove('visible');
+});
+document.querySelectorAll('#nav-list a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth <= 960) { sidebar.classList.remove('open'); overlay.classList.remove('visible'); }
+  });
+});
+</script>
+
+</body>
+</html>
