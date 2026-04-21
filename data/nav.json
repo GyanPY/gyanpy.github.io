@@ -221,7 +221,12 @@
         "title": "Deep Dive-6",
         "file": "pages/lb/6.html"
       }
-    ]
+    ], 
+    "Spatial/Geo": [
+      {
+        "title": "Internals",
+        "file": "pages/core-1.html"
+      },
   },
   "Interview": {
     "System Design": {
