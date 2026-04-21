@@ -1,0 +1,1746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InfluxDB — Senior Staff Engineer Interview Deep-Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2230;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #6e7681;
+  --link: #58a6ff;
+  --amber: #F5A623;
+  --teal: #00BFA5;
+  --gold: #FFD700;
+  --coral: #FF6B6B;
+  --purple: #b083f0;
+  --code-bg: #010409;
+  --sidebar-w: 280px;
+  --progress-h: 3px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; font-size: 16px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Source Serif 4', Georgia, serif;
+  line-height: 1.75;
+  opacity: 0;
+  animation: fadeIn 0.6s ease forwards;
+}
+
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* ── Progress Bar ── */
+#progress-bar {
+  position: fixed; top: 0; left: 0; height: var(--progress-h);
+  width: 0%; background: linear-gradient(90deg, var(--amber), var(--teal));
+  z-index: 9999; transition: width 0.1s linear;
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  position: fixed; top: var(--progress-h); left: 0; bottom: 0;
+  width: var(--sidebar-w); background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+  z-index: 100; display: flex; flex-direction: column;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  transition: transform 0.3s ease;
+}
+
+#sidebar::-webkit-scrollbar { width: 4px; }
+#sidebar::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-header {
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+}
+
+.sidebar-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 0.85rem; font-weight: 700;
+  color: var(--amber); letter-spacing: 0.05em;
+  text-transform: uppercase; margin-bottom: 10px;
+}
+
+#search-input {
+  width: 100%; padding: 7px 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace; outline: none;
+  transition: border-color 0.2s;
+}
+#search-input:focus { border-color: var(--link); }
+#search-input::placeholder { color: var(--text-dim); }
+
+#nav-list { padding: 8px 0; flex: 1; }
+
+.nav-section { margin: 0; }
+
+.nav-pillar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--amber); letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-left: 3px solid transparent;
+  text-decoration: none; transition: all 0.2s;
+}
+.nav-pillar:hover { background: rgba(245,166,35,0.08); border-left-color: var(--amber); color: var(--amber); }
+.nav-pillar.active { background: rgba(245,166,35,0.12); border-left-color: var(--amber); }
+
+.nav-sub {
+  display: flex; align-items: center;
+  padding: 5px 16px 5px 30px; cursor: pointer;
+  font-size: 0.75rem; color: var(--text-muted);
+  text-decoration: none; transition: all 0.2s;
+  border-left: 3px solid transparent; line-height: 1.4;
+}
+.nav-sub:hover { color: var(--link); background: rgba(88,166,255,0.06); border-left-color: var(--link); }
+.nav-sub.active { color: var(--link); background: rgba(88,166,255,0.08); border-left-color: var(--link); }
+
+/* ── Hamburger ── */
+#hamburger {
+  display: none; position: fixed; top: 12px; left: 12px;
+  z-index: 200; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px; cursor: pointer; color: var(--text);
+  flex-direction: column; gap: 4px;
+}
+#hamburger span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; transition: all 0.2s; }
+
+/* ── Main Content ── */
+#main {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh; padding: 0;
+}
+
+/* ── Hero ── */
+.hero {
+  background: linear-gradient(135deg, #0d1117 0%, #0f1923 40%, #0d1f2d 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 80px 60px 60px;
+  position: relative; overflow: hidden;
+}
+.hero::before {
+  content: 'InfluxDB';
+  position: absolute; right: -20px; top: 20px;
+  font-family: 'Playfair Display', serif;
+  font-size: 14rem; font-weight: 900; color: rgba(245,166,35,0.04);
+  white-space: nowrap; pointer-events: none; user-select: none;
+}
+.hero-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; color: var(--amber); letter-spacing: 0.15em;
+  text-transform: uppercase; margin-bottom: 16px;
+}
+.hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.4rem, 5vw, 4rem); font-weight: 900;
+  line-height: 1.1; color: var(--text); margin-bottom: 16px;
+}
+.hero h1 em { color: var(--amber); font-style: italic; }
+.hero-sub {
+  font-size: 1.1rem; color: var(--text-muted); max-width: 600px;
+  margin-bottom: 32px;
+}
+.hero-meta {
+  display: flex; gap: 24px; flex-wrap: wrap;
+}
+.hero-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; padding: 4px 12px;
+  border: 1px solid var(--border); border-radius: 20px;
+  color: var(--text-muted); letter-spacing: 0.05em;
+}
+.hero-tag.amber { border-color: var(--amber); color: var(--amber); }
+.hero-tag.teal { border-color: var(--teal); color: var(--teal); }
+
+/* ── Content Area ── */
+.content { max-width: 900px; padding: 0 60px 100px; margin: 0 auto; }
+
+/* ── Pillar Section ── */
+.pillar-section { margin-top: 80px; }
+
+.pillar-header {
+  display: flex; align-items: flex-start; gap: 20px;
+  margin-bottom: 40px; padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.pillar-number {
+  font-family: 'Playfair Display', serif;
+  font-size: 4rem; font-weight: 900; color: rgba(245,166,35,0.15);
+  line-height: 1; flex-shrink: 0; min-width: 80px; text-align: right;
+}
+.pillar-title-block { flex: 1; }
+.pillar-emoji { font-size: 1.8rem; margin-bottom: 4px; display: block; }
+.pillar-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.9rem; font-weight: 700; color: var(--text);
+  line-height: 1.2; margin-bottom: 6px;
+}
+.pillar-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; color: var(--text-dim);
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* ── h2 / h3 ── */
+h2.section-h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem; font-weight: 700; color: var(--amber);
+  margin: 48px 0 16px; padding-bottom: 8px;
+  border-bottom: 1px solid rgba(245,166,35,0.25);
+}
+h3.section-h3 {
+  font-family: 'Source Serif 4', serif;
+  font-size: 1.15rem; font-weight: 600; color: var(--teal);
+  margin: 32px 0 12px;
+}
+
+/* ── Paragraphs ── */
+.content p { margin-bottom: 16px; color: var(--text); }
+.content strong { color: var(--amber); font-weight: 600; }
+
+/* ── ASCII Diagram ── */
+.diagram-wrap {
+  margin: 28px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.diagram-label {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 14px; background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.diagram-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem; font-weight: 700; color: var(--teal);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  background: rgba(0,191,165,0.12); padding: 2px 8px; border-radius: 3px;
+  border: 1px solid rgba(0,191,165,0.3);
+}
+.diagram-wrap pre {
+  background: var(--code-bg);
+  padding: 20px 20px;
+  overflow-x: auto;
+  margin: 0;
+}
+.diagram-wrap pre code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem; line-height: 1.65;
+  color: #7fdbca; white-space: pre;
+  tab-size: 2;
+}
+
+/* ── Info Box ── */
+.info-box {
+  margin: 24px 0; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.info-box-title {
+  padding: 10px 16px; background: var(--surface2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem; font-weight: 700; color: var(--link);
+  border-bottom: 1px solid var(--border);
+  letter-spacing: 0.03em;
+}
+.info-box-body {
+  padding: 16px 20px; background: rgba(22,27,34,0.8);
+}
+.info-box-body p { margin-bottom: 8px; font-size: 0.92rem; }
+.info-box-body p:last-child { margin-bottom: 0; }
+
+/* ── Callout Box ── */
+.callout {
+  margin: 20px 0; padding: 16px 20px;
+  border-radius: 6px; border-left: 4px solid;
+}
+.callout-fire { border-color: var(--coral); background: rgba(255,107,107,0.07); }
+.callout-lightning { border-color: var(--amber); background: rgba(245,166,35,0.07); }
+.callout-key { border-color: var(--teal); background: rgba(0,191,165,0.07); }
+.callout-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; margin-bottom: 6px;
+}
+.callout-fire .callout-label { color: var(--coral); }
+.callout-lightning .callout-label { color: var(--amber); }
+.callout-key .callout-label { color: var(--teal); }
+.callout p { margin: 0; font-size: 0.92rem; }
+
+/* ── Table ── */
+.table-wrap {
+  margin: 24px 0; overflow-x: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+table {
+  width: 100%; border-collapse: collapse; font-size: 0.85rem;
+}
+thead tr {
+  background: linear-gradient(90deg, #1a2744, #0f2035);
+}
+thead th {
+  padding: 12px 14px; text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; font-weight: 700; color: var(--amber);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-bottom: 2px solid rgba(245,166,35,0.3);
+  white-space: nowrap;
+}
+tbody tr { border-bottom: 1px solid rgba(48,54,61,0.5); }
+tbody tr:nth-child(even) { background: rgba(22,27,34,0.5); }
+tbody tr:nth-child(odd) { background: rgba(13,17,23,0.3); }
+tbody tr:hover { background: rgba(88,166,255,0.05); }
+tbody td {
+  padding: 10px 14px; color: var(--text);
+  vertical-align: top; line-height: 1.5;
+}
+tbody td:first-child { color: var(--amber); font-weight: 500; }
+
+/* ── Bullets ── */
+.content ul, .content ol {
+  margin: 12px 0 16px 24px;
+}
+.content li { margin-bottom: 8px; }
+.content li strong { color: var(--amber); }
+
+/* ── Question Card ── */
+.qcard {
+  margin: 28px 0; padding: 0;
+  border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; transition: box-shadow 0.2s;
+}
+.qcard:hover { box-shadow: 0 4px 20px rgba(88,166,255,0.08); }
+.qcard-header {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 20px; cursor: pointer;
+  background: var(--surface2); transition: background 0.2s;
+}
+.qcard-header:hover { background: rgba(28,34,48,0.9); }
+.qcard-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem; font-weight: 900; color: rgba(245,166,35,0.3);
+  line-height: 1; flex-shrink: 0; min-width: 36px;
+}
+.qcard-q {
+  font-family: 'Source Serif 4', serif;
+  font-size: 0.95rem; font-weight: 600; color: var(--link);
+  line-height: 1.4; flex: 1; padding-top: 4px;
+}
+.qcard-toggle {
+  flex-shrink: 0; color: var(--text-dim); font-size: 0.8rem;
+  margin-left: 8px; transition: transform 0.3s;
+  padding-top: 4px;
+}
+.qcard.open .qcard-toggle { transform: rotate(180deg); }
+.qcard-body {
+  padding: 0 20px 0;
+  max-height: 0; overflow: hidden;
+  transition: max-height 0.4s ease, padding 0.3s ease;
+}
+.qcard.open .qcard-body {
+  max-height: 2000px; padding: 16px 20px 20px;
+}
+.qcard-body p { font-size: 0.9rem; margin-bottom: 10px; }
+.qcard-body p:last-child { margin-bottom: 0; }
+
+/* ── Design Problem Card ── */
+.problem-card {
+  margin: 28px 0; padding: 28px;
+  background: linear-gradient(135deg, rgba(22,27,34,0.9), rgba(15,25,40,0.9));
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 12px; position: relative; overflow: hidden;
+}
+.problem-card::before {
+  content: ''; position: absolute; top: 0; left: 0;
+  width: 4px; height: 100%; background: var(--amber);
+}
+.problem-card h4 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.1rem; color: var(--amber); margin-bottom: 16px;
+}
+.problem-card p { font-size: 0.9rem; margin-bottom: 10px; }
+
+/* ── Critique Section ── */
+.critique-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+.critique-card {
+  padding: 16px; border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.critique-good { border-top: 3px solid var(--teal); background: rgba(0,191,165,0.05); }
+.critique-bad { border-top: 3px solid var(--coral); background: rgba(255,107,107,0.05); }
+.critique-card h5 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; margin-bottom: 10px;
+}
+.critique-good h5 { color: var(--teal); }
+.critique-bad h5 { color: var(--coral); }
+.critique-card ul { margin-left: 16px; }
+.critique-card li { font-size: 0.85rem; margin-bottom: 6px; color: var(--text-muted); }
+
+/* ── Failure Mode Card ── */
+.failure-card {
+  margin: 24px 0; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.failure-header {
+  padding: 12px 18px; background: rgba(255,107,107,0.1);
+  border-bottom: 1px solid rgba(255,107,107,0.2);
+  font-family: 'Source Serif 4', serif;
+  font-weight: 700; color: var(--coral); font-size: 1rem;
+}
+.failure-body { padding: 16px 18px; }
+.failure-item { margin-bottom: 12px; }
+.failure-item:last-child { margin-bottom: 0; }
+.failure-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; font-weight: 700; color: var(--amber);
+  letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px;
+}
+.failure-item p { font-size: 0.88rem; margin: 0; color: var(--text-muted); }
+
+/* ── Back to Top ── */
+#back-top {
+  position: fixed; bottom: 28px; right: 28px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 1.1rem; transition: all 0.2s; z-index: 50;
+  opacity: 0; transform: translateY(10px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+#back-top.visible { opacity: 1; transform: translateY(0); }
+#back-top:hover { background: var(--amber); color: var(--bg); border-color: var(--amber); transform: translateY(-2px); }
+
+/* ── Section Divider ── */
+.section-divider {
+  height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent);
+  margin: 60px 0;
+}
+
+/* ── Highlight mark ── */
+mark {
+  background: rgba(245,166,35,0.2); color: var(--amber);
+  padding: 1px 3px; border-radius: 2px;
+}
+
+/* ── Spacer Util ── */
+.spacer { height: 24px; }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  :root { --sidebar-w: 0px; }
+  #sidebar { transform: translateX(-280px); width: 280px; }
+  #sidebar.open { transform: translateX(0); }
+  #hamburger { display: flex; }
+  #main { margin-left: 0; }
+  .hero { padding: 60px 28px 48px; }
+  .content { padding: 0 28px 80px; }
+  .critique-grid { grid-template-columns: 1fr; }
+  .pillar-number { font-size: 2.5rem; min-width: 50px; }
+  .hero::before { display: none; }
+}
+
+@media (max-width: 600px) {
+  .hero h1 { font-size: 2rem; }
+  .content { padding: 0 16px 80px; }
+  .hero { padding: 48px 16px 40px; }
+}
+
+/* ── Search highlight ── */
+.search-highlight { background: rgba(245,166,35,0.3); border-radius: 2px; }
+.nav-section.hidden { display: none; }
+
+/* ── Sidebar overlay (mobile) ── */
+#sidebar-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5); z-index: 99;
+}
+#sidebar-overlay.visible { display: block; }
+
+/* ── Copy btn ── */
+.copy-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem; padding: 3px 10px;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-dim); cursor: pointer;
+  transition: all 0.2s;
+}
+.copy-btn:hover { border-color: var(--teal); color: var(--teal); }
+.copy-btn.copied { border-color: var(--teal); color: var(--teal); }
+
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- Sidebar -->
+<nav id="sidebar" aria-label="Document navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-title">InfluxDB Deep-Dive</div>
+    <input type="text" id="search-input" placeholder="Search sections…" aria-label="Search sections">
+  </div>
+  <div id="nav-list">
+    <div class="nav-section" data-section="hero">
+      <a href="#hero" class="nav-pillar">⚡ Overview</a>
+    </div>
+    <div class="nav-section" data-section="p1">
+      <a href="#p1" class="nav-pillar">🧠 P1 — Core Concepts</a>
+      <a href="#p1-problem" class="nav-sub">Problem InfluxDB Solves</a>
+      <a href="#p1-model" class="nav-sub">Core Data Model</a>
+      <a href="#p1-guarantees" class="nav-sub">Guarantees &amp; Anti-Guarantees</a>
+      <a href="#p1-invariants" class="nav-sub">Invariants</a>
+      <a href="#p1-mental" class="nav-sub">Mental Model Diagram</a>
+    </div>
+    <div class="nav-section" data-section="p2">
+      <a href="#p2" class="nav-pillar">🏗️ P2 — Architecture</a>
+      <a href="#p2-components" class="nav-sub">Internal Components</a>
+      <a href="#p2-write" class="nav-sub">Write Path</a>
+      <a href="#p2-read" class="nav-sub">Read Path</a>
+      <a href="#p2-tsm" class="nav-sub">TSM File Format</a>
+      <a href="#p2-backpressure" class="nav-sub">Back-Pressure</a>
+    </div>
+    <div class="nav-section" data-section="p3">
+      <a href="#p3" class="nav-pillar">⚖️ P3 — Trade-offs</a>
+      <a href="#p3-cap" class="nav-sub">CAP Theorem</a>
+      <a href="#p3-pacelc" class="nav-sub">PACELC Analysis</a>
+      <a href="#p3-latency" class="nav-sub">Latency vs Throughput</a>
+      <a href="#p3-consistency" class="nav-sub">Consistency Models</a>
+      <a href="#p3-durability" class="nav-sub">Durability vs Performance</a>
+    </div>
+    <div class="nav-section" data-section="p4">
+      <a href="#p4" class="nav-pillar">💥 P4 — Failure Modes</a>
+      <a href="#p4-crash" class="nav-sub">Node Crash</a>
+      <a href="#p4-partition" class="nav-sub">Network Partition</a>
+      <a href="#p4-splitbrain" class="nav-sub">Split-Brain</a>
+      <a href="#p4-slownode" class="nav-sub">Slow Node</a>
+      <a href="#p4-disk" class="nav-sub">Disk Corruption</a>
+      <a href="#p4-clock" class="nav-sub">Clock Skew</a>
+      <a href="#p4-herd" class="nav-sub">Thundering Herd</a>
+      <a href="#p4-cascade" class="nav-sub">Cascading Failures</a>
+    </div>
+    <div class="nav-section" data-section="p5">
+      <a href="#p5" class="nav-pillar">📈 P5 — Scaling</a>
+      <a href="#p5-vertical" class="nav-sub">Vertical Scaling</a>
+      <a href="#p5-horizontal" class="nav-sub">Horizontal Scaling</a>
+      <a href="#p5-sharding" class="nav-sub">Sharding Strategies</a>
+      <a href="#p5-cross" class="nav-sub">Cross-Region Replication</a>
+      <a href="#p5-read-write" class="nav-sub">Read vs Write Scaling</a>
+    </div>
+    <div class="nav-section" data-section="p6">
+      <a href="#p6" class="nav-pillar">🔧 P6 — Real-World</a>
+      <a href="#p6-shine" class="nav-sub">Where InfluxDB Shines</a>
+      <a href="#p6-examples" class="nav-sub">Production Examples</a>
+      <a href="#p6-antipatterns" class="nav-sub">Anti-Patterns</a>
+      <a href="#p6-matrix" class="nav-sub">Decision Matrix</a>
+      <a href="#p6-mistakes" class="nav-sub">Common Mistakes</a>
+      <a href="#p6-day1" class="nav-sub">Day 1 Monitoring</a>
+    </div>
+    <div class="nav-section" data-section="p7">
+      <a href="#p7" class="nav-pillar">🌐 P7 — Google Scale</a>
+      <a href="#p7-breaks" class="nav-sub">What Breaks at Scale</a>
+      <a href="#p7-google" class="nav-sub">How Google Solves It</a>
+      <a href="#p7-tiers" class="nav-sub">Bottleneck Tiers</a>
+      <a href="#p7-multitenancy" class="nav-sub">Multi-Tenancy</a>
+      <a href="#p7-residency" class="nav-sub">Data Residency</a>
+      <a href="#p7-spanner" class="nav-sub">Spanner Equivalent</a>
+    </div>
+    <div class="nav-section" data-section="p8">
+      <a href="#p8" class="nav-pillar">🎯 P8 — Interview Sim</a>
+      <a href="#p8-problem" class="nav-sub">Design Problem</a>
+      <a href="#p8-answer" class="nav-sub">Strong Candidate Answer</a>
+      <a href="#p8-critique" class="nav-sub">Interviewer Critique</a>
+      <a href="#p8-rapid" class="nav-sub">10 Rapid-Fire Q&amp;As</a>
+    </div>
+  </div>
+</nav>
+
+<div id="sidebar-overlay"></div>
+
+<button id="hamburger" aria-label="Toggle navigation">
+  <span></span><span></span><span></span>
+</button>
+
+<!-- Main -->
+<main id="main">
+
+  <!-- Hero -->
+  <section id="hero" class="hero">
+    <div class="hero-eyebrow">Senior Staff Engineer Interview Guide · Google L7/L8</div>
+    <h1><em>InfluxDB</em><br>System Design Deep-Dive</h1>
+    <p class="hero-sub">All 8 pillars from first principles to Distinguished Engineer level. Purpose-built time-series database — architecture, failure modes, scaling, and interview simulation.</p>
+    <div class="hero-meta">
+      <span class="hero-tag amber">8 Pillars</span>
+      <span class="hero-tag teal">L6 → L8 Progression</span>
+      <span class="hero-tag">TSM Engine</span>
+      <span class="hero-tag">InfluxDB v1 → v3 (IOx)</span>
+      <span class="hero-tag">April 2026</span>
+    </div>
+  </section>
+
+  <div class="content">
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 1 -->
+  <section id="p1" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">01</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">🧠</span>
+        <div class="pillar-title">Core Concepts &amp; Mental Models</div>
+        <div class="pillar-subtitle">From First Principles to Staff-Level Fluency</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p1-problem">What Problem Does InfluxDB Solve?</h2>
+
+    <p>The world before InfluxDB was dominated by general-purpose relational databases like PostgreSQL and MySQL, or document stores like MongoDB, none of which were designed with the unique access patterns of time-series data in mind. When teams at monitoring companies like Datadog, or infrastructure operators tried to store metrics — think CPU utilization sampled every 10 seconds across 100,000 servers — they ran into catastrophic performance walls. Let's be precise about why.</p>
+
+    <p>In a relational database, every row you insert requires updating one or more B-tree indexes. The primary key index, any secondary indexes on timestamp columns, and often a covering index for the most common query patterns. For time-series workloads, the write rate is constant and high — millions of data points per second. Each insert into a B-tree causes page splits, index rebalancing, <strong>write amplification</strong> (writing the same logical data multiple times to different on-disk structures), and eventually massive fragmentation. The query planner also cannot exploit the fact that time-series data is naturally ordered by time — it treats it like any other random-access relational data.</p>
+
+    <p>Beyond raw performance, relational databases lack the semantic primitives that time-series users need. There is no native concept of a <mark>measurement</mark> (a named stream of related metrics), or <mark>tags</mark> (indexed metadata dimensions used to slice-and-dice data), or <mark>fields</mark> (the actual numeric values being recorded). Schema changes were expensive and required migrations, but IoT devices and microservices constantly emit new metric names. TTL (time-to-live) data expiration — since old metrics become useless but consume disk — required complex cron-job-based deletion strategies that themselves caused write amplification and query interference.</p>
+
+    <p><strong>InfluxDB was created in 2013 by InfluxData</strong> (originally named Paul Dix's project) to solve exactly this class of problems. It provides a purpose-built storage engine, a schema-on-write model, native time-based retention policies, and a query language (InfluxQL, later Flux) tuned entirely around time-series operations like downsampling, aggregations over time windows, and range scans.</p>
+
+    <h2 class="section-h2" id="p1-model">The Core Abstraction: The Data Model</h2>
+
+    <p>The fundamental abstraction InfluxDB provides is the concept of a time-series data model composed of four orthogonal dimensions. Understanding this model is the most important conceptual foundation for everything else.</p>
+
+    <p><strong>Measurement:</strong> This is analogous to a table name in SQL, but it is not a rigid schema. A measurement is a logical grouping of related time-series. For example, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">'cpu'</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">'memory'</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">'network_io'</code>. All data points within a measurement share a common semantic meaning — they describe aspects of the same phenomenon.</p>
+
+    <p><strong>Tags:</strong> Tags are string key-value pairs attached to each data point that represent the metadata describing what was measured. Examples: <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">host='server-42'</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">region='us-east-1'</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">datacenter='dc3'</code>. Critically, <mark>tags are indexed</mark> by InfluxDB. This means queries that filter on tag values are fast — they do not require a full scan. Tags are also used for grouping results. Because tags are indexed and stored in the in-memory tag index, they must have <strong>low cardinality</strong> — the number of unique combinations of tag values must be manageable. This is a critical invariant we will return to repeatedly.</p>
+
+    <p><strong>Fields:</strong> Fields are key-value pairs where the values are actual measurements — integers, floats, strings, or booleans. Examples: <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cpu_usage=72.3</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">memory_bytes=8589934592</code>. Unlike tags, fields are <strong>NOT indexed</strong>. They are stored in compressed time-series blocks alongside their timestamps. This means filtering on a field value requires a scan of all data for the given time range. The performance implication is significant and is a frequent interview topic.</p>
+
+    <p><strong>Timestamp:</strong> Every data point has exactly one timestamp, stored as a <mark>Unix nanosecond epoch</mark>. This precision allows InfluxDB to handle financial tick data (where sub-millisecond resolution matters), as well as more coarse sensor data. The timestamp is the primary ordering dimension of all data in the storage engine.</p>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — Data Model</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  InfluxDB Data Model
+  ─────────────────────────────────────────────────────────
+  Measurement: cpu
+  ┌──────────────────┬─────────────────┬──────────────────┬───────────────────┐
+  │   TIMESTAMP       │    TAGS (index) │  FIELDS (stored) │                   │
+  │   (ns epoch)      │ host | region   │ usage_user|idle  │                   │
+  ├──────────────────┼─────────────────┼──────────────────┤                   │
+  │ 1714000000000000 │ srv1 | us-east  │  72.3  |  27.7   │ ← one data point  │
+  │ 1714000010000000 │ srv1 | us-east  │  74.1  |  25.9   │                   │
+  │ 1714000000000000 │ srv2 | eu-west  │  11.0  |  89.0   │                   │
+  └──────────────────┴─────────────────┴──────────────────┴───────────────────┘
+                                │
+                  Series Key = Measurement + Tag Set
+                  e.g. cpu,host=srv1,region=us-east
+                  → uniquely identifies one time-series stream
+  ─────────────────────────────────────────────────────────</code></pre>
+    </div>
+
+    <h2 class="section-h2" id="p1-guarantees">Fundamental Guarantees — and What InfluxDB Does NOT Guarantee</h2>
+
+    <h3 class="section-h3">Guarantees InfluxDB Makes</h3>
+
+    <p><strong>1. High-throughput append-only writes:</strong> InfluxDB is designed to accept millions of data points per second on a single node. The storage engine (TSM — Time-Structured Merge Tree) optimizes for sequential writes. Data is first written to an in-memory cache (WAL + Cache), then flushed to immutable TSM files on disk. This append-only model means writes are never doing random I/O — the most expensive class of disk operation.</p>
+
+    <p><strong>2. Efficient time-range reads:</strong> Because data is physically stored in time-ordered TSM files and the on-disk index stores min/max timestamps per block, InfluxDB can skip entire files and blocks that fall outside a query's time range without reading them. This is called <mark>time-based file pruning</mark>. A query for 'last 5 minutes of CPU data' on a database holding 5 years of data will only touch the most recent TSM files.</p>
+
+    <p><strong>3. Automatic data lifecycle management via Retention Policies:</strong> InfluxDB lets you define how long data should be kept. After the retention period, shards are automatically dropped — not soft-deleted with tombstones, but the entire directory removed. This is <mark>O(1) deletion</mark> regardless of how many data points are in the shard, which is a massive advantage over relational databases where DELETE is O(n) and causes write amplification.</p>
+
+    <p><strong>4. Native time-series query semantics:</strong> Operations like MEAN(field) OVER 5m intervals, GROUP BY time(1h), downsampling, moving averages, and derivative calculations are first-class citizens in the query language. The storage engine is aware of these patterns and can optimize for them.</p>
+
+    <p><strong>5. Schema-on-write flexibility:</strong> You can start writing a new metric without any schema migration. New field keys, new tag keys, new measurements appear on first write. This is critical for microservice environments where service instrumentation evolves rapidly.</p>
+
+    <h3 class="section-h3">Guarantees InfluxDB Does NOT Make</h3>
+
+    <p><strong>NOT a strong ACID transactional system:</strong> InfluxDB does not provide multi-statement transactions. If you write a batch of 10,000 points, some might be persisted and some might not be if a failure occurs partway through. There is no rollback.</p>
+
+    <p><strong>NOT a relational join engine:</strong> There are no foreign keys, no JOIN operations across measurements. Correlating data from two different measurements must be done at the application layer or through Flux's experimental join capabilities, which are costly.</p>
+
+    <p><strong>NOT ideal for high-cardinality tag sets:</strong> If tags have extremely high cardinality (millions of unique tag combinations) InfluxDB's in-memory index becomes a memory pressure problem that can cause OOM kills and degraded performance. This is the <strong>#1 production operational failure mode</strong>.</p>
+
+    <h2 class="section-h2" id="p1-invariants">Critical Invariants for Correctness</h2>
+
+    <p><strong>Invariant 1 — Series Cardinality must be bounded:</strong> The number of unique series in a database must remain manageable — typically under 10 million per node for v1.x, with improvements in v2/v3. Each series consumes memory in the in-memory index (the TSI — Time Series Index in v1.5+). Violating this invariant causes OOM and node instability.</p>
+
+    <p><strong>Invariant 2 — Timestamps should be monotonically non-decreasing within a series for optimal performance:</strong> While InfluxDB handles out-of-order writes through the cache layer, persistent out-of-order writes degrade write performance significantly because the TSM compaction engine must do extra work to re-sort and merge data.</p>
+
+    <p><strong>Invariant 3 — Shard boundaries are immutable:</strong> Each shard covers a fixed time range. Once a shard's time range is defined, it does not change. Data for that time range always goes to that shard. This makes the system predictable but means you cannot dynamically re-partition old data.</p>
+
+    <p><strong>Invariant 4 — Fields cannot change type:</strong> If a field named <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">response_time</code> is first written as a float, subsequent writes of that field as a string or integer will either be silently dropped (v1.x) or cause an error (v2.x). Type conflicts corrupt or truncate data, and this is a common silent failure in production.</p>
+
+    <h2 class="section-h2" id="p1-mental">Conceptual Mental Model</h2>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — Logical Architecture</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  Mental Model: InfluxDB Logical Architecture
+  ────────────────────────────────────────────────────────────────────
+  Organization (v2+) / Instance (v1)
+  └─ Bucket (v2) / Database+RetentionPolicy (v1)
+     ├─ Shard Group (covers a time window, e.g. 1 week)
+     │   ├─ Shard 1 (physical storage unit on disk)
+     │   │   ├─ TSM Files (immutable, sorted, compressed blocks)
+     │   │   ├─ WAL (Write Ahead Log, for durability)
+     │   │   └─ Cache (in-memory write buffer)
+     │   └─ Shard 2 (same time range, different data / replica)
+     └─ Tag Index (in-memory + TSI file, maps tags → series IDs)
+
+  Query: SELECT mean(cpu) WHERE host='srv1' AND time > now()-1h
+      → Tag Index resolves host='srv1' → Series ID set
+      → Shard Group for last 1h identified
+      → TSM files for those series, in that shard, are read
+      → Compressed blocks decoded, aggregation applied
+  ────────────────────────────────────────────────────────────────────</code></pre>
+    </div>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB's power comes from co-designing the data model (measurement/tags/fields), storage engine (TSM), and query semantics around the invariant that <strong>time is the primary access dimension</strong> — a design decision that makes it exceptional at time-series workloads and fundamentally unsuitable for general-purpose relational use.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 2 -->
+  <section id="p2" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">02</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">🏗️</span>
+        <div class="pillar-title">Architecture Deep Dive</div>
+        <div class="pillar-subtitle">Internal Components, Data Flow, On-Disk Layout</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p2-components">Internal Components and Their Responsibilities</h2>
+
+    <h3 class="section-h3">1. HTTP API Layer / Line Protocol Handler</h3>
+    <p>Every data write and query arrives through the HTTP API. Writes use the InfluxDB Line Protocol — a compact, text-based format designed for high-throughput ingestion. A line looks like: <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cpu,host=srv1,region=us-east cpu_usage=72.3,cpu_idle=27.7 1714000000000000000</code>. The HTTP layer parses this format, validates the line (measurement name present, at least one field, valid timestamp), and routes to the storage engine. In InfluxDB v2+, authentication via API tokens happens here.</p>
+
+    <h3 class="section-h3">2. WAL (Write-Ahead Log)</h3>
+    <p>Before a write is acknowledged to the client, it is appended to the WAL — a sequential on-disk log. This is the primary durability guarantee: if the server crashes after acknowledging a write, the WAL ensures that data can be replayed on restart. The WAL is a simple append-only file; writes to it are extremely fast (sequential I/O). WAL segments are typically limited in size (e.g., 10MB) after which a new segment is opened. The WAL is the critical path for write latency — its fsync behavior determines the <mark>durability-vs-latency tradeoff</mark>.</p>
+
+    <h3 class="section-h3">3. Cache (Write Cache / MemTable)</h3>
+    <p>After being written to the WAL, data is also inserted into an in-memory data structure called the Cache. The Cache holds all recently written data that has not yet been flushed to TSM files. It is organized by series key and field, with timestamps in sorted order. Reads always check the Cache first, because the most recent data — which is the most frequently queried — lives here. The Cache has a configurable memory limit (<code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cache-max-memory-size</code>, default 1GB in v1.x). When it fills, a snapshot is triggered, flushing Cache contents to immutable TSM files.</p>
+
+    <h3 class="section-h3">4. TSM Engine (Time-Structured Merge Tree)</h3>
+    <p>TSM (Time-Structured Merge) is InfluxDB's custom storage engine, designed specifically for time-series data. It is inspired by LSM trees (Log-Structured Merge Trees) but adapted for the time-series access pattern. The TSM engine manages immutable TSM files — compressed, sorted blocks of field values for specific series, in specific time ranges. It also manages <strong>compaction</strong>: the background process of merging smaller TSM files into larger ones, removing deleted data, and improving read efficiency. There are multiple levels of compaction (Level 1 through Level 4 in v1.x) with each level producing larger, more optimized files.</p>
+
+    <h3 class="section-h3">5. Shard and Shard Group</h3>
+    <p>Data is physically stored in shards. A shard is a directory on disk containing WAL files, a Cache, and TSM files for a specific combination of retention policy and time range. A shard group is a logical grouping of all shards that cover the same time range. In a clustered deployment (InfluxDB Enterprise), a shard group contains multiple shards distributed across nodes, providing both parallelism and replication. The <mark>shard duration</mark> is configurable and defaults based on the retention policy duration.</p>
+
+    <h3 class="section-h3">6. Series Index (Tag Index / TSI)</h3>
+    <p>The Series Index maps from tag key-value combinations to series IDs. When a write arrives for <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cpu,host=srv1,region=us-east</code>, the index must resolve this tag set to a series ID (an integer). This index lives in memory (the older 'in-memory' index) or in a memory-mapped file structure (TSI — Time Series Index, introduced in v1.5 as an option, <strong>default in v2.0</strong>). TSI is critical for supporting high-cardinality tag sets — it keeps the working set of the index on disk with hot paths in memory, instead of requiring the entire index in RAM.</p>
+
+    <h3 class="section-h3">7. Query Engine (InfluxQL / Flux)</h3>
+    <p>The query engine translates user queries into execution plans. For a SELECT query, it: identifies relevant shards by time range, resolves series from the tag index, opens TSM iterators for the relevant series and time ranges, decodes compressed blocks, applies field value filters, performs aggregations through streaming aggregation to avoid loading entire result sets into memory, and merges results across shards.</p>
+
+    <h3 class="section-h3">8. Continuous Queries / Tasks (v2+)</h3>
+    <p>Continuous Queries (v1.x) and Tasks (v2.x Flux tasks) are scheduled query executions that run automatically. Their primary use is <mark>downsampling</mark>: taking high-resolution raw data and periodically aggregating it into lower-resolution summary data that persists longer. For example, raw second-level CPU metrics stored for 7 days, then hourly averages stored for 1 year.</p>
+
+    <h2 class="section-h2" id="p2-write">Full Data Flow: Write Path (Step by Step)</h2>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — Write Path</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  WRITE PATH
+  Client → HTTP POST /write (Line Protocol)
+         ↓
+  [1] HTTP Handler: parse line protocol, validate, extract
+         measurement='cpu', tags={host:srv1,region:us-east},
+         fields={cpu_usage:72.3}, timestamp=1714000000000000000
+         ↓
+  [2] Auth check (v2: token validation) → 401 if invalid
+         ↓
+  [3] Route to correct Database/Bucket &amp; Retention Policy
+         ↓
+  [4] Determine shard group for timestamp
+         → shard_group = time / shard_duration
+         → If no shard group exists for this time window, create one
+         ↓
+  [5] Series ID lookup in Tag Index
+         → Key: 'cpu,host=srv1,region=us-east'
+         → If new series: assign new series ID, update TSI on disk
+         → Cardinality check: reject if limit exceeded
+         ↓
+  [6] Write to WAL (append to current WAL segment file)
+         → fsync based on config (fsync-delay or per-write)
+         → Write acknowledged once WAL write is durable
+         ↓
+  [7] Insert into in-memory Cache
+         → Cache stores: map[seriesID]→ sorted []Entry{ts, value}
+         → Check cache size; if > cache-max-memory-size → trigger snapshot
+         ↓
+  [8] HTTP 204 No Content returned to client
+
+  BACKGROUND: Compaction Engine
+  Cache snapshot → Level 1 TSM file (small, ~few MB)
+  L1 + L1 → Level 2 TSM file (merged, compressed, ~tens of MB)
+  L2 + L2 → Level 3 TSM file (~hundreds of MB)
+  L3 + L3 → Level 4 TSM file (large, highly compressed, ~GB)
+  ← Compaction removes duplicate timestamps, applies deletes</code></pre>
+    </div>
+
+    <h2 class="section-h2" id="p2-read">Full Data Flow: Read Path (Step by Step)</h2>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — Read Path</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  READ PATH
+  Client → HTTP GET /query?q=SELECT mean(cpu_usage) FROM cpu
+           WHERE host='srv1' AND time > now()-1h GROUP BY time(5m)
+         ↓
+  [1] HTTP Handler: parse query, authenticate
+         ↓
+  [2] Query Engine: parse into AST (Abstract Syntax Tree)
+         → Measurement: cpu
+         → Tag filters: host='srv1'
+         → Time range: last 1 hour
+         → Aggregation: mean(cpu_usage), GROUP BY 5-minute windows
+         ↓
+  [3] Tag Index lookup: host='srv1' in measurement 'cpu'
+         → Returns set of series IDs matching tag filter
+         → e.g. seriesIDs = {42, 43} (for different regions if any)
+         ↓
+  [4] Identify relevant shard groups for time range [now-1h, now]
+         → Typically 1-2 shards for 1-hour range
+         ↓
+  [5] For each shard, for each series ID:
+         → Query Cache (most recent data, uncompressed in memory)
+         → Query TSM index for that shard: find blocks covering time range
+            TSM Index Block: { min_ts, max_ts, file_offset, block_size }
+         → Load and decompress only relevant TSM blocks (block pruning)
+         → Decode field values for cpu_usage
+         ↓
+  [6] Merge iterators: Cache results + TSM file results
+         → Deduplicate by timestamp (TSM is authoritative over Cache
+            for same timestamp — LWT-style last-write-wins)
+         ↓
+  [7] Streaming aggregation: compute mean per 5-minute window
+         → Does NOT require loading all points into memory
+         → Uses running sum + count → divide at end of each window
+         ↓
+  [8] Return JSON result to client</code></pre>
+    </div>
+
+    <h2 class="section-h2" id="p2-tsm">On-Disk Data Layout: TSM File Format</h2>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — TSM File Structure</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  TSM File Structure
+  ┌────────────────────────────────────────────────────────────┐
+  │ Header: Magic Number (0x16D116D1) | Version (4 bytes)       │
+  ├────────────────────────────────────────────────────────────┤
+  │ Data Blocks (variable number)                               │
+  │  ┌───────────────────────────────────────────────────────┐ │
+  │  │ Block 1: SeriesID + FieldKey                           │ │
+  │  │  ├─ Timestamp block: delta-encoded + snappy compressed  │ │
+  │  │  └─ Value block: RLE/delta/Gorilla encoded + snappy     │ │
+  │  └───────────────────────────────────────────────────────┘ │
+  │  ┌───────────────────────────────────────────────────────┐ │
+  │  │ Block 2: ...                                           │ │
+  │  └───────────────────────────────────────────────────────┘ │
+  ├────────────────────────────────────────────────────────────┤
+  │ Index (at end of file — allows binary search)               │
+  │  For each series+field key, sorted:                         │
+  │   Entry: { key_len, key_bytes, block_count,                 │
+  │            [{min_ts, max_ts, file_offset, block_size}...] } │
+  ├────────────────────────────────────────────────────────────┤
+  │ Footer: offset of Index section start                       │
+  └────────────────────────────────────────────────────────────┘
+
+  Key compression algorithms by data type:
+  Float64: Gorilla XOR encoding (~10x compression for smooth data)
+  Integer: delta-encoding + Zig-Zag + simple8b or RLE
+  Timestamps: delta-of-delta encoding (for regular intervals → near-perfect compression)
+  Strings: Snappy block compression</code></pre>
+    </div>
+
+    <h2 class="section-h2" id="p2-backpressure">Back-Pressure and Flow Control</h2>
+
+    <p>InfluxDB handles back-pressure through several mechanisms that work at different layers. When the in-memory Cache approaches its size limit (<code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cache-max-memory-size</code>), new writes are still accepted but a snapshot is triggered immediately. If the compaction engine cannot keep up with write rate and TSM file count grows beyond thresholds (too many Level 1 files), write throughput is intentionally throttled. In v1.x this manifests as write latency spikes (sometimes seconds) rather than explicit write rejection, which can surprise clients.</p>
+
+    <p>At the cluster level (InfluxDB Enterprise), if a data node is overloaded, the <strong>hinted handoff</strong> mechanism queues writes destined for that node in a local durable queue. This prevents write failures during temporary node overload but creates memory/disk pressure on the hinting node. The hinted handoff queue itself has size limits, and if those are exceeded, writes will finally be dropped.</p>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB's architecture is a purpose-built LSM-tree variant (TSM) with time-series-specific optimizations: time-ordered block storage, tag-based series index, retention-policy-driven shard lifecycle, and time-range-pruning for efficient reads — every component is co-designed around the assumption that <strong>time is the primary data dimension</strong>.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 3 -->
+  <section id="p3" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">03</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">⚖️</span>
+        <div class="pillar-title">Trade-offs &amp; Design Decisions</div>
+        <div class="pillar-subtitle">CAP, PACELC, Consistency, Durability</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p3-cap">CAP Theorem Positioning</h2>
+
+    <p>InfluxDB, in its open-source single-node configuration, is not a distributed system and therefore CAP theorem does not directly apply. However, InfluxDB Enterprise and InfluxDB Cloud (clustered deployments) do make explicit CAP choices.</p>
+
+    <p><strong>In clustered InfluxDB Enterprise:</strong> InfluxDB prioritizes <mark>Availability + Partition Tolerance (AP)</mark>. When a network partition occurs, nodes on both sides of the partition will continue accepting writes. This means that during a partition, two nodes may accept conflicting writes for the same series and timestamp. When the partition heals, the conflict resolution strategy is Last-Write-Wins based on wall clock time. This is an explicit sacrifice of Consistency.</p>
+
+    <p>The rationale for this AP choice is pragmatic: the primary use case (infrastructure monitoring) tolerates stale or slightly inconsistent metric data. If your monitoring dashboard shows CPU at 72% when it's actually 74% for 30 seconds during a partition, that is acceptable. But if your write fails, you lose data permanently — that is much worse for an observability system. Therefore, availability is prioritized.</p>
+
+    <h2 class="section-h2" id="p3-pacelc">PACELC Analysis</h2>
+
+    <p>PACELC asks: even when there is no Partition, what is the tradeoff between Latency and Consistency?</p>
+
+    <p><strong>Without partition (normal operation):</strong> InfluxDB defaults to an <mark>EL (Else Latency)</mark> tradeoff, meaning it favors low latency over strong consistency. Writes are acknowledged after WAL write (not after replication to all nodes), so a client reading from a replica immediately after a write may see stale data.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Default Behavior</th>
+            <th>Alternative Config</th>
+            <th>Tradeoff</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Write durability</td><td>WAL fsync with delay (batched)</td><td>fsync per write</td><td>Higher latency, stronger durability</td></tr>
+          <tr><td>Read freshness</td><td>Read from any node (stale possible)</td><td>Read from leader only</td><td>Higher latency, stronger consistency</td></tr>
+          <tr><td>Write acknowledgment</td><td>After WAL write on one node</td><td>After replication quorum</td><td>Higher write latency, no data loss on failure</td></tr>
+          <tr><td>Compaction impact on reads</td><td>Compaction and reads contend on I/O</td><td>Rate-limit compaction</td><td>Slower compaction, but stable read latency</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="section-h2" id="p3-latency">Latency vs. Throughput: The Knobs and Extremes</h2>
+
+    <p><strong>Write throughput:</strong> The primary knob is batch size. The Line Protocol HTTP API accepts batched writes — a single HTTP POST can contain thousands of lines. Larger batches amortize HTTP overhead and WAL sync cost across more data points. The sweet spot is typically <mark>5,000–10,000 points per batch</mark>, at which point you can achieve 500k–1M+ points/sec on modern NVMe hardware with a single node. Going beyond this can cause memory pressure in the parser. Going below (per-point writes) typically limits to &lt;10k points/sec due to HTTP and WAL fsync overhead.</p>
+
+    <p><strong>Read latency:</strong> Governed primarily by cache hit rate and TSM file fragmentation. If the query range is entirely within the Cache (very recent data), reads can be sub-millisecond. If the query spans months of data in many TSM files, read latency can be seconds or tens of seconds. The number of TSM files per shard (controlled by compaction aggressiveness) is the primary operational lever for read latency on historical data.</p>
+
+    <p><strong>At the extremes:</strong> Maximum write throughput degrades read performance. Compaction is an I/O-intensive operation. If writes are so fast that Level 1 TSM files accumulate faster than compaction can merge them, read queries must open many small files, increasing disk I/O and latency. This is the fundamental <strong>write-read tension in LSM-tree designs</strong>, and TSM inherits it.</p>
+
+    <h2 class="section-h2" id="p3-consistency">Consistency Models</h2>
+
+    <p><strong>Last-Write-Wins (LWW):</strong> This is the default consistency model for conflicting writes in InfluxDB. If two writes arrive for the same series and timestamp, the one with the later wall-clock time on the server wins. This is simple but vulnerable to clock skew. An NTP-synced write arriving late may be discarded in favor of an older write that arrived first but had a later server timestamp.</p>
+
+    <p><strong>No cross-measurement consistency:</strong> InfluxDB provides no guarantee that writes to two different measurements are visible atomically. A client writing to 'cpu' and 'memory' in the same batch cannot assume both will be visible to readers simultaneously.</p>
+
+    <p><strong>Read-your-writes:</strong> Within a single node, reads after writes will see the written data (the Cache is always read before TSM files). In a clustered setup where reads and writes go to different nodes, read-your-writes is <strong>NOT guaranteed</strong> without sticky routing.</p>
+
+    <h2 class="section-h2" id="p3-durability">Durability vs. Performance</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Config</th>
+            <th>fsync-delay=0ms</th>
+            <th>fsync-delay=100ms</th>
+            <th>No WAL (dev only)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Write latency</td><td>~1-5ms (disk seek bound)</td><td>~0.1-0.5ms (async)</td><td>~0.05ms</td></tr>
+          <tr><td>Durability</td><td>Strong: 0 data loss on crash</td><td>Up to 100ms of writes lost</td><td>All uncompacted data lost</td></tr>
+          <tr><td>Use case</td><td>Financial data, critical infra</td><td>High-throughput monitoring</td><td>Development only</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB's trade-off philosophy prioritizes write performance and operational simplicity for time-series data over strong consistency, join capabilities, and transactional semantics — it is purpose-built, not general-purpose, and understanding where it breaks is as important as knowing where it excels.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 4 -->
+  <section id="p4" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">04</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">💥</span>
+        <div class="pillar-title">Failure Modes &amp; Resilience</div>
+        <div class="pillar-subtitle">Detection, Recovery, Data Loss Risk, Manual Intervention</div>
+      </div>
+    </div>
+
+    <div id="p4-crash" class="failure-card">
+      <div class="failure-header">🔴 Single Node Crash (Leader vs. Follower)</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Detection</div><p>In a clustered InfluxDB Enterprise setup, meta nodes (which use the Raft consensus protocol) detect node failure through heartbeat timeouts. Data nodes send periodic heartbeats to meta nodes. If a data node misses heartbeats for a configurable timeout period (default ~10 seconds), it is marked as unavailable.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Automatic Recovery</div><p>Writes destined for the failed data node are redirected via hinted handoff. Other data nodes that own a replica of the affected shards continue serving reads from their local TSM files. When the failed node recovers, meta nodes instruct it to anti-entropy sync any data it missed during downtime from its peers.</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Data Loss Risk</div><p>Any writes that were in the failed node's WAL and Cache but not yet replicated to a peer shard are lost if the WAL was not synced to disk. If fsync-delay was non-zero, up to fsync-delay milliseconds of writes can be lost. If the node's disk also fails, any data unique to that node is permanently lost unless replicated elsewhere.</p></div>
+        <div class="failure-item"><div class="failure-label">(d) Manual Intervention</div><p>After recovery, monitor the anti-entropy sync process completion via InfluxDB Enterprise UI or <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">influxd-ctl show-shards</code>. Verify shard ownership is consistent. For permanent node replacement, use <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">influxd-ctl remove-data</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">add-data</code> commands.</p></div>
+      </div>
+    </div>
+
+    <div id="p4-partition" class="failure-card">
+      <div class="failure-header">🔴 Network Partition (One Side Has Quorum)</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Detection</div><p>Meta nodes using Raft detect the partition because they lose communication with the minority side. The majority partition's Raft leader remains valid. The minority partition's meta nodes detect they cannot reach quorum and step down from leadership.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Automatic Recovery</div><p>The majority partition continues operating normally for both reads and writes. The minority partition's data nodes will still accept writes (InfluxDB Enterprise does not block writes on the minority side) and store them locally, accumulating divergent state.</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Data Loss Risk</div><p>This is where the AP tradeoff materializes. When the partition heals, both sides have data for the partition period. InfluxDB will attempt to reconcile using LWW semantics, but data written to the minority partition for the same timestamps may be silently overwritten. There is no deterministic guarantee about which writes survive.</p></div>
+        <div class="failure-item"><div class="failure-label">(d) Manual Intervention</div><p>After partition healing, run anti-entropy checks. Review application-level data consistency for the affected time window. For critical data, implement client-side write confirmation by reading back written data immediately after the partition heals.</p></div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:8px"><span id="p4-splitbrain"></span></div>
+    <div class="failure-card">
+      <div class="failure-header">🔴 Network Partition — Even Split (No Quorum Possible)</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Detection</div><p>Meta nodes on both sides detect they cannot reach quorum for Raft leadership election. Both sides enter a leaderless state for the meta layer.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Automatic Behavior</div><p>Critically, data nodes in InfluxDB Enterprise will continue accepting writes even without meta layer leadership, because the write path to data nodes does not require meta layer consensus for every write. This is the AP prioritization — writes continue to flow to avoid data loss.</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Data Loss Risk</div><p>New shard group creation (when the current shard expires and a new time window begins) requires meta layer consensus. If a shard group boundary is crossed during an even-split partition, one or both sides may fail to create a new shard, causing write failures for that time window.</p></div>
+        <div class="failure-item"><div class="failure-label">(d) Manual Intervention</div><p>If a shard group creation failure occurs, manual intervention via <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">influxd-ctl</code> is required after the partition heals to backfill any data that failed to write. This is a serious operational scenario requiring incident response procedures.</p></div>
+      </div>
+    </div>
+
+    <div class="failure-card">
+      <div class="failure-header">🟡 Split-Brain: Two Leaders Believe They Are Authoritative</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Prevention</div><p>Raft consensus (used by meta nodes) inherently prevents split-brain for the meta layer — only the leader that has received a majority quorum vote can be the leader. There is no scenario where two nodes both validly hold Raft leadership simultaneously.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Data Layer Risk</div><p>Split-brain can occur at the data layer if two nodes both believe they own an exclusive shard and were never properly synchronized. This can happen due to bugs in shard ownership state management or manual misconfiguration. The result is two nodes writing different data to the same logical shard, which when merged produces a corrupt or inconsistent dataset.</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Detection and Recovery</div><p>Detecting data-layer split-brain requires comparing shard checksums across nodes (anti-entropy). InfluxDB Enterprise has a built-in anti-entropy service that periodically compares TSM file digests across replica shards. Discrepancies trigger repair by copying the authoritative shard.</p></div>
+      </div>
+    </div>
+
+    <div id="p4-slownode" class="failure-card">
+      <div class="failure-header">🟡 Slow / Degraded Node (Not Dead, But Lagging)</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Detection</div><p>A slow node manifests as write latency spikes for batches routed to it, or as hinted handoff accumulation. Monitoring <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">hinted_handoff_queue_depth</code> is the key operational signal.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Automatic Behavior</div><p>InfluxDB Enterprise's HTTP layer has a write timeout. If a data node does not respond within the timeout for a write, the write is added to the hinted handoff queue on the sending node and success is returned to the client (this is the AP tradeoff — acknowledge to preserve availability).</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Data Loss Risk</div><p>If the hinted handoff queue overflows (exceeds max-size configuration), queued writes are dropped. This is <strong>silent data loss</strong>. For high-write-rate systems, a slow node can cause the hinting node's queue to fill in minutes.</p></div>
+        <div class="failure-item"><div class="failure-label">(d) Manual Intervention</div><p>Monitor <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">hinted_handoff_queue_depth</code>. Increase max-size if possible. Investigate slow node root cause (disk I/O saturation, compaction storms, memory pressure).</p></div>
+      </div>
+    </div>
+
+    <div id="p4-disk" class="failure-card">
+      <div class="failure-header">🔴 Disk Corruption or Partial Write</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">(a) Detection</div><p>TSM files include checksums for each data block. When a TSM block is read, the checksum is verified. A corrupt block will be detected immediately at read time, not write time.</p></div>
+        <div class="failure-item"><div class="failure-label">(b) Automatic Recovery</div><p>InfluxDB does not automatically recover from corrupt TSM files in the open-source version. In Enterprise, if a replica exists, the anti-entropy service can detect the checksum mismatch and repair the shard from the healthy replica.</p></div>
+        <div class="failure-item"><div class="failure-label">(c) Data Loss Risk</div><p>Depending on which TSM file is corrupt and whether the WAL for that time period still exists, data loss can range from zero (WAL can replay) to complete loss of the affected shard's data.</p></div>
+        <div class="failure-item"><div class="failure-label">(d) Manual Intervention</div><p>Remove the corrupt TSM file manually. If WAL exists, restart influxd to trigger WAL replay. If no WAL, restore from backup. Run <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">influx_inspect verify-seriesfile</code> to assess corruption extent.</p></div>
+      </div>
+    </div>
+
+    <div id="p4-clock" class="failure-card">
+      <div class="failure-header">🟡 Clock Skew Between Nodes</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">Description</div><p>Clock skew is particularly dangerous because timestamps are the primary data dimension. Clock skew manifests in two ways: (1) if a data node's clock is significantly skewed, writes with 'current' timestamps from that node will appear in the future or past relative to other nodes. Future-dated data will not be visible in queries using now()-based ranges until the future time arrives. (2) LWW conflict resolution uses wall-clock time — a node with a fast clock will always 'win' conflicts, potentially silently discarding writes from nodes with slower clocks.</p></div>
+        <div class="failure-item"><div class="failure-label">Mitigation</div><p>Ensure NTP on all nodes with sub-100ms drift. Monitor node clock drift as an operational metric. InfluxDB v1.x does not validate or reject writes with timestamps far in the future or past.</p></div>
+      </div>
+    </div>
+
+    <div id="p4-herd" class="failure-card">
+      <div class="failure-header">🟡 Thundering Herd After Recovery</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">Description</div><p>When a node recovers after a crash or maintenance, multiple types of thundering herd can occur simultaneously: the WAL replay process consumes significant I/O and CPU; the anti-entropy sync from peers downloads potentially GB of TSM files; hinted handoff queued writes flood in from peer nodes; and normal incoming writes resume. All of these compete for the same disk I/O bandwidth, potentially causing the node to appear unresponsive for minutes to hours after recovery.</p></div>
+        <div class="failure-item"><div class="failure-label">Mitigation</div><p>Implement recovery throttling. InfluxDB Enterprise allows configuring anti-entropy and hinted handoff replay rates. Temporarily marking a recovering node as read-only or write-limited during recovery reduces thundering herd effects.</p></div>
+      </div>
+    </div>
+
+    <div id="p4-cascade" class="failure-card">
+      <div class="failure-header">🔴 Cascading Failures and How to Prevent Them</div>
+      <div class="failure-body">
+        <div class="failure-item"><div class="failure-label">Description</div><p>The most dangerous cascading failure pattern in InfluxDB clusters is <strong>cardinality explosion causing OOM on one node, which causes that node to fail, increasing load on remaining nodes, which also OOM, until the cluster collapses</strong>. This has happened in multiple production deployments.</p></div>
+        <div class="failure-item"><div class="failure-label">Prevention</div><p>Cardinality limits enforced at ingestion time (InfluxDB 2.0 supports this). Monitor <code style="font-family:'JetBrains Mono',monospace;font-size:0.85em;color:#7fdbca">series_cardinality</code> and memory usage per database. Circuit breakers at the application layer to stop writing new tag combinations if cardinality approaches limits. Load shedding policies that drop low-priority writes before accepting high-priority ones.</p></div>
+      </div>
+    </div>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB's failure modes cluster around three themes: <strong>cardinality-induced OOM</strong> (most common production failure), <strong>AP-tradeoff data divergence</strong> during partitions (correctness risk), and <strong>compaction I/O starvation</strong> (performance failure) — knowing these three failure patterns and their mitigations separates operational depth from theoretical knowledge.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 5 -->
+  <section id="p5" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">05</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">📈</span>
+        <div class="pillar-title">Scaling Strategies</div>
+        <div class="pillar-subtitle">Vertical, Horizontal, Sharding, Cross-Region</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p5-vertical">Vertical Scaling: How Far and What Breaks First</h2>
+
+    <p>A single InfluxDB node can be vertically scaled to handle enormous write throughput. With 32+ cores, 128GB+ RAM, and NVMe SSDs, a single node can sustain <mark>1–5 million data points per second</mark> in write throughput. Memory is the first constraint to hit. The in-memory tag index for high-cardinality series can consume tens of gigabytes. The Cache (write buffer) needs to be sized appropriately — too small causes frequent compaction, too large causes OOM under write bursts.</p>
+
+    <p>The second constraint is compaction I/O. At very high write rates, compaction cannot keep up, TSM file count grows unboundedly, and read latency degrades. IOPS on the storage device become the ceiling. NVMe drives with 500k+ IOPS handle this far better than SATA SSDs (80k IOPS) or spinning disks (200 IOPS). Going beyond what a single NVMe can provide, or beyond ~128GB of RAM for the series index, signals vertical scaling limit.</p>
+
+    <h2 class="section-h2" id="p5-horizontal">Horizontal Scaling: Architectural Changes</h2>
+
+    <p>Horizontal scaling in InfluxDB Enterprise involves adding data nodes and distributing shards across them. The shard group mechanism is the fundamental partitioning unit. In a 3-node cluster, each shard group can be configured with a replication factor of 2 (each shard has two replicas on different nodes) or 3 (full replication). Write throughput scales with the number of nodes minus replication overhead.</p>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — 3-Node Enterprise Cluster</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  3-Node InfluxDB Enterprise Cluster
+  ┌─────────────────────────────────────────────────────────┐
+  │            Load Balancer / Relay                         │
+  └──────────────┬───────────────┬───────────────┬──────────┘
+                 │               │               │
+          ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+          │  Data Node 1 │ │  Data Node 2 │ │  Data Node 3 │
+          │  Shards: A,B │ │  Shards: B,C │ │  Shards: A,C │
+          │  (A replica) │ │  (B replica) │ │  (A,C replc) │
+          └─────────────┘ └─────────────┘ └─────────────┘
+                     ↑               ↑
+          ┌──────────┴───────────────┴──────────┐
+          │         Meta Nodes (3-node Raft)     │
+          │  Track: shard ownership, topology,   │
+          │  retention policies, user auth        │
+          └─────────────────────────────────────-┘
+
+  Shard A has replicas on Node 1 and Node 3
+  Shard B has replicas on Node 1 and Node 2
+  Shard C has replicas on Node 2 and Node 3
+  → Any single node failure: all shards still have 1 replica</code></pre>
+    </div>
+
+    <h2 class="section-h2" id="p5-sharding">Sharding / Partitioning: Range vs. Hash</h2>
+
+    <p><strong>Time-range partitioning (default):</strong> InfluxDB's shard groups are fundamentally time-range partitioned. All data for a given time window goes to the same shard group. This is highly efficient for time-range queries (the primary access pattern) because only the relevant shard groups are read. However, it means that write hotspots naturally occur: the current time window's shard group receives 100% of writes, while historical shard groups are read-only. This is the intended design.</p>
+
+    <p><strong>Series distribution within a shard group:</strong> When multiple shards exist within a shard group (horizontal cluster), series are distributed across shards using a <mark>consistent hashing scheme</mark> based on the series key. This distributes write load across nodes.</p>
+
+    <p><strong>Resharding challenges:</strong> Unlike some distributed databases, InfluxDB does not support online shard splitting. Adding a data node to a cluster redistributes future shard groups across the new node topology, but historical shard groups are not automatically rebalanced. Manual shard migration is possible but requires downtime or careful orchestration. This is a significant operational limitation at large scale.</p>
+
+    <h2 class="section-h2" id="p5-cross">Cross-Region Replication</h2>
+
+    <p><strong>InfluxDB Enterprise Relay:</strong> The InfluxDB Relay is a simple HTTP proxy that can receive writes and fan them out to multiple InfluxDB clusters in different regions. This provides a form of multi-region write replication, but it is not a proper distributed consensus — it is best-effort fan-out with potential for divergence if one region is down during a write.</p>
+
+    <p><strong>Active-Active concerns:</strong> True active-active cross-region replication requires solving the clock skew problem globally. Different regions may have clocks that drift relative to each other. For LWW conflict resolution to work correctly, all regions must be within a few milliseconds of each other. GPS-disciplined NTP or Google's TrueTime-equivalent is necessary at this scale.</p>
+
+    <p><strong>Active-Passive (preferred for InfluxDB):</strong> Most production deployments use an active-passive model: one primary region receives all writes, and a Relay or Kafka-based pipeline replicates data to a passive secondary region for DR purposes. Reads for analytics can be served from the secondary, but writes always go to the primary. This avoids cross-region consistency issues.</p>
+
+    <h2 class="section-h2" id="p5-read-write">Read Scaling vs. Write Scaling — Independence</h2>
+
+    <p>In InfluxDB's architecture, read and write paths share the same storage nodes, so you cannot scale them completely independently in Enterprise. However, practical approaches exist. For read scaling, you can add data nodes and configure them as read-only replicas. For write scaling, additional data nodes are added to the cluster and shard groups for future time windows are spread across all nodes.</p>
+
+    <div class="callout callout-lightning">
+      <div class="callout-label">⚡ L7/L8 Differentiator</div>
+      <p>InfluxDB v3 (IOx) fundamentally changes this with a <strong>disaggregated storage and compute architecture</strong>. Object storage (S3/GCS) is the persistent layer. Ingesters (stateful write nodes) handle the write path. Queriers (stateless compute nodes) handle the read path. Each can be scaled independently. This is the architectural evolution required at Google scale, and understanding the IOx vs. v1.x/v2.x architectural differences is a strong signal of L8-level knowledge.</p>
+    </div>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB scales most naturally along the time dimension — new shard groups for new time windows are the scaling unit — but horizontal scaling requires InfluxDB Enterprise and introduces operational complexity around shard rebalancing that doesn't exist in cloud-native alternatives like InfluxDB Cloud (IOx) or TimescaleDB.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 6 -->
+  <section id="p6" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">06</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">🔧</span>
+        <div class="pillar-title">Real-World Engineering Decisions</div>
+        <div class="pillar-subtitle">Production Examples, Anti-Patterns, Decision Matrix</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p6-shine">Where InfluxDB Shines Above All Alternatives</h2>
+
+    <p><strong>Infrastructure and Application Monitoring at Medium Scale:</strong> For teams running 100–10,000 servers/containers with Telegraf-based metric collection, InfluxDB + Grafana is the gold standard. The tight integration between Telegraf (InfluxDB's metric collection agent), InfluxDB, and Grafana creates a zero-friction monitoring pipeline where new metrics appear automatically without schema changes.</p>
+
+    <p><strong>IoT Sensor Data at Edge:</strong> InfluxDB's small footprint (can run on Raspberry Pi), line protocol simplicity, and retention policy-based data lifecycle make it ideal for edge IoT gateways. A factory floor sensor gateway can buffer readings locally in InfluxDB during network outages and sync to a central cluster when connectivity resumes.</p>
+
+    <p><strong>Financial Time-Series (OHLCV Data):</strong> InfluxDB's nanosecond timestamp precision and efficient storage of floating-point values makes it suitable for storing trade tick data and OHLCV (Open/High/Low/Close/Volume) bars. However, the lack of ACID transactions means it's for analytics, not as the primary trade execution store.</p>
+
+    <h2 class="section-h2" id="p6-examples">3 Real-World Production Examples</h2>
+
+    <h3 class="section-h3">1. Tesla's Vehicle Telemetry Platform</h3>
+    <p>Tesla vehicles generate thousands of sensor readings per second per vehicle — temperature, battery state of charge, motor RPM, GPS coordinates, door sensor states. The write pattern is: high-frequency (10–100 Hz), from millions of devices simultaneously, with fixed measurement schemas. InfluxDB was chosen for its write throughput, native time-series query support for fleet-level analytics ('average battery degradation for Model Y in hot climates over the last 3 years'), and the ability to downsample high-frequency sensor data to daily aggregates for long-term trend analysis. The challenge: vehicle ID as a tag creates very high cardinality. Tesla likely uses tag cardinality management strategies — routing different vehicle ranges to different InfluxDB instances based on VIN prefix.</p>
+
+    <h3 class="section-h3">2. CERN's LHC Detector Monitoring</h3>
+    <p>The Large Hadron Collider at CERN produces detector monitoring data at millions of data points per second from thousands of monitoring endpoints across the detector array. InfluxDB was selected for its ability to handle high-frequency scientific instrument data with sub-second granularity, combined with support for Grafana-based dashboards used by physicists to monitor detector health in real time. The time-range retention policies align perfectly with CERN's need to keep raw high-frequency data for 48 hours and downsampled aggregates for years.</p>
+
+    <h3 class="section-h3">3. Datadog's Internal Infrastructure Monitoring</h3>
+    <p>Datadog, while building their own proprietary time-series storage, used InfluxDB extensively for internal development and early production use due to its operational simplicity and Telegraf integration. The key insight: InfluxDB works exceptionally well as the 'first database' for a metrics platform because it requires zero schema management, allowing engineering teams to iterate rapidly on metric definitions. The migration away from InfluxDB at Datadog's scale was driven by <mark>cardinality and multi-tenancy limitations</mark> — not performance at moderate scale.</p>
+
+    <h2 class="section-h2" id="p6-antipatterns">When NOT to Use InfluxDB: Anti-Patterns</h2>
+
+    <div class="callout callout-fire">
+      <div class="callout-label">🔥 Anti-Pattern 1 — High-Cardinality Tags from Business Data</div>
+      <p>Using <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">user_id</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">session_id</code>, <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">request_id</code>, or <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">order_id</code> as InfluxDB tags is a catastrophic mistake. If you have 10 million users each generating 100 events per day, your series cardinality is 10 million. This will OOM your InfluxDB node within days. The correct solution is to use a low-cardinality identifier (user_tier, user_region, product_category) as a tag, and store high-cardinality identifiers in fields (not indexed) or in a separate relational database.</p>
+    </div>
+
+    <div class="callout callout-fire">
+      <div class="callout-label">🔥 Anti-Pattern 2 — ACID Transaction Requirements</div>
+      <p>Using InfluxDB to store financial ledger entries, inventory counts, or any data where atomicity and rollback are required is fundamentally incorrect. InfluxDB has no transactions. Write failures leave partial data. There is no compensation mechanism. Use PostgreSQL or a proper OLTP database.</p>
+    </div>
+
+    <div class="callout callout-fire">
+      <div class="callout-label">🔥 Anti-Pattern 3 — Ad-hoc Schema with Frequent Field Type Changes</div>
+      <p>If your application is in early development and the metric schema changes weekly, InfluxDB's field type immutability will cause data corruption. A field that was float becomes string — InfluxDB will silently drop one or the other. Use Prometheus (which has no field type concept) or TimescaleDB (full PostgreSQL type system) during early development.</p>
+    </div>
+
+    <h2 class="section-h2" id="p6-matrix">Decision Matrix: InfluxDB vs. Alternatives</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Dimension</th>
+            <th>InfluxDB</th>
+            <th>TimescaleDB</th>
+            <th>Prometheus</th>
+            <th>Druid/Pinot</th>
+            <th>Cassandra+custom</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Write throughput</td><td>★★★★★ (native TSM)</td><td>★★★★ (PostgreSQL overhead)</td><td>★★★ (remote write limit)</td><td>★★★★★ (column store)</td><td>★★★★ (LSM)</td></tr>
+          <tr><td>Query expressiveness</td><td>★★★★ (Flux)</td><td>★★★★★ (full SQL+PostGIS)</td><td>★★ (PromQL only)</td><td>★★★★★ (SQL+OLAP)</td><td>★★ (CQL limited)</td></tr>
+          <tr><td>Operational complexity</td><td>★★★ (simple OSS)</td><td>★★★★ (PostgreSQL ecosystem)</td><td>★★★★★ (very simple)</td><td>★★ (complex cluster)</td><td>★★ (complex ops)</td></tr>
+          <tr><td>Cardinality handling</td><td>★★★ (10M limit/node)</td><td>★★★★★ (PostgreSQL, no limit)</td><td>★★ (memory-bound)</td><td>★★★★★ (designed for it)</td><td>★★★★ (good)</td></tr>
+          <tr><td>Multi-tenancy</td><td>★★ (DB-level only)</td><td>★★★ (schema-level)</td><td>★ (single tenant)</td><td>★★★★ (built-in)</td><td>★★★★ (keyspace)</td></tr>
+          <tr><td>Time-series semantics</td><td>★★★★★ (native)</td><td>★★★★★ (extensions)</td><td>★★★★ (native)</td><td>★★★ (some)</td><td>★★★ (manual)</td></tr>
+          <tr><td>Cost (self-hosted)</td><td>Free OSS / Enterprise $$</td><td>Free (PG license)</td><td>Free (CNCF)</td><td>Free (Apache)</td><td>Free (Apache)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="section-h2" id="p6-mistakes">Most Common Operational Mistakes in Production</h2>
+
+    <p><strong>1. Not setting cardinality limits:</strong> Teams discover cardinality explosion when the node OOMs. By then, writing to the database has already been degraded for hours. Set <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">influxdb_series_cardinality</code> alerts at 50% of your expected limit.</p>
+
+    <p><strong>2. Wrong shard duration:</strong> Using the default shard duration for a use case it does not fit. If you have 90-day retention but default to 1-week shard duration, you accumulate 13 shards. Queries spanning months touch 13+ shards, each requiring disk I/O. For long retention policies with wide time-range queries, increase shard duration to 4 weeks or more.</p>
+
+    <p><strong>3. Not downsampling before retention policy expiry:</strong> Teams delete high-resolution data without creating pre-aggregated long-term summaries. The result: dashboards showing 'last 6 months' return no data because the raw data expired before continuous queries aggregated it. Always set up continuous queries to create lower-resolution summary data before the high-resolution retention policy expires.</p>
+
+    <p><strong>4. Line protocol type drift:</strong> Sending <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cpu_usage=72</code> (integer) in one batch and <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">cpu_usage=72.3</code> (float) in another. InfluxDB v1.x treats these as different fields and creates two separate series. Use explicit float notation (<code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">72.0</code>) consistently.</p>
+
+    <h2 class="section-h2" id="p6-day1">Day 1 Monitoring and Alerting</h2>
+
+    <p>The following metrics must be monitored from day one in any production InfluxDB deployment:</p>
+    <ul>
+      <li><strong>influxdb_series_cardinality</strong> per database: alert at 5M, page at 9M for a node sized for 10M max</li>
+      <li><strong>influxdb_cache_size_bytes</strong>: alert if Cache approaches cache-max-memory-size consistently — indicates compaction cannot keep up with writes</li>
+      <li><strong>influxdb_tsm_files_disk_size_bytes</strong> and file count per shard: excessive files indicate compaction backlog</li>
+      <li><strong>influxdb_hinted_handoff_queue_depth</strong> (Enterprise): any non-zero value means a node is down or degraded</li>
+      <li><strong>influxdb_query_executor_queries_active</strong>: high active query count indicates query pile-up</li>
+      <li><strong>Write error rate</strong>: any non-zero partial write errors may indicate type conflicts or cardinality limits</li>
+      <li><strong>Node memory usage</strong>: InfluxDB will OOM without warning if tag index + cache exceeds available RAM</li>
+    </ul>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>InfluxDB's real-world failure mode is almost always <strong>cardinality-induced OOM or compaction I/O starvation</strong> — both of which are silent until catastrophic. Proactive monitoring of series cardinality and compaction metrics from day one is the single most important operational practice.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 7 -->
+  <section id="p7" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">07</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">🌐</span>
+        <div class="pillar-title">Google-Scale &amp; Beyond</div>
+        <div class="pillar-subtitle">1M → 100M → 1B Users, Monarch, IOx, Multi-Tenancy</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p7-breaks">What Fundamentally Breaks at Each Scale Tier</h2>
+
+    <p><strong>1M users / ~10k servers:</strong> InfluxDB OSS handles this comfortably on a single node. ~100k–1M points/sec write rate. Series cardinality likely in the millions. Memory for tag index: ~1–5GB. NVMe SSD can absorb compaction I/O. Operational complexity: minimal. No clustering needed if retention policies are set correctly.</p>
+
+    <p><strong>100M users / ~1M servers:</strong> Single node breaks at multiple dimensions simultaneously. Series cardinality explodes — 1M servers with 100 tag combinations each = 100M series, which exceeds in-memory index capacity of a single node. Write throughput of 10M–100M points/sec exceeds single-node capacity. InfluxDB Enterprise clustering is required, with 10–20 data nodes, each sharded by series key hash.</p>
+
+    <p><strong>1B users / ~10M servers:</strong> InfluxDB Enterprise's architecture fundamentally breaks here. The meta node Raft cluster cannot maintain consensus at the speed required for 10M servers' worth of shard management. The shared-nothing shard architecture cannot scale to petabyte-level data without extreme operational complexity. Multi-tenancy requires strong isolation that InfluxDB database-level separation cannot provide with cost-efficient resource sharing. At this scale, Google-style architecture is required.</p>
+
+    <h2 class="section-h2" id="p7-google">How Google (and Hyperscalers) Solve This Differently</h2>
+
+    <p><strong>Disaggregated Storage and Compute (Monarch / Borgmon model):</strong> Google's internal time-series monitoring system (Monarch, the successor to Borgmon) uses a fundamentally different architecture where storage (data persistence) and compute (query processing) are completely separated. Data is written to a global replicated log (similar to Kafka), then ingested into regional stores. Query processing is stateless and elastically scaled using Borg. No single node owns data — data is replicated across global zones with consistent hashing and multi-level caching.</p>
+
+    <p><strong>Zone-Level Leaf Storage with Global Aggregation:</strong> Monarch uses a zone-local storage layer that stores fine-grained raw metrics with short retention, and a global aggregation layer that stores pre-computed aggregates with long retention. Queries for recent data are served from zone-local stores (low latency). Queries for historical trends are served from the global aggregation layer (high throughput). This mirrors InfluxDB's continuous query downsampling pattern but at 1000x the scale.</p>
+
+    <p><strong>Columnar Storage for Analytics:</strong> At hyperscaler scale, the row-oriented TSM format of InfluxDB v1.x/v2.x is insufficient for interactive analytics over billions of data points. Google uses columnar storage (similar to Apache Parquet) on top of Colossus (Google's distributed filesystem) for long-term analytics. Column pruning, vectorized execution, and predicate pushdown allow reading only the columns and rows needed for a query — <mark>10-100x I/O reduction</mark> vs. row-oriented storage.</p>
+
+    <h2 class="section-h2" id="p7-tiers">Component Bottlenecks and Architectural Pivots by Scale</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Scale Tier</th><th>Primary Bottleneck</th><th>Required Pivot</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>&lt;1M series</td><td>None — single node sufficient</td><td>OSS InfluxDB, single node</td></tr>
+          <tr><td>1–10M series</td><td>Memory for tag index</td><td>Migrate to TSI (disk-based index)</td></tr>
+          <tr><td>10–100M series</td><td>Single node write capacity</td><td>InfluxDB Enterprise clustering</td></tr>
+          <tr><td>100M–1B series</td><td>Meta node Raft throughput</td><td>Shard writes by measurement/customer to separate clusters</td></tr>
+          <tr><td>&gt;1B series</td><td>Entire shared-nothing architecture</td><td>Disaggregated IOx / custom Monarch-style system</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="section-h2" id="p7-multitenancy">Multi-Tenancy: Noisy Neighbor Isolation</h2>
+
+    <p>InfluxDB's native multi-tenancy model is database-level isolation within a single instance. Different customers get different databases. The problem: all databases share the same compaction thread pool, the same WAL, and the same Cache. A customer causing a cardinality explosion will degrade the entire instance for all customers. This is the <mark>noisy neighbor problem</mark>.</p>
+
+    <p><strong>Isolation strategies at scale:</strong> Hard multi-tenancy requires separate InfluxDB instances (or clusters) per tenant tier — at minimum, separate instances for 'noisy' vs. 'well-behaved' tenants. This requires a routing layer (a meta-service that maps tenant ID → InfluxDB cluster endpoint) and a control plane for provisioning new tenant clusters on demand. InfluxDB Cloud implements this with Kubernetes-based pod-per-tenant isolation for premium tiers and shared clusters for free tier with aggressive resource quotas.</p>
+
+    <p><strong>Resource quotas in InfluxDB v2+:</strong> InfluxDB v2 OSS and Cloud support per-bucket rate limits on write throughput (bytes per second), query concurrency limits, and series cardinality limits. These are the primary tools for multi-tenant resource isolation, but they are soft limits enforced at the API layer — a runaway compaction job or query can still consume shared I/O resources without limit.</p>
+
+    <h2 class="section-h2" id="p7-residency">Global Deployments and Data Residency</h2>
+
+    <p>For organizations subject to GDPR, CCPA, or regional data sovereignty laws, InfluxDB must be deployed such that data for EU users stays in EU regions. The InfluxDB Enterprise Relay can be configured to route writes to specific regional clusters based on tags. However, this requires application-level routing logic — InfluxDB itself does not understand data residency semantics.</p>
+
+    <p>A more robust approach for multi-region data residency uses a message bus layer (Kafka with region-aware partitioning) between data producers and InfluxDB clusters. Producers write to Kafka with region tags. Regional Kafka consumers forward to the appropriate InfluxDB cluster. Cross-region analytics requires federated queries that union results from multiple regional clusters — a pattern that InfluxDB 2.0's Flux language supports but with high query latency due to network round trips between regions.</p>
+
+    <h2 class="section-h2" id="p7-spanner">The 'Google Spanner Equivalent' for InfluxDB</h2>
+
+    <p>What would a Google-scale time-series database look like if designed from first principles today? It would combine: <strong>TrueTime-based globally consistent timestamps</strong> (eliminating LWW ambiguity due to clock skew), <strong>Spanner-style externally consistent transactions</strong> for multi-series atomic writes, <strong>Bigtable-style hierarchical serving topology</strong> with row-level hotspot splitting, <strong>F1-style distributed SQL</strong> with automatic query routing to the nearest data replica, and <strong>Colossus-backed immutable columnar storage</strong> with global deduplication.</p>
+
+    <p>InfluxDB IOx (v3) takes meaningful steps in this direction: Apache Arrow for columnar in-memory representation, object storage (S3) for the persistence layer, DataFusion for vectorized SQL query execution, and full disaggregation of ingest vs. query compute. However, it does not yet provide TrueTime semantics, distributed transactions, or automatic hotspot mitigation — gaps that a hyperscaler would need to fill.</p>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway</div>
+      <p>Google-scale time-series storage requires four architectural pivots that vanilla InfluxDB does not provide: <strong>disaggregated compute/storage, columnar persistence, globally consistent timestamps, and hierarchical query federation</strong> — InfluxDB IOx is moving toward the first two, but the latter two remain research-grade engineering challenges even for hyperscalers.</p>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ PILLAR 8 -->
+  <section id="p8" class="pillar-section">
+    <div class="pillar-header">
+      <div class="pillar-number">08</div>
+      <div class="pillar-title-block">
+        <span class="pillar-emoji">🎯</span>
+        <div class="pillar-title">Interview Simulation</div>
+        <div class="pillar-subtitle">Design Problem · Strong Answer · Critique · 10 Rapid-Fire Q&amp;As</div>
+      </div>
+    </div>
+
+    <h2 class="section-h2" id="p8-problem">Step 1: The Staff-Level Design Problem</h2>
+
+    <div class="problem-card">
+      <h4>🔬 Design Problem — Multi-Tenant Infrastructure Monitoring Platform</h4>
+      <p>You are the lead engineer at a major cloud provider that wants to build a multi-tenant infrastructure monitoring platform. It needs to handle telemetry from tens of millions of customer servers and containers globally. Customers range from startups (10 servers) to enterprises (100,000 servers). Each server emits 50–200 metrics every 10 seconds.</p>
+      <p>Your design must support: real-time dashboards with sub-5-second refresh, retroactive metric queries spanning up to 3 years, data residency isolation (EU customer data cannot leave EU), SLA guarantees (99.9% write availability, P95 query latency &lt; 2 seconds for 30-day ranges), and cost-efficient tiered storage. You have a team of 8 engineers and 6 months to launch.</p>
+      <p>The platform must use InfluxDB as a core component (this is a business constraint). How do you design it?</p>
+    </div>
+
+    <h2 class="section-h2" id="p8-answer">Step 2: Strong Candidate Answer (L7/L8 Level)</h2>
+
+    <h3 class="section-h3">Clarifying Questions to Ask</h3>
+    <ul>
+      <li>What is the expected P99 write latency SLA? (Impacts WAL fsync strategy and batching tier design)</li>
+      <li>Are there enterprise customers with single-tenant isolation requirements, or is database-level isolation within shared clusters acceptable?</li>
+      <li>What is the expected maximum series cardinality per customer? (Determines whether shared cluster + DB-level isolation is viable)</li>
+      <li>Are we building greenfield or integrating with an existing metric collection pipeline (Prometheus, Telegraf, CloudWatch agents)?</li>
+      <li>What is the data residency requirement for global customers — strict at-rest residency or also transit residency?</li>
+      <li>Is there a budget ceiling for object storage vs. SSD cost per TB/month? (Drives tiered storage thresholds)</li>
+    </ul>
+
+    <h3 class="section-h3">Back-of-Envelope Sizing</h3>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">📐 Back-of-Envelope Calculation</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  📐 Back-of-Envelope Calculation
+  ────────────────────────────────────────────────────────
+  Assumptions:
+   - 50M servers total (across all tenants)
+   - 100 metrics per server per 10 seconds
+   = 100 / 10 = 10 metrics/server/sec
+   = 50M servers × 10 = 500M points/sec at peak
+
+  Per-region distribution (5 regions):
+   = 100M points/sec per region
+
+  Storage (raw, 30 days):
+   - Each point: ~50 bytes uncompressed, ~5 bytes compressed (Gorilla ~10x)
+   - 100M points/sec × 5 bytes × 86400 sec × 30 days
+   = 100M × 5 × 2,592,000 ≈ 1.296 PB per region per month
+   → Object storage tier: ~$25,000/month/region at $0.02/GB
+
+  Series cardinality:
+   - 50M servers × avg 20 unique tag combos per server = 1B series total
+   - Per region: 200M series
+   - Per InfluxDB node: max 10M series → need 20+ nodes per region
+  ────────────────────────────────────────────────────────</code></pre>
+    </div>
+
+    <h3 class="section-h3">High-Level Architecture</h3>
+
+    <div class="diagram-wrap">
+      <div class="diagram-label">
+        <span class="diagram-badge">DIAGRAM — Multi-Tenant Platform Architecture</span>
+        <button class="copy-btn" onclick="copyDiagram(this)">Copy</button>
+      </div>
+      <pre><code>  MULTI-TENANT INFLUXDB MONITORING PLATFORM
+  ═══════════════════════════════════════════════════════════════
+  INGESTION TIER
+  ┌───────────────────────────────────────────────────────────┐
+  │  Agent (Telegraf) on each server                          │
+  │    → Line Protocol → Regional Kafka Cluster               │
+  │    → Tenant-tagged topic partitioning                     │
+  └───────────────────────────────────────────────────────────┘
+                          │
+  ROUTING &amp; ISOLATION TIER
+  ┌───────────────────────────────────────────────────────────┐
+  │  Tenant Router Service                                     │
+  │  - Reads Kafka, looks up tenant tier in metadata store    │
+  │  - Enterprise tenants → dedicated InfluxDB cluster        │
+  │  - SMB tenants → shared InfluxDB cluster (by region)     │
+  │  - Enforces per-tenant write rate limits                  │
+  └───────────────────────────────────────────────────────────┘
+            │                          │
+  DEDICATED CLUSTERS          SHARED CLUSTERS
+  ┌──────────────────┐       ┌──────────────────────────────┐
+  │ InfluxDB Cluster │       │  InfluxDB Enterprise Cluster │
+  │ (per enterprise  │       │  (5–10 data nodes per region)│
+  │  customer, sized │       │  DB-per-tenant isolation     │
+  │  to their needs) │       │  Cardinality quotas enforced │
+  └──────────────────┘       └──────────────────────────────┘
+            │                          │
+  TIERED STORAGE (IOx / v3)
+  ┌───────────────────────────────────────────────────────────┐
+  │  Hot tier: NVMe SSD (last 7 days, sub-ms read latency)   │
+  │  Warm tier: S3/GCS object storage (7–90 days)            │
+  │  Cold tier: S3 + columnar Parquet (90 days–3 years)      │
+  │  Continuous queries: 10s → 1min → 5min → 1hour → 1day   │
+  └───────────────────────────────────────────────────────────┘
+                          │
+  QUERY TIER
+  ┌───────────────────────────────────────────────────────────┐
+  │  Query Federation Layer                                   │
+  │  - Routes &lt; 7 day queries to hot tier (low latency)      │
+  │  - Routes &gt; 7 day queries to pre-aggregated tier         │
+  │  - For cross-region analytics: federated query executor  │
+  └───────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h3 class="section-h3">Deep Dive: Cardinality Management Strategy</h3>
+    <p>The #1 failure risk is cardinality explosion from enterprise customers using high-cardinality tags. My design uses three layers of protection: (1) <strong>Static schema validation at ingest</strong> — the Tenant Router validates incoming metrics against a pre-registered schema. New tag keys that would push cardinality above 10% of the bucket's quota require explicit approval. (2) <strong>Real-time cardinality monitoring with automated circuit breakers</strong> — a background process queries <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">influxdb_series_cardinality</code> every 60 seconds and disables writes for any tenant whose cardinality exceeds their tier's limit. (3) <strong>Series cardinality budgets per tenant tier</strong> — Free: 100k series. Business: 1M series. Enterprise: negotiated limit, default 10M.</p>
+
+    <h3 class="section-h3">Deep Dive: Data Residency</h3>
+    <p>Regional Kafka clusters are deployed in each regulatory region (EU, US, APAC). The Tenant Router's metadata store maps each tenant to their required data residency region. When a tenant's API key is provisioned, their data residency is locked. All metric writes from their agents are routed to the Kafka cluster for their residency region. The InfluxDB cluster in that region processes and stores only that region's data. No cross-region data replication occurs for residency-locked tenants. Analytics that span regions use query federation at the API layer.</p>
+
+    <h2 class="section-h2" id="p8-critique">Step 3: Interviewer Critique</h2>
+
+    <div class="critique-grid">
+      <div class="critique-card critique-good">
+        <h5>✅ What the Candidate Did Well</h5>
+        <ul>
+          <li>Back-of-envelope calculation was precise and used realistic numbers (Gorilla compression factor, storage costs)</li>
+          <li>Correctly identified cardinality explosion as the #1 risk and addressed it with three defensive layers</li>
+          <li>Multi-tier storage design shows production operational awareness</li>
+          <li>Data residency at the Kafka routing layer shows systems thinking about the full pipeline</li>
+          <li>Tenant tiering (shared vs. dedicated clusters) is the correct operational model for a SaaS platform</li>
+        </ul>
+      </div>
+      <div class="critique-card critique-bad">
+        <h5>❌ What Was Missed or Glossed Over</h5>
+        <ul>
+          <li>Did not discuss write availability during Kafka consumer failures — this counts against the 99.9% SLA</li>
+          <li>Hinted handoff queue overflow scenario during peak write time not addressed</li>
+          <li>Query federation for cross-region analytics was mentioned but not designed in depth</li>
+          <li>No discussion of schema versioning strategy for new metric names</li>
+          <li>Cost model for dedicated enterprise clusters not discussed</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="section-h3">Follow-Up Questions That Would Expose Weaknesses</h3>
+    <ul>
+      <li>Your P95 query latency target is 2 seconds for 30-day ranges. Walk me through exactly what happens for a query for 30 days of CPU data across 10,000 servers. How many TSM files are read? Can this meet 2 seconds?</li>
+      <li>A large enterprise tenant has configured 500 custom tags on their servers. Their cardinality is now 50M series. Your circuit breaker fires. What is the user experience? How do you help them remediate without losing data?</li>
+      <li>Explain how your downsampling continuous queries handle late-arriving data — a server that was offline for 6 hours sends backfilled data. Does the hourly average get recalculated?</li>
+      <li>Your design uses InfluxDB Enterprise. InfluxData is acquired and the enterprise license becomes unavailable. What is your migration path?</li>
+    </ul>
+
+    <h3 class="section-h3">What an L8 Answer Would Include That L7 Missed</h3>
+
+    <div class="callout callout-lightning">
+      <div class="callout-label">⚡ L7/L8 Differentiator</div>
+      <p>An L8 candidate would discuss the fundamental tension between InfluxDB's shard-based architecture and the multi-tenant tiering requirement. Specifically: when a shared cluster shard covers a time window that spans multiple tenants, and one tenant's data causes compaction pressure, all tenants in that shard are affected. The L8 solution is <strong>shard isolation</strong> — ensuring each tenant's data is in its own shard via measurement-prefixed routing (measurement name includes tenant ID hash) combined with per-shard compaction priority queuing. This is not supported natively in InfluxDB Enterprise and requires a custom compaction scheduling layer — which an L8 candidate would design and propose.</p>
+    </div>
+
+    <p>An L8 answer would also discuss the architectural decision to use InfluxDB IOx (v3) as the storage backend instead of Enterprise, explicitly trading operational maturity (IOx is newer, less battle-tested) for architectural correctness (disaggregated compute/storage natively supports multi-tenancy, tiered storage, and eliminates the shard-rebalancing problem). The L8 candidate frames this as a risk-managed bet: launch v1 with Enterprise (proven), migrate to IOx in year 2 as it matures, with IOx's S3-backed storage allowing zero-downtime migration of old shards.</p>
+
+    <h2 class="section-h2" id="p8-rapid">Step 4: 10 Rapid-Fire Staff-Level Questions</h2>
+
+    <div id="q1" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q1')">
+        <div class="qcard-num">01</div>
+        <div class="qcard-q">What is a TSM file and how does its index work?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>A TSM (Time-Structured Merge) file is InfluxDB's immutable on-disk data file, analogous to an SSTable in LevelDB. It contains compressed blocks of time-series data organized by series key and field, followed by a footer-referenced index. The index stores, for each series+field key, a list of entries containing <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">(min_timestamp, max_timestamp, file_offset, block_size)</code>.</p>
+        <p>When a query needs data for a specific series and time range, the index is binary-searched to find only the relevant blocks — blocks outside the query time range are skipped without reading their data. This is the mechanism that makes time-range queries efficient even in files containing data for many series.</p>
+      </div>
+    </div>
+
+    <div id="q2" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q2')">
+        <div class="qcard-num">02</div>
+        <div class="qcard-q">Explain series cardinality and why it causes OOM.</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>Series cardinality is the total number of unique time-series in a database, where each series is identified by a unique combination of measurement name + all tag key-value pairs. Each unique series requires an entry in the in-memory tag index. In InfluxDB's default in-memory index, each series entry consumes approximately <strong>1–2KB of heap memory</strong> for index tree nodes and string storage.</p>
+        <p>At 10 million series, this consumes 10–20GB of RAM. If unbounded tag combinations are used (e.g., UUID as a tag), series count can reach hundreds of millions, exhausting all available RAM and causing OOM kills. The insidious part is that this memory growth is gradual — it takes weeks of steadily increasing cardinality before OOM occurs, by which time the root cause is obscured.</p>
+      </div>
+    </div>
+
+    <div id="q3" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q3')">
+        <div class="qcard-num">03</div>
+        <div class="qcard-q">How does InfluxDB handle out-of-order writes?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>InfluxDB accepts out-of-order writes (data with timestamps in the past relative to previously written data for the same series). They are written to the WAL and Cache normally. The Cache maintains data in sorted timestamp order, so out-of-order data is correctly inserted at the right position in the Cache's sorted list. During Cache snapshot/flush to TSM files, the data is written in timestamp order.</p>
+        <p>However, if out-of-order data arrives after the relevant time window's Cache has already been flushed to TSM files, the new out-of-order data will result in a Level 1 TSM file that overlaps in time range with existing TSM files. This causes the compaction engine to do extra work to merge and deduplicate overlapping time ranges, increasing CPU and I/O load. <strong>Heavy out-of-order write patterns should be avoided</strong> or pre-sorted before ingestion.</p>
+      </div>
+    </div>
+
+    <div id="q4" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q4')">
+        <div class="qcard-num">04</div>
+        <div class="qcard-q">What is the hinted handoff mechanism and when does it fail?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>Hinted handoff is InfluxDB Enterprise's mechanism for maintaining write availability when a data node is temporarily unavailable. When a write is destined for a shard on Node B, but Node B is down, the coordinating node (Node A) writes the data to its local hinted handoff queue — a durable disk-backed queue. Node A returns success to the client. When Node B recovers, Node A drains the hinted handoff queue to Node B.</p>
+        <p>Hinted handoff fails when the queue overflows: if Node B is down for an extended period and write rate is high, the queue exceeds its configured <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">max-size</code>, and subsequent writes destined for Node B are <strong>silently dropped</strong>. This is the primary data loss scenario in InfluxDB Enterprise, and <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">max-hinted-handoff-size</code> must be carefully sized based on expected node downtime duration and write rate.</p>
+      </div>
+    </div>
+
+    <div id="q5" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q5')">
+        <div class="qcard-num">05</div>
+        <div class="qcard-q">Compare InfluxQL and Flux. When would you choose each?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>InfluxQL is SQL-like and designed specifically for time-series operations in InfluxDB 1.x. It is familiar to anyone who knows SQL, has well-optimized execution paths in the InfluxDB 1.x query engine, and is supported by all client libraries. Flux (introduced in InfluxDB 2.0) is a functional, dataflow-oriented scripting language. Flux is far more expressive: it supports cross-measurement joins (not possible in InfluxQL), external HTTP calls within queries, user-defined functions, pivot operations, and mathematical transformations.</p>
+        <p>Choose InfluxQL when working with InfluxDB 1.x or when performance is paramount and queries are simple aggregations and range filters. Choose Flux when you need joins, complex transformations, or are on InfluxDB 2.0+ and can accept the higher query planning overhead.</p>
+      </div>
+    </div>
+
+    <div id="q6" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q6')">
+        <div class="qcard-num">06</div>
+        <div class="qcard-q">What is the role of the WAL, and what is the impact of fsync-delay?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>The WAL (Write-Ahead Log) provides InfluxDB's primary durability guarantee. Every write is appended to the WAL before being acknowledged to the client and before being inserted into the in-memory Cache. On crash, the WAL is replayed on startup to recover any data in the Cache that was not yet flushed to TSM files.</p>
+        <p>The <code style="font-family:'JetBrains Mono',monospace;background:rgba(1,4,9,0.6);padding:2px 6px;border-radius:3px;color:#7fdbca;font-size:0.85em">fsync-delay</code> setting controls how long WAL writes are batched before calling fsync (forcing data to physical storage). A delay of 0ms means every write triggers an fsync — very durable but slow (~1–5ms on SSD per write). A delay of 100ms means up to 100ms of writes are batched before fsync — much faster but means up to 100ms of acknowledged writes can be lost on power failure. Production systems typically use 0–25ms delays.</p>
+      </div>
+    </div>
+
+    <div id="q7" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q7')">
+        <div class="qcard-num">07</div>
+        <div class="qcard-q">What is the TSI index and how does it differ from the in-memory index?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>The TSI (Time Series Index) is InfluxDB's disk-based series index, available since v1.5 and the default in v2.0. The original in-memory index kept all series metadata in a Go map in RAM — simple and fast but limited to whatever series cardinality fits in available memory. The TSI index uses a memory-mapped file structure inspired by LevelDB's SSTable design, where hot series entries are cached in RAM but the index can be larger than available RAM because it pages data from disk on demand.</p>
+        <p>TSI files are periodically compacted similarly to TSM files. The tradeoff: TSI has slightly higher read latency for series lookups (potential disk I/O) vs. the in-memory index's pure-RAM speed. But TSI allows series cardinality to scale <strong>10–100x beyond</strong> what the in-memory index could support.</p>
+      </div>
+    </div>
+
+    <div id="q8" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q8')">
+        <div class="qcard-num">08</div>
+        <div class="qcard-q">How does InfluxDB resolve conflicting writes for the same timestamp?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>InfluxDB uses Last-Write-Wins (LWW) semantics for conflicting writes — two writes for the same measurement, tag set, and timestamp. In a single-node setup, the write that arrives later (later server-side processing time) wins. In a clustered setup, the write with the later wall-clock time on the node that receives and processes it wins.</p>
+        <p>This creates a vulnerability to clock skew: if Node A has a clock that is 500ms ahead of Node B, writes processed by Node A will always win conflicts regardless of the actual order of events. The mitigation is to ensure all nodes are NTP-synchronized to within a few milliseconds. <strong>InfluxDB does not implement vector clocks, Lamport timestamps, or any causality-aware conflict resolution</strong> — LWW is simple, performant, and sufficient for monitoring data where sub-second-level conflicts are rare.</p>
+      </div>
+    </div>
+
+    <div id="q9" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q9')">
+        <div class="qcard-num">09</div>
+        <div class="qcard-q">Explain TSM compaction levels and what happens if compaction can't keep up with writes.</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>TSM compaction happens in levels. Level 1 TSM files are created by flushing the in-memory Cache — small (~few MB), may have overlapping time ranges. Level 2 merges multiple Level 1 files (~tens of MB), deduplicating by timestamp. Level 3 merges Level 2 files (~hundreds of MB). Level 4 produces the largest, most optimized files (~GB), with no overlapping time ranges and maximum compression.</p>
+        <p>If write rate exceeds the compaction engine's capacity, Level 1 file count grows unboundedly. This causes three problems: each query must open and merge data from increasingly many small files (increasing I/O); TSM file descriptor count can exhaust OS-level file descriptor limits (causing write failures); and disk space grows because small files have lower compression ratios. The operational response is to reduce write rate, increase compaction concurrency, or provision faster storage.</p>
+      </div>
+    </div>
+
+    <div id="q10" class="qcard open">
+      <div class="qcard-header" onclick="toggleQ('q10')">
+        <div class="qcard-num">10</div>
+        <div class="qcard-q">What does InfluxDB IOx (v3) change architecturally, and why does it matter?</div>
+        <div class="qcard-toggle">▼</div>
+      </div>
+      <div class="qcard-body">
+        <p>InfluxDB IOx is a complete rewrite of InfluxDB's storage layer using Apache Arrow for in-memory columnar representation, Apache Parquet for on-disk columnar storage, DataFusion for vectorized SQL query execution, and object storage (AWS S3, GCS) as the primary persistence layer — eliminating local disk as a reliability concern. The key architectural change is separation of compute and storage: Ingesters (stateful write nodes) handle incoming writes and buffer in WAL + memory; Queriers (stateless compute nodes) read from object storage and execute queries; and there is no direct coupling between them.</p>
+        <p>This enables independent scaling of read vs. write capacity, elastic query parallelism (spin up 100 querier pods for a heavy analytics job, then scale down), and infinite storage capacity at object storage economics. The tradeoff: IOx is architecturally more complex, has higher query latency for very recent data (object storage is slower than local NVMe), and as of 2025 is still maturing in production stability vs. the battle-tested TSM engine.</p>
+      </div>
+    </div>
+
+    <div class="callout callout-key">
+      <div class="callout-label">🔑 Key Takeaway — Entire Guide</div>
+      <p>InfluxDB's strength is its radical co-design of data model, storage engine, and query semantics around the time axis. Its weaknesses (cardinality limits, no transactions, eventual consistency in clusters) are not bugs — they are deliberate tradeoffs that make it exceptional at what it does. <strong>Knowing the failure modes as well as the strengths is what separates L7 from L8.</strong></p>
+    </div>
+
+  </section>
+
+  </div><!-- /content -->
+</main>
+
+<button id="back-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑</button>
+
+<script>
+// Progress bar
+const progressBar = document.getElementById('progress-bar');
+window.addEventListener('scroll', () => {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+  progressBar.style.width = progress + '%';
+
+  // Back to top
+  const btn = document.getElementById('back-top');
+  if (scrollTop > 400) btn.classList.add('visible');
+  else btn.classList.remove('visible');
+});
+
+// Active nav
+const allNavLinks = document.querySelectorAll('#nav-list a');
+const sections = [];
+document.querySelectorAll('[id]').forEach(el => {
+  if (el.tagName.match(/^H[123]$/) || el.classList.contains('pillar-section')) {
+    sections.push(el);
+  }
+});
+
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const id = e.target.id;
+      allNavLinks.forEach(l => {
+        l.classList.remove('active');
+        if (l.getAttribute('href') === '#' + id) l.classList.add('active');
+      });
+    }
+  });
+}, { threshold: 0.1, rootMargin: '-60px 0px -60% 0px' });
+
+document.querySelectorAll('.pillar-section, h2.section-h2, h3.section-h3').forEach(el => {
+  if (el.id) observer.observe(el);
+});
+
+// Q&A toggle
+function toggleQ(id) {
+  const card = document.getElementById(id);
+  card.classList.toggle('open');
+}
+
+// Hamburger
+const hamburger = document.getElementById('hamburger');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+hamburger.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('visible');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('visible');
+});
+
+// Copy button for diagrams
+function copyDiagram(btn) {
+  const pre = btn.closest('.diagram-wrap').querySelector('pre code');
+  const text = pre ? pre.textContent : '';
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+  });
+}
+
+// Search
+const searchInput = document.getElementById('search-input');
+searchInput.addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  const navSections = document.querySelectorAll('.nav-section');
+  navSections.forEach(sec => {
+    if (!q) {
+      sec.classList.remove('hidden');
+      return;
+    }
+    const text = sec.textContent.toLowerCase();
+    sec.classList.toggle('hidden', !text.includes(q));
+  });
+});
+
+// Sidebar nav click → close on mobile
+allNavLinks.forEach(l => {
+  l.addEventListener('click', () => {
+    if (window.innerWidth <= 900) {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('visible');
+    }
+  });
+});
+</script>
+</body>
+</html>
