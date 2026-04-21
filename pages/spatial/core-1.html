@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geospatial Indexing (Part 1) — Core Understanding & QuadTree Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  /* Geospatial series — cartographic teal/earth tones */
+  --geo:#14B8A6;--geo2:#0D9488;--geo3:#5EEAD4;
+  --qt:#6366F1;--rt:#F59E0B;--gh:#10B981;--s2:#EC4899;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--geo),var(--qt),var(--rt),var(--gh),var(--s2));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--geo3);background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--geo)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(20,184,166,.05)}
+.ni.active a{color:var(--geo3);border-left-color:var(--geo3);background:rgba(20,184,166,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--geo3);border-color:var(--geo3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--geo3) 35%,var(--qt) 60%,var(--gh));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(20,184,166,.1);border-color:var(--geo3);color:var(--geo3)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* ELEVATOR PITCHES */
+.pitch-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.pitch-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.pitch-card.lay{border-left:3px solid var(--geo)}
+.pitch-card.eng{border-left:3px solid var(--qt)}
+.pitch-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:8px}
+.pitch-card.lay .pitch-label{color:var(--geo)}
+.pitch-card.eng .pitch-label{color:var(--qt)}
+.pitch-card p{font-size:.87rem;color:var(--muted);line-height:1.65}
+.pitch-card strong{color:var(--text)}
+
+/* AHA MOMENT */
+.aha{background:rgba(20,184,166,.06);border:1px solid rgba(20,184,166,.22);border-radius:10px;padding:18px 20px;margin:14px 0;position:relative}
+.aha::before{content:'💡';position:absolute;right:16px;top:14px;font-size:1.3rem;opacity:.4}
+.aha-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.12em;color:var(--geo);margin-bottom:10px;font-weight:600}
+.aha p{font-size:.9rem;color:var(--muted);line-height:1.7;padding-right:28px}
+.aha strong{color:var(--text)}
+
+/* LIBRARY ANALOGY TABLE */
+.lib-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.lib-table thead tr{background:linear-gradient(90deg,rgba(20,184,166,.1),rgba(99,102,241,.06))}
+.lib-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--geo3);border-bottom:1px solid rgba(20,184,166,.2)}
+.lib-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5;font-size:.8rem}
+.lib-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.lib-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.lib-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc)}
+
+/* FAILURE ANALOGY CARDS */
+.fail-analogies{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.fa-item{background:var(--surface2);border:1px solid rgba(255,107,107,.18);border-left:3px solid var(--no);border-radius:0 8px 8px 0;padding:12px 14px}
+.fa-title{font-family:var(--fc);font-size:.72rem;font-weight:700;color:var(--no);margin-bottom:5px}
+.fa-item p{font-size:.86rem;color:var(--muted);line-height:1.6;font-style:italic}
+.fa-item strong{color:var(--text)}
+
+/* 5 CORE CONCEPTS */
+.concepts{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.concept{background:var(--surface);border:1px solid rgba(20,184,166,.18);border-radius:9px;padding:14px 16px;overflow:hidden}
+.concept-hdr{display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer;user-select:none}
+.concept-num{font-family:var(--fc);font-size:.66rem;font-weight:700;text-transform:uppercase;padding:2px 9px;border-radius:10px;background:rgba(20,184,166,.12);color:var(--geo);border:1px solid rgba(20,184,166,.2);flex-shrink:0}
+.concept-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.concept-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.concept.collapsed .concept-toggle{transform:rotate(-90deg)}
+.concept-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.concept.collapsed .concept-body{max-height:0;opacity:0}
+.concept-body p{font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:8px}
+.concept-body strong{color:var(--text)}
+
+/* GUARANTEES VS NOT */
+.guar-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.guar-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 15px}
+.guar-card.yes{border-top:3px solid var(--cass4)}
+.guar-card.no{border-top:3px solid var(--no)}
+.guar-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:9px}
+.guar-card.yes .guar-label{color:var(--cass4)}.guar-card.no .guar-label{color:var(--no)}
+.guar-card ul{padding-left:14px}
+.guar-card li{font-size:.83rem;color:var(--muted);line-height:1.55;margin-bottom:4px}
+
+/* SCALE TABLE */
+.scale-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.scale-table thead tr{background:rgba(20,184,166,.06)}
+.scale-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--geo3);border-bottom:1px solid rgba(20,184,166,.18)}
+.scale-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.35);color:var(--muted);vertical-align:top;line-height:1.45;font-size:.8rem}
+.scale-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.scale-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.scale-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc)}
+
+/* QUADTREE DEEP DIVE */
+.qt-section{background:var(--surface);border:1px solid rgba(99,102,241,.2);border-radius:12px;margin-bottom:20px;overflow:hidden}
+.qt-hdr{padding:13px 20px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid rgba(99,102,241,.15);background:rgba(99,102,241,.05)}
+.qt-tag{font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:12px;background:rgba(99,102,241,.12);color:var(--qt);border:1px solid rgba(99,102,241,.2)}
+.qt-title{font-family:var(--fh);font-size:1rem;font-weight:700;color:var(--text)}
+.qt-toggle{color:var(--dim);font-size:.76rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.qt-section.collapsed .qt-toggle{transform:rotate(-90deg)}
+.qt-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.qt-section.collapsed .qt-body{max-height:0;opacity:0}
+.qt-inner{padding:0 20px 18px}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.geo{border:1px solid rgba(20,184,166,.2)}.diag.geo .diag-hdr{background:rgba(20,184,166,.06);border-bottom:1px solid rgba(20,184,166,.18)}.diag.geo .diag-title{color:var(--geo3)}
+.diag.qt{border:1px solid rgba(99,102,241,.2)}.diag.qt .diag-hdr{background:rgba(99,102,241,.06);border-bottom:1px solid rgba(99,102,241,.18)}.diag.qt .diag-title{color:var(--qt)}
+.diag.fail{border:1px solid rgba(239,68,68,.2)}.diag.fail .diag-hdr{background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.18)}.diag.fail .diag-title{color:var(--no)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--geo3);border-color:var(--geo3)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.geo{background:rgba(20,184,166,.07);border:1px solid rgba(20,184,166,.2)}
+.callout.qt{background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.geo .callout-title{color:var(--geo3)}
+.callout.qt .callout-title{color:var(--qt)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* STRENGTHS/LIMITS SPLIT */
+.sl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.sl-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.sl-card.str{border-left:3px solid var(--cass4)}
+.sl-card.lim{border-left:3px solid var(--no)}
+.sl-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:8px}
+.sl-card.str .sl-label{color:var(--cass4)}.sl-card.lim .sl-label{color:var(--no)}
+.sl-card ul{padding-left:14px}.sl-card li{font-size:.84rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.sl-card strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(20,184,166,.09),rgba(99,102,241,.05));border:1px solid rgba(20,184,166,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--geo);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--geo3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+mark{background:rgba(20,184,166,.14);color:var(--geo);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.v{background:rgba(99,102,241,.14);color:var(--qt)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.pitch-pair,.guar-grid,.sl-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Geospatial Indexing · L6/L7 Series</div>
+    <div class="sb-title">Core Understanding & QuadTree</div>
+    <div class="sb-part">Part 1 — Fundamentals to L7 Excellence</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Core Understanding</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#elevator">Elevator Pitch</a></li>
+      <li class="ni sub"><a href="#library">Library Analogy</a></li>
+      <li class="ni sub"><a href="#fail-analogies">Failure Analogies</a></li>
+    </li>
+    <li class="ng"><div class="nl">Mental Models</div>
+      <li class="ni sub"><a href="#concepts">5 Core Concepts</a></li>
+      <li class="ni sub"><a href="#guarantees">What It Guarantees vs Doesn't</a></li>
+      <li class="ni sub"><a href="#tradeoffs">Fundamental Trade-offs</a></li>
+      <li class="ni sub"><a href="#when">When Does This Come Up?</a></li>
+    </li>
+    <li class="ng"><div class="nl">QuadTree Deep Dive</div>
+      <li class="ni sub"><a href="#qt-what">A: What It Is</a></li>
+      <li class="ni sub"><a href="#qt-how">B: How It Works</a></li>
+      <li class="ni sub"><a href="#qt-strengths">C: Strengths & Use Cases</a></li>
+      <li class="ni sub"><a href="#qt-limits">D: Limitations & Failure Modes</a></li>
+      <li class="ni sub"><a href="#qt-ops">E: Operational Considerations</a></li>
+      <li class="ni sub"><a href="#qt-l7">F: L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Geospatial Indexing & Location-Based Systems · L6/L7 Series · Part 1</div>
+  <h1>Core Understanding<br>& QuadTree<br>Deep Dive</h1>
+  <div class="hero-meta">
+    <span>🌍 The "find nearby" problem from first principles</span>
+    <span>📚 Library analogy for all 4 index types</span>
+    <span>🧠 5 core concepts you must internalize</span>
+    <span>🌳 QuadTree: mechanics, failure modes, L7 nuances</span>
+    <span>📐 Scale thresholds: when each approach breaks</span>
+    <span>🔑 Interview sound bite + trigger keywords</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill ap">Part 1: Core + QuadTree</span>
+    <span class="part-pill">Part 2: R-Tree, GeoHash, S2/H3</span>
+    <span class="part-pill">Part 3: System Design Applications</span>
+  </div>
+  <p style="margin-top:14px">Every location-based system interview — Uber, Google Maps, Yelp, dating apps — eventually asks: "How do you find nearby X efficiently?" The answer is geospatial indexing. This guide builds the mental model from scratch: why the problem is hard, the four canonical index types with their analogies and failure modes, and a complete QuadTree deep-dive from first principles to L7 nuances.</p>
+</section>
+
+<!-- ELEVATOR PITCHES -->
+<div class="sec-hdr" id="elevator"><h2>The Elevator Pitch</h2></div>
+
+<div class="pitch-pair">
+  <div class="pitch-card lay">
+    <div class="pitch-label">For a Smart Non-Engineer</div>
+    <p>"It's a clever way to <strong>organize the entire planet into an address book</strong>, so when you ask 'what's near me?', we can find answers in milliseconds without checking every single place on Earth."</p>
+  </div>
+  <div class="pitch-card eng">
+    <div class="pitch-label">For a Fellow Engineer</div>
+    <p>"Geospatial indexing transforms <strong>2D/3D continuous coordinate spaces into discrete, hierarchical data structures</strong> that enable O(log n) proximity queries instead of O(n) full scans, with different index types optimizing for different query patterns, update frequencies, and consistency requirements."</p>
+  </div>
+</div>
+
+<div class="aha" id="aha-section">
+  <div class="aha-label">The "Aha!" Moment — The Stadium Problem</div>
+  <p>Imagine finding your friend in a stadium of 80,000 people. You could check every single person (O(n) — terrible). OR, you could say: <strong>"Section 200s, Row M-P, Seats 10-20."</strong></p>
+  <p style="margin-top:8px">You've just used <strong>hierarchical spatial decomposition</strong>. The magic is that geography itself provides the hierarchy: Planet → Continent → Country → City → Neighborhood → Street → Building → Floor → Room. Geospatial indexes exploit this natural hierarchy, letting you skip 99.99% of data immediately.</p>
+</div>
+
+<!-- LIBRARY ANALOGY -->
+<div class="sec-hdr" id="library"><h2>The Library Analogy — All Four Index Types</h2></div>
+<p style="font-size:.9rem;color:var(--muted);line-height:1.7;margin-bottom:14px">You're a librarian organizing 10 million books by <em>where in the world</em> each book is about. Without any indexing, answering "books within 5 miles of the Eiffel Tower?" means checking every book — including books about Tokyo and Antarctica.</p>
+
+<table class="lib-table">
+  <thead><tr><th>Index Type</th><th>Library Analogy</th><th>How It Works</th></tr></thead>
+  <tbody>
+    <tr><td>QuadTree</td><td>You divide your library into 4 quadrants: NE, NW, SE, SW. Each quadrant is further divided into 4 smaller sections. Books about Paris are in the "Europe → Western Europe → France → Paris" section.</td><td>Recursive quartering of space. Each node has exactly 4 children.</td></tr>
+    <tr><td>R-Tree</td><td>Flexible bookshelves that can be any size/shape. One shelf holds "all books about Mediterranean coastal cities." Another holds "all books about Alpine ski resorts." Shelves can overlap.</td><td>Bounding rectangles that group nearby items. Shapes can nest and overlap.</td></tr>
+    <tr><td>GeoHash</td><td>Each book has a barcode like "u09tvw" — similar barcodes mean nearby places. All books starting with "u09" are on the same shelf (Paris region).</td><td>String encoding where longer prefix = finer precision, same prefix = nearby.</td></tr>
+    <tr><td>H3 / S2</td><td>You've covered your library floor with hexagonal/square tiles. Each tile has a number. Books about nearby places share similar tile numbers.</td><td>Discrete grid cells covering the sphere. Hierarchical cell IDs.</td></tr>
+  </tbody>
+</table>
+
+<!-- FAILURE ANALOGIES -->
+<div class="sec-hdr" id="fail-analogies"><h2>How the Analogy Explains Failure Scenarios</h2></div>
+
+<div class="fail-analogies">
+  <div class="fa-item">
+    <div class="fa-title">Hotspot Problem — QuadTree</div>
+    <p>"What if 90% of your books are about Manhattan? Your NE/NW/SE/SW split keeps subdividing the NYC section until you have <strong>50 levels deep there</strong>, while Antarctica has just 2 levels. Your index becomes absurdly unbalanced — and a query about Manhattan now takes 50 hops instead of 2."</p>
+  </div>
+  <div class="fa-item">
+    <div class="fa-title">Boundary Problem — GeoHash</div>
+    <p>"Books with barcodes 'u09' and 'gbp' are actually <strong>neighbors (France and England across the Channel)</strong>, but they're on completely different shelves because they share no common prefix. You miss nearby results even though the books are physically adjacent."</p>
+  </div>
+  <div class="fa-item">
+    <div class="fa-title">Update Storm — R-Tree</div>
+    <p>"Your flexible bookshelves worked great when everything was static. But now <strong>100,000 Uber drivers are books that change location every 4 seconds</strong>. You're constantly reshuffling bookshelves — every update potentially triggers a rebalance cascade."</p>
+  </div>
+</div>
+
+<!-- 5 CORE CONCEPTS -->
+<div class="sec-hdr" id="concepts"><h2>5 Core Concepts You MUST Internalize</h2></div>
+
+<div class="concepts">
+  <div class="concept" id="c1">
+    <div class="concept-hdr" onclick="toggleConcept(this)">
+      <span class="concept-num">Concept 1</span>
+      <span class="concept-title">Space-Filling Curves Turn 2D Into 1D</span>
+      <span class="concept-toggle">▾</span>
+    </div>
+    <div class="concept-body">
+      <p><strong>The fundamental insight:</strong> Databases are optimized for 1D range queries. If you map 2D coordinates to a 1D line where "nearby in 2D" means "nearby in 1D," you can use standard B-tree indexes on geospatial data.</p>
+      <div class="diag geo">
+        <div class="diag-hdr"><span class="diag-title">Z-Order Curve — 2D to 1D Mapping</span></div>
+        <pre>2D Space:           1D Z-Order Mapping:
+┌───┬───┬───┬───┐   
+│ 0 │ 1 │ 4 │ 5 │   0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 ...
+├───┼───┼───┼───┤   
+│ 2 │ 3 │ 6 │ 7 │   Points nearby in 2D tend to be nearby
+├───┼───┼───┼───┤   in this 1D sequence (though not always —
+│ 8 │ 9 │12 │13 │   Z-order has diagonal "jumps" at boundaries)
+├───┼───┼───┼───┤
+│10 │11 │14 │15 │   GeoHash and S2 use this principle:
+└───┴───┴───┴───┘   encode 2D → 1D → use B-tree index</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="concept" id="c2">
+    <div class="concept-hdr" onclick="toggleConcept(this)">
+      <span class="concept-num">Concept 2</span>
+      <span class="concept-title">Hierarchical Decomposition = Divide and Conquer</span>
+      <span class="concept-toggle">▾</span>
+    </div>
+    <div class="concept-body">
+      <p>Every geospatial index partitions space recursively. The power is in <strong>pruning</strong>: if a user is in San Francisco, you can immediately skip 99.9% of Earth by eliminating continents, then countries, then states, then cities — before ever looking at individual coordinates.</p>
+      <div class="diag geo">
+        <div class="diag-hdr"><span class="diag-title">Hierarchical Pruning in Action</span></div>
+        <pre>Query: "Find restaurants near the Eiffel Tower"
+
+Level 0 (Earth):     [All 8 billion locations] — Start here
+Level 1 (Continent): [Europe] ← prune 6 continents (75% eliminated)
+Level 2 (Country):   [France] ← prune 40+ European countries (95% eliminated)
+Level 3 (City):      [Paris]  ← prune 35,000 French communes (99.9% eliminated)
+Level 4 (District):  [7th arrondissement] ← narrow to neighborhood
+Level 5 (Block):     [Champ de Mars area] ← now check actual distances
+
+End result: Check ~100 candidates instead of 8 billion ← O(log n) not O(n)</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="concept" id="c3">
+    <div class="concept-hdr" onclick="toggleConcept(this)">
+      <span class="concept-num">Concept 3</span>
+      <span class="concept-title">The Precision-Storage Trade-off</span>
+      <span class="concept-toggle">▾</span>
+    </div>
+    <div class="concept-body">
+      <p>More precision = longer identifiers = more storage = finer-grained queries. You choose precision based on your use case — there's no universally correct answer.</p>
+      <div class="diag geo">
+        <div class="diag-hdr"><span class="diag-title">GeoHash Precision Example</span></div>
+        <pre>GeoHash length → Cell size → Use case:
+
+Length 1:  ~5,000 km × 5,000 km  ← continent level
+Length 2:  ~1,250 km × 625 km    ← large country
+Length 3:  ~156 km × 156 km      ← province/state
+Length 4:  ~39 km × 20 km        ← large city
+Length 5:  ~4.9 km × 4.9 km      ← neighborhood
+Length 6:  ~1.2 km × 0.61 km     ← city block ← Uber-like use case
+Length 8:  ~38 m × 19 m          ← building entrance
+Length 12: ~37 mm × 19 mm        ← sub-centimeter (scientific)
+
+Rule: Choose precision just finer than your typical search radius</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="concept" id="c4">
+    <div class="concept-hdr" onclick="toggleConcept(this)">
+      <span class="concept-num">Concept 4</span>
+      <span class="concept-title">The Static vs Dynamic Spectrum</span>
+      <span class="concept-toggle">▾</span>
+    </div>
+    <div class="concept-body">
+      <p><strong>Indexes optimized for static data</strong> (R-Tree) break down with millions of moving objects. <strong>Indexes optimized for movement</strong> (grid-based GeoHash) sacrifice query sophistication. Understanding which end of the spectrum your use case sits on is a prerequisite to choosing the right index.</p>
+      <table class="scale-table">
+        <thead><tr><th>System</th><th>Update Frequency</th><th>Right Index</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Restaurant DB</td><td>Rare (new openings)</td><td>R-Tree / PostGIS</td><td>Complex polygon queries, joins with metadata</td></tr>
+          <tr><td>Store locations</td><td>Never/rarely</td><td>GeoHash + B-tree</td><td>Simple, integrates with any SQL database</td></tr>
+          <tr><td>Uber drivers</td><td>Every 4 seconds</td><td>Grid/GeoHash cells</td><td>O(1) updates, no rebalancing</td></tr>
+          <tr><td>Tracking system</td><td>100K updates/sec</td><td>Custom in-memory grid</td><td>R-Tree update cost is prohibitive at this rate</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="concept" id="c5">
+    <div class="concept-hdr" onclick="toggleConcept(this)">
+      <span class="concept-num">Concept 5</span>
+      <span class="concept-title">Spherical Earth Breaks Flat Assumptions</span>
+      <span class="concept-toggle">▾</span>
+    </div>
+    <div class="concept-body">
+      <p>Latitude/longitude is not a Cartesian grid. Distance at the equator vs the poles differs dramatically (1° longitude = 111km at equator, ~0 at poles). Naive bounding boxes fail near poles and at the antimeridian (180° line).</p>
+      <div class="callout warn">
+        <div class="callout-title">The Three Spherical Failure Cases</div>
+        <ul>
+          <li><strong>Antimeridian crossing:</strong> A query near Fiji (longitude ~180°) spans from +170° to -170°. Naive bounding box wraps around the entire Earth in the wrong direction.</li>
+          <li><strong>Polar regions:</strong> Near the North Pole, all longitude lines converge. A 1km radius search spans many longitude degrees — bounding boxes become huge.</li>
+          <li><strong>Equal-area assumption:</strong> GeoHash cells at the equator are different physical sizes than cells at 60° latitude. A GeoHash "neighbor" at high latitude may actually be closer than cells that "share a prefix."</li>
+        </ul>
+      </div>
+      <p>S2 and H3 are designed specifically to handle the sphere correctly. GeoHash has known issues near these boundaries and requires workarounds.</p>
+    </div>
+  </div>
+</div>
+
+<!-- GUARANTEES -->
+<div class="sec-hdr" id="guarantees"><h2>What Geospatial Indexing Guarantees vs. What It Doesn't</h2></div>
+
+<div class="guar-grid">
+  <div class="guar-card yes">
+    <div class="guar-label">✅ Guarantees</div>
+    <ul>
+      <li>Logarithmic query time for point-in-region</li>
+      <li>Efficient pruning of irrelevant regions</li>
+      <li>Consistent encoding (same point = same index)</li>
+      <li>Range queries perform significantly better than O(n)</li>
+      <li>Results contain all true positives (no false negatives)</li>
+    </ul>
+  </div>
+  <div class="guar-card no">
+    <div class="guar-label">❌ Does NOT Guarantee</div>
+    <ul>
+      <li>Perfect nearest-neighbor without candidate refinement</li>
+      <li>Exact results without a post-filter step (boundary candidates)</li>
+      <li>Equal precision everywhere on Earth (GeoHash)</li>
+      <li>Cheap updates with tree-based indexes</li>
+      <li>Results contain <em>only</em> true positives (false positives possible)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout geo">
+  <div class="callout-title">The Post-Filter Step — Why It's Almost Always Required</div>
+  <p>Geospatial indexes return <strong>candidates</strong>, not final answers. A cell-based search (GeoHash, H3) for "within 5km" returns all objects in the cells that overlap the search area — including some that are in the cell but outside the actual radius. <strong>You must always filter candidates by exact distance.</strong> This is not a bug — it's the designed behavior. The index does the 99.9% reduction; the application does the final 0.1% refinement.</p>
+</div>
+
+<!-- TRADE-OFFS -->
+<div class="sec-hdr" id="tradeoffs"><h2>Fundamental Trade-offs</h2></div>
+
+<table class="scale-table">
+  <thead><tr><th>Trade-off</th><th>Optimizes</th><th>Sacrifices</th></tr></thead>
+  <tbody>
+    <tr><td>Query Flexibility vs Update Performance</td><td>R-Trees: complex polygon queries</td><td>Rebalancing on every insert — catastrophic for moving objects</td></tr>
+    <tr><td>Index Depth vs Hotspot Tolerance</td><td>Deeper trees: more precision</td><td>When all data clusters in one area (Manhattan), tree becomes pathological</td></tr>
+    <tr><td>Spherical Accuracy vs Computational Simplicity</td><td>S2/H3: correct sphere handling</td><td>More complex cell arithmetic vs flat-Earth simplicity</td></tr>
+    <tr><td>Consistency vs Availability (Distributed)</td><td>Strong consistency: always fresh location</td><td>Requires coordination — higher latency, lower availability</td></tr>
+    <tr><td>Precision vs Storage</td><td>Finer precision: more accurate queries</td><td>Longer identifiers, more cells to check per query radius</td></tr>
+  </tbody>
+</table>
+
+<!-- WHEN IT COMES UP -->
+<div class="sec-hdr" id="when"><h2>When Does This Come Up?</h2></div>
+
+<div class="callout geo">
+  <div class="callout-title">Interview Trigger Keywords</div>
+  <p>"Find nearby…" / "within X miles" · "Location-based" / "proximity search" · "Ride-sharing" / "food delivery" / "dating app" · "Map" / "routing" / "places" · "Store locations" / "query by location" · "Moving objects" / "tracking" · "Geofencing" / "region alerts" · "Points of interest" / "POI search"</p>
+</div>
+
+<table class="scale-table">
+  <thead><tr><th>Scale</th><th>What You Need</th><th>Example</th></tr></thead>
+  <tbody>
+    <tr><td>&lt;10K locations</td><td>Naive lat/lng scan might work (O(n) acceptable)</td><td>Small local business directory</td></tr>
+    <tr><td>10K–100K</td><td>Simple grid or GeoHash in application layer</td><td>City-wide delivery service</td></tr>
+    <tr><td>100K–10M</td><td>Proper spatial index essential (PostGIS/GeoHash)</td><td>National delivery, restaurant chain</td></tr>
+    <tr><td>10M–1B</td><td>Distributed spatial indexing, tiered architecture</td><td>Uber, Google Maps, Yelp</td></tr>
+    <tr><td>&gt;1B + 100K+ QPS</td><td>Multi-region, specialized systems, custom solutions</td><td>Global real-time tracking</td></tr>
+  </tbody>
+</table>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Interview Sound Bite — Core Concept</div>
+  <p>"Geospatial indexing solves the 'find nearby' problem by exploiting the hierarchical nature of geography — we recursively subdivide space so queries can skip 99.99% of data immediately. The key decision is whether to optimize for query flexibility with tree structures like R-Trees, or update frequency with grid systems like GeoHash. You rarely get both."</p>
+</div>
+
+<!-- QUADTREE DEEP DIVE -->
+<div class="sec-hdr" id="qt-deep"><h2>QuadTree Deep Dive</h2></div>
+
+<!-- A: WHAT IT IS -->
+<div class="qt-section" id="qt-what-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section A</span>
+    <span class="qt-title">What It Is — The Mental Model</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-what">
+    <div class="callout qt">
+      <div class="callout-title">One-Sentence Definition</div>
+      <p>A QuadTree <strong>recursively divides 2D space into four equal quadrants</strong>, creating a tree where each internal node has exactly four children (NE, NW, SE, SW).</p>
+    </div>
+    <div class="callout qt">
+      <div class="callout-title">The Core Insight</div>
+      <p>Space itself becomes the key. You don't hash coordinates — you follow the binary decisions <strong>"left or right?" and "up or down?"</strong> at each level to navigate directly to a region. It's a spatial trie over 2D space.</p>
+    </div>
+    <div class="callout qt">
+      <div class="callout-title">The Inventor's Problem</div>
+      <p>"I have points scattered on a 2D plane. I need to find all points in a rectangle, or find the nearest neighbor, without scanning all points." — The same problem Uber, Google Maps, and every proximity system faces.</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- B: HOW IT WORKS -->
+<div class="qt-section" id="qt-how-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section B</span>
+    <span class="qt-title">How It Works — Mechanics Deep-Dive</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-how">
+    <div class="callout geo">
+      <div class="callout-title">Step-by-Step Construction Rules</div>
+      <ul>
+        <li>Start with a bounding box covering all possible coordinates</li>
+        <li>When a node exceeds capacity (configurable, e.g. 4 points), split into 4 quadrants</li>
+        <li>Redistribute existing points to appropriate quadrants</li>
+        <li>Repeat recursively until each leaf has ≤ capacity points</li>
+      </ul>
+    </div>
+    <div class="diag qt">
+      <div class="diag-hdr"><span class="diag-title">Concrete Example — 5 Restaurants in a 100×100km Area</span></div>
+      <pre>Points: A(10,10)  B(15,12)  C(80,85)  D(82,87)  E(50,50)
+Capacity: 2 points per node (trigger split when exceeded)
+
+Step 1: Root (0-100 × 0-100) contains all 5 → EXCEEDS capacity of 2
+
+Step 2: Split into 4 quadrants:
+  NW (x:0-50,  y:50-100): [E is on boundary → assign here]
+  NE (x:50-100,y:50-100): [C(80,85), D(82,87)] ← at capacity, stop
+  SW (x:0-50,  y:0-50):   [A(10,10), B(15,12)] ← at capacity, stop
+  SE (x:50-100,y:0-50):   [empty]
+
+Resulting tree:
+           Root (0-100 × 0-100)
+         /       |       \       \
+       NW       NE       SW       SE
+     [E]    [C,D]    [A,B]    [empty]
+
+Query: "Find restaurants within 20km of point (12,11)"
+  Search bounds: rectangle (0,0) to (32,31)
+
+  Root → check each quadrant for overlap with (0,0)-(32,31):
+    NW (x:0-50, y:50-100): NO overlap (y-range 50-100 doesn't touch 0-31) → SKIP
+    NE (x:50-100, y:50-100): NO overlap → SKIP
+    SW (x:0-50, y:0-50): YES overlap → recurse → return [A, B]
+    SE (x:50-100, y:0-50): NO overlap → SKIP
+
+  Final: Check actual distances for [A, B]
+  Only examined 2 of 5 points. At billion scale: 1,000 of 1,000,000,000.</pre>
+    </div>
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — The Query Must Always Post-Filter</div>
+      <p>"QuadTree (and all spatial indexes) return <strong>candidate points within the bounding region</strong>, not points within the exact distance. A circle query on a QuadTree returns all points within the bounding square of the circle — the application must then filter by actual Euclidean/Haversine distance. This is not optional — it's fundamental to how spatial indexes work."</p>
+    </div>
+  </div></div>
+</div>
+
+<!-- C: STRENGTHS -->
+<div class="qt-section" id="qt-strengths-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section C</span>
+    <span class="qt-title">Strengths & Ideal Use Cases</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-strengths">
+    <div class="sl-grid">
+      <div class="sl-card str">
+        <div class="sl-label">Where QuadTree Shines</div>
+        <ul>
+          <li>Relatively <strong>uniform distribution</strong> of points across space</li>
+          <li><strong>Read-heavy workloads</strong> (queries >> updates)</li>
+          <li>Rectangle/region queries (natural for the data structure)</li>
+          <li>2D collision detection in game engines</li>
+          <li>Image processing with recursive subdivision</li>
+          <li>Computational geometry applications</li>
+        </ul>
+      </div>
+      <div class="sl-card str">
+        <div class="sl-label">The Sweet Spot</div>
+        <ul>
+          <li>100K to 10M <strong>static or slowly-changing</strong> points</li>
+          <li>Moderate query complexity (rectangle, circle, nearest-N)</li>
+          <li>Single-machine or region-sharded scenarios</li>
+          <li>When you control the data distribution</li>
+          <li>Game engines, GIS, computational geometry</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout geo">
+      <div class="callout-title">Real-World Production Uses</div>
+      <ul>
+        <li><strong>Game engines:</strong> Collision detection — quickly find all objects near a moving entity</li>
+        <li><strong>Computational geometry:</strong> Point-in-polygon, region overlap detection</li>
+        <li><strong>Some GIS systems:</strong> For static reference data (country boundaries, census tracts)</li>
+        <li><strong>Computer graphics:</strong> Frustum culling, scene subdivision</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<!-- D: LIMITS -->
+<div class="qt-section" id="qt-limits-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section D</span>
+    <span class="qt-title">Limitations & Failure Modes</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-limits">
+    <div class="diag fail">
+      <div class="diag-hdr"><span class="diag-title">Three Ways QuadTree Breaks</span></div>
+      <pre>FAILURE 1: Hotspot Disaster (Data Skew)
+  Scenario: 90% of your users are in Manhattan
+  Effect: Tree depth becomes 40+ levels in NYC, only 3 in Montana
+  Impact:
+    - Memory wildly imbalanced across quadrants
+    - Query time for NYC: 40 hops — for Montana: 3 hops
+    - Rebalancing is not defined for QuadTree (you just keep splitting)
+    - Pathological case: two points at exactly the same location → infinite splits
+
+FAILURE 2: High Update Volume (Lock Contention)
+  Scenario: 1M taxis updating location every 4 seconds
+  Effect: 250K inserts/second, each potentially triggering a split
+  Impact:
+    - Lock contention during splits (especially in concurrent environments)
+    - Tree rebalancing cascades upward
+    - Write latency becomes unpredictable
+    - Single-threaded or carefully synchronized access required
+
+FAILURE 3: Spherical Earth (Wrong Results Near Boundaries)
+  Scenario: Query near the North Pole or crossing the antimeridian (180°)
+  Effect: Quadrant boundaries don't map sensibly on a sphere
+  Impact:
+    - Longitude lines converge at poles → huge cells for tiny areas
+    - Antimeridian crossing: -179° and +179° appear far apart in the tree
+    - Wrong results and edge case bugs</pre>
+    </div>
+    <div class="callout warn">
+      <div class="callout-title">The Midnight Shift Gotcha</div>
+      <p>"When you cross midnight and all food delivery orders shift from residential neighborhoods to bar districts, your carefully balanced QuadTree becomes completely lopsided. The tree that was perfect at 6 PM is pathological at midnight — all the leaf nodes are now in a completely different quadrant than the one the tree was built around."</p>
+    </div>
+    <div class="callout warn">
+      <div class="callout-title">Hidden Assumptions That Break the Model</div>
+      <ul>
+        <li>Points are roughly uniformly distributed (violated by all real cities)</li>
+        <li>Bounding box is fixed and known upfront (violated by expanding datasets)</li>
+        <li>Flat 2D space, not spherical (violated by Earth's surface)</li>
+        <li>Single-threaded or carefully synchronized access (violated by distributed systems)</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<!-- E: OPERATIONS -->
+<div class="qt-section" id="qt-ops-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section E</span>
+    <span class="qt-title">Operational Considerations</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-ops">
+    <div class="callout geo">
+      <div class="callout-title">Monitoring Metrics That Matter</div>
+      <ul>
+        <li><strong>Max tree depth:</strong> Should be bounded. Alert if &gt; expected maximum. Unbounded depth signals data skew or duplicate-coordinate pathology.</li>
+        <li><strong>Nodes per level histogram:</strong> Sudden asymmetry = hotspot detection before it becomes a performance problem.</li>
+        <li><strong>Query latency P99:</strong> Spikes indicate hotspot access — the tree is being traversed much deeper than expected.</li>
+        <li><strong>Split/rebalance rate:</strong> High rate = churn. If splits are happening constantly, either data is too skewed or capacity is too low.</li>
+      </ul>
+    </div>
+    <div class="callout qt">
+      <div class="callout-title">Tuning Parameters</div>
+      <ul>
+        <li><strong>Node capacity:</strong> Higher = flatter tree with more scan per node. Lower = deeper tree with more navigation hops. Tune based on read/write ratio and data distribution.</li>
+        <li><strong>Minimum cell size:</strong> Stop splitting below this threshold — prevents infinite recursion on duplicate coordinates or arbitrarily close points.</li>
+      </ul>
+    </div>
+    <div class="callout good">
+      <div class="callout-title">Migration Strategy (Building New Index in Parallel)</div>
+      <ul>
+        <li>Build new index in parallel with old (shadow mode)</li>
+        <li>Double-write during transition: all new writes go to both indexes</li>
+        <li>Compare results (run same query on both, verify consistency)</li>
+        <li>Switch reads to new index (keep old as fallback)</li>
+        <li>Stop old writes, decommission old index</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<!-- F: L6/L7 NUANCES -->
+<div class="qt-section" id="qt-l7-card">
+  <div class="qt-hdr" onclick="toggleQT(this)">
+    <span class="qt-tag">Section F</span>
+    <span class="qt-title">L6/L7 Nuances — The Deep Understanding</span>
+    <span class="qt-toggle">▾</span>
+  </div>
+  <div class="qt-body"><div class="qt-inner" id="qt-l7">
+    <div class="callout qt">
+      <div class="callout-title">The Deep Question</div>
+      <p style="font-style:italic;color:var(--text)">"How would you handle a QuadTree where 99% of points are in one quadrant, and those points are updating 10K times per second?"</p>
+      <p style="margin-top:8px">This question combines the two core failure modes simultaneously (hotspot + high update rate). <strong>The answer requires abandoning QuadTree entirely</strong>: use a grid-based system (GeoHash cells) for the high-update area, with a separate tiered index for the sparse areas. Trying to fix QuadTree under these conditions is architectural debt.</p>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">L6/L7 Insight — Why QuadTree Rarely Appears at Google/Uber Scale</div>
+      <p>"QuadTrees are often taught as the canonical spatial index, but at Google/Uber scale, they're rarely used directly. The problem isn't the algorithm — it's that <strong>tree rebalancing doesn't parallelize well</strong>, and spatial locality doesn't match data locality in distributed systems. You end up with S2/H3 grid systems that trade query elegance for operational simplicity."</p>
+    </div>
+
+    <div class="callout qt">
+      <div class="callout-title">Google-Scale vs Startup-Scale Thinking</div>
+      <p>At startup scale, an in-memory QuadTree is elegant and fast — you can fit it in one machine's memory and queries are nanoseconds.</p>
+      <p style="margin-top:8px">At Google scale, the index must be distributed across 1,000+ machines. QuadTree's recursive structure makes sharding awkward: do you shard by quadrant? Then cross-boundary queries hit many shards. Grid systems (S2, H3) give you <strong>predictable cell IDs that shard cleanly</strong> — each cell gets a fixed numeric ID that hashes to a specific shard. No cross-boundary coordination needed for most queries.</p>
+    </div>
+
+    <div class="callout good">
+      <div class="callout-title">The Interview Signal: When to Mention QuadTree vs When to Use It</div>
+      <ul>
+        <li><strong>Mention it</strong> when asked "how does spatial indexing work?" — it's the clearest conceptual explanation</li>
+        <li><strong>Use it</strong> for game engines, single-server GIS, or when data is uniformly distributed and mostly static</li>
+        <li><strong>Avoid it</strong> for real-time tracking, high-update systems, or when you need distributed sharding</li>
+        <li><strong>The pivot:</strong> "QuadTree illustrates the core concept well, but for a production Uber-like system I'd use GeoHash cells or S2 cells because they offer O(1) updates and clean horizontal sharding."</li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Part 1 Key Lesson</div>
+  <p>Geospatial indexing is fundamentally about <strong>exploiting the hierarchical nature of geography</strong> to achieve O(log n) proximity queries by pruning irrelevant regions before scanning any data. The library analogy makes the differences between index types intuitive: QuadTree divides space uniformly (fast for uniform data, pathological for skewed data); R-Tree uses flexible bounding boxes (great for complex polygons, terrible for high-update rates); GeoHash encodes location as a string (elegant for static data, boundary problems near region edges); S2/H3 use sphere-aware cells (correct everywhere, operationally complex).</p>
+  <p>QuadTree's deep-dive establishes the pattern for every subsequent index type: <strong>what it is → how it works → where it shines → where it breaks → how to operate it → the L7 nuance</strong>. The L7 nuance is always the same question: "Would you actually use this at Google/Uber scale, and if not, why not, and what would you use instead?" For QuadTree, the honest answer is no — you'd use S2 or a grid-based system — and explaining precisely why is the signal.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleConcept(h){h.parentElement.classList.toggle('collapsed')}
+function toggleQT(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
