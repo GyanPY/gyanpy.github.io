@@ -6,12 +6,6 @@
         "file": "pages/kafka/kafka.html"
       }
     ],
-     "Spatial Data": [
-      {
-        "title": "Deep Dive-1",
-        "file": "pages/spatial/core-1.html"
-      }
-    ],
     "Cassandra": [
       {
         "title": "Internals",
@@ -221,12 +215,13 @@
         "title": "Deep Dive-6",
         "file": "pages/lb/6.html"
       }
-    ], 
-    "Spatial/Geo": [
+    ],
+     "Spatial Data": [
       {
-        "title": "Internals",
-        "file": "pages/core-1.html"
-      },
+        "title": "Deep Dive-1",
+        "file": "pages/spatial/core-1.html"
+      }
+    ]
   },
   "Interview": {
     "System Design": {
