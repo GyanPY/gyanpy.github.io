@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClickHouse — Staff/Principal Engineer Deep Dive</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #79c0ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --orange: #f0883e;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --pink: #ff7b72;
+    --teal: #39d353;
+    --ch-orange: #FFCC01;
+    --ch-red: #FF3300;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  /* HERO */
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #1a0a00 40%, #0d1117 100%);
+    border-bottom: 2px solid var(--ch-orange);
+    padding: 60px 40px 50px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(255,204,1,0.08) 0%, transparent 70%);
+  }
+  .hero h1 {
+    font-size: 3.2rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--ch-orange), var(--ch-red), var(--ch-orange));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+    margin-bottom: 12px;
+  }
+  .hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--muted);
+    max-width: 700px;
+    margin: 0 auto 20px;
+  }
+  .hero .badges {
+    display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  }
+  .badge {
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 4px 14px; border-radius: 20px; font-size: 0.8rem; color: var(--muted);
+  }
+  .badge.hot { border-color: var(--ch-orange); color: var(--ch-orange); }
+
+  /* NAV */
+  .toc {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 40px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .toc a {
+    color: var(--muted); text-decoration: none; font-size: 0.78rem;
+    padding: 4px 10px; border-radius: 6px; transition: all 0.2s;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .toc a:hover { color: var(--ch-orange); border-color: var(--ch-orange); background: rgba(255,204,1,0.07); }
+  .toc-label { font-size: 0.72rem; color: var(--muted); margin-right: 4px; font-weight: 600; }
+
+  /* LAYOUT */
+  .container { max-width: 1200px; margin: 0 auto; padding: 0 40px 80px; }
+
+  /* PILLAR SECTIONS */
+  .pillar {
+    margin: 60px 0 0;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .pillar-header {
+    padding: 28px 36px 24px;
+    background: linear-gradient(135deg, var(--surface2), var(--surface));
+    border-bottom: 2px solid var(--ch-orange);
+    display: flex; align-items: flex-start; gap: 16px;
+  }
+  .pillar-num {
+    font-size: 0.75rem; font-weight: 700; letter-spacing: 2px;
+    color: var(--ch-orange); text-transform: uppercase; margin-bottom: 4px;
+  }
+  .pillar-title {
+    font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1.2;
+  }
+  .pillar-emoji { font-size: 2.2rem; line-height: 1; }
+  .pillar-body { padding: 36px; background: var(--surface); }
+
+  /* SECTIONS within pillar */
+  h3 {
+    font-size: 1.1rem; font-weight: 700; color: var(--accent2);
+    margin: 32px 0 14px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 0.95rem; font-weight: 700; color: var(--orange); margin: 22px 0 10px; }
+
+  p { margin-bottom: 14px; color: var(--text); }
+  p:last-child { margin-bottom: 0; }
+  strong { color: #fff; font-weight: 700; }
+
+  /* CODE / ASCII */
+  pre, code {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.82rem;
+  }
+  pre {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+    overflow-x: auto;
+    margin: 16px 0;
+    color: var(--teal);
+    line-height: 1.5;
+    tab-size: 4;
+  }
+  code {
+    background: rgba(110,118,129,0.15);
+    padding: 2px 6px; border-radius: 4px;
+    color: var(--pink); font-size: 0.83rem;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+
+  /* CALLOUTS */
+  .callout {
+    border-radius: 10px; padding: 16px 20px; margin: 18px 0;
+    border-left: 4px solid; font-size: 0.9rem;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+  .callout-body strong { display: block; margin-bottom: 4px; font-size: 0.88rem; }
+  .callout.fire { background: rgba(255,107,0,0.08); border-color: var(--orange); }
+  .callout.fire .callout-icon::before { content: '🔥'; }
+  .callout.lightning { background: rgba(88,166,255,0.08); border-color: var(--accent); }
+  .callout.lightning .callout-icon::before { content: '⚡'; }
+  .callout.calc { background: rgba(63,185,80,0.08); border-color: var(--green); }
+  .callout.calc .callout-icon::before { content: '📐'; }
+  .callout.warn { background: rgba(248,81,73,0.08); border-color: var(--red); }
+  .callout.warn .callout-icon::before { content: '⚠️'; }
+  .callout.info { background: rgba(188,140,255,0.08); border-color: var(--purple); }
+  .callout.info .callout-icon::before { content: '💡'; }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 18px 0; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+  thead tr { background: var(--surface2); }
+  th { padding: 12px 16px; text-align: left; font-weight: 700; color: var(--accent2); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid var(--ch-orange); }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  td.good { color: var(--green); }
+  td.bad { color: var(--red); }
+  td.mid { color: var(--yellow); }
+  td strong { color: #fff; }
+
+  /* KEY TAKEAWAY */
+  .takeaway {
+    margin-top: 36px; padding: 20px 24px;
+    background: linear-gradient(135deg, rgba(255,204,1,0.07), rgba(255,51,0,0.07));
+    border: 1px solid rgba(255,204,1,0.3);
+    border-radius: 12px;
+    font-size: 0.95rem;
+  }
+  .takeaway strong { color: var(--ch-orange); }
+
+  /* SCENARIO CARDS */
+  .scenario-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .scenario-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px;
+  }
+  .scenario-card h5 { font-size: 0.88rem; color: var(--orange); margin-bottom: 10px; font-weight: 700; }
+  .scenario-card p { font-size: 0.84rem; color: var(--muted); margin-bottom: 6px; }
+  .scenario-card p strong { color: var(--text); }
+
+  /* METRIC PILLS */
+  .metrics { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+  .metric {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 18px; text-align: center; min-width: 120px;
+  }
+  .metric .val { font-size: 1.5rem; font-weight: 800; color: var(--ch-orange); line-height: 1; }
+  .metric .lbl { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+
+  /* INTERVIEW SIM */
+  .interview-q {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 24px; margin: 14px 0;
+  }
+  .interview-q .q-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+  .interview-q .q-text { font-size: 1rem; color: var(--accent2); font-weight: 600; margin-bottom: 14px; }
+  .interview-q .a-text { font-size: 0.88rem; color: var(--text); }
+
+  /* DIVIDER */
+  hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  /* FOOTER */
+  footer {
+    text-align: center; padding: 40px; color: var(--muted); font-size: 0.82rem;
+    border-top: 1px solid var(--border); margin-top: 60px;
+  }
+
+  ul, ol { padding-left: 22px; margin-bottom: 14px; }
+  li { margin-bottom: 7px; color: var(--text); }
+  li strong { color: #fff; }
+
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 2rem; }
+    .pillar-body { padding: 24px; }
+    .scenario-grid { grid-template-columns: 1fr; }
+    .container { padding: 0 20px 60px; }
+    .toc { padding: 12px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="pillar-num" style="font-size:0.9rem;letter-spacing:3px;margin-bottom:10px;">SENIOR STAFF ENGINEER INTERVIEW PREP</div>
+  <h1>ClickHouse Deep Dive</h1>
+  <p class="subtitle">A comprehensive 8-pillar breakdown from first principles to Google-scale — everything needed for an L7/L8 interview signal</p>
+  <div class="badges">
+    <span class="badge hot">🔥 L7/L8 Focused</span>
+    <span class="badge">ClickHouse v24.x</span>
+    <span class="badge">25+ Years Engineering Lens</span>
+    <span class="badge">Production Battle-Tested</span>
+    <span class="badge">April 2026</span>
+  </div>
+</div>
+
+<!-- TOC -->
+<nav class="toc">
+  <span class="toc-label">PILLARS →</span>
+  <a href="#p1">1. Core Concepts</a>
+  <a href="#p2">2. Architecture</a>
+  <a href="#p3">3. Trade-offs</a>
+  <a href="#p4">4. Failure Modes</a>
+  <a href="#p5">5. Scaling</a>
+  <a href="#p6">6. Real-World</a>
+  <a href="#p7">7. Google-Scale</a>
+  <a href="#p8">8. Interview Sim</a>
+</nav>
+
+<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 1                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p1">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🧠</div>
+    <div>
+      <div class="pillar-num">Pillar 1</div>
+      <div class="pillar-title">Core Concepts & Mental Models</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>What Problem Does ClickHouse Solve?</h3>
+    <p>Before ClickHouse existed, the analytics world was divided into two very painful camps. On one side, you had <strong>OLTP databases</strong> (PostgreSQL, MySQL) — they were row-oriented, ACID-compliant, and optimized for transactional workloads. They excelled at fetching a single row by primary key but completely fell apart when you asked them to scan 10 billion rows and compute a COUNT(*) GROUP BY. On the other side, you had <strong>Hadoop/MapReduce pipelines</strong> that could handle petabyte-scale data but introduced enormous operational complexity, multi-hour query latencies, and a Java ecosystem that required a small army of engineers to maintain.</p>
+
+    <p>The key insight Yandex engineers had in 2008 (and open-sourced in 2016) was: <strong>analytical queries almost always touch a small number of columns but an enormous number of rows</strong>. If you rethink storage layout around columns rather than rows, and pair that with aggressive vectorized execution and compression, you can achieve query latencies measured in milliseconds over billions of rows — on commodity hardware. This is the core value proposition ClickHouse delivers.</p>
+
+    <p>The world before ClickHouse for real-time analytics looked like: ingest data into Hadoop → run hourly/daily batch jobs → materialize aggregated results into MySQL → serve dashboards from those pre-computed tables. This pipeline had terrible freshness (hours of lag), required teams of data engineers to manage, and any new metric required re-running the entire pipeline. ClickHouse collapsed this entire architecture into a single system with sub-second query latency on fresh data.</p>
+
+    <h3>The Core Abstraction: Columnar MergeTree Storage</h3>
+    <p>The central abstraction ClickHouse provides is a <strong>columnar, append-only, LSM-like storage engine called MergeTree</strong>. Think of it as a marriage between columnar storage (Apache Parquet's layout philosophy), an LSM-tree's write path (batching writes into immutable sorted parts), and a B-tree's read-time sparse indexing. This is a fundamentally different abstraction from a B-tree heap file (PostgreSQL), a row-oriented LSM (RocksDB), or a distributed file system (HDFS).</p>
+
+    <p>Why is this abstraction powerful? Because it aligns perfectly with how analytical queries behave: they filter on a few dimensions (which the sparse primary index accelerates) and aggregate over many rows in a few columns (which columnar storage and SIMD-vectorized execution makes blazing fast). The immutability of parts also means reads and writes never contend in the way they do in a page-locked B-tree, enabling very high concurrent read throughput.</p>
+
+    <h3>Fundamental Guarantees ClickHouse Makes</h3>
+    <ul>
+      <li><strong>Guarantee 1 — Ordering within partitions:</strong> Within a single data part, rows are guaranteed to be sorted by the primary key (ORDER BY expression). This guarantee is what makes the sparse primary index possible and enables merge-join like operations during background merges.</li>
+      <li><strong>Guarantee 2 — Eventual deduplication (with ReplacingMergeTree):</strong> In the ReplacingMergeTree variant, rows with the same primary key will eventually be collapsed to the latest version during background merges. This is <em>not</em> an immediate guarantee — duplicates can persist until the next merge cycle.</li>
+      <li><strong>Guarantee 3 — Monotonically increasing write visibility:</strong> Inserted data is immediately visible to subsequent queries on the same node (once the INSERT transaction completes). ClickHouse does not implement MVCC for analytical reads — it uses a simpler mechanism of snapshotting which parts exist at query start.</li>
+      <li><strong>Guarantee 4 — Durable writes on ACK:</strong> When ClickHouse acknowledges an INSERT, the data has been written to the WAL (Write-Ahead Log) and the part directory on disk. The durability guarantee is local to the node unless you use Replicated tables.</li>
+      <li><strong>Guarantee 5 — Horizontal partition isolation:</strong> Each partition (e.g., by month) is stored in completely separate directory trees. This means partition drops and detaches are O(1) metadata operations — no expensive tombstone cleanup or vacuuming needed.</li>
+    </ul>
+
+    <h3>What ClickHouse Explicitly Does NOT Guarantee</h3>
+    <ul>
+      <li><strong>No multi-row ACID transactions:</strong> There is no cross-row atomicity. Two concurrent INSERTs can interleave. As of v23.x, experimental lightweight transactions (LWT) exist for single-partition operations, but these are not production-grade for complex use cases. UPDATE and DELETE are implemented as mutations that rewrite entire parts asynchronously — they are not low-latency operations.</li>
+      <li><strong>No immediate deduplication:</strong> Even with ReplacingMergeTree, you can read duplicate rows between the time of insert and the next merge. You must use the <code>FINAL</code> modifier (which forces a merge at query time) or handle deduplication client-side.</li>
+      <li><strong>No strong cross-replica read consistency:</strong> With Replicated tables, reads from different replicas can return different data if replication lag exists. There is no linearizability guarantee across replicas.</li>
+    </ul>
+
+    <div class="callout fire">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Common Interview Mistake</strong>
+        Candidates say "ClickHouse is strongly consistent." Wrong. ClickHouse is AP in the CAP theorem — it prioritizes availability and partition tolerance. Reads from replicas can be stale. This is a core design choice, not a bug.
+      </div>
+    </div>
+
+    <h3>Invariants That Must Hold for Correctness</h3>
+    <ul>
+      <li><strong>Primary key ordering within parts:</strong> If this breaks (due to a bug or forced merge manipulation), the sparse index becomes incorrect and queries silently return wrong results. ClickHouse detects this via checksums.</li>
+      <li><strong>Part checksums:</strong> Every part has a checksums.txt file. If any data file's content doesn't match its checksum, the part is considered corrupt and ClickHouse refuses to use it.</li>
+      <li><strong>Partition key monotonicity:</strong> Data inserted into a partition must conform to that partition's boundary. ClickHouse does not enforce this at write time for performance, but violating it (via manual part moves) corrupts query results.</li>
+      <li><strong>ZooKeeper/ClickHouse Keeper quorum:</strong> In Replicated tables, the ZooKeeper (or ClickHouse Keeper) quorum must be maintained for metadata coordination. Loss of quorum makes the cluster read-only.</li>
+    </ul>
+
+    <h3>Mental Model: How ClickHouse Stores and Queries Data</h3>
+    <pre>
+┌─────────────────────────────────────────────────────────────────────┐
+│                       TABLE: events                                  │
+│              PARTITION BY toYYYYMM(timestamp)                       │
+│              ORDER BY (tenant_id, event_type, timestamp)            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Partition: 202401          │  Partition: 202402                    │
+│  ┌─────────────────────┐   │  ┌─────────────────────┐             │
+│  │  Part: 1_1_0         │   │  │  Part: 1_1_0         │             │
+│  │  ├── tenant_id.bin  │   │  │  ├── tenant_id.bin  │             │
+│  │  ├── event_type.bin │   │  │  ├── event_type.bin │             │
+│  │  ├── timestamp.bin  │   │  │  ├── timestamp.bin  │             │
+│  │  ├── payload.bin    │   │  │  ├── payload.bin    │             │
+│  │  ├── primary.idx    │   │  │  ├── primary.idx    │             │
+│  │  └── checksums.txt  │   │  │  └── checksums.txt  │             │
+│  └─────────────────────┘   │  └─────────────────────┘             │
+│  ┌─────────────────────┐   │                                        │
+│  │  Part: 1_10_1        │   │  ← Merged from parts 1_1 through      │
+│  │  (merged)            │   │    1_10 by background merge thread    │
+│  └─────────────────────┘   │                                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+SPARSE PRIMARY INDEX (primary.idx):
+  Every 8192 rows → 1 index entry = (tenant_id, event_type, timestamp)
+  Binary search → narrow down to granule range → scan only those rows
+  
+QUERY: SELECT count() WHERE tenant_id=42 AND event_type='click'
+  1. Skip-scan partition pruning: only touch 202401, 202402
+  2. Primary index binary search: find granule range for tenant_id=42
+  3. Load ONLY tenant_id.bin and event_type.bin column files
+  4. SIMD-vectorized filter → count matching rows
+  → Scans &lt;0.01% of total data. Query: 50ms over 10B rows.
+</pre>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>L7/L8 Differentiator</strong>
+        The sparse index reads one index entry per 8192 rows (one granule). This means a table with 1 billion rows has only ~122,070 index entries — the entire index fits in memory. Compare this to a B-tree which has an index entry per row. Understanding that the index granularity is tunable (<code>index_granularity</code> setting) and its impact on memory vs selectivity tradeoff is what separates senior from staff candidates.
+      </div>
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse's power comes from the synergy of columnar storage (load only needed columns), sparse primary indexing (skip irrelevant row ranges), partition pruning (skip entire months of data), and SIMD vectorized execution (process 256 rows per CPU instruction). No single one of these is novel; combining all four in a single system is the innovation.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 2                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p2">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🏗️</div>
+    <div>
+      <div class="pillar-num">Pillar 2</div>
+      <div class="pillar-title">Architecture Deep Dive</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>Full Architecture Overview</h3>
+    <pre>
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     CLIENT TIER                                           │
+│   HTTP Interface (:8123)  │  Native Protocol (:9000)  │  MySQL Wire       │
+│   (REST, JSON, CSV)       │  (binary, streaming)      │  (:9004)          │
+└──────────────┬────────────┴───────────────┬───────────┴──────────────────┘
+               │                            │
+┌──────────────▼────────────────────────────▼──────────────────────────────┐
+│                     QUERY PROCESSING LAYER                                │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  ┌────────────────┐  │
+│  │  SQL Parser  │→│ Query        │→│ Query       │→│  Distributed   │  │
+│  │  (ANTLR4)   │  │ Analyzer     │  │ Optimizer  │  │  Query Planner │  │
+│  └─────────────┘  └──────────────┘  └────────────┘  └───────┬────────┘  │
+│                                                               │            │
+│  ┌─────────────────────────────────────────────────────────▼──────────┐  │
+│  │                    PIPELINE EXECUTOR                                 │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌──────────────────┐  │  │
+│  │  │ Source   │→│ Filter   │→│ Transform │→│  Aggregator      │  │  │
+│  │  │ (Reader) │  │ (SIMD)   │  │ (Hash)    │  │  (Hash/Sort)     │  │  │
+│  │  └──────────┘  └──────────┘  └───────────┘  └──────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────────────────────────────────┐
+│                     STORAGE ENGINE (MergeTree Family)                    │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  WRITE PATH                                                        │   │
+│  │  INSERT → WAL (write-ahead log) → In-Memory Buffer               │   │
+│  │         → Sorted Part on Disk (immutable .bin files)             │   │
+│  │         → Background Merge Thread (merge small parts → large)    │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐   │
+│  │  READ PATH                                                         │   │
+│  │  Query → Partition Pruner → Part Iterator                         │   │
+│  │       → Sparse Index Lookup → Mark File Seek                     │   │
+│  │       → Async Column Reader → SIMD Filter → Aggregation           │   │
+│  └──────────────────────────────────────────────────────────────────┘   │
+│                                                                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────┐  │
+│  │ MergeTree    │  │ Replacing    │  │ Summing    │  │ Aggregating  │  │
+│  │ (base)       │  │ MergeTree    │  │ MergeTree  │  │ MergeTree    │  │
+│  └──────────────┘  └──────────────┘  └────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────────────────────────────────┐
+│                     DISK / FILE LAYOUT                                   │
+│                                                                           │
+│  /var/lib/clickhouse/data/{database}/{table}/                            │
+│  ├── 20240101_1_10_2/            ← Part directory (partition_minblock_maxblock_level)
+│  │   ├── column_name.bin         ← Compressed column data                │
+│  │   ├── column_name.mrk3        ← Mark file (granule offsets)           │
+│  │   ├── primary.idx             ← Sparse primary index                  │
+│  │   ├── skipping_idx_name.idx   ← Secondary skip indices                │
+│  │   ├── skipping_idx_name.mrk3  ← Skip index marks                     │
+│  │   ├── partition.dat           ← Partition metadata                    │
+│  │   ├── minmax_{col}.idx        ← MinMax index for partition pruning    │
+│  │   └── checksums.txt           ← SHA256 checksums of all files         │
+│  └── detached/                   ← Parts detached/awaiting attach        │
+└─────────────────────────────────────────────────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────────────────────────────────┐
+│                     DISTRIBUTED / REPLICATION LAYER                      │
+│                                                                           │
+│  ClickHouse Keeper (Raft) ← Replaces ZooKeeper for metadata             │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │  /clickhouse/tables/{shard}/{table}/                             │    │
+│  │  ├── /replicas/{replica_name}/                                  │    │
+│  │  │   ├── /log_pointer      ← how far replica has replicated     │    │
+│  │  │   ├── /parts/           ← list of parts this replica has     │    │
+│  │  │   └── /queue/           ← pending replication tasks          │    │
+│  │  ├── /log/                 ← ordered log of all mutations       │    │
+│  │  ├── /block_numbers/       ← global block counter               │    │
+│  │  └── /leader_election/     ← which replica leads merge schedule │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────┘
+</pre>
+
+    <h3>Write Path — Step by Step</h3>
+    <ol>
+      <li><strong>Client sends INSERT statement</strong> via HTTP or Native protocol. The payload can be in dozens of formats (CSV, JSONEachRow, Parquet, Arrow, etc.). ClickHouse performs format parsing in parallel using multiple threads if the payload is large.</li>
+      <li><strong>Block formation:</strong> Incoming rows are grouped into "blocks" — the basic unit of processing in ClickHouse. Each block is a collection of column vectors. Default block size is 65,536 rows (<code>max_block_size</code>). This batching is critical — ClickHouse is not designed for single-row inserts.</li>
+      <li><strong>Sorting:</strong> Rows within the block are sorted by the ORDER BY key. This is the first sort step. When multiple blocks arrive, ClickHouse writes each as a separate immutable "part" on disk.</li>
+      <li><strong>Part creation:</strong> The sorted block is serialized to disk as a "part" directory. Each column gets its own <code>.bin</code> file (compressed with LZ4 or ZSTD). Mark files (<code>.mrk3</code>) are created that store the byte offset of every 8192-row granule within the <code>.bin</code> file. The sparse primary index (<code>primary.idx</code>) stores one primary key tuple per granule. This entire write is essentially a sequential I/O pattern — extremely fast on SSDs and even spinning disks.</li>
+      <li><strong>WAL (Write-Ahead Log):</strong> As of ClickHouse 22.x+, inserts first write to an in-memory buffer backed by a WAL for crash recovery. Upon ack to the client, data is durable either in WAL or as a completed part on disk.</li>
+      <li><strong>Background Merge Thread:</strong> ClickHouse continuously runs background merge threads that select small parts and merge them into larger parts. This process re-sorts, re-compresses, and rebuilds all index structures. It's analogous to compaction in RocksDB. After a successful merge, the old small parts are deleted (after a retention period for replicas to catch up).</li>
+    </ol>
+
+    <div class="callout calc">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Back-of-Envelope: Write Amplification</strong>
+        If you insert 1000 rows/sec in 1000 tiny INSERT statements, you get 1000 parts/sec. ClickHouse default limit is 150 parts before throttling inserts. A 1000-row part might be ~100KB compressed. Background merges read and rewrite this data ~5-7x as parts are merged from level 0 → 1 → 2... Total write amplification: 5-7x. Compare to RocksDB which is 10-30x. Batching inserts to 100K+ rows reduces this dramatically — each merged write covers more data at once.
+      </div>
+    </div>
+
+    <h3>Read Path — Step by Step</h3>
+    <ol>
+      <li><strong>SQL Parsing & Analysis:</strong> The SQL statement is parsed into an AST. The analyzer resolves table references, validates column names, and expands wildcards. In ClickHouse v22.3+, a new "Analyzer" (enabled by <code>allow_experimental_analyzer=1</code>, default in v23.11+) dramatically improved query planning for complex queries, CTEs, and subqueries.</li>
+      <li><strong>Query Optimization:</strong> The optimizer applies rule-based optimizations: constant folding, predicate pushdown into subqueries, filter pushdown to storage, projection pruning (only reading needed columns), and partition elimination.</li>
+      <li><strong>Partition Pruning:</strong> Using the <code>minmax_{partition_key}.idx</code> files (tiny files that store min/max values per part), ClickHouse eliminates entire parts whose partition range doesn't overlap with the query's WHERE clause. For a table partitioned by month, a query for "last 7 days" might skip 99% of parts instantly.</li>
+      <li><strong>Primary Index Scan:</strong> For the remaining parts, ClickHouse binary-searches the <code>primary.idx</code> sparse index to identify the range of granules that could contain matching rows. Since the index has only 1 entry per 8192 rows, this lookup is extremely fast and the entire index fits in the OS page cache.</li>
+      <li><strong>Skip Index Evaluation (Secondary Indices):</strong> If the table has secondary indices (BloomFilter, minmax, set, ngrambf_v1), ClickHouse evaluates them to skip additional granules. For example, a BloomFilter on a text column can skip granules that definitely don't contain a search term.</li>
+      <li><strong>Asynchronous Column Reading:</strong> Only the columns referenced in the query are read. Each column's <code>.mrk3</code> mark file is used to seek directly to the relevant granule offset within the <code>.bin</code> file. Multiple columns are read in parallel using async I/O (io_uring on Linux since v22.x).</li>
+      <li><strong>Vectorized Execution:</strong> Decompressed column data is processed in blocks of 65,536 rows using SIMD instructions (AVX2, AVX-512). Filter conditions compile down to bit-mask operations on entire vectors. This is why ClickHouse can process hundreds of millions of rows per second per CPU core.</li>
+      <li><strong>Aggregation:</strong> Hash aggregation is used for GROUP BY. ClickHouse uses a two-stage aggregation for distributed queries: partial aggregation on each shard, then a final merge aggregation on the coordinator node.</li>
+    </ol>
+
+    <h3>On-Disk Data Layout</h3>
+    <pre>
+FILE: user_id.bin (one per column)
+┌──────────────────────────────────────────────────────────────┐
+│ Compressed Block 1          │ Compressed Block 2              │
+│ (up to 1MB compressed)      │ (up to 1MB compressed)         │
+│ ┌────────────────────────┐  │ ┌────────────────────────┐     │
+│ │ Granule 0: rows 0-8191 │  │ │ Granule 8: rows 65536+ │     │
+│ │ Granule 1: rows 8192-  │  │ │ ...                     │     │
+│ │ ...                    │  │ └────────────────────────┘     │
+│ │ Granule 7: rows 57344- │  │                                 │
+│ └────────────────────────┘  │                                 │
+└──────────────────────────────────────────────────────────────┘
+
+FILE: user_id.mrk3 (mark file - maps granule → byte offset)
+┌──────────────────────────────────────────────────────┐
+│ Granule 0: block_offset=0,    granule_offset=0        │
+│ Granule 1: block_offset=0,    granule_offset=8192     │
+│ Granule 8: block_offset=65536, granule_offset=0       │
+└──────────────────────────────────────────────────────┘
+
+FILE: primary.idx (sparse index - 1 entry per granule)
+┌──────────────────────────────────────────────────────┐
+│ Entry 0:  (user_id=1000, ts=2024-01-01 00:00:00)     │
+│ Entry 1:  (user_id=1024, ts=2024-01-01 00:03:14)     │
+│ Entry 2:  (user_id=1048, ts=2024-01-01 00:06:28)     │
+└──────────────────────────────────────────────────────┘
+
+COMPRESSION: Each .bin column file uses block-level compression
+- LZ4 (default): 2-4x compression, ~3GB/s decompression speed
+- ZSTD: 3-7x compression, ~1GB/s decompression speed
+- ZSTD(level=1 to 22): tunable compression/speed tradeoff
+- Codec chains: ZSTD + Delta (great for timestamps)
+- DoubleDelta + Gorilla (perfect for monotonic metrics/IoT data)
+</pre>
+
+    <h3>Back-Pressure and Flow Control</h3>
+    <p>ClickHouse implements several back-pressure mechanisms to prevent runaway queries from degrading the system. The <strong>parts count threshold</strong> is the most important: if the number of active parts in a single partition exceeds <code>parts_to_delay_insert</code> (default: 150), new inserts are slowed down with artificial delays. If it exceeds <code>parts_to_throw_insert</code> (default: 300), inserts are rejected with a "Too many parts" error. This is ClickHouse's primary admission control mechanism.</p>
+
+    <p>For queries, <strong>query complexity limits</strong> (<code>max_rows_to_read</code>, <code>max_bytes_to_read</code>, <code>max_memory_usage</code>) act as circuit breakers. The <strong>priority system</strong> allows marking queries with priorities (1-10) so that interactive dashboard queries can preempt long-running background analytics. The <strong>concurrent query limit</strong> (<code>max_concurrent_queries</code>) prevents thread exhaustion.</p>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>L7/L8 Differentiator — New in v24.x</strong>
+        ClickHouse 24.x introduced <strong>Parallel Replicas</strong> (query-time horizontal scaling within a single table). Instead of one replica handling a query, the coordinator can split the mark range across N replicas, each reading a non-overlapping portion of granules. This is fundamentally different from sharding — same data, same replica, but query work is parallelized. This is a breakthrough for low-cardinality tables that can't be easily sharded.
+      </div>
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse's architecture is intentionally designed around sequential I/O, columnar access, and SIMD vectorization. Every component — from the sparse index to the async column reader to the pipeline executor — is optimized for the assumption that queries touch few columns but many rows in sequential order. Deviating from this pattern (e.g., high-cardinality point lookups) is where ClickHouse performs poorly.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 3                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p3">
+  <div class="pillar-header">
+    <div class="pillar-emoji">⚖️</div>
+    <div>
+      <div class="pillar-num">Pillar 3</div>
+      <div class="pillar-title">Trade-offs & Design Decisions</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>CAP Theorem Positioning</h3>
+    <p>ClickHouse in its replicated configuration sits firmly in the <strong>AP (Available + Partition Tolerant)</strong> quadrant of the CAP theorem. When a network partition occurs, ClickHouse chooses to remain available for reads — potentially returning stale data from a lagging replica — rather than returning an error. Writes to the leader/quorum can still proceed (depending on configuration), while isolated replicas continue serving reads independently.</p>
+
+    <p>This is a deliberate design choice for the analytics use case: an analyst querying yesterday's events can tolerate reading data that's 30 seconds stale due to replication lag. They absolutely cannot tolerate their dashboard returning a 503 error. The <strong>consistency sacrifice</strong> is: different replicas can return different aggregate counts for the same time window query if replication is lagging. For financial reporting or billing, this is unacceptable. For product analytics, it's perfectly fine.</p>
+
+    <h3>PACELC Analysis</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Scenario</th><th>Choice</th><th>Implication</th><th>How to Change</th></tr></thead>
+        <tbody>
+          <tr><td><strong>During Partition (P)</strong></td><td class="mid">Availability over Consistency (A)</td><td>Reads from isolated replicas may return stale/inconsistent aggregates</td><td>Use <code>select_sequential_consistency=1</code> — forces reads only from replicas that have applied all known inserts, at the cost of higher latency and possible unavailability</td></tr>
+          <tr><td><strong>No Partition — Latency (EL)</strong></td><td class="mid">Latency over Consistency (L)</td><td>Default reads go to any available replica without waiting for replication confirmation</td><td>Use <code>insert_quorum=2</code> and <code>insert_quorum_timeout</code> to force synchronous replication of writes to N replicas before ACK</td></tr>
+          <tr><td><strong>No Partition — Consistency (EC)</strong></td><td class="mid">Eventual Consistency (E)</td><td>After an insert, the data is immediately visible on the writing replica, but may take seconds to minutes to appear on other replicas</td><td>Read from the same replica you wrote to using sticky sessions, or use <code>select_sequential_consistency</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Latency vs Throughput Knobs</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dimension</th><th>Default</th><th>Optimize for Latency</th><th>Optimize for Throughput</th><th>Breaking Point</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Insert batch size</strong></td><td>Any</td><td>Small batches (1K rows) for freshness</td><td>Large batches (1M+ rows) for fewer parts</td><td>Small batches → "Too many parts" errors</td></tr>
+          <tr><td><strong>max_threads</strong></td><td>CPU cores</td><td>Fewer threads for predictable latency</td><td>More threads for parallelism</td><td>Too many threads → lock contention, cache thrashing</td></tr>
+          <tr><td><strong>Compression codec</strong></td><td>LZ4</td><td>LZ4 (fast decompress)</td><td>ZSTD(3) (better ratio, less I/O)</td><td>ZSTD(22) — extremely slow writes</td></tr>
+          <tr><td><strong>index_granularity</strong></td><td>8192 rows</td><td>Lower (4096) — more precise index seeking, smaller granule scans</td><td>Higher (16384) — smaller index, less overhead</td><td>Too low → huge primary.idx that doesn't fit in memory</td></tr>
+          <tr><td><strong>Parallel replicas</strong></td><td>Off</td><td>Off (avoid network overhead)</td><td>On (distribute scan across N replicas)</td><td>High N on small tables → coordination overhead dominates</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Consistency Models Offered</h3>
+    <ul>
+      <li><strong>Read Your Writes (single node):</strong> Within a single ClickHouse node, after an INSERT is acknowledged, a subsequent SELECT on the same node will see the data. This holds because the part directory is created atomically before the INSERT returns.</li>
+      <li><strong>Eventual Consistency (replicated):</strong> The default. Inserts to a ReplicatedMergeTree table propagate to other replicas asynchronously via the ZooKeeper/Keeper replication log. Lag is typically sub-second on healthy clusters, but can stretch to minutes under load.</li>
+      <li><strong>Quorum Writes (<code>insert_quorum=N</code>):</strong> Forces the insert to wait until N replicas have confirmed the data. With <code>insert_quorum=2</code> in a 3-replica setup, you get a write majority guarantee. Reads with <code>select_sequential_consistency=1</code> will then only return data that has reached the write quorum.</li>
+      <li><strong>No Serializable/Linearizable:</strong> ClickHouse does not offer serializable isolation or linearizability. Concurrent long-running aggregation queries and concurrent inserts are not serialized. A query sees a snapshot of the parts that existed at its start time — new parts inserted during the query's execution are not included.</li>
+    </ul>
+
+    <div class="callout fire">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Common Interview Mistake</strong>
+        Candidates assume <code>insert_quorum</code> is equivalent to Raft consensus. It is not. <code>insert_quorum</code> means N replicas ACK the insert, but there's no leader election or log ordering guarantee. Two concurrent inserts can interleave across replicas. The replication order is governed by ZooKeeper's log, not by insert_quorum alone.
+      </div>
+    </div>
+
+    <h3>Durability vs Performance Trade-offs</h3>
+    <ul>
+      <li><strong>fsync on insert (default: off):</strong> By default, ClickHouse calls <code>fdatasync</code> after writing a part but does NOT call <code>fsync</code> on the directory entry. This means a kernel crash could lose the last insert. Setting <code>fsync_after_insert=1</code> adds safety at the cost of 2-5x higher insert latency.</li>
+      <li><strong>WAL durability:</strong> The write-ahead log introduced in v22.x provides crash recovery within a node (replaying the WAL after restart recovers in-flight inserts). But the WAL itself is only fsynced based on the <code>fsync_after_insert</code> setting.</li>
+      <li><strong>Background merge durability:</strong> Merged parts are written atomically (via rename from a temp directory). If ClickHouse crashes mid-merge, the original parts still exist and the incomplete merged part is cleaned up on restart. No data loss from interrupted merges.</li>
+    </ul>
+
+    <h3>Operational Complexity vs Feature Richness</h3>
+    <p>ClickHouse's surface area is enormous and this is both a strength and a weakness. The MergeTree family alone has 8+ variants (MergeTree, ReplacingMergeTree, SummingMergeTree, AggregatingMergeTree, CollapsingMergeTree, VersionedCollapsingMergeTree, GraphiteMergeTree, and the Shared MergeTree introduced in ClickHouse Cloud). Each has subtly different semantics and gotchas. Choosing the wrong table engine for your use case (e.g., using ReplacingMergeTree without understanding the <code>FINAL</code> requirement for deduplication) leads to silently wrong query results.</p>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse is unabashedly an AP system that trades consistency for extreme read/write throughput. Every knob in the system (insert_quorum, select_sequential_consistency, fsync settings) is a dial on the consistency-performance spectrum. An L7/L8 engineer knows not just what these knobs do, but when to turn them and what customer SLAs justify the cost.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 4                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p4">
+  <div class="pillar-header">
+    <div class="pillar-emoji">💥</div>
+    <div>
+      <div class="pillar-num">Pillar 4</div>
+      <div class="pillar-title">Failure Modes & Resilience</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>Failure Scenario Analysis</h3>
+
+    <div class="scenario-grid">
+
+      <div class="scenario-card">
+        <h5>🔴 Single Node Crash (Leader/Follower)</h5>
+        <p><strong>(a) Detection:</strong> ZooKeeper/Keeper detects the session timeout (default: 30s). Other replicas see the ephemeral node disappear from <code>/replicas/{name}/is_active</code>.</p>
+        <p><strong>(b) Auto-recovery:</strong> Followers continue serving reads. If the crashed node was the merge "leader" (who coordinates merge scheduling), another replica is elected via ZooKeeper leader election. The crashed node, on restart, replays its replication queue from the last committed log pointer in ZooKeeper, fetching any missed parts from healthy replicas.</p>
+        <p><strong>(c) Data loss risk:</strong> Any inserts that were ACK'd to the client but not yet replicated to other nodes AND whose WAL was lost in the crash. With <code>insert_quorum &gt; 1</code>, this risk is eliminated. Without it, ~30 seconds of inserts could be lost.</p>
+        <p><strong>(d) Manual action:</strong> If the crashed node has disk corruption, run <code>SYSTEM RESTORE REPLICA</code> to force the replica to refetch all parts from healthy siblings. Monitor the replication queue lag with <code>system.replication_queue</code>.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>🟠 Simultaneous Minority Node Failures</h5>
+        <p><strong>(a) Detection:</strong> Same as single node — ZooKeeper session timeouts for each node independently.</p>
+        <p><strong>(b) Auto-recovery:</strong> The majority (2 of 3, or 3 of 5) continue operating normally. Reads and writes proceed on surviving nodes. Merge scheduling continues via leader election among survivors.</p>
+        <p><strong>(c) Data loss risk:</strong> Low. Surviving nodes have a quorum of the replication log. Any inserts ACK'd to clients were written to the majority of nodes.</p>
+        <p><strong>(d) Manual action:</strong> After recovering the failed nodes, they automatically catch up by fetching missed parts. Watch for "replication queue depth" — if the queue is very long, catching up can take hours and put pressure on surviving nodes' bandwidth.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>🔴 Network Partition (One Side Has Quorum)</h5>
+        <p><strong>(a) Detection:</strong> Nodes on the minority side detect they've lost ZooKeeper connectivity (can't write to ZooKeeper). Nodes on the majority side continue normally.</p>
+        <p><strong>(b) Auto-recovery:</strong> The majority side continues writes and merges. The minority side falls into read-only mode for replicated tables — inserts are rejected with "Keeper is unavailable." Reads continue serving from local data (potentially stale).</p>
+        <p><strong>(c) Data loss risk:</strong> Zero for acknowledged writes (they were on the majority side). However, reads from the minority side return stale data — this is the AP tradeoff in action.</p>
+        <p><strong>(d) Manual action:</strong> None typically needed. When the partition heals, minority nodes re-join, discover the replication log divergence, and catch up. Monitor <code>system.replicas</code> for <code>queue_size</code> and <code>last_queue_update</code>.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>⛔ Network Partition (Even Split — No Quorum)</h5>
+        <p><strong>(a) Detection:</strong> Both sides detect ZooKeeper is unreachable (since ZooKeeper itself requires quorum). Both sides go read-only for writes on replicated tables.</p>
+        <p><strong>(b) Auto-recovery:</strong> No automatic recovery possible. Both sides wait until the partition heals. ClickHouse Keeper (the built-in Raft-based replacement for ZooKeeper) handles this better — it requires N/2+1 Keeper nodes to have quorum, and Keeper itself partitions cleanly.</p>
+        <p><strong>(c) Data loss risk:</strong> No writes are ACK'd during the partition, so no data loss. But the cluster is effectively dead for writes.</p>
+        <p><strong>(d) Manual action:</strong> Restore network connectivity. If a Keeper node is permanently lost in a 3-node Keeper cluster, add a replacement node and let it sync from the remaining two.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>🔀 Split-Brain: Two Leaders</h5>
+        <p><strong>(a) Detection:</strong> ClickHouse prevents true split-brain through ZooKeeper/Keeper's fencing tokens. All mutations to the replication log require a ZooKeeper transaction. If two nodes both think they are "leader" for merge scheduling, ZooKeeper's linearizable writes ensure only one can acquire the lock at a time.</p>
+        <p><strong>(b) Auto-recovery:</strong> The fencing mechanism ensures split-brain doesn't cause data divergence. The node that can't acquire the ZooKeeper lock backs off. This is one reason why ClickHouse mandates ZooKeeper/Keeper for replicated tables — without it, split-brain would be a real risk.</p>
+        <p><strong>(c) Data loss risk:</strong> Minimal due to fencing. However, if ZooKeeper itself suffers split-brain (which is extremely rare in a properly configured 3-node ZK cluster with quorum of 2), all bets are off.</p>
+        <p><strong>(d) Manual action:</strong> If you suspect data divergence between replicas, use <code>SELECT * FROM system.replicas</code> to compare <code>parts_to_check</code>, <code>total_replicas</code>, and <code>active_replicas</code> across nodes.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>🐢 Slow/Degraded Node (Not Dead, But Lagging)</h5>
+        <p><strong>(a) Detection:</strong> Not automatically detected by ZooKeeper. The degraded node keeps its ZooKeeper session alive but processes replication tasks slowly. Monitoring via <code>system.replication_queue</code> shows growing queue size on the slow node.</p>
+        <p><strong>(b) Auto-recovery:</strong> ClickHouse's distributed query engine has a <code>prefer_localhost_replica</code> setting and a <code>load_balancing</code> policy. The <code>in_order</code> or <code>nearest_hostname</code> policies can route queries away from the slow node. However, this is not automatic — it requires round-robin or latency-aware routing configuration.</p>
+        <p><strong>(c) Data loss risk:</strong> None for durability. But the slow node serves stale reads. As of v23.x, ClickHouse can detect replica staleness via <code>max_replica_delay_for_distributed_queries</code> — queries are not routed to replicas that are more than N seconds behind.</p>
+        <p><strong>(d) Manual action:</strong> Identify the cause (disk I/O saturation, high CPU from a bad query, OOM-killed merge thread). Use <code>SYSTEM STOP MERGES</code> to reduce I/O pressure. Use <code>KILL QUERY</code> to terminate runaway queries.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>💾 Disk Corruption or Partial Write</h5>
+        <p><strong>(a) Detection:</strong> ClickHouse checksums every part at write time (SHA256 of each <code>.bin</code> file stored in <code>checksums.txt</code>). On every read, the checksum is verified. A failed checksum immediately raises an exception. Additionally, ClickHouse runs periodic background part integrity checks (<code>check_delay_period</code>).</p>
+        <p><strong>(b) Auto-recovery:</strong> In a replicated setup, when a corrupted part is detected, ClickHouse automatically adds a task to its replication queue to fetch the correct part from another replica. The corrupted part is moved to <code>detached/</code> for forensic analysis.</p>
+        <p><strong>(c) Data loss risk:</strong> Zero in a replicated setup — the data exists on other replicas. In a single-node setup, the corrupted part's data is permanently lost.</p>
+        <p><strong>(d) Manual action:</strong> Run <code>CHECK TABLE table_name</code> to verify all parts. Inspect <code>detached/</code> directory. In extreme corruption cases, use <code>SYSTEM RESTORE REPLICA</code> to force a full re-sync from a healthy replica.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>⏰ Clock Skew Between Nodes</h5>
+        <p><strong>(a) Detection:</strong> ClickHouse uses ZooKeeper for all distributed coordination, and ZooKeeper itself is sensitive to clock skew (&gt;2 seconds between ZK nodes causes ZK to fail). ClickHouse itself uses wall clock time for TTL expressions, partition function evaluation, and query timestamps.</p>
+        <p><strong>(b) Auto-recovery:</strong> No automatic recovery from clock skew. ClickHouse does not use Hybrid Logical Clocks (HLC) like CockroachDB or TrueTime like Spanner. It relies on NTP synchronization.</p>
+        <p><strong>(c) Data loss risk:</strong> Clock skew can cause TTL rules to delete data prematurely (if a node's clock is ahead) or retain data too long (if behind). For partitioning by date, clock skew can cause rows to land in wrong partitions. For <code>insert_quorum</code> with timeout, clock skew between client and server can cause spurious timeouts.</p>
+        <p><strong>(d) Manual action:</strong> Enforce NTP synchronization across all nodes. Use Chrony with PTP for sub-millisecond accuracy. Alert on <code>ntp_offset &gt; 100ms</code>. Deploy ClickHouse Keeper (which uses Raft with its own clock-independent sequence numbers) instead of external ZooKeeper for better tolerance.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>⚡ Thundering Herd After Recovery</h5>
+        <p><strong>(a) Detection:</strong> When a node returns from downtime, all replicas simultaneously begin sending it missed parts. The recovering node's network interface and disk I/O become saturated. ZooKeeper shows all replicas with full replication queues pointing at the recovering node.</p>
+        <p><strong>(b) Auto-recovery:</strong> ClickHouse has <code>max_replicated_fetches_network_bandwidth</code> and <code>max_replicated_sends_network_bandwidth</code> throttling settings. These limit the bandwidth each node uses for replication traffic, preventing recovery from overwhelming the network.</p>
+        <p><strong>(c) Cascading risk:</strong> If the recovering node is flooded with replication traffic, its CPU and I/O are consumed, making it unable to serve production queries. This can cascade — the node appears alive to ZooKeeper but is effectively unresponsive for queries.</p>
+        <p><strong>(d) Manual action:</strong> Set <code>max_replicated_fetches_network_bandwidth</code> to 50-100 MB/s on recovery. Use <code>SYSTEM STOP FETCHES</code> to pause recovery temporarily during business hours, then resume during off-peak. Monitor via Prometheus/Grafana — watch for disk I/O saturation on the recovering node.</p>
+      </div>
+
+      <div class="scenario-card">
+        <h5>🌊 Cascading Failures</h5>
+        <p><strong>(a) How they happen:</strong> A slow query consumes all thread pool slots → new queries queue up → queue fills up → new connections are rejected → load balancer marks the node unhealthy → all traffic reroutes to remaining nodes → remaining nodes become overloaded → cascade.</p>
+        <p><strong>(b) Prevention mechanisms:</strong> (1) <code>max_concurrent_queries</code> hard limit per node. (2) Query complexity limits prevent single queries from consuming all memory. (3) Priority queues allow shedding low-priority queries. (4) Circuit breakers in the distributed query layer skip overloaded shards. (5) <code>max_memory_usage_for_all_queries</strong></code> at the server level prevents OOM.</p>
+        <p><strong>(c) Design patterns:</strong> Separate read and write replicas. Separate user-facing OLAP from internal batch workloads via different replica groups. Use resource groups (v23.x+) to isolate tenant workloads. Deploy a query proxy (ClickHouse Proxy, CHProxy) that enforces connection limits and query timeouts before requests reach the server.</p>
+        <p><strong>(d) Manual action:</strong> Use <code>KILL QUERY WHERE user='heavy_user'</code> to evict runaway queries. Temporarily increase <code>max_concurrent_queries</code> if safe. Use <code>SYSTEM RELOAD ASYNCHRONOUS METRICS</code> to get fresh system health metrics without a restart.</p>
+      </div>
+
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse's failure resilience is primarily built on two foundations: (1) ZooKeeper/Keeper-mediated coordination with fencing tokens that prevents split-brain, and (2) checksum-based data integrity that enables automatic corruption detection and repair from replicas. The weakest points are clock skew sensitivity, thundering herd on recovery, and the lack of automatic slow-node detection for query routing.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 5                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p5">
+  <div class="pillar-header">
+    <div class="pillar-emoji">📈</div>
+    <div>
+      <div class="pillar-num">Pillar 5</div>
+      <div class="pillar-title">Scaling Strategies</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>Vertical Scaling — How Far Can You Go?</h3>
+    <p>ClickHouse scales extraordinarily well vertically because its query executor is embarrassingly parallel — it uses all CPU cores via thread pools. A single ClickHouse node on a 96-core machine with 768 GB RAM and 8 NVMe SSDs in RAID-0 can sustain <strong>100+ million rows per second</strong> query throughput for aggregation queries on warm cache. Yandex has reported single nodes processing 2+ PB of data.</p>
+
+    <p>What breaks first on a single node? In practice: <strong>RAM</strong> is the first bottleneck. ClickHouse's hash aggregation for GROUP BY with high cardinality keys can consume enormous memory. The <code>max_memory_usage</code> limit exists to prevent OOM, and when hit, ClickHouse spills to disk (via <code>max_bytes_before_external_group_by</code>). After RAM: <strong>NVMe I/O bandwidth</strong> for sequential scans. A single NVMe can sustain ~7 GB/s. 8 NVMe in RAID-0 gives ~56 GB/s — and ClickHouse can saturate this with hot queries. After I/O: <strong>network egress</strong> when the node is a distributed query coordinator receiving partial results from many shards.</p>
+
+    <div class="callout calc">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Back-of-Envelope: Single Node Capacity</strong>
+        A realistic production ClickHouse node: 32 cores, 256 GB RAM, 4x NVMe SSD (14 GB/s total I/O). Assume 10:1 compression ratio for analytics data (100 GB raw → 10 GB on disk). In a 5TB NVMe setup, that's 50 TB of raw data. At 14 GB/s I/O and 10:1 compression: reading 14 GB/s * 10 = 140 GB/s raw data throughput. A query scanning 10 TB raw data completes in ~71 seconds — with column pruning (only 5 of 50 columns), that's ~7 seconds. With partition pruning (last 7 days of a 1-year table), that's ~2 seconds. This is why ClickHouse is fast.
+      </div>
+    </div>
+
+    <h3>Horizontal Scaling — What Changes Architecturally?</h3>
+    <p>ClickHouse scales horizontally through <strong>sharding</strong> and <strong>replication</strong>. The <code>Distributed</code> table engine is the key abstraction: it acts as a transparent proxy that routes queries and inserts to the underlying shards. The cluster topology is defined in <code>config.xml</code> as a static configuration of shards and replicas. This is fundamentally different from systems like Cassandra or CockroachDB that have automatic, dynamic ring-based sharding. ClickHouse's sharding is <strong>manual and static</strong> — you define the number of shards at cluster creation and resharding requires data movement.</p>
+
+    <pre>
+DISTRIBUTED TABLE ARCHITECTURE:
+
+Client → Distributed Table (events_dist)
+           │
+           ├── Shard 1 (2 replicas)
+           │   ├── Replica 1A: ch-shard1-rep1.internal:9000
+           │   └── Replica 1B: ch-shard1-rep2.internal:9000
+           │
+           ├── Shard 2 (2 replicas)
+           │   ├── Replica 2A: ch-shard2-rep1.internal:9000
+           │   └── Replica 2B: ch-shard2-rep2.internal:9000
+           │
+           └── Shard 3 (2 replicas)
+               ├── Replica 3A: ch-shard3-rep1.internal:9000
+               └── Replica 3B: ch-shard3-rep2.internal:9000
+
+INSERT to Distributed table:
+  → sharding_key expression evaluated per row
+  → rows sent to correct shard (async by default)
+  → shard writes to ReplicatedMergeTree locally
+  → replication propagates to the shard's replica
+
+SELECT from Distributed table:
+  → Coordinator sends sub-query to all shards simultaneously
+  → Each shard runs partial aggregation locally
+  → Partial results streamed back to coordinator
+  → Coordinator performs final aggregation
+  → Result returned to client
+</pre>
+
+    <h3>Replication Strategies</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Strategy</th><th>How It Works</th><th>Pros</th><th>Cons</th><th>When to Use</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Async Replication (default)</strong></td>
+            <td>Insert ACK'd after writing to one replica. Other replicas pull from ZooKeeper log asynchronously.</td>
+            <td class="good">Lowest insert latency, highest throughput</td>
+            <td class="bad">Up to seconds of stale reads on lagging replicas</td>
+            <td>Product analytics, logs, events — where freshness SLA is >1s</td>
+          </tr>
+          <tr>
+            <td><strong>Quorum Writes (insert_quorum=N)</strong></td>
+            <td>Insert blocks until N replicas confirm. Client waits for ZooKeeper acknowledgment from N nodes.</td>
+            <td class="good">Stronger durability guarantee</td>
+            <td class="bad">2-5x higher insert latency. N replicas must be healthy for writes.</td>
+            <td>Financial data, billing events where losing an insert is unacceptable</td>
+          </tr>
+          <tr>
+            <td><strong>Parallel Replicas (v23.3+)</strong></td>
+            <td>Single query is split across multiple replicas, each reading different granule ranges.</td>
+            <td class="good">Query-level horizontal scaling without sharding</td>
+            <td class="bad">High network traffic for result coordination. Complex queries with joins don't benefit as much.</td>
+            <td>Large tables that can't be sharded, interactive dashboards needing sub-second latency</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Sharding / Partitioning Strategy</h3>
+    <p><strong>Sharding key selection</strong> is the most critical and irreversible decision in a ClickHouse deployment. The wrong sharding key leads to hot shards (one shard gets 80% of writes because all data for popular tenants maps to it) and skewed reads (cross-shard joins become expensive because related data is on different shards).</p>
+
+    <p><strong>Best sharding keys:</strong></p>
+    <ul>
+      <li><code>intHash64(user_id)</code> — Good for user-level analytics. Distributes data evenly. Enables shard-local joins if queries are scoped to a single user.</li>
+      <li><code>cityHash64(tenant_id)</code> — Good for multi-tenant SaaS. Each tenant's data is co-located on one shard, enabling efficient per-tenant queries.</li>
+      <li><code>rand()</code> — Maximum distribution uniformity. But cross-shard aggregation always needed. Good when queries always touch all shards anyway.</li>
+    </ul>
+
+    <p><strong>Anti-patterns:</strong> Using a low-cardinality column as sharding key (e.g., <code>country</code> with only 200 values — US gets 40% of traffic → hot shard). Using a monotonically increasing ID as sharding key without hashing (all new data goes to one shard until it overflows to the next).</p>
+
+    <h3>Cross-Region Replication</h3>
+    <p>ClickHouse's native replication is designed for low-latency intra-datacenter replication (sub-100ms network RTT). Stretching ZooKeeper replication across regions with 50-200ms RTT significantly impacts performance: every replicated insert operation requires multiple ZooKeeper round trips, and with 100ms RTT, this dominates insert latency.</p>
+
+    <p>The recommended pattern for cross-region ClickHouse is <strong>active-active with application-level fan-out</strong>: write to a message queue (Kafka, Kinesis), have separate ClickHouse clusters per region each consuming from their regional Kafka topic, with cross-region Kafka MirrorMaker replication. This decouples ClickHouse from inter-region latency at the cost of requiring Kafka infrastructure and accepting eventual consistency across regions.</p>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>L7/L8 Differentiator — ClickHouse Keeper vs ZooKeeper</strong>
+        ClickHouse 22.4 introduced ClickHouse Keeper — a Raft-based coordination service embedded within ClickHouse itself, designed to replace external ZooKeeper. Key advantages: (1) No external dependency, (2) Better performance for ClickHouse-specific workloads (log replication, block number allocation), (3) Supports reconfiguration without downtime. For Google-scale deployments, ClickHouse Keeper eliminates the ZooKeeper bottleneck — a single ZooKeeper ensemble can become the coordination bottleneck when managing thousands of replicated tables across hundreds of nodes.
+      </div>
+    </div>
+
+    <h3>Read vs Write Scaling Independence</h3>
+    <p>ClickHouse <strong>CAN</strong> scale reads and writes independently, but only through careful architectural design. The key pattern: write to a dedicated "write replica" (or directly to the shard's primary), and read from read-only replicas that are configured as pure read targets. This is achieved by using different replica weights in the Distributed table configuration. Read replicas can be scaled independently of write replicas — you can add 10 read replicas to a shard without adding write replicas.</p>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse's horizontal scaling is powerful but manual. The Distributed table engine provides transparent fan-out, but sharding key selection, resharding, and cross-region replication all require careful up-front design. The new Parallel Replicas feature in v23.3+ is a game-changer because it provides query-level horizontal scaling without the complexity of sharding — but it only works when data is replicated, not sharded.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 6                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p6">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🏭</div>
+    <div>
+      <div class="pillar-num">Pillar 6</div>
+      <div class="pillar-title">Real-World Engineering Decisions</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>Where ClickHouse Shines Above All Alternatives</h3>
+    <ul>
+      <li><strong>High-cardinality real-time analytics:</strong> COUNT(DISTINCT user_id) over 10 billion events in 100ms. No other open-source system matches this for fresh data.</li>
+      <li><strong>Time-series aggregation with arbitrary dimensions:</strong> "Show me p99 latency by service, by region, by deployment version for the last 24 hours, with 1-minute resolution." ClickHouse handles this natively where purpose-built time-series databases (Prometheus, InfluxDB) struggle with high-cardinality dimensions.</li>
+      <li><strong>Log analytics at petabyte scale:</strong> Full-text search (via ngrambf bloom filters), structured field extraction, and aggregation over billions of log lines. Better than Elasticsearch for structured analytics; worse for full-text relevance scoring.</li>
+      <li><strong>Ad-tech click stream analysis:</strong> The original Yandex.Metrica use case — tracking billions of page views and user sessions with sub-second query response for real-time dashboards.</li>
+    </ul>
+
+    <h3>Three Real-World Production Examples</h3>
+
+    <h4>1. Cloudflare — HTTP Request Analytics at 25+ Million Requests/Second</h4>
+    <p>Cloudflare processes over 25 million HTTP requests per second globally and needs to provide customers with analytics dashboards showing firewall rule effectiveness, cache hit rates, bandwidth by geography, and threat analysis — all with &lt;1 minute data freshness and &lt;2 second query response time for customer dashboards.</p>
+    <p>Why ClickHouse: Cloudflare evaluated Druid and BigQuery but needed a system they could deploy on-premise (customer data residency requirements), that handled high-cardinality dimensions (customer ID × country × ASN × URL path), and that supported flexible ad-hoc queries (not just pre-aggregated cubes). ClickHouse's ability to handle 50+ column schemas with arbitrary GROUP BY combinations without pre-aggregation was decisive. They run ClickHouse clusters with hundreds of nodes per region, using Kafka for ingestion buffering and the Distributed table engine for cross-shard queries.</p>
+
+    <h4>2. Uber — Operational Metrics & Experimentation Platform</h4>
+    <p>Uber's experimentation platform (for A/B testing driver/rider features) needed to compute metric deltas across treatment and control groups with statistical significance. This requires computing aggregates over hundreds of millions of trip records, grouped by experiment variant, user segment, city, and time bucket — and doing so in real-time as the experiment runs.</p>
+    <p>Why ClickHouse: The queries involve complex aggregations (quantiles, HyperLogLog distinct counts) over columnar data that changes constantly as new trips complete. Uber's alternative was a Spark batch pipeline running hourly — but this meant experiment owners couldn't detect problems (metric degradation) for an hour. ClickHouse gave them real-time metric computation with sub-minute data freshness. The key decision: using AggregatingMergeTree to pre-aggregate states (HLL, quantile sketches) at insert time, then using <code>finalizeAggregation()</code> at query time to compute final values. This is dramatically more efficient than re-aggregating raw rows on every query.</p>
+
+    <h4>3. Contentsquare — UX Analytics over Trillions of Mouse Movements</h4>
+    <p>Contentsquare tracks mouse movements, clicks, scroll depth, and frustration signals for enterprise website visitors. They ingest ~1.5 trillion events per day and need to compute UX heatmaps and journey analytics for their customers.</p>
+    <p>Why ClickHouse: The challenge is that each event is a tiny record (user_id, session_id, element_selector, x, y, timestamp) but there are trillions of them. Computing "what percentage of users who saw this button clicked it" requires scanning all events for a given website within a time window. ClickHouse's columnar storage means only relevant columns are read, and the sharding key on website_id means each query only hits one shard. They achieved 10x cost reduction vs their previous BigQuery setup by reducing data egress costs and compute costs simultaneously.</p>
+
+    <h3>When NOT to Use ClickHouse</h3>
+    <div class="callout warn">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Anti-Pattern 1: OLTP Workloads (Point Lookups)</strong>
+        If your queries look like <code>SELECT * FROM orders WHERE order_id = 12345</code>, use PostgreSQL. ClickHouse has no row-level caching and no efficient B-tree index for point lookups. Every "point lookup" reads an entire 8192-row granule minimum. At P99, this is 10-50ms — fine for analytics, terrible for user-facing transactional queries.
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Anti-Pattern 2: Frequent Updates/Deletes</strong>
+        If you need to update user profile data, delete GDPR-requested records frequently, or implement "last value" semantics with sub-second freshness, ClickHouse is wrong. ALTER TABLE mutations rewrite entire data parts asynchronously — a DELETE WHERE user_id = 12345 on a 1 TB table will rewrite 1 TB of data in the background over hours. Use ClickHouse's built-in TTL for bulk expiry, or design around ReplacingMergeTree for upsert patterns. For point deletes at high frequency, use PostgreSQL or Cassandra.
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Anti-Pattern 3: Complex Multi-Table OLTP Joins</strong>
+        ClickHouse's distributed JOIN performance is poor for large fact-dimension table joins where the dimension table is also large. A join between two billion-row tables is an ORDER OF MAGNITUDE slower than in a well-tuned OLAP system like DuckDB (for single-node) or BigQuery (for massive parallelism). ClickHouse is optimized for wide denormalized tables — if your schema is highly normalized (3NF with 20 tables), denormalize before loading into ClickHouse or use a different system.
+      </div>
+    </div>
+
+    <h3>Decision Matrix: ClickHouse vs Alternatives</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dimension</th><th>ClickHouse</th><th>Apache Druid</th><th>BigQuery</th><th>Elasticsearch</th><th>DuckDB</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Query Latency (aggregation)</strong></td><td class="good">p99 &lt;1s for 10B rows</td><td class="good">p99 &lt;500ms (pre-agg)</td><td class="mid">p99 2-10s (cold)</td><td class="mid">p99 1-5s</td><td class="good">&lt;1s (single node)</td></tr>
+          <tr><td><strong>Data Freshness</strong></td><td class="good">Seconds</td><td class="mid">Minutes (batch segments)</td><td class="mid">Minutes (streaming)</td><td class="good">Near-real-time</td><td class="good">Real-time (embedded)</td></tr>
+          <tr><td><strong>Write Throughput</strong></td><td class="good">10M+ rows/sec/node</td><td class="mid">5M rows/sec</td><td class="good">Unlimited (managed)</td><td class="mid">100K-1M/sec</td><td class="mid">Limited (single node)</td></tr>
+          <tr><td><strong>Ad-Hoc Query Flexibility</strong></td><td class="good">Full SQL, any GROUP BY</td><td class="bad">Requires pre-defined dimensions</td><td class="good">Full SQL</td><td class="mid">Aggregation only (no complex SQL)</td><td class="good">Full SQL (DuckDB dialect)</td></tr>
+          <tr><td><strong>Ops Overhead</strong></td><td class="mid">Medium (ZK/Keeper mgmt)</td><td class="bad">High (deep JVM tuning, ZK, deep storage)</td><td class="good">None (fully managed)</td><td class="mid">Medium (JVM heap, cluster mgmt)</td><td class="good">Zero (embedded)</td></tr>
+          <tr><td><strong>Cost at Scale</strong></td><td class="good">Very low (commodity HW)</td><td class="mid">Medium</td><td class="bad">High (per-query billing)</td><td class="bad">High (heap overhead)</td><td class="good">Near-zero</td></tr>
+          <tr><td><strong>Full-Text Search</strong></td><td class="mid">Basic (ngrambf)</td><td class="bad">None</td><td class="bad">None</td><td class="good">Excellent (inverted index)</td><td class="bad">None</td></tr>
+          <tr><td><strong>Multi-tenancy</strong></td><td class="mid">Via sharding, resource groups</td><td class="mid">Data source isolation</td><td class="good">Project-level isolation</td><td class="mid">Index per tenant</td><td class="bad">Single user</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Common Operational Mistakes in Production</h3>
+    <ul>
+      <li><strong>Mistake 1 — Tiny INSERT statements:</strong> Sending one INSERT per event from application code. This creates thousands of tiny parts per second, exhausting the parts limit and causing "Too many parts" errors. Solution: Always buffer with Kafka, use the Buffer table engine, or batch at the application layer to &gt;10K rows per INSERT.</li>
+      <li><strong>Mistake 2 — Wrong PRIMARY KEY vs ORDER BY:</strong> In ClickHouse, you can define <code>PRIMARY KEY (a, b)</code> separately from <code>ORDER BY (a, b, c)</code>. Many engineers assume these are the same. The ORDER BY determines physical sort order; PRIMARY KEY determines the sparse index. Using a high-cardinality first column in PRIMARY KEY (like UUID) makes the sparse index useless for range scans.</li>
+      <li><strong>Mistake 3 — Not using Partition Pruning:</strong> Writing queries without including the partition key in the WHERE clause. If data is partitioned by month and you query without a date filter, ClickHouse scans all partitions. Always include partition key predicates.</li>
+      <li><strong>Mistake 4 — Ignoring merge pressure:</strong> Not monitoring the number of parts per partition. When parts exceed <code>parts_to_delay_insert</code>, inserts slow down silently. The fix: increase <code>background_pool_size</code> to give more threads to the merge process, and ensure your data arrival rate doesn't consistently exceed merge throughput.</li>
+      <li><strong>Mistake 5 — Using ReplacingMergeTree without FINAL:</strong> Reading from a ReplacingMergeTree table without the <code>FINAL</code> modifier and expecting deduplicated results. You will see duplicates. FINAL forces a merge at query time — expensive on large tables. Correct pattern: either use FINAL, or add a MAX(version) GROUP BY deduplication query layer, or use the <code>optimize_on_insert</code> setting (with caveats).</li>
+    </ul>
+
+    <h3>Day 1 Monitoring & Alerting</h3>
+    <pre>
+CRITICAL ALERTS (page immediately):
+┌─────────────────────────────────────────────────────────────────┐
+│ SELECT count() FROM system.parts WHERE active                    │
+│   AND table='your_table' AND partition='current_month'           │
+│ ALERT: > 200 parts → "Too many parts" imminent                  │
+├─────────────────────────────────────────────────────────────────┤
+│ SELECT max(queue_size) FROM system.replication_queue             │
+│ ALERT: > 10,000 items → replica falling behind                   │
+├─────────────────────────────────────────────────────────────────┤
+│ SELECT * FROM system.replicas WHERE is_readonly = 1              │
+│ ALERT: any row → ZooKeeper connectivity lost                     │
+└─────────────────────────────────────────────────────────────────┘
+
+IMPORTANT METRICS (dashboard):
+- query_duration_ms p95/p99 by query_kind
+- memory_usage (current vs max_memory_usage)
+- disk_usage per volume
+- background_merges_in_progress
+- replication_delay (seconds behind for each replica)
+- ProfileEvents.{InsertRows, InsertedBytes, MergedRows}
+- Failed queries rate by error type
+</pre>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> ClickHouse wins decisively for high-volume, low-latency OLAP on append-heavy data with complex aggregations. The three red flags where it fails: (1) You need real-time row updates, (2) you need multi-table normalized joins, (3) you need full-text search relevance ranking. Match the tool to the workload, not the other way around.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 7                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p7">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🌍</div>
+    <div>
+      <div class="pillar-num">Pillar 7</div>
+      <div class="pillar-title">Google-Scale & Beyond</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>What Breaks as You Scale from 1M → 100M → 1B Users</h3>
+
+    <h4>1M Users — Single Cluster Problems</h4>
+    <p>At 1M active users generating events, you're likely dealing with 10-100 million events/day — roughly 1,000 events/second. A single ClickHouse node handles this trivially. The problems that emerge: <strong>ZooKeeper becomes a bottleneck</strong> when you have many small replicated tables (each table requires several ZooKeeper paths; 1000 tables × 3 replicas = 3000+ ZK watches). The solution is to move to ClickHouse Keeper (Raft-based) or carefully limit the number of replicated tables. The other early-scale problem is <strong>schema evolution</strong> — ALTER TABLE ADD COLUMN is eventually consistent in replicated setups and can take minutes to propagate.</p>
+
+    <h4>100M Users — Multi-Cluster Problems</h4>
+    <p>At 100M users generating events, you're at ~10,000-100,000 events/second. Now you need multiple shards. The challenges that emerge: <strong>Cross-shard query coordination</strong> — every SELECT on a Distributed table fans out to all shards, and if one shard is slow (stragglers), the entire query waits. The solution is implementing a "skip degraded shards" policy (<code>skip_unavailable_shards</code>) and timeout-based fallback. <strong>INSERT routing reliability</strong> becomes critical — if the Distributed table's async insert buffer exceeds its limit, inserts are silently dropped. This requires monitoring <code>system.distribution_queue</code> aggressively and implementing application-level retry.</p>
+
+    <h4>1B Users — Hyperscaler Problems</h4>
+    <p>At 1B users, you're looking at 1 million+ events/second sustained. Now you need: (1) <strong>Multi-region active-active</strong> with cross-region Kafka replication, (2) <strong>Tenant isolation</strong> to prevent one customer's massive query from impacting others, (3) <strong>Global query routing</strong> that directs queries to the region where the data lives (for data residency), and (4) <strong>Cost optimization</strong> through tiered storage (hot NVMe → warm HDD → cold S3).</p>
+
+    <h3>How Google/Hyperscalers Solve This Differently</h3>
+    <p>Google's internal analytics systems (Mesa, Dremel/BigQuery, Monarch) have several fundamental architectural differences from vanilla ClickHouse that enable hyperscale:</p>
+
+    <ul>
+      <li><strong>Disaggregated Storage and Compute (Google Colossus + BigQuery):</strong> BigQuery separates storage (Colossus, effectively infinite) from compute (Dremel query engines, ephemeral and elastic). This means you can scale compute up for a heavy query and back to zero. ClickHouse traditionally co-locates storage and compute — ClickHouse Cloud (ClickHouse Inc.'s managed service) introduced shared object storage (S3/GCS) as the storage layer in v23.x with "SharedMergeTree" — this is ClickHouse's first step toward disaggregation. An L8 candidate should discuss this evolution and its implications.</li>
+      <li><strong>Global Query Optimization (Spanner-style):</strong> Google Spanner's query optimizer has cross-region awareness — it knows where data physically lives across global zones and optimizes data movement in the query plan. ClickHouse's distributed query layer is much simpler — it fans out to all shards and aggregates. There's no CBO (cost-based optimizer) that models cross-shard data movement cost. Adding a full CBO to ClickHouse is an unsolved engineering challenge.</li>
+      <li><strong>Petabyte-Scale Compaction (Mesa architecture):</strong> Google's Mesa system (used for ads reporting) handles the same challenge as ClickHouse merges but at petabyte scale. Mesa uses a hierarchical delta compaction approach with globally coordinated compaction jobs — analogous to but far more sophisticated than ClickHouse's background merge threads. Mesa explicitly models compaction as a distributed job, not a local background task.</li>
+    </ul>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>L7/L8 Differentiator — SharedMergeTree (ClickHouse Cloud)</strong>
+        In 2023, ClickHouse Cloud introduced <strong>SharedMergeTree</strong> — a new table engine that stores data in shared object storage (S3/GCS/Azure Blob) instead of local disk. Parts are stored in S3 and metadata in a distributed coordination layer. This enables: (1) True compute-storage separation, (2) Zero-copy replication (replicas share the same S3 objects, no data copying needed), (3) Instant scaling of compute nodes (add a node → it immediately accesses all data in S3), (4) Dramatic cost reduction (S3 at $0.023/GB vs NVMe at $0.10/GB). The tradeoff: S3 GET latency (~5-10ms) vs NVMe local read (~0.1ms). ClickHouse mitigates this with aggressive local disk caching of hot data.
+      </div>
+    </div>
+
+    <h3>Multi-Tenancy: Noisy Neighbor Isolation</h3>
+    <p>In a multi-tenant ClickHouse deployment (SaaS analytics product serving thousands of customers), the noisy neighbor problem is severe. Customer A runs a SELECT that scans 100B rows, consuming all CPU threads for 60 seconds, while Customer B's simple dashboard query gets starved. Solutions in order of complexity:</p>
+
+    <ul>
+      <li><strong>Level 1 — Query Complexity Limits:</strong> Per-user <code>max_rows_to_read</code>, <code>max_execution_time</code>, <code>max_memory_usage</code> limits in user profiles. Enforced at the session level. Simple but blunt — doesn't differentiate between a legitimately large query from a premium customer and a runaway query from a free tier user.</li>
+      <li><strong>Level 2 — Priority Queues:</strong> Assign query priorities (1-10) based on customer tier. Low-priority queries yield CPU to high-priority ones. ClickHouse implements this via the <code>priority</code> session setting. The limitation: priorities are per-query, not per-user workload. A single high-priority query can still monopolize resources.</li>
+      <li><strong>Level 3 — Resource Groups (v23.x+):</strong> ClickHouse 23.x introduced user-level and role-level resource constraints via <code>CREATE RESOURCE CONSTRAINT</code>. This allows capping CPU, memory, and I/O per user class. More granular than per-query limits — it limits the total resources a user class can consume concurrently.</li>
+      <li><strong>Level 4 — Separate Clusters per Tier:</strong> Premium customers get dedicated ClickHouse clusters. Free tier customers share a cluster. This is operationally expensive but provides true isolation. ClickHouse Cloud's "dedicated" tier does exactly this.</li>
+    </ul>
+
+    <h3>Regulatory Data Residency</h3>
+    <p>For GDPR (EU), CCPA (California), and sector-specific regulations (HIPAA, PCI-DSS), data residency requirements mandate that certain data never leaves a specific geographic boundary. ClickHouse's approach:</p>
+
+    <ul>
+      <li><strong>Physical isolation via separate clusters:</strong> EU customer data lives exclusively in Frankfurt/Amsterdam ClickHouse clusters. US customer data lives in us-east-1/us-west-2. The Distributed table's cluster configuration explicitly maps tenants to regional clusters. The routing logic is implemented at the application layer.</li>
+      <li><strong>Column-level encryption:</strong> For PII fields (email, IP address), ClickHouse supports column-level encryption via the <code>Encrypted</code> codec. The encryption key can be per-tenant, stored in a KMS (AWS KMS, Google Cloud KMS), ensuring that even if the ClickHouse cluster is compromised, individual tenant data requires their specific encryption key to decrypt.</li>
+      <li><strong>Right to be Forgotten (GDPR Article 17):</strong> This is a hard problem for ClickHouse. The recommended approach is a two-phase delete: immediately mark the user as deleted in a metadata table (Kafka event → ReplacingMergeTree), and schedule a background mutation (<code>ALTER TABLE DELETE WHERE user_id = X</code>) that physically removes the data within the regulatory deadline (typically 30 days). Monitor mutation progress via <code>system.mutations</code>.</li>
+    </ul>
+
+    <h3>What a "Google Spanner for ClickHouse" Would Look Like</h3>
+    <p>If you were designing the hyperscale successor to ClickHouse, drawing on Google's internal systems, the key innovations needed would be:</p>
+
+    <ul>
+      <li><strong>TrueTime / Hybrid Logical Clocks:</strong> Replace wall-clock-based TTLs and partition functions with HLC-based monotonic timestamps. This enables correct cross-region consistent snapshots without needing to compensate for clock skew.</li>
+      <li><strong>Globally Coordinated Compaction:</strong> Instead of each node running background merge independently, implement a globally-aware compaction scheduler (like Mesa's) that coordinates merges across the entire cluster to minimize total I/O amplification and ensure uniform part size distribution.</li>
+      <li><strong>CBO with Data Statistics:</strong> A cost-based optimizer that collects column statistics (NDV, histogram, correlation) and uses them to make intelligent decisions about join order, aggregation strategy, and shard routing. ClickHouse's optimizer is primarily rule-based today.</li>
+      <li><strong>Native ACID for Small Transactions:</strong> A lightweight transaction layer for insert+metadata updates that allows atomic "write event + update aggregate table" operations. Currently ClickHouse's lightweight transactions are experimental and limited to single-table, single-partition atomicity.</li>
+    </ul>
+
+    <div class="callout calc">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Back-of-Envelope: ClickHouse at Google Scale</strong>
+        Google processes ~8.5 billion search queries/day. If each query generates 10 analytics events (impression, click, session, etc.) → 85B events/day → ~1M events/second. At 200 bytes/event compressed: 200 MB/s ingestion. Stored for 1 year: 200 MB/s × 86400 × 365 = ~6.3 PB/year. At 10:1 compression: ~630 TB on disk. A 50-node ClickHouse cluster with 20 TB NVMe each = 1 PB storage → 2 years of data. Query throughput: 1000 dashboard queries/second, each touching 1% of data = 6.3 TB each → at 14 GB/s per node across 50 nodes = 700 GB/s total → each query completes in ~9 seconds. With partition pruning to last 7 days: ~120 GB each → 0.17 seconds. This is the design target.
+      </div>
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> Google-scale ClickHouse requires moving beyond the traditional co-located storage+compute model toward disaggregated architecture (SharedMergeTree + S3), sophisticated multi-tenancy isolation (resource groups + dedicated clusters), and globally-coordinated metadata management. The ClickHouse Cloud product is converging on this architecture, but the open-source version still requires significant operational engineering to achieve hyperscale.
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  PILLAR 8                                                          -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<section class="pillar" id="p8">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🎤</div>
+    <div>
+      <div class="pillar-num">Pillar 8</div>
+      <div class="pillar-title">Interview Simulation</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>Step 1: The Design Problem</h3>
+    <div class="callout info">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Interview Question (Ambiguous & Open-Ended)</strong>
+        <p style="margin-top:8px">You're the Staff Engineer at a company that provides a SaaS analytics product. Your top customer, a global e-commerce company, has told you that your analytics dashboards are "too slow" and they're going to churn unless you fix it within 2 months. Currently, your system uses ClickHouse with 6 nodes across 3 shards (2 replicas each). The customer has ~500 million events/day across 3 million product SKUs, 50 million users, and 200 markets. Their dashboards query conversion funnels, revenue by market, and real-time inventory analytics. You have full architectural freedom. How do you approach this?</p>
+        <p style="margin-top:8px;font-size:0.82rem;color:var(--muted)">Note: No specific latency numbers were given. "Too slow" is undefined. The interviewer is testing whether you ask the right questions before proposing solutions.</p>
+      </div>
+    </div>
+
+    <h3>Step 2: Strong Candidate Answer (L7/L8 Level)</h3>
+
+    <h4>Clarifying Questions (ask first, always):</h4>
+    <ol>
+      <li>"When they say 'too slow' — what are the specific queries and what latency are they seeing vs. what's acceptable? Are we talking about 10-second dashboard loads, or 60-second exports?"</li>
+      <li>"Is this a consistent slowness or intermittent? Does it correlate with specific times of day (daily batch jobs loading data?) or specific query patterns?"</li>
+      <li>"What does the data freshness requirement look like? Is real-time inventory truly real-time (seconds) or near-real-time (minutes)?"</li>
+      <li>"Are there concurrent user counts that stress the system? How many dashboard users are querying simultaneously during peak?"</li>
+      <li>"What's the current schema design — is data denormalized in ClickHouse, or are there joins across tables?"</li>
+      <li>"What monitoring do we currently have? Do we have query execution plans from the slow queries?"</li>
+    </ol>
+
+    <h4>Stated Assumptions:</h4>
+    <ul>
+      <li>Dashboard queries are loading in 8-15 seconds; target is &lt;2 seconds for P90.</li>
+      <li>~200 concurrent dashboard users during peak (9 AM - 6 PM customer local time).</li>
+      <li>Data freshness: 5 minutes is acceptable for conversion funnels, 30 seconds for inventory.</li>
+      <li>Current schema: semi-normalized, with events table joining product/user dimension tables.</li>
+    </ul>
+
+    <h4>High-Level Diagnosis Approach:</h4>
+    <pre>
+DIAGNOSIS FRAMEWORK:
+1. Profile actual slow queries:
+   SELECT query, read_rows, read_bytes, query_duration_ms, memory_usage
+   FROM system.query_log
+   WHERE event_time > now() - INTERVAL 1 DAY
+   AND type = 'QueryFinish'
+   AND query_duration_ms > 2000
+   ORDER BY query_duration_ms DESC LIMIT 20;
+
+2. Check part health:
+   SELECT partition, count() as parts, sum(rows) as total_rows
+   FROM system.parts WHERE active AND table = 'events'
+   GROUP BY partition ORDER BY parts DESC;
+   -- If any partition has >100 parts → merge pressure!
+
+3. Check shard balance:
+   -- Run on each shard: is data evenly distributed?
+   SELECT shard_num, count() FROM system.parts GROUP BY shard_num;
+
+4. Analyze query plans:
+   EXPLAIN PIPELINE SELECT ... → check for "PartialAggregatingTransform"
+   across all shards (good) vs full scan without partition pruning (bad)
+</pre>
+
+    <h4>Solution Architecture:</h4>
+
+    <p><strong>Fix 1 — Denormalize the Schema (Quick Win, 2 Weeks):</strong> ClickHouse performs poorly on JOIN-heavy queries. If the current schema requires joining events to product/user dimension tables, pre-JOIN at ingest time. Use a Kafka Streams or Flink job to enrich events with product category, market, user segment at ingestion. This transforms an 8-table JOIN query into a single-table GROUP BY — typically 5-10x speedup.</p>
+
+    <p><strong>Fix 2 — Add Materialized Views for Common Aggregations (2 Weeks):</strong> For conversion funnels and revenue by market (which are queried identically by all dashboard users), create AggregatingMergeTree materialized views. Example:</p>
+    <pre>
+CREATE MATERIALIZED VIEW revenue_by_market_mv
+ENGINE = AggregatingMergeTree()
+PARTITION BY toYYYYMM(date)
+ORDER BY (market_id, date, product_category)
+AS SELECT
+  market_id,
+  toDate(event_timestamp) AS date,
+  product_category,
+  sumState(revenue) AS revenue_state,
+  countState() AS event_count_state
+FROM events
+GROUP BY market_id, date, product_category;
+
+-- Query time:
+SELECT market_id, sumMerge(revenue_state) AS revenue
+FROM revenue_by_market_mv
+WHERE date >= today() - 30
+GROUP BY market_id ORDER BY revenue DESC;
+-- This query reads from a pre-aggregated 1000-row table, not 500M rows!</pre>
+
+    <p><strong>Fix 3 — Partition Pruning Fix (1 Day):</strong> Audit every dashboard query for missing partition key predicates. If the events table is partitioned by <code>toYYYYMM(event_timestamp)</code>, every WHERE clause must include a timestamp filter. Add query rewriting at the API layer to always inject a default time range.</p>
+
+    <p><strong>Fix 4 — Parallel Replicas for Complex Ad-Hoc Queries (1 Week):</strong> Enable Parallel Replicas for the queries that can't be pre-aggregated (truly ad-hoc exploration queries). Configure:</p>
+    <pre>
+SET allow_experimental_parallel_reading_from_replicas = 1;
+SET max_parallel_replicas = 2;
+SET parallel_replicas_for_non_replicated_merge_tree = 0;
+-- This splits the table scan across both replicas in a shard
+-- ~2x speedup for full-scan queries</pre>
+
+    <p><strong>Fix 5 — Read Replica Routing (2 Weeks):</strong> Separate dashboard reads (customer-facing, latency-sensitive) from internal batch analytics reads (internal BI, high-resource). Configure CHProxy to route queries by user profile to different replica sets. Dashboard users → read-optimized replicas (no background merges during peak). Batch users → replicas where merges are allowed to run freely.</p>
+
+    <div class="callout calc">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>Back-of-Envelope: Expected Improvement</strong>
+        Original: 500M events/day × 30-day window = 15B rows scanned per dashboard query. At 100M rows/sec per node with 6 nodes: 15B / 600M = 25 seconds. With Fix 1 (denormalization) + Fix 2 (materialized views): query reads from 5M pre-aggregated rows → 5M / 600M = 0.008 seconds → plus network overhead → ~200ms. For ad-hoc queries without materialized views: with Fix 4 (parallel replicas) + Fix 3 (partition pruning, last 7 days only): 15B × (7/30) = 3.5B rows, distributed across 2 replicas × 3 shards = 6 readers → 3.5B / (6 × 100M) = 0.58 seconds. Target of &lt;2 seconds achieved.
+      </div>
+    </div>
+
+    <h3>Step 3: Interviewer Critique</h3>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>What They Did Well</strong>
+        Asked excellent clarifying questions before proposing solutions. Proposed a diagnosis-first framework (query_log analysis) rather than jumping to architecture. Correctly identified denormalization as the #1 issue for ClickHouse performance. Quantified the expected improvement with back-of-envelope calculations. Proposed solutions in order of risk/effort (quick wins first). Demonstrated knowledge of Parallel Replicas (a v23.x feature that L5/L6 candidates typically don't know).
+      </div>
+    </div>
+
+    <div class="callout fire">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>What They Missed / Glossed Over</strong>
+        <p><strong>(1) Didn't discuss Projection feature:</strong> ClickHouse v21.6+ supports PROJECTIONS — pre-computed sorted sub-indices within a part that can dramatically speed up queries with non-primary-key access patterns. For the "revenue by market" query where the primary key is (user_id, timestamp) but the query groups by market_id, a projection could avoid a full scan. This is an advanced ClickHouse feature that L7+ candidates should know.</p>
+        <p><strong>(2) Didn't discuss insert pipeline reliability:</strong> When you add Flink/Kafka Streams for event enrichment (Fix 1), you've added a stateful processing layer that can introduce lag, failures, and ordering issues. How do you handle Flink job failures? What's the recovery strategy? What's the impact on data freshness during Flink restarts?</p>
+        <p><strong>(3) Didn't mention the "inventory real-time" use case:</strong> 30-second freshness for inventory is a completely different access pattern — it might require a different table design (using CollapsingMergeTree for stock level updates) or even a different system entirely (Redis for current inventory state, ClickHouse for historical trends).</p>
+        <p><strong>(4) Didn't discuss query result caching:</strong> For dashboard queries that multiple users run identically (same time range, same market filter), a query result cache would serve subsequent users instantly. ClickHouse v22.7+ has a built-in query result cache (<code>use_query_cache=1</code>). This is often the highest-ROI optimization for multi-tenant dashboard workloads.</p>
+      </div>
+    </div>
+
+    <div class="callout lightning">
+      <div class="callout-icon"></div>
+      <div class="callout-body">
+        <strong>What an L8 Answer Would Include That the L7 Didn't</strong>
+        <p>An L8 candidate would recognize that "too slow" is a business problem, not just a technical problem. They would ask: "Is losing this customer a blocker for the business or a nice-to-have?" — because the answer determines whether you do a 2-week quick fix or a 3-month architectural rework. They would also model the cost of each fix (engineering time, infrastructure cost, risk of regression) and present a clear recommendation of which to do in what order, with explicit rollback plans for each. Finally, an L8 would propose an observability plan BEFORE implementing fixes — instrumenting query latency by customer, by query type, and by data access pattern — so you can measure whether the fixes actually worked and have data to show the customer.</p>
+      </div>
+    </div>
+
+    <h3>Step 4: Rapid-Fire Questions</h3>
+
+    <div class="interview-q">
+      <div class="q-label">Q1</div>
+      <div class="q-text">What is the difference between PRIMARY KEY and ORDER BY in ClickHouse, and why does it matter for query performance?</div>
+      <div class="a-text">In ClickHouse, ORDER BY defines the physical sort order of data within a part AND the columns indexed by the sparse primary index. PRIMARY KEY is an explicit subset of ORDER BY that tells ClickHouse which columns to include in the primary.idx file. When you set <code>PRIMARY KEY (a, b)</code> with <code>ORDER BY (a, b, c)</code>, the data is physically sorted by (a, b, c) but the index only indexes (a, b). This allows the index to be smaller (omitting c) while still allowing efficient range scans using (a, b). The critical insight is that the LEFT-MOST columns of ORDER BY get the most benefit from the sparse index — a query filtering only on the 3rd ORDER BY column must scan ALL granules because the index can't narrow the range without knowing the preceding column values.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q2</div>
+      <div class="q-text">How does ReplacingMergeTree handle deduplication, and what are the correctness risks in production?</div>
+      <div class="a-text">ReplacingMergeTree deduplicates rows with the same primary key (ORDER BY columns) during background merges, keeping only the row with the highest <code>ver</code> column value (or the last inserted row if no version column). The correctness risk: deduplication is NOT immediate — between insert time and the next merge, duplicate rows coexist in the table. A SELECT without FINAL will return duplicates. Adding FINAL forces an in-memory merge at query time, which is expensive O(total_rows) even for small result sets. The production pattern: use FINAL for correctness-critical queries, and implement application-side deduplication (GROUP BY primary key, MAX(version)) for performance-critical paths. As of v23.x, the <code>do_not_merge_across_partitions_select_final</code> setting can optimize FINAL for partitioned tables by performing deduplication within each partition independently in parallel.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q3</div>
+      <div class="q-text">Explain ClickHouse's "Too many parts" error and how to prevent it systematically.</div>
+      <div class="a-text">Every INSERT in ClickHouse creates a new immutable "part" on disk. Background merge threads continuously merge small parts into larger ones, but if inserts arrive faster than merges can keep up, the number of parts per partition grows unboundedly. When parts exceed <code>parts_to_delay_insert</code> (default: 150), ClickHouse slows inserts artificially. Above <code>parts_to_throw_insert</code> (default: 300), all inserts are rejected. Prevention: (1) Always batch inserts to ≥10,000 rows per INSERT statement — this dramatically reduces parts/second. (2) Use Kafka + ClickHouse Kafka table engine or MaterializedPostgreSQL for batch ingestion. (3) Increase <code>background_pool_size</code> to allocate more CPU threads to background merges. (4) Use the Buffer table engine to absorb bursty small inserts and flush them in batches. Monitor via <code>SELECT partition, count() FROM system.parts WHERE active GROUP BY partition</code>.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q4</div>
+      <div class="q-text">When would you choose AggregatingMergeTree over a regular Materialized View with SummingMergeTree?</div>
+      <div class="a-text">SummingMergeTree pre-aggregates rows by summing numeric columns during merges — it stores final aggregated values (e.g., total revenue = $500). AggregatingMergeTree stores partial aggregation states (e.g., a binary HyperLogLog sketch for COUNT(DISTINCT), or a quantile tdigest) that can be merged later. You choose AggregatingMergeTree when: (1) The aggregation function is not decomposable (e.g., exact median requires all data, but approximate quantiles using tdigest are decomposable — two tdigests can be merged). (2) You need COUNT(DISTINCT) — use <code>uniqState()</code> → stores HLL sketch → <code>uniqMerge()</code> at query time. (3) You need histograms, quantiles, or complex statistics that can't be expressed as simple sums. The practical rule: if your metric is SUM or COUNT, use SummingMergeTree. If it's COUNT(DISTINCT), quantile, or any statistical function, use AggregatingMergeTree with the corresponding *State/*Merge function pair.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q5</div>
+      <div class="q-text">How does ClickHouse's vectorized query execution differ from traditional row-at-a-time execution, and what hardware features does it exploit?</div>
+      <div class="a-text">Traditional row-at-a-time execution (Volcano model) processes one row through the entire operator tree before fetching the next row — this is cache-unfriendly and can't exploit SIMD. ClickHouse uses vectorized execution where the query engine operates on "blocks" of 65,536 rows per column at a time. This means a filter operation loads 65,536 integers into L2/L3 cache and applies the filter using AVX2 SIMD instructions that compare 8 integers simultaneously — 8x speedup over scalar code. ClickHouse further compiles repetitive loop bodies using LLVM JIT compilation, eliminating function call overhead. Hardware features exploited: (1) AVX2/AVX-512 SIMD for parallel integer/float comparisons, (2) Cache-line prefetching for sequential column reads, (3) Branch-free SIMD operations for filter conditions, (4) POPCNT for efficient COUNT on bitmasks, (5) io_uring for async non-blocking I/O on Linux 5.1+. The result: a single CPU core can filter ~1 billion integers per second with a simple equality predicate.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q6</div>
+      <div class="q-text">How would you design a multi-tenant ClickHouse cluster serving 1000 customers with SLA isolation between customers?</div>
+      <div class="a-text">A three-tier isolation architecture: (1) Logical isolation at the query layer — deploy CHProxy as a query router that authenticates customers, injects per-customer query limits (max_execution_time, max_memory_usage, max_rows_to_read) via ClickHouse user profiles, and implements per-customer query rate limiting. (2) Physical isolation via sharding key — shard by hashed customer_id so each customer's data lives on one shard. This means a customer's queries hit only one shard (no fan-out overhead), and a runaway customer query doesn't stress all shards. (3) Resource groups (v23.x+) — assign customer tiers (free/pro/enterprise) to resource constraint groups that cap total CPU shares and memory per tier group. Enterprise customers get higher CPU weights. For true noisy-neighbor isolation, deploy separate ClickHouse clusters per enterprise customer (expensive but correct). Monitor per-customer query latency via the query_log table partitioned by customer_id, and alert when any customer's P95 latency exceeds their SLA target.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q7</div>
+      <div class="q-text">What are skip indices (secondary indices) in ClickHouse, how do they work, and when are they effective?</div>
+      <div class="a-text">Skip indices in ClickHouse are granule-level metadata structures that allow the query engine to skip entire granules (8192-row blocks) without reading the actual column data. Unlike B-tree secondary indices in RDBMS (which index individual rows), skip indices index per-granule aggregates. Types: (1) <code>minmax</code> — stores min/max value per granule; effective for range queries on numeric columns not in the primary key. (2) <code>set(N)</code> — stores up to N distinct values per granule; effective for low-cardinality equality filters. (3) <code>bloom_filter(false_positive_rate)</code> — probabilistic membership test per granule; effective for high-cardinality equality and IN list filters (e.g., search by user_id in a column not in the primary key). (4) <code>ngrambf_v1</code> — n-gram bloom filter for LIKE/contains text search. Effectiveness conditions: the indexed column must have good "locality" — rows with the same value must cluster together in the granule. If values are randomly distributed, the skip index degrades (every granule passes the filter and nothing is skipped). Best paired with a correlated ORDER BY column that causes similar values to co-locate.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q8</div>
+      <div class="q-text">How does ClickHouse handle TTL (data expiration) for compliance use cases, and what are the operational risks?</div>
+      <div class="a-text">ClickHouse TTL can be applied at column level (set column to DEFAULT value after expiry) or at row level (DELETE rows after expiry), and also for data tiering (MOVE TO DISK 'cold_disk' AFTER 90 DAYS). TTL evaluation happens during background merges — ClickHouse checks if any data in a part is expired and either deletes it or moves it. The operational risks: (1) TTL processing is not instantaneous — data persists until the next merge that touches the relevant part. In a low-write table, parts may not merge for months, and expired data lingers. Mitigation: <code>OPTIMIZE TABLE ... FINAL</code> forces a merge immediately (expensive on large tables). (2) TTL relies on system wall clock — clock skew between nodes can cause premature or delayed deletion. (3) In replicated setups, TTL merges are initiated by the merge leader; if the leader is behind, TTL-deleted data persists on other replicas longer. (4) Compliance risk: if a customer requests right-to-be-forgotten under GDPR, TTL alone is insufficient — you need a targeted mutation (<code>ALTER TABLE DELETE WHERE user_id=X</code>) AND a TTL as a safety net. Monitor TTL compliance via column-level checksums and compliance audit logs.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q9</div>
+      <div class="q-text">Explain ClickHouse's approach to handling JOINs in distributed queries and where it breaks down.</div>
+      <div class="a-text">ClickHouse evaluates distributed JOINs using one of two strategies: (1) <code>GLOBAL JOIN</code> — the coordinator evaluates the right-side table (small table) in full, broadcasts the result to ALL shards, and each shard performs a local hash join. This is efficient when the right table is small (&lt;100MB) and the left table is huge and sharded. (2) <code>local JOIN</code> (default) — each shard independently joins its local data with its local portion of the right table. This is ONLY correct if both tables are co-located (sharded on the same key). Using a local JOIN when tables are sharded differently produces INCORRECT results without any error — it silently misses cross-shard joins. Where it breaks down: (1) Large fact-to-fact joins (two billion-row tables) — GLOBAL JOIN broadcasts a huge dataset to all shards, overwhelming network. (2) Multi-hop JOINs (A JOIN B JOIN C) where B and C are on different shards. (3) JOINs with DISTINCT semantics across shards. The production solution: denormalize at ingestion time using Kafka Streams enrichment, eliminating the need for distributed JOINs in ClickHouse entirely. Reserve ClickHouse JOINs for dimension table lookups where the dimension fits in memory.</div>
+    </div>
+
+    <div class="interview-q">
+      <div class="q-label">Q10</div>
+      <div class="q-text">What is the ClickHouse Projection feature and how does it differ from a Materialized View?</div>
+      <div class="a-text">A Projection is a hidden, automatically maintained secondary sort order within the same table part. When you define <code>ALTER TABLE events ADD PROJECTION proj_by_market (SELECT market_id, event_type, count() GROUP BY market_id, event_type ORDER BY market_id)</code>, ClickHouse stores a secondary copy of the data (or aggregated data) within each part, sorted by market_id instead of the primary sort order. At query time, the optimizer automatically uses the projection if it determines the projection can answer the query more efficiently than the primary data. Key differences from Materialized Views: (1) Projections are stored INSIDE the same part as the main data — no separate table, no separate consistency management. (2) Projections are transactionally consistent with the main table (they're built together during the merge). (3) Projections can store aggregated states (GROUP BY), making them equivalent to AggregatingMergeTree MVs but without the separate table overhead. (4) Projections are limited to the same partition and part as the original data — they can't span tables. Use Projections when you have 2-3 common access patterns on the same table with different sort orders. Use MVs when you need independent lifecycle management, cross-table joins at materialization time, or separate partitioning strategy.</div>
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway:</strong> In a ClickHouse interview at L7/L8, the differentiator is always the combination of (1) deeply understanding WHY ClickHouse makes each design choice (columnar, sparse index, merge-tree), (2) knowing the failure modes and operational gotchas cold (too many parts, deduplication semantics, TTL timing), and (3) demonstrating that you've operated ClickHouse at scale and have war stories about what breaks. Architecture diagrams and back-of-envelope numbers are table stakes — the depth of operational knowledge is what separates L7 from L8.
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ -->
+<!--  REAL-WORLD E2E SIMULATION            -->
+<!-- ══════════════════════════════════════ -->
+<section class="pillar" id="sim">
+  <div class="pillar-header">
+    <div class="pillar-emoji">🔬</div>
+    <div>
+      <div class="pillar-num">Bonus: End-to-End</div>
+      <div class="pillar-title">Real-World Problem Simulation: Ad-Tech Click Analytics at Scale</div>
+    </div>
+  </div>
+  <div class="pillar-body">
+
+    <h3>The Problem</h3>
+    <p>You're the Staff Engineer at a digital advertising company. You serve 50,000 advertisers, each running real-time ad campaigns. Every advertiser needs a dashboard showing: impressions served, clicks, conversions, cost, CPM/CPC/CPA in real-time (30-second freshness), broken down by creative, placement, geography, device type, and time of day. You process 5 million ad events per second at peak (Super Bowl, major sports events spike to 25 million/second).</p>
+
+    <p><strong>The challenge:</strong> With 50,000 advertisers × 1000 campaign dimensions × 30-second freshness, pre-computing all aggregations ahead of time would require 50 billion pre-aggregated cells that must be updated 30 seconds. But serving raw event scans for 50,000 concurrent dashboard users would require scanning 5M events/sec × 86,400 sec/day × 30 days = 12.96 trillion rows — obviously impossible for every query.</p>
+
+    <h3>Solution Architecture</h3>
+    <pre>
+INGESTION TIER:
+Ad Server → Kafka (3 brokers, 300 partitions) → Flink (enrichment + dedup)
+  → ClickHouse (raw events table + materialized view pipeline)
+
+FLINK ENRICHMENT (stateful):
+  - Deduplication: event_id bloom filter (30s window) → drop duplicates
+  - Geo IP lookup: IP → country, region, city
+  - Device fingerprint: UA string → device_type, OS, browser
+  - Campaign metadata join: campaign_id → advertiser_id, budget, targeting
+  - Conversion attribution: last-click within 24h window (Redis lookup)
+  Output: enriched_event record → ClickHouse Kafka consumer
+
+CLICKHOUSE RAW EVENTS TABLE:
+CREATE TABLE ad_events (
+  event_time   DateTime CODEC(DoubleDelta, ZSTD),
+  advertiser_id UInt32,
+  campaign_id  UInt32,
+  creative_id  UInt32,
+  placement_id UInt32,
+  country      LowCardinality(String),  -- ~200 values
+  region       LowCardinality(String),
+  device_type  LowCardinality(String),  -- mobile/desktop/tablet/ctv
+  event_type   LowCardinality(String),  -- impression/click/conversion
+  cost_micro   UInt64,                  -- cost in microdollars
+  user_id      UInt64
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ad_events', '{replica}')
+PARTITION BY toYYYYMMDD(event_time)    -- daily partitions
+ORDER BY (advertiser_id, campaign_id, event_time)  -- primary sort
+SETTINGS index_granularity = 8192;
+
+-- MATERIALIZED VIEW: pre-aggregate to 1-minute buckets per advertiser
+CREATE MATERIALIZED VIEW ad_stats_1min_mv
+ENGINE = AggregatingMergeTree()
+PARTITION BY toYYYYMMDD(bucket)
+ORDER BY (advertiser_id, campaign_id, creative_id, country, device_type, bucket)
+AS SELECT
+  advertiser_id, campaign_id, creative_id, country, device_type,
+  toStartOfMinute(event_time) AS bucket,
+  countStateIf(event_type = 'impression')    AS impressions,
+  countStateIf(event_type = 'click')         AS clicks,
+  countStateIf(event_type = 'conversion')    AS conversions,
+  sumStateIf(cost_micro, event_type = 'impression') AS spend,
+  uniqState(user_id)                          AS unique_users
+FROM ad_events
+GROUP BY advertiser_id, campaign_id, creative_id, country, device_type, bucket;
+
+QUERY (dashboard: last 24h by campaign, country):
+SELECT
+  campaign_id, country,
+  sumMerge(impressions) AS impressions,
+  sumMerge(clicks) AS clicks,
+  sumMerge(spend) / 1000000 AS spend_usd,
+  sumMerge(clicks) / sumMerge(impressions) * 100 AS ctr
+FROM ad_stats_1min_mv
+WHERE advertiser_id = 12345
+  AND bucket &gt;= now() - INTERVAL 24 HOUR
+GROUP BY campaign_id, country
+ORDER BY spend_usd DESC;
+-- Reads: ~1440 buckets × avg 50 campaign×country combinations = 72,000 rows
+-- Latency: &lt;50ms ✓
+</pre>
+
+    <h3>Challenges and Trade-offs at L7/L8 Level</h3>
+
+    <h4>Challenge 1: Conversion Attribution Latency</h4>
+    <p><strong>Problem:</strong> Conversions happen up to 24 hours after a click. When a user clicks an ad at 9 AM and converts at 5 PM, the conversion event needs to be attributed back to the 9 AM click — and this attribution needs to update the 9 AM stats bucket in the materialized view. But ClickHouse materialized views are append-only at insert time and can't retroactively update past buckets.</p>
+
+    <p><strong>Solution:</strong> Two-table pattern. Keep a "raw conversions" table alongside the materialized view. When a conversion event arrives, look up the original click in Redis (attribution cache), emit a "retroactive_credit" event with the original click's timestamp, and insert it into ClickHouse. The MV handles it as a new event in the past bucket. At query time, join the MV stats with the retroactive credits. The trade-off: query time complexity increases, and the "retroactive_credits" table can accumulate billions of rows over time. Alternative: Use CollapsingMergeTree — insert a negative-sign row to cancel the previous state, then a positive row with the new attribution.</p>
+
+    <h4>Challenge 2: Peak Traffic Spike (Super Bowl 5x volume)</h4>
+    <p><strong>Problem:</strong> During a Super Bowl, ad event volume spikes from 5M/sec to 25M/sec for ~4 hours. The normal ingestion pipeline is designed for 5M/sec. The ClickHouse cluster can handle 5M/sec → 10 parts/sec → merges keep up. At 25M/sec → 50 parts/sec → merges fall behind → "Too many parts" error.</p>
+
+    <p><strong>Solution:</strong> (1) Pre-warm: 6 hours before the event, stop all non-essential background merges (<code>SYSTEM STOP MERGES</code>) to free background threads, letting the merge pool accumulate capacity. (2) Kafka Lag Buffer: Kafka can absorb 4 hours of 25M/sec → 360 billion events. Kafka becomes the buffer, ClickHouse ingests at its natural rate, just with higher lag. Freshness SLA degrades from 30 seconds to 5 minutes during the spike — pre-negotiate this SLA exception with advertisers. (3) Horizontal scale pre-event: Add 2 shards 24 hours before the event, with the Distributed table config updated. New data routes to the new shards. (4) Reserve the Flink enrichment buffer: During spike, drop non-critical enrichment (geo-IP, device fingerprinting) to reduce Flink processing overhead — focus on core event ingestion at the cost of reduced dimension completeness.</p>
+
+    <h4>Challenge 3: Advertiser Isolation for Security and Performance</h4>
+    <p><strong>Problem:</strong> A malicious or misconfigured advertiser runs a query that selects ALL events across the past year without time filter. This scans the entire table, consuming all CPU for 60 seconds and starving other advertisers' dashboard queries.</p>
+
+    <p><strong>Solution:</strong> (1) Query proxy (CHProxy) with per-advertiser limits: max_execution_time=30s, max_rows_to_read=10B, max_memory_usage=10GB. (2) The advertiser's API key maps to a ClickHouse user profile with these limits. (3) Mandatory query rewriting: the API layer ALWAYS injects <code>AND event_time &gt;= now() - INTERVAL 90 DAY</code> before sending to ClickHouse — no raw query passthrough. (4) Resource groups: free-tier advertisers share a resource group with 20% CPU weight; premium advertisers get 60% CPU weight; the remaining 20% is reserved for internal monitoring queries. The trade-off: the query proxy is a single point of failure (mitigated with CHProxy HA) and adds ~1ms latency (acceptable).</p>
+
+    <div class="metrics">
+      <div class="metric"><div class="val">25M</div><div class="lbl">Events/sec peak</div></div>
+      <div class="metric"><div class="val">&lt;50ms</div><div class="lbl">Dashboard P90 query</div></div>
+      <div class="metric"><div class="val">30s</div><div class="lbl">Data freshness</div></div>
+      <div class="metric"><div class="val">50K</div><div class="lbl">Concurrent advertisers</div></div>
+      <div class="metric"><div class="val">10:1</div><div class="lbl">Compression ratio</div></div>
+      <div class="metric"><div class="val">99.99%</div><div class="lbl">Query availability SLA</div></div>
+    </div>
+
+    <div class="takeaway">
+      <strong>Key Takeaway — E2E Simulation:</strong> The real challenge in ad-tech analytics is not raw throughput — ClickHouse handles 25M events/sec with enough hardware. The hard problems are: (1) retroactive data corrections (conversion attribution), (2) maintaining data freshness SLAs during traffic spikes without over-provisioning 5x for peak, and (3) tenant isolation that prevents one advertiser's bad query from impacting 49,999 others. These are L7/L8-level concerns that go far beyond "choose the right table engine."
+    </div>
+
+  </div>
+</section>
+
+</div>
+
+<footer>
+  <div>ClickHouse Staff/Principal Engineer Interview Deep Dive</div>
+  <div style="margin-top:8px">Covers ClickHouse versions up to 24.x (April 2026) · For L6/L7/L8 preparation · 8 Pillars · 25+ Years Engineering Perspective</div>
+  <div style="margin-top:12px; color: var(--ch-orange); font-weight: 600;">🚀 Good luck — trust the preparation, not the anxiety.</div>
+</footer>
+
+</body>
+</html>
