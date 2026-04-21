@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geospatial Indexing (Part 2) — KD-Tree & R-Tree Deep Dives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  --geo:#14B8A6;--geo3:#5EEAD4;
+  /* KD-Tree: sky blue */
+  --kd:#0EA5E9;--kd2:#38BDF8;--kd3:#075985;
+  /* R-Tree: amber */
+  --rt:#F59E0B;--rt2:#FCD34D;--rt3:#78350F;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--kd),var(--kd2),var(--rt),var(--rt2),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--kd2);background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--kd)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(14,165,233,.05)}
+.ni.active a{color:var(--kd2);border-left-color:var(--kd2);background:rgba(14,165,233,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--kd2);border-color:var(--kd2);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--kd2) 38%,var(--rt) 65%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.pkd{background:rgba(14,165,233,.1);border-color:var(--kd2);color:var(--kd2)}
+.part-pill.prt{background:rgba(245,158,11,.1);border-color:var(--rt2);color:var(--rt2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* INDEX SECTION WRAPPER */
+.index-section{border-radius:14px;overflow:hidden;margin-bottom:32px}
+.index-section.kd-s{border:1px solid rgba(14,165,233,.25)}
+.index-section.rt-s{border:1px solid rgba(245,158,11,.22)}
+.index-banner{padding:16px 22px;display:flex;align-items:center;gap:14px}
+.index-section.kd-s .index-banner{background:linear-gradient(90deg,rgba(14,165,233,.1),rgba(14,165,233,.03))}
+.index-section.rt-s .index-banner{background:linear-gradient(90deg,rgba(245,158,11,.09),rgba(245,158,11,.02))}
+.index-badge{font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:4px 12px;border-radius:20px;flex-shrink:0}
+.kd-s .index-badge{background:rgba(14,165,233,.15);color:var(--kd);border:1px solid rgba(14,165,233,.3)}
+.rt-s .index-badge{background:rgba(245,158,11,.15);color:var(--rt);border:1px solid rgba(245,158,11,.3)}
+.index-title{font-family:var(--fh);font-size:1.4rem;font-weight:900;color:var(--text)}
+.index-sub{font-family:var(--fb);font-size:.85rem;color:var(--muted);margin-left:auto;flex-shrink:0}
+.index-content{padding:0 22px 20px}
+
+/* A–F SECTION CARDS */
+.af-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.af-hdr{padding:11px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.af-tag{font-family:var(--fc);font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:2px 9px;border-radius:8px;flex-shrink:0}
+.af-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text)}
+.af-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.af-card.collapsed .af-toggle{transform:rotate(-90deg)}
+.af-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.af-card.collapsed .af-body{max-height:0;opacity:0}
+.af-inner{padding:0 16px 14px}
+/* KD colors */
+.kd-card .af-hdr{background:rgba(14,165,233,.04);border-bottom:1px solid rgba(14,165,233,.12)}
+.kd-card .af-tag{background:rgba(14,165,233,.12);color:var(--kd);border:1px solid rgba(14,165,233,.2)}
+/* RT colors */
+.rt-card .af-hdr{background:rgba(245,158,11,.04);border-bottom:1px solid rgba(245,158,11,.12)}
+.rt-card .af-tag{background:rgba(245,158,11,.12);color:var(--rt);border:1px solid rgba(245,158,11,.2)}
+
+/* DIAGRAM BLOCKS */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.kd{border:1px solid rgba(14,165,233,.2)}.diag.kd .diag-hdr{background:rgba(14,165,233,.06);border-bottom:1px solid rgba(14,165,233,.18)}.diag.kd .diag-title{color:var(--kd2)}
+.diag.rt{border:1px solid rgba(245,158,11,.2)}.diag.rt .diag-hdr{background:rgba(245,158,11,.06);border-bottom:1px solid rgba(245,158,11,.18)}.diag.rt .diag-title{color:var(--rt2)}
+.diag.fail{border:1px solid rgba(239,68,68,.2)}.diag.fail .diag-hdr{background:rgba(239,68,68,.06);border-bottom:1px solid rgba(239,68,68,.18)}.diag.fail .diag-title{color:var(--no)}
+.diag.comp{border:1px solid rgba(20,184,166,.2)}.diag.comp .diag-hdr{background:rgba(20,184,166,.06);border-bottom:1px solid rgba(20,184,166,.18)}.diag.comp .diag-title{color:var(--geo3)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--kd2);border-color:var(--kd2)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.kd{background:rgba(14,165,233,.07);border:1px solid rgba(14,165,233,.2)}
+.callout.rt{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2)}
+.callout.geo{background:rgba(20,184,166,.07);border:1px solid rgba(20,184,166,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.kd .callout-title{color:var(--kd2)}
+.callout.rt .callout-title{color:var(--rt2)}.callout.geo .callout-title{color:var(--geo3)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* STRENGTHS/LIMITS SPLIT */
+.sl-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.sl-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.sl-card.str{border-left:3px solid var(--cass4)}
+.sl-card.lim{border-left:3px solid var(--no)}
+.sl-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:8px}
+.sl-card.str .sl-label{color:var(--cass4)}.sl-card.lim .sl-label{color:var(--no)}
+.sl-card ul{padding-left:14px}.sl-card li{font-size:.84rem;color:var(--muted);line-height:1.55;margin-bottom:3px}
+.sl-card strong{color:var(--text)}
+
+/* VARIANTS TABLE */
+.var-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.var-table thead tr{background:rgba(245,158,11,.07)}
+.var-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--rt2);border-bottom:1px solid rgba(245,158,11,.18)}
+.var-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);color:var(--muted);vertical-align:top;line-height:1.4;font-size:.8rem}
+.var-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.var-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.var-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc)}
+
+/* COMPARISON TABLE KD vs QT vs RT */
+.comp-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.comp-table thead tr{background:var(--surface2)}
+.comp-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border)}
+.comp-table th:nth-child(2){color:var(--geo3)}.comp-table th:nth-child(3){color:var(--kd2)}.comp-table th:nth-child(4){color:var(--rt2)}
+.comp-table th:first-child{color:var(--dim)}
+.comp-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.79rem}
+.comp-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.comp-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.comp-table td:first-child{font-weight:600;color:var(--text)}
+.comp-table td:nth-child(2){color:var(--muted);border-left:2px solid rgba(99,102,241,.2)}
+.comp-table td:nth-child(3){color:var(--muted);border-left:2px solid rgba(14,165,233,.2)}
+.comp-table td:nth-child(4){color:var(--muted);border-left:2px solid rgba(245,158,11,.2)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--geo3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{border-radius:10px;padding:18px 20px;margin:18px 0;position:relative}
+.soundbite.kd-sb{background:linear-gradient(135deg,rgba(14,165,233,.09),rgba(14,165,233,.03));border:1px solid rgba(14,165,233,.22)}
+.soundbite.rt-sb{background:linear-gradient(135deg,rgba(245,158,11,.09),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.22)}
+.soundbite::before{content:'🔑';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.62rem;text-transform:uppercase;letter-spacing:.14em;margin-bottom:9px;font-weight:600}
+.soundbite.kd-sb .soundbite-label{color:var(--kd2)}
+.soundbite.rt-sb .soundbite-label{color:var(--rt2)}
+.soundbite p{font-size:.9rem;line-height:1.7;color:var(--text);font-style:italic;padding-right:24px}
+
+mark{background:rgba(14,165,233,.14);color:var(--kd2);border-radius:3px;padding:1px 4px}
+mark.rt{background:rgba(245,158,11,.14);color:var(--rt2)}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.sl-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Geospatial Indexing · L6/L7 Series</div>
+    <div class="sb-title">KD-Tree & R-Tree Deep Dives</div>
+    <div class="sb-part">Part 2 — Binary Split & Bounding Boxes</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Navigation</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+    </li>
+    <li class="ng"><div class="nl">KD-Tree</div>
+      <li class="ni sub"><a href="#kd-what">A: What It Is</a></li>
+      <li class="ni sub"><a href="#kd-how">B: How It Works</a></li>
+      <li class="ni sub"><a href="#kd-strengths">C: Strengths & Use Cases</a></li>
+      <li class="ni sub"><a href="#kd-limits">D: Limitations</a></li>
+      <li class="ni sub"><a href="#kd-ops">E: Operational Considerations</a></li>
+      <li class="ni sub"><a href="#kd-l7">F: L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">R-Tree</div>
+      <li class="ni sub"><a href="#rt-what">A: What It Is</a></li>
+      <li class="ni sub"><a href="#rt-how">B: How It Works</a></li>
+      <li class="ni sub"><a href="#rt-strengths">C: Strengths & Use Cases</a></li>
+      <li class="ni sub"><a href="#rt-limits">D: Limitations</a></li>
+      <li class="ni sub"><a href="#rt-ops">E: Operational Considerations</a></li>
+      <li class="ni sub"><a href="#rt-l7">F: L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Comparison</div>
+      <li class="ni sub"><a href="#comparison">QuadTree vs KD-Tree vs R-Tree</a></li>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Geospatial Indexing & Location-Based Systems · L6/L7 Series · Part 2</div>
+  <h1>KD-Tree &<br>R-Tree<br>Deep Dives</h1>
+  <div class="hero-meta">
+    <span>🌲 KD-Tree: alternating splits, NN pruning trace</span>
+    <span>📐 Nearest-neighbor algorithm step by step</span>
+    <span>📦 R-Tree: MBR nesting, overlap penalty</span>
+    <span>🔄 R-Tree variants: R*, R+, Hilbert</span>
+    <span>⚖️ Why PostGIS uses R-Tree but Uber doesn't</span>
+    <span>🎯 Full 3-way comparison: QuadTree vs KD vs R</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + QuadTree</span>
+    <span class="part-pill pkd">Part 2: KD-Tree & R-Tree</span>
+    <span class="part-pill">Part 3: GeoHash, S2/H3 & System Design</span>
+  </div>
+  <p style="margin-top:14px">Part 1 established the foundational mental models and QuadTree. Part 2 goes deep on the two remaining tree-based indexes: KD-Tree (the generalized binary splitter, king of nearest-neighbor search) and R-Tree (the bounding-box hierarchy, king of complex spatial queries). Both have L6/L7-level nuances — KD-Tree's curse of dimensionality and its mathematical connection to space-filling curves; R-Tree's overlap problem and why it's the right tool for PostGIS but the wrong tool for Uber.</p>
+</section>
+
+<!-- ═══════════════════ KD-TREE ═══════════════════ -->
+<div class="sec-hdr" id="kd-section"><h2>KD-Tree (K-Dimensional Tree)</h2></div>
+
+<div class="index-section kd-s">
+  <div class="index-banner">
+    <span class="index-badge">KD-Tree</span>
+    <span class="index-title">Alternating Dimension Binary Splits</span>
+    <span class="index-sub">Best for: K-nearest-neighbor queries</span>
+  </div>
+  <div class="index-content">
+
+    <!-- A: WHAT -->
+    <div class="af-card kd-card" id="kd-what-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">A</span>
+        <span class="af-title">What It Is — The Mental Model</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-what">
+        <div class="callout kd">
+          <div class="callout-title">One-Sentence Definition</div>
+          <p>A KD-Tree <strong>splits space by alternating dimensions</strong> — first by X, then by Y, then X again — creating a binary tree optimized for nearest-neighbor queries in k-dimensional space.</p>
+        </div>
+        <div class="callout kd">
+          <div class="callout-title">The Core Insight</div>
+          <p>Instead of always quartering (4 children like QuadTree), we <strong>binary split on one dimension at a time</strong>. This generalizes beautifully to 3D, 4D, or even 100-dimensional space (ML embeddings). QuadTree is a 2D-only concept; KD-Tree works for any k.</p>
+        </div>
+        <div class="callout kd">
+          <div class="callout-title">The Inventor's Problem</div>
+          <p>"I need efficient nearest-neighbor search, and my data might be 2D (maps), 3D (CAD/gaming), or high-dimensional (feature vectors). QuadTree doesn't generalize beyond 2D — I need something that does."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- B: HOW -->
+    <div class="af-card kd-card" id="kd-how-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">B</span>
+        <span class="af-title">How It Works — Construction & NN Query Trace</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-how">
+        <div class="callout kd">
+          <div class="callout-title">Construction Rules</div>
+          <ul>
+            <li>At depth 0: split on X — find median X value, put points left/right</li>
+            <li>At depth 1: split on Y — find median Y in each subtree</li>
+            <li>At depth 2: split on X again (dimension = depth mod k)</li>
+            <li>Continue until leaf nodes have ≤ threshold points</li>
+            <li>Key: always split on <strong>median</strong> value → balanced tree, O(log n) depth</li>
+          </ul>
+        </div>
+        <div class="diag kd">
+          <div class="diag-hdr"><span class="diag-title">Construction — 7 Points, Alternating Splits</span></div>
+          <pre>Points: A(3,6)  B(17,15)  C(13,15)  D(6,12)  E(9,1)  F(2,7)  G(10,19)
+
+Step 1: Sort by X → [F(2), A(3), D(6), E(9), G(10), C(13), B(17)]
+        Median X = E(9,1)  → Split: Left[F,A,D] | E | Right[G,C,B]
+
+Step 2: Left subtree [F(2,7), A(3,6), D(6,12)] — now split by Y
+        Sort by Y → [A(6), F(7), D(12)]  Median = F(2,7)
+        Left: [A(3,6)] | F | Right: [D(6,12)]
+
+Step 3: Right subtree [G(10,19), C(13,15), B(17,15)] — split by Y
+        Sort by Y → [C(15), B(15), G(19)]  Median = C(13,15)
+        Left: [B(17,15)] | C | Right: [G(10,19)]
+        (Note: B has same Y as C — goes left by convention)
+
+Final tree:
+               E(9,1)          ← split on X=9
+              /       \
+          F(2,7)      C(13,15)  ← split on Y=7, Y=15
+          /   \        /    \
+       A(3,6) D(6,12) B(17,15) G(10,19)  ← leaves</pre>
+        </div>
+        <div class="diag kd">
+          <div class="diag-hdr"><span class="diag-title">Nearest-Neighbor Query — Full Pruning Trace for Q(8,8)</span></div>
+          <pre>Find nearest neighbor to Q(8,8)
+
+Step 1: Traverse as if inserting Q
+        E(9,1): Q.x=8 < E.x=9 → go LEFT
+        F(2,7): Q.y=8 > F.y=7 → go RIGHT
+        Reach leaf: D(6,12)
+
+Step 2: D(6,12) is current best candidate
+        dist(Q, D) = √((8-6)² + (8-12)²) = √(4+16) = √20 ≈ 4.47
+        best_dist = 4.47
+
+Step 3: Backtrack to F(2,7). Check F's LEFT subtree [A(3,6)]?
+        F splits on Y=7. Distance from Q.y=8 to split line Y=7 = 1.
+        1 < 4.47 → MUST check (could be closer point there)
+        Check A(3,6): dist = √((8-3)² + (8-6)²) = √(25+4) = √29 ≈ 5.39  WORSE
+        A's subtree exhausted.
+
+Step 4: Check F itself: dist(Q,F) = √((8-2)² + (8-7)²) = √(36+1) = √37 ≈ 6.08  WORSE
+
+Step 5: Backtrack to E(9,1). Check E's RIGHT subtree [C,B,G]?
+        E splits on X=9. Distance from Q.x=8 to split line X=9 = 1.
+        1 < 4.47 → MUST check (could be closer point)
+        Check C(13,15): dist = √((8-13)² + (8-15)²) = √(25+49) = √74 ≈ 8.6  WORSE
+        C.y=15, Q.y=8 → go left to B(17,15): dist ≈ 11.4  WORSE
+        C.y=15, Q.y=8 → go right to G(10,19): dist ≈ 11.0  WORSE
+
+Result: D(6,12) is nearest neighbor at distance ≈ 4.47
+Nodes examined: 5 of 7 (pruned 2 via split-line distance test)
+At 1M points: examine ~20 nodes instead of 1,000,000</pre>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — The Pruning Rule</div>
+          <p>"The core of KD-Tree NN search is the split-line distance test: <strong>if the distance from the query point to the split hyperplane is greater than the current best distance, no point in that subtree can be closer.</strong> This allows pruning entire branches. When data is clustered, pruning is aggressive and search is fast. When data is high-dimensional, every direction has nearby split lines and pruning nearly disappears — that's the curse of dimensionality."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- C: STRENGTHS -->
+    <div class="af-card kd-card" id="kd-strengths-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">C</span>
+        <span class="af-title">Strengths & Ideal Use Cases</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-strengths">
+        <div class="sl-grid">
+          <div class="sl-card str">
+            <div class="sl-label">Where KD-Tree Shines</div>
+            <ul>
+              <li>Exact nearest-neighbor queries (not just "within radius")</li>
+              <li>K-nearest-neighbor (find 10 closest restaurants)</li>
+              <li>High-dimensional data — feature vectors, ML embeddings</li>
+              <li>Static data with read-heavy workload</li>
+              <li>k &lt; 20 dimensions (effective pruning possible)</li>
+            </ul>
+          </div>
+          <div class="sl-card str">
+            <div class="sl-label">Real-World Production Uses</div>
+            <ul>
+              <li><strong>Point cloud processing</strong> — LiDAR, 3D scanning (PCL library)</li>
+              <li><strong>Computer graphics</strong> — ray tracing acceleration structures</li>
+              <li><strong>ML inference</strong> — finding similar embeddings (scipy KDTree)</li>
+              <li><strong>Computational geometry</strong> — CGAL, scipy spatial</li>
+              <li><strong>Robotics</strong> — motion planning, sensor fusion</li>
+            </ul>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- D: LIMITS -->
+    <div class="af-card kd-card" id="kd-limits-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">D</span>
+        <span class="af-title">Limitations & Failure Modes</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-limits">
+        <div class="diag fail">
+          <div class="diag-hdr"><span class="diag-title">Three Ways KD-Tree Breaks</span></div>
+          <pre>FAILURE 1: Curse of Dimensionality (k > 20)
+
+  The pruning condition: skip subtree if dist_to_hyperplane > best_dist
+  In 2D: most hyperplanes are far from query → aggressive pruning
+  In 100D: every direction has a hyperplane nearby → no pruning
+  
+  Result: Tree degenerates to near-linear scan
+  Cause: In high dimensions, data points are roughly equidistant
+         (counterintuitive: most of a hypersphere's volume is in its "shell")
+  Rule: If k > 20, use approximate NN methods (HNSW, FAISS, LSH)
+
+FAILURE 2: Insertions Break Balance
+
+  Construction: O(n log n), builds balanced tree via median splits
+  Insertions: O(log n), but do NOT maintain balance
+  
+  After 100K incremental inserts to a 1M-point tree:
+    → Some subtrees may have 10x more points than others
+    → Query time degrades: O(log n) → O(√n) in worst case
+  
+  Standard fix: Periodic full rebuild (daily or when balance metric exceeded)
+  No online rebalancing algorithm exists for KD-Trees
+
+FAILURE 3: Range Queries Less Natural
+
+  KD-Tree splits are half-planes, not aligned to query patterns
+  Rectangle range queries require checking both sides of many splits
+  For "find all restaurants in bounding box": QuadTree is more elegant
+  For "find K nearest restaurants": KD-Tree wins</pre>
+        </div>
+        <div class="callout warn">
+          <div class="callout-title">The Food Truck Gotcha</div>
+          <p>"You build a perfect KD-Tree for your restaurant database. Then you add 100K food trucks that change location constantly. After a week of incremental inserts, your tree is so unbalanced that queries are 10x slower than a linear scan. The fix: separate static restaurants (KD-Tree, rebuild weekly) from dynamic food trucks (GeoHash grid, O(1) updates)."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- E: OPS -->
+    <div class="af-card kd-card" id="kd-ops-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">E</span>
+        <span class="af-title">Operational Considerations</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-ops">
+        <div class="callout kd">
+          <div class="callout-title">Monitoring Metrics</div>
+          <ul>
+            <li><strong>Tree depth vs log₂(n):</strong> Should be close. If depth &gt;&gt; log₂(n), tree is unbalanced — trigger rebuild.</li>
+            <li><strong>Query latency variance:</strong> High P99/P50 ratio signals imbalance — some queries hit deep subtrees while others don't.</li>
+            <li><strong>Backtrack ratio</strong> (nodes visited / result count): Should decrease over time. If increasing, data distribution is shifting — rebuild.</li>
+          </ul>
+        </div>
+        <div class="callout kd">
+          <div class="callout-title">Tuning Parameters</div>
+          <ul>
+            <li><strong>Rebuild threshold:</strong> Trigger full rebuild when balance metric (max depth / log₂(n)) exceeds configured limit (e.g., 2.0).</li>
+            <li><strong>Leaf size:</strong> Larger leaf size amortizes tree traversal overhead for small datasets. Smaller leaf size gives more pruning precision for large datasets.</li>
+          </ul>
+        </div>
+        <div class="callout good">
+          <div class="callout-title">Rebuild Strategy — Zero-Downtime</div>
+          <ul>
+            <li>Build new tree in background while old tree serves all queries</li>
+            <li>When new tree is ready: atomic pointer swap (single instruction)</li>
+            <li>Keep old tree briefly for rollback if new tree has errors</li>
+            <li>Defer inserts during final build phase (queue them, replay after swap)</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- F: L7 -->
+    <div class="af-card kd-card" id="kd-l7-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">F</span>
+        <span class="af-title">L6/L7 Nuances</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="kd-l7">
+        <div class="callout kd">
+          <div class="callout-title">The Deep Question</div>
+          <p style="font-style:italic;color:var(--text)">"When would you choose KD-Tree over QuadTree for a 2D map application?"</p>
+          <p style="margin-top:8px"><strong>Strong answer:</strong> "KD-Tree excels when the primary query is 'find K nearest neighbors' rather than 'find all in rectangle.' KD-Tree's alternating splits create tighter bounding regions for NN queries — the pruning condition (dist to hyperplane vs current best) is more effective than QuadTree's quadrant check. But for range queries, QuadTree's structure maps more naturally. At extreme scale, I'd use neither — both struggle with updates, and I'd go to a grid system like S2 or GeoHash."</p>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — KD-Trees Are a Linearization of Multidimensional Space</div>
+          <p>"KD-Trees are secretly related to space-filling curves. Each path from root to leaf defines a region through alternating half-plane splits. If you assign binary codes (0 for left, 1 for right) at each level, you get a specific ordering of space. <strong>KD-Trees and Z-order/Hilbert curves are mathematically related</strong> — they're both ways of imposing a 1D ordering on k-dimensional space. This is why KD-Tree construction is O(n log n) — same as sorting, because you're essentially sorting multidimensional data into a tree structure."</p>
+        </div>
+        <div class="callout kd">
+          <div class="callout-title">When to Recommend KD-Tree in an Interview</div>
+          <ul>
+            <li><strong>Recommend KD-Tree:</strong> "Find the 10 closest drivers to this user" (K-NN, low-dimensional)</li>
+            <li><strong>Recommend KD-Tree:</strong> "Find similar ML embeddings" (high-dimensional, use approximate variant)</li>
+            <li><strong>Don't recommend:</strong> "Find all restaurants within a city boundary" (range query, R-Tree better)</li>
+            <li><strong>Don't recommend:</strong> "Track 1M moving objects" (high update rate, grid-based system better)</li>
+            <li><strong>The pivot:</strong> "KD-Tree is my first instinct for NN search, but for moving objects at scale I'd use GeoHash cells with a separate KD-Tree index rebuilt hourly on a static snapshot."</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="soundbite kd-sb">
+      <div class="soundbite-label">🔑 KD-Tree Sound Bite</div>
+      <p>"KD-Tree is the best-in-class structure for K-nearest-neighbor queries in static, low-dimensional data — the alternating splits create tight bounding regions that prune entire branches during search. But it breaks above ~20 dimensions (curse of dimensionality), doesn't self-balance on inserts, and doesn't naturally handle moving objects. Use it for static spatial lookups and ML embedding search; don't use it for real-time tracking."</p>
+    </div>
+
+  </div><!-- /index-content -->
+</div><!-- /kd-s -->
+
+
+<!-- ═══════════════════ R-TREE ═══════════════════ -->
+<div class="sec-hdr" id="rt-section"><h2>R-Tree (and R*, R+, Hilbert Variants)</h2></div>
+
+<div class="index-section rt-s">
+  <div class="index-banner">
+    <span class="index-badge">R-Tree</span>
+    <span class="index-title">Minimum Bounding Rectangle Hierarchy</span>
+    <span class="index-sub">Best for: complex shapes & spatial joins</span>
+  </div>
+  <div class="index-content">
+
+    <!-- A: WHAT -->
+    <div class="af-card rt-card" id="rt-what-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">A</span>
+        <span class="af-title">What It Is — The Mental Model</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-what">
+        <div class="callout rt">
+          <div class="callout-title">One-Sentence Definition</div>
+          <p>An R-Tree <strong>groups nearby objects into minimum bounding rectangles (MBRs)</strong>, creating a hierarchy of nested rectangles — like Russian nesting dolls for spatial data.</p>
+        </div>
+        <div class="callout rt">
+          <div class="callout-title">The Core Insight — Data Partitioning vs Space Partitioning</div>
+          <p>QuadTree and KD-Tree partition <em>empty space</em> into regions. R-Tree partitions <em>the data itself</em> — it groups objects by proximity without caring about grid lines. This means <strong>the index adapts to data distribution naturally</strong> — dense areas get smaller MBRs, sparse areas get larger ones.</p>
+        </div>
+        <div class="callout rt">
+          <div class="callout-title">The Inventor's Problem</div>
+          <p>"I have complex shapes — polygons, lines, rectangles, not just points. I need to index them efficiently and answer 'what objects intersect this region?' — a question no point-based index handles well."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- B: HOW -->
+    <div class="af-card rt-card" id="rt-how-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">B</span>
+        <span class="af-title">How It Works — MBR Construction & Overlap</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-how">
+        <div class="callout rt">
+          <div class="callout-title">Construction Rules</div>
+          <ul>
+            <li>Each leaf node contains up to M objects with their MBRs</li>
+            <li>When a leaf overflows (M+1 objects), split into two nodes — the split algorithm is the critical design choice</li>
+            <li>Parent nodes store MBRs that bound all their children's MBRs</li>
+            <li>Root's MBR bounds everything in the tree</li>
+            <li>Key: <strong>MBRs can overlap</strong> — unlike QuadTree/KD-Tree where regions are disjoint</li>
+          </ul>
+        </div>
+        <div class="diag rt">
+          <div class="diag-hdr"><span class="diag-title">R-Tree Construction — Restaurant Indexing</span></div>
+          <pre>Insert restaurants A, B, C, D, E, F (node capacity = 4):
+
+Step 1: Insert A, B, C, D → Leaf L1 (capacity 4, full)
+Step 2: Insert E → L1 overflows → must split
+
+Split decision: group by proximity to minimize overlap
+L1' = {A, B, C}  (western cluster)
+L2  = {D, E}     (eastern cluster)
+
+Step 3: Parent P created with two child MBRs:
+P.mbr_L1' = bounding box of {A, B, C} — tight rectangle
+P.mbr_L2  = bounding box of {D, E} — tight rectangle
+
+Step 4: Insert F → goes to L2 (closer to D, E)
+L2 = {D, E, F} — still under capacity
+
+Final structure:
+           P[entire region MBR]
+          /                   \
+   L1'[MBR of A,B,C]     L2[MBR of D,E,F]
+   Leaf: A, B, C          Leaf: D, E, F
+
+Query "Find all restaurants in search area Q":
+  Root P: Does Q intersect P's MBR? Yes → descend both children
+  L1': Does Q intersect L1's MBR? Yes → check each object
+  L2: Does Q intersect L2's MBR? Partially → check each object
+  Return objects whose MBR intersects Q</pre>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — The Overlap Penalty Is Fundamental</div>
+          <p>"MBR overlap is R-Tree's core tension. Overlap is necessary because you can't perfectly partition arbitrary shapes without it — a building that straddles a grid line belongs to both cells. But overlap means queries must descend multiple branches even when the answer is only in one. <strong>Good split algorithms minimize overlap; bad ones create 'dead space' where every query visits most of the tree.</strong> This is why R*-Tree (forced reinserts during overflow) consistently outperforms original R-Tree — it actively works to reduce overlap by reconsidering placements."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- C: STRENGTHS -->
+    <div class="af-card rt-card" id="rt-strengths-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">C</span>
+        <span class="af-title">Strengths, Variants & Ideal Use Cases</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-strengths">
+        <div class="sl-grid">
+          <div class="sl-card str">
+            <div class="sl-label">Where R-Tree Shines</div>
+            <ul>
+              <li><strong>Complex geometries</strong> — polygons, lines, rectangles (not just points)</li>
+              <li>Spatial joins ("find all buildings intersecting roads")</li>
+              <li>Range queries over shapes with varying sizes</li>
+              <li>Read-heavy with moderate writes</li>
+              <li>Database-integrated spatial queries (PostGIS, Oracle Spatial)</li>
+              <li>Data distribution varies (R-Tree adapts naturally)</li>
+            </ul>
+          </div>
+          <div class="sl-card str">
+            <div class="sl-label">Real-World Production Uses</div>
+            <ul>
+              <li><strong>PostGIS / PostgreSQL</strong> — GiST index (generalization of R-Tree)</li>
+              <li><strong>Oracle Spatial</strong> — enterprise GIS</li>
+              <li><strong>SQLite R*Tree module</strong> — embedded spatial queries</li>
+              <li><strong>ESRI ArcGIS</strong> — desktop GIS applications</li>
+              <li><strong>Any GIS application</strong> with complex shape queries</li>
+            </ul>
+          </div>
+        </div>
+        <h3 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:16px 0 10px">R-Tree Variants Comparison</h3>
+        <table class="var-table">
+          <thead><tr><th>Variant</th><th>Key Difference</th><th>Best For</th></tr></thead>
+          <tbody>
+            <tr><td>R-Tree (original)</td><td>Simple quadratic/linear split algorithm</td><td>Baseline — easy to implement, understood behavior</td></tr>
+            <tr><td>R*-Tree</td><td>Forced reinserts during overflow — tries to find better placement</td><td>Industry standard — consistently better query performance</td></tr>
+            <tr><td>R+-Tree</td><td>No MBR overlap allowed; objects stored multiple times if needed</td><td>Simpler query logic, but higher storage overhead</td></tr>
+            <tr><td>Hilbert R-Tree</td><td>Orders entries by Hilbert curve value for better spatial clustering</td><td>Bulk loading massive static datasets</td></tr>
+          </tbody>
+        </table>
+      </div></div>
+    </div>
+
+    <!-- D: LIMITS -->
+    <div class="af-card rt-card" id="rt-limits-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">D</span>
+        <span class="af-title">Limitations & Failure Modes</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-limits">
+        <div class="diag fail">
+          <div class="diag-hdr"><span class="diag-title">R-Tree's Three Failure Modes</span></div>
+          <pre>FAILURE 1: High Update Volume → Tree Thrashing
+
+  Every update is: remove + reinsert (3+ steps each)
+  Each step may cascade: leaf overflow → split → parent MBR update → root update
+  100K updates/second → hundreds of thousands of lock acquisitions/second
+  
+  Real Uber scenario: 50K drivers × 1 update every 3 seconds = 16K updates/sec
+  For each update, R-Tree must:
+    1. Find driver's leaf node
+    2. Remove old entry
+    3. Shrink MBR if driver was at MBR edge (recalculate parent chain)
+    4. Insert new entry (potentially to a different leaf)
+    5. Expand MBR of new leaf
+    6. Split leaf if overflow → update parent MBRs
+    7. Propagate MBR changes up to root
+  → Tree is in constant churn. This is why Uber uses GeoHash, not R-Tree.
+
+FAILURE 2: Overlap Explosion (Bad Split Quality)
+
+  Scenario: Data inserted in non-clustered order
+  Effect: Split algorithm creates highly overlapping MBRs
+  Symptoms: Query visits 80% of tree nodes even for small searches
+  Detection: High "nodes visited / results returned" ratio
+  Fix: R*-Tree (forced reinserts) or periodic rebuild with better ordering
+
+FAILURE 3: Degenerate MBRs for Long Thin Shapes
+
+  Scenario: Indexing roads (very long, narrow polylines)
+  Effect: MBR is much larger than the shape itself (huge empty space inside)
+  Impact: Queries match MBR but not actual shape → many false positives
+  Solution: Segment long shapes into shorter pieces before indexing</pre>
+        </div>
+        <div class="callout warn">
+          <div class="callout-title">The Delivery Tracking Gotcha — The Update Chain</div>
+          <p>"You build an R-Tree for delivery tracking. At peak hours, you have 50K drivers updating location every 3 seconds — 16K updates/second. Each update triggers a chain: find → remove → MBR recalculate → insert → MBR expand → possible split → parent propagation. Your tree is thrashing constantly, lock contention is brutal, and P99 latency spikes to seconds. Switch to GeoHash: one O(1) key change in a hash map. No cascade, no locks, no problem."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- E: OPS -->
+    <div class="af-card rt-card" id="rt-ops-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">E</span>
+        <span class="af-title">Operational Considerations</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-ops">
+        <div class="callout rt">
+          <div class="callout-title">Monitoring Metrics That Matter</div>
+          <ul>
+            <li><strong>MBR overlap percentage:</strong> High overlap = degraded query performance. Measure as fraction of leaf MBR area that is covered by more than one sibling MBR.</li>
+            <li><strong>Fan-out ratio:</strong> Average children per internal node. Should be close to M (node capacity). Low fan-out = unnecessarily deep tree.</li>
+            <li><strong>Query paths</strong> (nodes visited per query): The key health metric. Rising trend = overlap degradation, trigger rebuild.</li>
+            <li><strong>Rebuild frequency:</strong> If rebuilding more than weekly on a "static" dataset, your write pattern is too dynamic for R-Tree.</li>
+          </ul>
+        </div>
+        <div class="callout rt">
+          <div class="callout-title">Tuning Parameters</div>
+          <ul>
+            <li><strong>Node capacity (M):</strong> Higher = shallower tree with more scan per node. Lower = deeper tree with less fan-out overhead. Typical: 50–200 entries per node.</li>
+            <li><strong>Fill factor:</strong> How full nodes are before splitting. 70–90% typical. Too low = wasted space. Too high = frequent splits.</li>
+            <li><strong>Split algorithm:</strong> R*-Tree's forced reinsert almost always wins over linear and quadratic split algorithms.</li>
+          </ul>
+        </div>
+        <div class="callout good">
+          <div class="callout-title">Bulk Loading — Much Better Than Incremental</div>
+          <ul>
+            <li>Sort all objects by Hilbert curve value first — ensures spatial locality</li>
+            <li>Pack nodes optimally (no wasted fill factor)</li>
+            <li>Result: much less MBR overlap than incremental insertion</li>
+            <li>PostGIS uses CLUSTER command + VACUUM ANALYZE to rebuild optimally</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- F: L7 -->
+    <div class="af-card rt-card" id="rt-l7-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">F</span>
+        <span class="af-title">L6/L7 Nuances</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner" id="rt-l7">
+        <div class="callout rt">
+          <div class="callout-title">The Deep Question</div>
+          <p style="font-style:italic;color:var(--text)">"Why does PostGIS use an R-Tree variant but Uber doesn't?"</p>
+          <p style="margin-top:8px"><strong>Strong answer:</strong> "The workloads are fundamentally different. PostGIS indexes relatively static geographic data — city boundaries, roads, buildings. A road doesn't move. The query pattern is complex spatial operations (intersects, contains, within) where R-Tree excels with its shape-aware MBRs. Uber's driver locations change every 4 seconds for millions of drivers. R-Tree's update cost involves a 7-step cascade with potential rebalancing. <strong>Uber uses grid-based indexing (GeoHash or similar) where updates are O(1) — just change the cell ID in a hash map.</strong> They sacrifice complex spatial queries for update throughput."</p>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — Overlap Is a Feature, Not a Bug</div>
+          <p>"R-Tree's MBR overlap problem is actually a feature in disguise. Overlap means <strong>the index adapts to non-uniform data without forced partitioning</strong>. QuadTree and KD-Tree force disjoint partitions — a point at the exact boundary of two cells belongs to exactly one. R-Tree allows a road that crosses a grid boundary to live naturally in a parent MBR. The cost is query complexity (must check multiple branches). But it also means the index models reality more faithfully — real geography doesn't fit neatly into grid cells."</p>
+        </div>
+        <div class="callout rt">
+          <div class="callout-title">The Interview Signal: Don't Recommend R-Tree Without Asking</div>
+          <p>If someone says "use R-Tree" without asking about update patterns, they haven't thought deeply enough. The correct behavior: "R-Tree is my first instinct for complex spatial queries, but before I commit: what are the update patterns? If data is mostly static (roads, buildings), R-Tree is excellent. If objects are moving (vehicles, users), I'd use GeoHash cells for updates and optionally maintain a separate R-Tree rebuilt on a schedule for complex queries."</p>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="soundbite rt-sb">
+      <div class="soundbite-label">🔑 R-Tree Sound Bite</div>
+      <p>"R-Tree is the right tool when you have complex shapes (not just points), a read-heavy workload, and need spatial join queries like 'which buildings intersect this road?' — it's the foundation of every production GIS database. But it's completely wrong for tracking moving objects: each update triggers a 7-step cascade with potential rebalancing. PostGIS loves R-Tree; Uber avoids it."</p>
+    </div>
+
+  </div><!-- /index-content -->
+</div><!-- /rt-s -->
+
+
+<!-- 3-WAY COMPARISON -->
+<div class="sec-hdr" id="comparison"><h2>Three-Way Comparison: QuadTree vs KD-Tree vs R-Tree</h2></div>
+
+<table class="comp-table">
+  <thead>
+    <tr>
+      <th>Dimension</th>
+      <th>QuadTree</th>
+      <th>KD-Tree</th>
+      <th>R-Tree / R*-Tree</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Core idea</td>
+      <td>Uniform 4-way space split</td>
+      <td>Alternating binary dimension splits</td>
+      <td>Group objects by MBR proximity</td>
+    </tr>
+    <tr>
+      <td>Best query type</td>
+      <td>Rectangle region queries</td>
+      <td>K-nearest-neighbor (KNN)</td>
+      <td>Shape intersection, spatial joins</td>
+    </tr>
+    <tr>
+      <td>Handles shapes?</td>
+      <td>Points only (natural)</td>
+      <td>Points only (natural)</td>
+      <td>Any shape — polygons, lines, regions</td>
+    </tr>
+    <tr>
+      <td>Dimensions</td>
+      <td>2D only</td>
+      <td>Any k (degrades &gt;20D)</td>
+      <td>2D/3D typical (any in theory)</td>
+    </tr>
+    <tr>
+      <td>Update performance</td>
+      <td>Moderate — can cause imbalance</td>
+      <td>Moderate — no rebalancing, degrades over time</td>
+      <td>Poor — 7-step cascade per update</td>
+    </tr>
+    <tr>
+      <td>Read performance</td>
+      <td>Good for uniform data</td>
+      <td>Excellent for KNN, static data</td>
+      <td>Excellent for shapes, degrades with overlap</td>
+    </tr>
+    <tr>
+      <td>Hotspot tolerance</td>
+      <td>Poor — extreme tree depth in dense areas</td>
+      <td>Moderate — median splits help</td>
+      <td>Good — MBRs adapt to density</td>
+    </tr>
+    <tr>
+      <td>Production use</td>
+      <td>Games, GIS (static)</td>
+      <td>LiDAR, ML embeddings, scipy</td>
+      <td>PostGIS, Oracle Spatial, SQLite</td>
+    </tr>
+    <tr>
+      <td>Moving objects?</td>
+      <td>No — use GeoHash grid</td>
+      <td>No — use GeoHash grid</td>
+      <td>No — use GeoHash grid</td>
+    </tr>
+    <tr>
+      <td>Distributed sharding</td>
+      <td>Awkward — recursive structure</td>
+      <td>Awkward — recursive structure</td>
+      <td>Awkward — tree structure</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout geo">
+  <div class="callout-title">The Universal Pattern: All Three Break for Moving Objects at Scale</div>
+  <p>The last two rows reveal a crucial pattern: none of the tree-based indexes handle moving objects well, and none shard cleanly for distributed systems. This is why <strong>GeoHash, S2, and H3 (covered in Part 3) exist</strong> — they sacrifice tree-based query sophistication for O(1) updates and clean horizontal sharding. The interview signal: knowing when to reach for a tree-based index vs a grid-based system is the L6/L7 differentiator.</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Part 2 Key Lesson</div>
+  <p>KD-Tree and R-Tree solve fundamentally different problems. <strong>KD-Tree is a nearest-neighbor machine</strong> — its alternating splits create tight bounding regions that prune entire branches during NN search. It generalizes to any dimensionality but fails above ~20D and doesn't self-balance. <strong>R-Tree is a shape indexer</strong> — its adaptive MBRs handle complex geometries naturally and power every production GIS database. But it fails catastrophically for high-update workloads.</p>
+  <p>The L7 pattern across both: <strong>the right index depends entirely on the workload, not the data structure aesthetics</strong>. KNN queries → KD-Tree. Complex shape intersection → R-Tree. Moving objects → neither; use a grid system. Distributed horizontal sharding → neither; use S2 or H3. The ability to name the workload condition that breaks each tree-based index — and pivot to the right alternative — is what separates L5 from L7 answers.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleAF(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
