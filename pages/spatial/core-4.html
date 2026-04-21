@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spatial Data Internals · H3 & Space-Filling Curves</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --h3: #f0883e;
+    --h3-soft: rgba(240,136,62,0.12);
+    --h3-border: rgba(240,136,62,0.28);
+    --zorder: #79c0ff;
+    --zorder-soft: rgba(121,192,255,0.1);
+    --hilbert: #56d364;
+    --hilbert-soft: rgba(86,211,100,0.1);
+    --warn: #FFD700;
+    --danger: #FF6B6B;
+    --code-bg: #010409;
+    --sidebar-w: 290px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 300;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.55s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  /* PROGRESS */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--h3), var(--hilbert), var(--zorder));
+    z-index: 9999; transition: width 0.1s linear;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed; top: 0; left: 0; width: var(--sidebar-w);
+    height: 100vh; background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 22px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    position: relative; overflow: hidden;
+  }
+
+  .sidebar-header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--h3), var(--hilbert), var(--zorder), transparent);
+  }
+
+  .sb-eyebrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+
+  .sb-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+  }
+
+  .sb-badge.h3      { color: var(--h3);      background: var(--h3-soft);      border: 1px solid var(--h3-border); }
+  .sb-badge.hilbert { color: var(--hilbert);  background: var(--hilbert-soft); border: 1px solid rgba(86,211,100,0.25); }
+  .sb-badge.zorder  { color: var(--zorder);   background: var(--zorder-soft);  border: 1px solid rgba(121,192,255,0.25); }
+
+  .sb-title { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .sb-sub   { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-muted); }
+
+  #sidebar-search {
+    margin: 11px 14px;
+    padding: 7px 12px;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; width: calc(100% - 28px); outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #sidebar-search:focus { border-color: var(--accent); }
+  #sidebar-search::placeholder { color: var(--text-muted); }
+
+  nav ul { list-style: none; padding: 6px 0 20px; }
+
+  nav li a {
+    display: block; padding: 6px 20px;
+    color: var(--text-muted); text-decoration: none;
+    font-size: 12.5px; font-family: 'Source Serif 4', serif;
+    transition: all 0.15s; border-left: 2px solid transparent; line-height: 1.4;
+  }
+
+  nav li a:hover { color: var(--text); background: rgba(88,166,255,0.04); border-left-color: var(--accent); }
+  nav li a.active           { color: var(--accent);  border-left-color: var(--accent);  background: rgba(88,166,255,0.06); }
+  nav li a.active.h3-link   { color: var(--h3);      border-left-color: var(--h3);      background: rgba(240,136,62,0.06); }
+  nav li a.active.zhl-link  { color: var(--hilbert); border-left-color: var(--hilbert); background: rgba(86,211,100,0.06); }
+
+  nav li.nav-sub  a { padding-left: 34px; font-size: 11.5px; }
+  nav li.nav-sub2 a { padding-left: 48px; font-size: 11px; color: rgba(139,148,158,0.6); }
+
+  .nav-sec-label {
+    display: block; padding: 13px 20px 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.75;
+  }
+
+  .nav-sec-label.h3      { color: var(--h3); }
+  .nav-sec-label.curves  { color: var(--hilbert); }
+
+  /* HAMBURGER */
+  #hamburger {
+    display: none; position: fixed; top: 12px; left: 12px; z-index: 200;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px;
+    cursor: pointer; color: var(--text); font-size: 16px;
+    align-items: center; justify-content: center;
+  }
+
+  /* MAIN */
+  main { margin-left: var(--sidebar-w); max-width: 920px; padding: 56px 64px 140px; }
+
+  /* HERO */
+  .hero {
+    margin-bottom: 60px; padding: 44px 0 40px;
+    border-bottom: 1px solid var(--border);
+    position: relative; overflow: hidden;
+  }
+
+  .hero::before {
+    content: '⬡';
+    position: absolute; top: -20px; right: -30px;
+    font-size: 230px; line-height: 1;
+    color: rgba(240,136,62,0.04);
+    pointer-events: none; user-select: none;
+  }
+
+  .hero-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+
+  .h-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 3px;
+  }
+
+  .h-badge.h3      { color: var(--h3);      background: var(--h3-soft);      border: 1px solid var(--h3-border); }
+  .h-badge.hilbert { color: var(--hilbert);  background: var(--hilbert-soft); border: 1px solid rgba(86,211,100,0.3); }
+  .h-badge.zorder  { color: var(--zorder);   background: var(--zorder-soft);  border: 1px solid rgba(121,192,255,0.3); }
+  .h-badge.num     { color: var(--text-muted); }
+
+  .hero h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 46px; font-weight: 900; line-height: 1.1; color: var(--text); margin-bottom: 10px;
+  }
+
+  .hero h1 .h3t    { color: var(--h3); }
+  .hero h1 .curvet { color: var(--hilbert); }
+
+  .hero-sub { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 400; font-style: italic; color: var(--text-muted); margin-bottom: 18px; }
+
+  .hero p { font-size: 15px; color: var(--text-muted); max-width: 560px; line-height: 1.7; }
+
+  .hero-toc { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+
+  .toc-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 4px 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 100px; color: var(--text-muted); text-decoration: none; transition: all 0.15s;
+  }
+
+  .toc-pill.h3:hover      { border-color: var(--h3);      color: var(--h3); }
+  .toc-pill.hilbert:hover { border-color: var(--hilbert);  color: var(--hilbert); }
+
+  /* SECTION DIVIDERS */
+  .section-divider {
+    margin: 72px 0 38px; padding-top: 28px;
+    border-top: 1px solid var(--border); position: relative;
+  }
+
+  .section-divider::before {
+    content: ''; position: absolute; top: -1px; left: 0; width: 80px; height: 2px;
+  }
+
+  .section-divider.h3::before      { background: var(--h3); }
+  .section-divider.curves::before  { background: var(--hilbert); }
+
+  .sec-num { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 6px; }
+  .sec-num.h3      { color: var(--h3); }
+  .sec-num.curves  { color: var(--hilbert); }
+
+  .section-divider h2 { font-family: 'Playfair Display', serif; font-size: 34px; font-weight: 900; line-height: 1.15; margin-bottom: 6px; }
+  .section-divider .sec-desc { font-size: 14px; font-style: italic; color: var(--text-muted); }
+
+  /* VARIANT CARD */
+  .variant-card {
+    display: flex; align-items: flex-start; gap: 18px;
+    padding: 22px; margin-bottom: 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; border-left: 4px solid var(--h3);
+    transition: box-shadow 0.2s;
+  }
+
+  .variant-card.curves { border-left-color: var(--hilbert); }
+  .variant-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+  .v-letter { font-family: 'Playfair Display', serif; font-size: 40px; font-weight: 900; line-height: 1; flex-shrink: 0; opacity: 0.8; }
+  .variant-card .v-letter        { color: var(--h3); }
+  .variant-card.curves .v-letter { color: var(--hilbert); }
+
+  .v-body h4 { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+  .v-body .one-liner { font-size: 13.5px; color: var(--text-muted); font-style: italic; margin: 0; line-height: 1.6; }
+
+  /* CONTENT */
+  .content-block { margin-bottom: 52px; }
+
+  h4.sub-title { font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 700; margin: 28px 0 12px; }
+  h5.mini-title { font-family: 'Source Serif 4', serif; font-size: 12.5px; font-weight: 600; margin: 22px 0 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  h5.mini-title.h3      { color: var(--h3); }
+  h5.mini-title.hilbert { color: var(--hilbert); }
+  h5.mini-title.zorder  { color: var(--zorder); }
+  h5.mini-title.accent  { color: var(--accent); }
+  h5.mini-title.danger  { color: var(--danger); }
+
+  p { margin-bottom: 14px; }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0; padding: 15px 20px; margin: 16px 0;
+  }
+
+  .callout.h3      { border-left-color: var(--h3); }
+  .callout.hilbert { border-left-color: var(--hilbert); }
+  .callout.zorder  { border-left-color: var(--zorder); }
+  .callout.warn    { border-left-color: var(--warn); }
+  .callout.red     { border-left-color: var(--danger); }
+
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+  }
+
+  /* TABLES */
+  .table-wrap { overflow-x: auto; margin: 18px 0; border-radius: 8px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: linear-gradient(90deg, #1c2128, #161b22); }
+
+  th {
+    padding: 11px 16px; text-align: left;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+
+  th.h3-head      { color: var(--h3); }
+  th.hilbert-head { color: var(--hilbert); }
+  th.zorder-head  { color: var(--zorder); }
+  th.acc-head     { color: var(--accent); }
+
+  td { padding: 10px 16px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top; line-height: 1.55; }
+  tbody tr:nth-child(even) { background: rgba(22,27,34,0.4); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(88,166,255,0.03); }
+  td:first-child { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--h3); }
+
+  .td-hilbert { color: var(--hilbert) !important; }
+  .td-zorder  { color: var(--zorder)  !important; }
+  .td-good    { color: #56d364 !important; }
+  .td-bad     { color: var(--danger)  !important; }
+  .td-muted   { color: var(--text-muted) !important; }
+
+  /* DIAGRAM BLOCKS */
+  .diagram-wrap {
+    position: relative; margin: 18px 0;
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+
+  .diagram-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; background: rgba(22,27,34,0.85);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diagram-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 3px;
+  }
+
+  .diagram-label.h3      { color: var(--h3);      background: var(--h3-soft); }
+  .diagram-label.hilbert { color: var(--hilbert);  background: var(--hilbert-soft); }
+  .diagram-label.zorder  { color: var(--zorder);   background: var(--zorder-soft); }
+  .diagram-label.both    { color: var(--warn);      background: rgba(255,215,0,0.08); }
+  .diagram-label.def     { color: var(--accent);    background: rgba(88,166,255,0.1); }
+
+  .copy-btn {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 3px 10px; background: transparent;
+    border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--hilbert); color: var(--hilbert); }
+
+  pre {
+    padding: 18px 20px; overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; line-height: 1.7; color: #c9d1d9; white-space: pre;
+  }
+
+  /* STEP LIST */
+  .step-list { margin: 14px 0; }
+
+  .step-item {
+    display: flex; gap: 14px; padding: 12px 0;
+    border-bottom: 1px solid rgba(48,54,61,0.35);
+  }
+
+  .step-item:last-child { border-bottom: none; }
+
+  .step-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    border-radius: 50%; width: 26px; height: 26px; min-width: 26px;
+    display: flex; align-items: center; justify-content: center; margin-top: 2px;
+  }
+
+  .step-num.h3      { color: var(--h3);      background: var(--h3-soft); }
+  .step-num.hilbert { color: var(--hilbert);  background: var(--hilbert-soft); }
+  .step-num.zorder  { color: var(--zorder);   background: var(--zorder-soft); }
+  .step-num.def     { color: var(--accent);   background: rgba(88,166,255,0.1); }
+
+  .step-content { flex: 1; }
+  .step-content strong { display: block; font-size: 14px; color: var(--text); margin-bottom: 3px; font-family: 'Source Serif 4', serif; font-weight: 600; }
+  .step-content span { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+  .step-content code { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--accent); background: rgba(88,166,255,0.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* RESOLUTION TABLE — special first-col */
+  .res-table td:first-child { color: var(--accent); text-align: center; }
+  .res-table td:nth-child(2) { color: var(--h3); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+
+  /* CONCEPT GRID */
+  .concept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap: 14px; margin: 18px 0; }
+
+  .concept-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .concept-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+  .concept-card.h3:hover      { border-color: var(--h3); }
+  .concept-card.hilbert:hover { border-color: var(--hilbert); }
+  .concept-card.zorder:hover  { border-color: var(--zorder); }
+
+  .cc-num { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; line-height: 1; margin-bottom: 10px; }
+  .cc-num.h3      { color: rgba(240,136,62,0.2); }
+  .cc-num.hilbert { color: rgba(86,211,100,0.2); }
+  .cc-num.zorder  { color: rgba(121,192,255,0.2); }
+
+  .concept-card h5 { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 7px; }
+  .concept-card p  { font-size: 12.5px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+
+  /* SMELL GRID */
+  .smell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+
+  .smell-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .smell-card.good-h3 { border-top: 2px solid var(--h3); }
+  .smell-card.good-hl { border-top: 2px solid var(--hilbert); }
+  .smell-card.bad     { border-top: 2px solid var(--danger); }
+
+  .smell-card h5 { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .smell-card.good-h3 h5 { color: var(--h3); }
+  .smell-card.good-hl h5 { color: var(--hilbert); }
+  .smell-card.bad h5     { color: var(--danger); }
+
+  .smell-card ul { list-style: none; padding: 0; }
+  .smell-card ul li { font-size: 12.5px; padding: 4px 0 4px 22px; color: var(--text-muted); position: relative; }
+  .smell-card.good-h3 ul li::before,
+  .smell-card.good-hl ul li::before { content: '✅'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+  .smell-card.bad ul li::before     { content: '❌'; position: absolute; left: 0; font-size: 11px; top: 5px; }
+
+  /* GOTCHA */
+  .gotcha {
+    background: linear-gradient(135deg, rgba(255,107,107,0.07), rgba(245,166,35,0.03));
+    border: 1px solid rgba(255,107,107,0.25); border-radius: 10px;
+    padding: 18px 22px; margin: 20px 0; position: relative;
+  }
+
+  .gotcha::before { content: '⚠️'; position: absolute; top: -12px; left: 18px; font-size: 18px; }
+
+  .gotcha-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--danger); margin-bottom: 8px; }
+  .gotcha p { font-size: 13.5px; color: var(--text-muted); margin: 0; line-height: 1.75; }
+  .gotcha p strong { color: var(--text); }
+
+  /* INSIGHT */
+  .insight {
+    background: linear-gradient(135deg, rgba(86,211,100,0.06), rgba(88,166,255,0.03));
+    border: 1px solid rgba(86,211,100,0.2); border-radius: 10px;
+    padding: 18px 22px; margin: 20px 0; position: relative;
+  }
+
+  .insight::before { content: '💡'; position: absolute; top: -12px; left: 18px; font-size: 18px; }
+
+  .insight-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--hilbert); margin-bottom: 8px; }
+  .insight p { font-size: 13.5px; color: var(--text-muted); margin: 0; line-height: 1.75; }
+  .insight p strong { color: var(--text); }
+
+  /* QA BLOCK */
+  .qa-block { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 20px 0; }
+
+  .qa-question {
+    padding: 14px 20px; background: var(--surface2); border-bottom: 1px solid var(--border);
+    font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; color: var(--text);
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+
+  .q-icon {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+    color: var(--warn); background: rgba(255,215,0,0.1);
+    padding: 3px 7px; border-radius: 4px; flex-shrink: 0; margin-top: 2px;
+  }
+
+  .qa-answer { padding: 16px 20px; }
+  .qa-answer p { font-size: 13.5px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.75; }
+  .qa-answer p:last-child { margin-bottom: 0; }
+  .qa-answer strong { color: var(--text); }
+
+  /* SOUNDBITE */
+  .soundbite {
+    background: linear-gradient(135deg, rgba(240,136,62,0.07), rgba(86,211,100,0.04));
+    border: 1px solid rgba(240,136,62,0.22); border-radius: 10px;
+    padding: 20px 26px; margin: 24px 0; position: relative;
+  }
+
+  .soundbite::before { content: '🔑'; position: absolute; top: -12px; left: 20px; font-size: 20px; }
+  .soundbite p { font-style: italic; color: var(--text); font-size: 14.5px; line-height: 1.8; margin: 0; }
+
+  /* HEX VS SQUARE VISUAL */
+  .grid-compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0;
+  }
+
+  .grid-col {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+
+  .grid-col .gc-header {
+    padding: 10px 16px; background: var(--surface2); border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+
+  .grid-col.sq  .gc-header { color: var(--danger); }
+  .grid-col.hex .gc-header { color: var(--h3); }
+
+  .grid-col .gc-body { padding: 14px 16px; }
+  .grid-col .gc-body p { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.65; }
+  .grid-col .gc-body p:last-child { margin-bottom: 0; }
+  .grid-col .gc-body strong { color: var(--text); }
+
+  /* CURVE COMPARISON */
+  .curve-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 18px 0; }
+
+  .curve-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+
+  .curve-card .cv-header {
+    padding: 10px 16px; background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+
+  .curve-card.z  .cv-header { color: var(--zorder); }
+  .curve-card.hl .cv-header { color: var(--hilbert); }
+
+  .curve-card .cv-body { padding: 14px 16px; }
+  .curve-card .cv-body ul { list-style: none; padding: 0; }
+  .curve-card .cv-body ul li { font-size: 12.5px; padding: 4px 0 4px 18px; color: var(--text-muted); position: relative; }
+  .curve-card.z  .cv-body ul li::before { content: '▸'; position: absolute; left: 0; color: var(--zorder); }
+  .curve-card.hl .cv-body ul li::before { content: '▸'; position: absolute; left: 0; color: var(--hilbert); }
+
+  /* RW PILLS */
+  .rw-grid { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+
+  .rw-pill {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 5px 13px; border-radius: 100px;
+  }
+
+  .rw-pill.h3      { color: var(--h3);      background: var(--h3-soft);      border: 1px solid var(--h3-border); }
+  .rw-pill.hilbert { color: var(--hilbert);  background: var(--hilbert-soft); border: 1px solid rgba(86,211,100,0.2); }
+  .rw-pill.zorder  { color: var(--zorder);   background: var(--zorder-soft);  border: 1px solid rgba(121,192,255,0.2); }
+
+  /* METRIC BANNER */
+  .metric-banner {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0;
+  }
+
+  .metric-tile {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; text-align: center;
+  }
+
+  .metric-tile .mt-val {
+    font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700;
+    display: block; margin-bottom: 4px;
+  }
+
+  .metric-tile.h3-tile .mt-val { color: var(--h3); }
+  .metric-tile.hl-tile .mt-val { color: var(--hilbert); }
+  .metric-tile.z-tile  .mt-val { color: var(--zorder); }
+
+  .metric-tile .mt-label { font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+  mark    { background: rgba(240,136,62,0.12); color: var(--h3);      padding: 1px 3px; border-radius: 3px; }
+  mark.h  { background: rgba(86,211,100,0.12); color: var(--hilbert); padding: 1px 3px; border-radius: 3px; }
+  mark.z  { background: rgba(121,192,255,0.1); color: var(--zorder);  padding: 1px 3px; border-radius: 3px; }
+  mark.w  { background: rgba(255,215,0,0.1);   color: var(--warn);    padding: 1px 3px; border-radius: 3px; }
+
+  /* BACK TO TOP */
+  #back-to-top {
+    position: fixed; bottom: 32px; right: 32px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text-muted);
+    font-size: 18px; transition: all 0.2s;
+    opacity: 0; pointer-events: none; z-index: 50;
+  }
+
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--h3); color: var(--h3); transform: translateY(-2px); }
+
+  /* OVERLAY */
+  #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+  #sidebar-overlay.visible { display: block; }
+
+  /* RESPONSIVE */
+  @media (max-width: 960px) {
+    #sidebar { transform: translateX(-100%); }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    main { margin-left: 0; padding: 56px 22px 100px; }
+    .hero h1 { font-size: 30px; }
+    .smell-grid, .grid-compare, .curve-split { grid-template-columns: 1fr; }
+    .metric-banner { grid-template-columns: 1fr; }
+    .concept-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<div id="sidebar-overlay"></div>
+<button id="hamburger" aria-label="Open navigation">☰</button>
+
+<aside id="sidebar" aria-label="Navigation">
+  <div class="sidebar-header">
+    <div class="sb-eyebrow">
+      <span class="sb-badge h3">H3</span>
+      <span class="sb-badge hilbert">Hilbert</span>
+      <span class="sb-badge zorder">Z-order</span>
+    </div>
+    <div class="sb-title">Spatial Data Internals</div>
+    <div class="sb-sub">Sections 2.6 – 2.7 · L6/L7 Guide</div>
+  </div>
+  <input id="sidebar-search" type="search" placeholder="Search sections…" aria-label="Search">
+  <nav>
+    <ul id="nav-list">
+      <li><span class="nav-sec-label h3">2.6 — H3 Hexagonal System</span></li>
+      <li><a href="#h3" class="h3-link">H3 Overview</a></li>
+      <li class="nav-sub"><a href="#h3-what">A) What It Is</a></li>
+      <li class="nav-sub"><a href="#h3-mechanics">B) How It Works</a></li>
+      <li class="nav-sub2"><a href="#h3-steps">Encoding Steps</a></li>
+      <li class="nav-sub2"><a href="#h3-resolution">Resolution Levels</a></li>
+      <li class="nav-sub2"><a href="#h3-why-hex">Why Hexagons</a></li>
+      <li class="nav-sub2"><a href="#h3-pentagon">Pentagon Problem</a></li>
+      <li class="nav-sub"><a href="#h3-strengths">C) Strengths & Use Cases</a></li>
+      <li class="nav-sub"><a href="#h3-limits">D) Limitations & Failure Modes</a></li>
+      <li class="nav-sub"><a href="#h3-ops">E) Operational Considerations</a></li>
+      <li class="nav-sub"><a href="#h3-nuances">F) L6/L7 Nuances</a></li>
+
+      <li><span class="nav-sec-label curves">2.7 — Space-Filling Curves</span></li>
+      <li><a href="#curves" class="zhl-link">Z-order vs Hilbert</a></li>
+      <li class="nav-sub"><a href="#curves-what">A) What They Are</a></li>
+      <li class="nav-sub"><a href="#curves-mechanics">B) How They Work</a></li>
+      <li class="nav-sub2"><a href="#zorder-encoding">Z-order Encoding</a></li>
+      <li class="nav-sub2"><a href="#hilbert-numbering">Hilbert Numbering</a></li>
+      <li class="nav-sub"><a href="#curves-range">C) Why Hilbert Wins for DBs</a></li>
+      <li class="nav-sub"><a href="#curves-table">D) Comparison Table</a></li>
+      <li class="nav-sub"><a href="#curves-nuances">E) L6/L7 Insight</a></li>
+    </ul>
+  </nav>
+</aside>
+
+<main>
+
+  <!-- HERO -->
+  <div class="hero" id="top">
+    <div class="hero-eyebrow">
+      <span class="h-badge h3">H3 Hexagonal</span>
+      <span class="h-badge hilbert">Hilbert Curve</span>
+      <span class="h-badge zorder">Z-order / Morton</span>
+      <span class="h-badge num">Sections 2.6 – 2.7</span>
+    </div>
+    <h1>Hexagons &amp;<br><span class="curvet">Space-Filling</span> <span class="h3t">Curves</span></h1>
+    <div class="hero-sub">H3 · Z-order · Hilbert · L6/L7 Mastery</div>
+    <p>Uber's hexagonal cell system and the mathematical foundations behind spatial indexing — covering why hexagons beat squares, the Hilbert vs Z-order trade-off, and how these choices translate to 30% fewer disk seeks at scale.</p>
+    <div class="hero-toc">
+      <a class="toc-pill h3"      href="#h3">2.6 H3 Hexagons</a>
+      <a class="toc-pill h3"      href="#h3-why-hex">Why Hexagons</a>
+      <a class="toc-pill h3"      href="#h3-limits">Failure Modes</a>
+      <a class="toc-pill hilbert" href="#curves">2.7 Space-Filling Curves</a>
+      <a class="toc-pill hilbert" href="#curves-range">Hilbert vs Z-order</a>
+      <a class="toc-pill hilbert" href="#curves-nuances">L6/L7 Deep Dive</a>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.6 ═══════════════════════════════════ -->
+  <div class="section-divider h3" id="h3">
+    <div class="sec-num h3">2.6</div>
+    <h2>H3 — Uber's Hexagonal System</h2>
+    <div class="sec-desc">Hierarchical hexagons with exactly 6 equidistant neighbors for uniform spatial analysis</div>
+  </div>
+
+  <!-- A) What It Is -->
+  <div class="content-block" id="h3-what">
+    <div class="variant-card">
+      <div class="v-letter">A</div>
+      <div class="v-body">
+        <h4>What It Is — The Mental Model</h4>
+        <p class="one-liner">H3 divides Earth into hierarchical hexagonal cells, where each hexagon has exactly 6 equidistant neighbors, making it ideal for uniform proximity analysis and spatial aggregation.</p>
+      </div>
+    </div>
+
+    <div class="callout h3">
+      <div class="callout-label">The Core Insight</div>
+      <p>Hexagons are the <mark>only regular polygon that tiles a plane where every neighbor is equidistant</mark>. Squares have corner neighbors that are √2 farther than edge neighbors. Hexagons don't have this problem.</p>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-label">The Inventor's Problem</div>
+      <p>"We're Uber. We need to aggregate supply/demand by region, compute surge pricing by area, and match riders to drivers. <strong>Square grids have annoying corner effects.</strong> We need uniform spatial regions."</p>
+    </div>
+  </div>
+
+  <!-- B) How It Works -->
+  <div class="content-block" id="h3-mechanics">
+    <div class="variant-card">
+      <div class="v-letter">B</div>
+      <div class="v-body">
+        <h4>How It Works — Mechanics Deep-Dive</h4>
+        <p class="one-liner">Icosahedron projection → hexagonal tiling → hierarchical refinement (aperture 7) → 64-bit cell ID.</p>
+      </div>
+    </div>
+
+    <div id="h3-steps">
+      <h5 class="mini-title h3">Step-by-Step</h5>
+      <div class="step-list">
+        <div class="step-item">
+          <div class="step-num h3">1</div>
+          <div class="step-content"><strong>Icosahedron projection</strong><span>Project Earth onto a 20-faced shape (not a cube like S2)</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num h3">2</div>
+          <div class="step-content"><strong>Hexagonal tiling</strong><span>Subdivide each icosahedron face into hexagons</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num h3">3</div>
+          <div class="step-content"><strong>Hierarchical refinement</strong><span>Each hexagon contains ~7 children (aperture 7) at the next resolution level</span></div>
+        </div>
+        <div class="step-item">
+          <div class="step-num h3">4</div>
+          <div class="step-content"><strong>Cell ID assigned</strong><span>64-bit integer encoding: face + resolution + position within the icosahedron face</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="h3-resolution">
+      <h5 class="mini-title h3">H3 Resolution Levels</h5>
+      <div class="table-wrap">
+        <table class="res-table">
+          <thead>
+            <tr>
+              <th class="acc-head">Resolution</th>
+              <th class="h3-head">Avg Edge (m)</th>
+              <th class="acc-head">Typical Use</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>0</td><td>1,107,712</td><td>Continent</td></tr>
+            <tr><td>4</td><td>22,606</td><td>Large city</td></tr>
+            <tr><td>8</td><td>461</td><td>Neighborhood</td></tr>
+            <tr><td>9</td><td>174</td><td>Few blocks</td></tr>
+            <tr><td>10</td><td>66</td><td>Large building</td></tr>
+            <tr><td>12</td><td>10</td><td>Room</td></tr>
+            <tr><td>15</td><td>0.5</td><td>Sub-meter</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="h3-why-hex">
+      <h5 class="mini-title h3">Why Hexagons? The Geometry Argument</h5>
+      <div class="grid-compare">
+        <div class="grid-col sq">
+          <div class="gc-header">❌ Square Grid Problem</div>
+          <div class="gc-body">
+            <p><strong>Edge neighbors:</strong> distance = 1</p>
+            <p><strong>Corner neighbors:</strong> distance = √2 ≈ 1.41</p>
+            <p>Corner neighbors are <strong>41% farther</strong> — "nearby" isn't uniform. Algorithms that treat all 8 neighbors equally introduce systematic bias.</p>
+          </div>
+        </div>
+        <div class="grid-col hex">
+          <div class="gc-header">✅ Hexagonal Grid Solution</div>
+          <div class="gc-body">
+            <p><strong>All 6 neighbors:</strong> distance = 1 (exactly equal)</p>
+            <p>Every neighbor is equidistant. Proximity analysis, averaging, and gradient computations are all <strong>geometrically unbiased</strong>.</p>
+            <p>K-ring queries (all cells within k steps) produce <strong>truly uniform coverage</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label both">DIAGRAM — SQUARE vs HEX NEIGHBORS</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Square grid problem:          Hexagonal grid solution:
+┌───┬───┬───┐                    ╱ ╲___╱ ╲
+│ d │ 1 │ d │                   ╱ ╲     ╱ ╲
+├───┼───┼───┤  d = √2 ≈ 1.41    ╲   1   ╲   1
+│ 1 │ X │ 1 │                   ╱ ╲___╱ ╲___╱
+├───┼───┼───┤  Corner neighbors  ╲   1   ╲
+│ d │ 1 │ d │  are farther!      ╱ ╲___╱ ╲
+└───┴───┴───┘                   
+                               All 6 neighbors equidistant!</pre>
+      </div>
+    </div>
+
+    <div id="h3-pentagon">
+      <h5 class="mini-title" style="color:var(--danger);">The Pentagon Problem</h5>
+      <div class="callout red">
+        <div class="callout-label">Why Pentagons Exist</div>
+        <p>You can't tile a sphere purely with hexagons. H3 has <mark class="w">exactly 12 pentagons at each resolution</mark> (at the vertices of the underlying icosahedron). These pentagons have <strong>5 neighbors instead of 6</strong> and are deliberately placed in oceans to minimize their impact on real-world queries.</p>
+      </div>
+
+      <h5 class="mini-title h3">H3 Core Operations</h5>
+      <div class="concept-grid">
+        <div class="concept-card h3">
+          <div class="cc-num h3">▸</div>
+          <h5>Point to Cell</h5>
+          <p><code style="font-size:11px;color:var(--h3);">(lat, lng, resolution)</code> → H3 index. Deterministic. Different resolutions return different cells for the same point.</p>
+        </div>
+        <div class="concept-card h3">
+          <div class="cc-num h3">▸</div>
+          <h5>K-ring</h5>
+          <p>Get all cells within k steps (neighbors of neighbors). K=1 → 7 cells. K=2 → 19 cells. K=n → 3n²+3n+1 cells.</p>
+        </div>
+        <div class="concept-card h3">
+          <div class="cc-num h3">▸</div>
+          <h5>Polyfill</h5>
+          <p>Given a polygon boundary, return all H3 cells that intersect it. Essential for "find all drivers in this city zone" queries.</p>
+        </div>
+        <div class="concept-card h3">
+          <div class="cc-num h3">▸</div>
+          <h5>Parent / Children</h5>
+          <p>Navigate hierarchy — each cell has one parent at coarser resolution and ~7 children at finer resolution (aperture 7).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C) Strengths -->
+  <div class="content-block" id="h3-strengths">
+    <div class="variant-card">
+      <div class="v-letter">C</div>
+      <div class="v-body">
+        <h4>Strengths & Ideal Use Cases</h4>
+        <p class="one-liner">Aggregation, surge pricing, uniform neighbor analysis, and any use case where cell fairness matters.</p>
+      </div>
+    </div>
+
+    <div class="smell-grid">
+      <div class="smell-card good-h3">
+        <h5>✅ WHERE IT SHINES</h5>
+        <ul>
+          <li>Spatial aggregation (average values per region)</li>
+          <li>Surge pricing / demand analysis</li>
+          <li>Uniform neighbor queries (exactly 6, equidistant)</li>
+          <li>Visualization (hexagons look great on maps)</li>
+          <li>Smoothing / spatial interpolation</li>
+        </ul>
+      </div>
+      <div class="smell-card good-h3">
+        <h5>✅ THE SWEET SPOT</h5>
+        <ul>
+          <li>Analysis workloads (aggregate, average, compare)</li>
+          <li>Applications where cell "fairness" matters</li>
+          <li>Queries like "find average ETA in this region"</li>
+          <li>Visualization dashboards</li>
+        </ul>
+      </div>
+    </div>
+
+    <h5 class="mini-title h3">Real-World Users</h5>
+    <div class="rw-grid">
+      <span class="rw-pill h3">Uber (surge pricing, supply/demand)</span>
+      <span class="rw-pill h3">Lime, Bird (scooter distribution)</span>
+      <span class="rw-pill h3">Urban planning tools</span>
+      <span class="rw-pill h3">Data visualization platforms</span>
+    </div>
+  </div>
+
+  <!-- D) Limitations -->
+  <div class="content-block" id="h3-limits">
+    <div class="variant-card">
+      <div class="v-letter">D</div>
+      <div class="v-body">
+        <h4>Limitations & Failure Modes</h4>
+        <p class="one-liner">No natural total ordering means range queries don't work — you must enumerate cells manually.</p>
+      </div>
+    </div>
+
+    <div class="concept-grid">
+      <div class="concept-card h3">
+        <div class="cc-num h3">01</div>
+        <h5>Not Great for Range Queries</h5>
+        <p>H3 indices aren't ordered like S2/GeoHash. "Find all cells in range X–Y" doesn't work naturally. Must enumerate k-rings or use polyfill.</p>
+      </div>
+      <div class="concept-card h3">
+        <div class="cc-num h3">02</div>
+        <h5>Pentagon Edge Cases</h5>
+        <p>12 pentagons per resolution with only 5 neighbors. Placed in oceans, but all algorithms must handle the pentagon case explicitly.</p>
+      </div>
+      <div class="concept-card h3">
+        <div class="cc-num h3">03</div>
+        <h5>Unclean Hierarchy</h5>
+        <p>Aperture 7 means 1 hex → ~7 children (not exact). Some children hexes stick out of parent boundary. Parent-child containment isn't perfect.</p>
+      </div>
+      <div class="concept-card h3">
+        <div class="cc-num h3">04</div>
+        <h5>Less Ecosystem Support</h5>
+        <p>Fewer databases natively support H3 vs GeoHash. More client-side computation required. Fewer native index optimizations.</p>
+      </div>
+    </div>
+
+    <div class="gotcha">
+      <div class="gotcha-label">⚠️ Gotcha Scenario — Sharding by H3</div>
+      <p>"You shard your database by H3 cell at resolution 4. You have <strong>122 shards</strong> (122 level-4 cells cover your region). But H3 cells don't have a total ordering — you <strong>can't do range queries across shards easily</strong>. When you need 'all drivers in San Francisco,' you must identify all relevant cells and query each shard individually."</p>
+    </div>
+  </div>
+
+  <!-- E) Operational -->
+  <div class="content-block" id="h3-ops">
+    <div class="variant-card">
+      <div class="v-letter">E</div>
+      <div class="v-body">
+        <h4>Operational Considerations</h4>
+        <p class="one-liner">Cell population monitoring, k-ring tuning, and integration with analytics stacks.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title h3">Monitoring</h5>
+    <div class="concept-grid">
+      <div class="concept-card h3">
+        <div class="cc-num h3">📊</div>
+        <h5>Cell Population Distribution</h5>
+        <p>Detect hot cells — high-density urban cores can dwarf surrounding cells at the same resolution.</p>
+      </div>
+      <div class="concept-card h3">
+        <div class="cc-num h3">🔢</div>
+        <h5>K-ring Query Sizes</h5>
+        <p>K=1 → 7 cells, K=2 → 19, K=3 → 37. Monitor fan-out to prevent runaway query costs at high k values.</p>
+      </div>
+      <div class="concept-card h3">
+        <div class="cc-num h3">⬠</div>
+        <h5>Pentagon Proximity</h5>
+        <p>Rare, but track when queries touch pentagon cells — neighbor counts differ (5 vs 6) and can cause off-by-one bugs.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title h3">Integration Patterns</h5>
+    <div class="callout h3">
+      <div class="callout-label">PostgreSQL / PostGIS</div>
+      <p>H3 extension available. Store cell IDs as <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">bigint</code>, use standard B-tree index for point lookups. Range queries require explicit cell enumeration via <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">h3_k_ring()</code>.</p>
+    </div>
+    <div class="callout h3">
+      <div class="callout-label">Spark / Flink</div>
+      <p>H3 UDFs for streaming pipelines. Ideal for real-time aggregation: tag each event with H3 cell, then <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">GROUP BY h3_cell</code> for demand heatmaps.</p>
+    </div>
+    <div class="callout h3">
+      <div class="callout-label">Redis</div>
+      <p>Store as <code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">int64</code>, but no native range advantage unlike S2. Use sorted sets keyed by resolution for hierarchical lookups.</p>
+    </div>
+  </div>
+
+  <!-- F) L6/L7 -->
+  <div class="content-block" id="h3-nuances">
+    <div class="variant-card">
+      <div class="v-letter">F</div>
+      <div class="v-body">
+        <h4>The L6/L7 Nuances</h4>
+        <p class="one-liner">The H3 vs S2 decision and the non-obvious aperture-7 hierarchy trap.</p>
+      </div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-question">
+        <span class="q-icon">L6/L7</span>
+        "When would you choose H3 over S2?"
+      </div>
+      <div class="qa-answer">
+        <p>"<strong>H3 when my primary operations are aggregation and neighborhood analysis</strong> — average surge in this cell, drivers within 2 hexes. The uniform 6-neighbor property simplifies algorithms considerably."</p>
+        <p>"<strong>S2 when I need efficient range queries and database integration</strong> — S2's Hilbert ordering means range scans work naturally on B-tree indexes. S2 also has a cleaner hierarchy (parent always contains children)."</p>
+        <p>"In practice, <strong>Uber uses H3 for analytics and visualization</strong> and likely S2-like approaches for real-time driver matching — they use different tools for different problems."</p>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Non-Obvious Insight — Aperture-7 Containment Trap</div>
+      <p>"<strong>H3's aperture 7 creates a peculiar property:</strong> a child cell might be closer to a different parent's center than its actual parent. This matters for algorithms that assume hierarchical containment. If you're doing 'find the level-4 cell containing this point and count level-8 children,' the count isn't exactly 7⁴ — the boundary children may belong to adjacent level-4 cells."</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════ 2.7 ═══════════════════════════════════ -->
+  <div class="section-divider curves" id="curves">
+    <div class="sec-num curves">2.7</div>
+    <h2>Z-order Curve vs Hilbert Curve</h2>
+    <div class="sec-desc">Space-filling curves deep dive — the mathematical engine behind GeoHash and S2</div>
+  </div>
+
+  <!-- A) What They Are -->
+  <div class="content-block" id="curves-what">
+    <div class="variant-card curves">
+      <div class="v-letter">A</div>
+      <div class="v-body">
+        <h4>What They Are</h4>
+        <p class="one-liner">Space-filling curves that map 2D spatial coordinates to 1D values — the key choice that separates GeoHash (Z-order) from S2 (Hilbert).</p>
+      </div>
+    </div>
+
+    <div class="curve-split">
+      <div class="curve-card z">
+        <div class="cv-header">Z-ORDER (MORTON CODE) — used by GeoHash</div>
+        <div class="cv-body">
+          <ul>
+            <li>Interleave bits of coordinates</li>
+            <li>Simple to compute — pure bit operations</li>
+            <li>Has "jumps" where sequential values aren't spatial neighbors</li>
+            <li>2D locality → 1D has discontinuities</li>
+          </ul>
+        </div>
+      </div>
+      <div class="curve-card hl">
+        <div class="cv-header">HILBERT CURVE — used by S2</div>
+        <div class="cv-body">
+          <ul>
+            <li>Continuous fractal curve visiting every cell exactly once</li>
+            <li>More complex to compute (lookup table or recursive)</li>
+            <li>Preserves locality better than Z-order</li>
+            <li>Consecutive values are always spatial neighbors</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <div class="callout-label">The Core Trade-off</div>
+      <p><mark class="z">Z-order:</mark> Fast to compute, simple bit operations, but 2D locality → 1D has discontinuities. &nbsp;&nbsp; <mark class="h">Hilbert:</mark> Better locality preservation, but more complex computation.</p>
+    </div>
+  </div>
+
+  <!-- B) How They Work -->
+  <div class="content-block" id="curves-mechanics">
+    <div class="variant-card curves">
+      <div class="v-letter">B</div>
+      <div class="v-body">
+        <h4>How They Work</h4>
+        <p class="one-liner">Concrete encoding walkthrough and cell numbering — the diagrams that make the locality difference visual.</p>
+      </div>
+    </div>
+
+    <div id="zorder-encoding">
+      <h5 class="mini-title zorder">Z-order (Morton) Encoding — Step by Step</h5>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label zorder">Z-ORDER ENCODING</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>Point (x=5, y=3):
+x = 5 = 101 in binary
+y = 3 = 011 in binary
+
+Interleave (y₂x₂y₁x₁y₀x₀):
+y₂=0, x₂=1, y₁=1, x₁=0, y₀=1, x₀=1
+= 010111 = 23 in decimal
+
+So (5,3) → Morton code 23</pre>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label zorder">Z-ORDER CELL NUMBERING</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>┌────┬────┬────┬────┐
+│  0 │  1 │  4 │  5 │
+├────┼────┼────┼────┤
+│  2 │  3 │  6 │  7 │
+├────┼────┼────┼────┤
+│  8 │  9 │ 12 │ 13 │
+├────┼────┼────┼────┤
+│ 10 │ 11 │ 14 │ 15 │
+└────┴────┴────┴────┘
+
+Notice: 3 and 4 are sequential in Z-order
+but NOT spatial neighbors (3 is at (1,1), 4 is at (2,0))</pre>
+      </div>
+    </div>
+
+    <div id="hilbert-numbering">
+      <h5 class="mini-title hilbert">Hilbert Curve Numbering</h5>
+
+      <div class="diagram-wrap">
+        <div class="diagram-header">
+          <span class="diagram-label hilbert">HILBERT CURVE CELL NUMBERING</span>
+          <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre>┌────┬────┬────┬────┐
+│  0 │  3 │  4 │  5 │
+├────┼────┼────┼────┤
+│  1 │  2 │  7 │  6 │
+├────┼────┼────┼────┤
+│ 14 │ 13 │  8 │  9 │
+├────┼────┼────┼────┤
+│ 15 │ 12 │ 11 │ 10 │
+└────┴────┴────┴────┘
+
+Every consecutive pair (0-1, 1-2, 2-3, ...) are spatial neighbors!
+No jumps.</pre>
+      </div>
+
+      <div class="callout hilbert">
+        <div class="callout-label">The Key Difference</div>
+        <p>In <mark class="z">Z-order</mark>, cells 3 and 4 are adjacent in 1D but live in completely different spatial quadrants. In <mark class="h">Hilbert</mark>, every step from N to N+1 is a move to a spatially adjacent cell — guaranteed, with no exceptions.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- C) Why Hilbert Wins -->
+  <div class="content-block" id="curves-range">
+    <div class="variant-card curves">
+      <div class="v-letter">C</div>
+      <div class="v-body">
+        <h4>Why Hilbert Wins for Databases</h4>
+        <p class="one-liner">Range queries on Hilbert IDs require fewer ranges — translating directly to fewer disk seeks, fewer B-tree lookups, and better cache utilization.</p>
+      </div>
+    </div>
+
+    <h5 class="mini-title accent">The Range Query Problem — Concrete Examples</h5>
+
+    <div class="callout hilbert">
+      <div class="callout-label">Query: "Find all points in the upper-left 2×2 quadrant"</div>
+      <p><mark class="z">Z-order:</mark> Cells 0,1,2,3 → range query "0 to 3" ✓ works &nbsp; | &nbsp; <mark class="h">Hilbert:</mark> Cells 0,1,2,3 → range query "0 to 3" ✓ works &nbsp; | &nbsp; <strong>Tie for this shape.</strong></p>
+    </div>
+
+    <div class="callout hilbert">
+      <div class="callout-label">Query: "Find all points in the left 2×4 column"</div>
+      <p><mark class="z">Z-order:</mark> Cells 0,1,2,3,8,9,10,11 → needs <strong>TWO ranges</strong>: "0–3" AND "8–11" &nbsp; | &nbsp; <mark class="h">Hilbert:</mark> Path is more spatially coherent → <strong>fewer ranges needed on average</strong></p>
+    </div>
+
+    <div class="callout h3">
+      <div class="callout-label">The Key Metric</div>
+      <p><strong>Average number of contiguous ranges needed for arbitrary rectangular queries.</strong> Hilbert curve requires fewer ranges on average because its path minimizes jumps. This means fewer disk seeks, fewer B-tree lookups, and better cache utilization.</p>
+    </div>
+
+    <div class="metric-banner">
+      <div class="metric-tile hl-tile">
+        <span class="mt-val">30–50%</span>
+        <span class="mt-label">Fewer ranges needed (Hilbert vs Z-order)</span>
+      </div>
+      <div class="metric-tile z-tile">
+        <span class="mt-val">~40%</span>
+        <span class="mt-label">Faster wall-clock (5 ranges vs 8 ranges = 40% speedup)</span>
+      </div>
+      <div class="metric-tile h3-tile">
+        <span class="mt-val">Empirical</span>
+        <span class="mt-label">For typical rectangular spatial queries</span>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Why This Isn't Just Big-O Academic</div>
+      <p>"The difference between Z-order and Hilbert <strong>seems academic until you're doing range scans on Bigtable or Spanner</strong> where each range requires a separate tablet lookup. A query that needs 5 ranges instead of 8 ranges is <mark class="h">40% faster in wall-clock time</mark>, not just big-O equivalent."</p>
+    </div>
+  </div>
+
+  <!-- D) Comparison Table -->
+  <div class="content-block" id="curves-table">
+    <div class="variant-card curves">
+      <div class="v-letter">D</div>
+      <div class="v-body">
+        <h4>Comparison Table</h4>
+        <p class="one-liner">Side-by-side reference across all dimensions — implementation, performance, and ecosystem.</p>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="acc-head">Aspect</th>
+            <th class="zorder-head">Z-order (Morton)</th>
+            <th class="hilbert-head">Hilbert Curve</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Computation</td>
+            <td class="td-zorder">Simple bit interleaving</td>
+            <td class="td-hilbert">Lookup table or recursive algorithm</td>
+          </tr>
+          <tr>
+            <td>Locality preservation</td>
+            <td class="td-bad">Good, but has jumps</td>
+            <td class="td-good">Excellent, minimal jumps</td>
+          </tr>
+          <tr>
+            <td>Range query efficiency</td>
+            <td class="td-zorder">Good</td>
+            <td class="td-good">Better (~30% fewer ranges)</td>
+          </tr>
+          <tr>
+            <td>Implementation</td>
+            <td class="td-zorder">Trivial</td>
+            <td class="td-muted">Moderate (needs library)</td>
+          </tr>
+          <tr>
+            <td>Used by</td>
+            <td class="td-zorder">GeoHash, many spatial DBs</td>
+            <td class="td-hilbert">S2 (Google), sophisticated systems</td>
+          </tr>
+          <tr>
+            <td>Cache behavior</td>
+            <td class="td-zorder">Decent</td>
+            <td class="td-good">Better (fewer disk seeks)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- E) L6/L7 Insight -->
+  <div class="content-block" id="curves-nuances">
+    <div class="variant-card curves">
+      <div class="v-letter">E</div>
+      <div class="v-body">
+        <h4>L6/L7 Insight — When to Bring This Up</h4>
+        <p class="one-liner">The exact framing that signals deep systems knowledge to an interviewer.</p>
+      </div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-question">
+        <span class="q-icon">L6/L7</span>
+        How would you use this in an interview? Give the exact phrasing.
+      </div>
+      <div class="qa-answer">
+        <p>"I'd recommend using S2 over GeoHash here because <strong>S2 uses a Hilbert curve while GeoHash uses Z-order (Morton code)</strong>. The Hilbert curve has better locality preservation — consecutive cell IDs are always spatial neighbors."</p>
+        <p>"This means range queries on cell IDs produce spatially coherent results with fewer 'holes.' <strong>At our scale of 10 billion points, this translates to 30% fewer disk seeks per query.</strong>"</p>
+      </div>
+    </div>
+
+    <div class="insight">
+      <div class="insight-label">Non-Obvious Insight — Bigtable / Spanner Specificity</div>
+      <p>"The difference between Z-order and Hilbert <strong>seems academic until you're doing range scans on Bigtable or Spanner</strong> where each range requires a separate tablet lookup. A query that needs <strong>5 ranges instead of 8 ranges is 40% faster in wall-clock time</strong>, not just big-O equivalent. This is the kind of insight that matters when you're the team deciding which spatial library to build your global infrastructure on."</p>
+    </div>
+
+    <div class="soundbite">
+      <p>"The spatial indexing decision ladder is: use <mark>GeoHash</mark> when you need spatial indexing on existing infrastructure for free; use <mark class="h">S2</mark> when you need global accuracy, shape covering, or Bigtable-class range query efficiency; use <mark class="w">H3</mark> when you need uniform proximity analysis, aggregation fairness, or spatial visualization. The underlying curve choice — <mark class="z">Z-order vs Hilbert</mark> — is what separates good-enough from production-grade at billion-record scale."</p>
+    </div>
+  </div>
+
+</main>
+
+<button id="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+window.addEventListener('scroll', () => {
+  const scrolled = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+  document.getElementById('progress-bar').style.width = scrolled + '%';
+  document.getElementById('back-to-top').classList.toggle('visible', window.scrollY > 300);
+  updateActiveNav();
+});
+
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id]');
+  let current = '';
+  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 130) current = s.id; });
+  document.querySelectorAll('#nav-list a').forEach(a => {
+    const href = a.getAttribute('href');
+    a.classList.toggle('active', href && href === '#' + current);
+  });
+}
+
+function copyCode(btn) {
+  const pre = btn.closest('.diagram-wrap').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = 'Copied ✓'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+document.getElementById('sidebar-search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#nav-list li').forEach(li => {
+    li.style.display = (!q || li.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
+});
+
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+document.getElementById('hamburger').addEventListener('click', () => {
+  sidebar.classList.toggle('open'); overlay.classList.toggle('visible');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open'); overlay.classList.remove('visible');
+});
+document.querySelectorAll('#nav-list a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    if (window.innerWidth <= 960) { sidebar.classList.remove('open'); overlay.classList.remove('visible'); }
+  });
+});
+</script>
+
+</body>
+</html>
