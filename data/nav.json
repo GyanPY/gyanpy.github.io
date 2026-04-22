@@ -100,12 +100,6 @@
         "file": "pages/InFluxDB/InFluxDB.html"
       }
     ],
-    "Pinot": [
-      {
-        "title": "Internals",
-        "file": "pages/Pinot/Pinot.html"
-      }
-    ],
     "BigQuery": [
       {
         "title": "Deep Dive-1",
