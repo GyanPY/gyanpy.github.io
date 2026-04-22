@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geospatial Indexing (Part 3) — Spatio-Temporal, Decision Framework & L6/L7 Mastery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  --geo:#14B8A6;--geo2:#0D9488;--geo3:#5EEAD4;
+  --kd:#0EA5E9;--rt:#F59E0B;--gh:#10B981;--s2:#6366F1;--h3:#EC4899;
+  --qt:#8B5CF6;--st:#E879F9;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--st),var(--kd),var(--rt),var(--gh),var(--s2),var(--h3));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--geo3);background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--geo)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(20,184,166,.05)}
+.ni.active a{color:var(--geo3);border-left-color:var(--geo3);background:rgba(20,184,166,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--geo3);border-color:var(--geo3);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--geo3);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--st) 28%,var(--kd) 48%,var(--gh) 68%,var(--s2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(20,184,166,.1);border-color:var(--geo3);color:var(--geo3)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* SPATIO-TEMPORAL PATTERNS */
+.st-patterns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.stp{background:var(--surface2);border:1px solid rgba(232,121,249,.18);border-left:3px solid var(--st);border-radius:0 8px 8px 0;padding:12px 14px}
+.stp-label{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--st);margin-bottom:6px}
+.stp p{font-size:.84rem;color:var(--muted);line-height:1.6}
+.stp strong{color:var(--text)}
+
+/* APPROACH CARDS */
+.approach-list{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.approach{background:var(--surface);border:1px solid rgba(232,121,249,.18);border-radius:9px;overflow:hidden}
+.approach-hdr{padding:10px 16px;display:flex;align-items:center;gap:10px;background:rgba(232,121,249,.04);border-bottom:1px solid rgba(232,121,249,.12);cursor:pointer;user-select:none}
+.ap-num{font-family:var(--fc);font-size:.65rem;font-weight:700;padding:2px 9px;border-radius:9px;background:rgba(232,121,249,.12);color:var(--st);border:1px solid rgba(232,121,249,.2);flex-shrink:0}
+.ap-title{font-family:var(--fh);font-size:.92rem;font-weight:700;color:var(--text)}
+.ap-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.approach.collapsed .ap-toggle{transform:rotate(-90deg)}
+.ap-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.approach.collapsed .ap-body{max-height:0;opacity:0}
+.ap-inner{padding:0 16px 14px}
+
+/* L6/L7 ANSWER COMPARISON */
+.level-compare{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.lc-item{border-radius:8px;padding:13px 16px}
+.lc-item.l6{background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-left:3px solid var(--kd)}
+.lc-item.l7{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);border-left:3px solid var(--cass4)}
+.lc-label{font-family:var(--fc);font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin-bottom:7px}
+.lc-item.l6 .lc-label{color:var(--kd)}
+.lc-item.l7 .lc-label{color:var(--cass4)}
+.lc-item p{font-size:.87rem;color:var(--muted);line-height:1.65}
+.lc-item strong{color:var(--text)}
+
+/* VARIANT COMPARISON TABLE */
+.var-table{width:100%;border-collapse:collapse;font-size:.74rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.var-table thead tr{background:var(--surface2)}
+.var-table th{padding:8px 10px;text-align:left;font-family:var(--fc);font-size:.57rem;text-transform:uppercase;letter-spacing:.07em;color:var(--geo3);border-bottom:1px solid rgba(20,184,166,.2)}
+.var-table td{padding:7px 10px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.4;font-size:.76rem;color:var(--muted)}
+.var-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.var-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.var-table td:first-child{font-weight:700;color:var(--text);font-family:var(--fc);white-space:nowrap}
+.vtag{display:inline-block;font-family:var(--fc);font-size:.6rem;padding:1px 6px;border-radius:6px;font-weight:700}
+.vtag.qt{background:rgba(139,92,246,.12);color:var(--qt);border:1px solid rgba(139,92,246,.2)}
+.vtag.kd{background:rgba(14,165,233,.12);color:var(--kd);border:1px solid rgba(14,165,233,.2)}
+.vtag.rt{background:rgba(245,158,11,.12);color:var(--rt);border:1px solid rgba(245,158,11,.2)}
+.vtag.gh{background:rgba(16,185,129,.12);color:var(--gh);border:1px solid rgba(16,185,129,.2)}
+.vtag.s2{background:rgba(99,102,241,.12);color:var(--s2);border:1px solid rgba(99,102,241,.2)}
+.vtag.h3{background:rgba(236,72,153,.12);color:var(--h3);border:1px solid rgba(236,72,153,.2)}
+
+/* DECISION FRAMEWORK TREE */
+.decision-tree{background:#010409;border:1px solid rgba(20,184,166,.22);border-radius:12px;overflow:hidden;margin:14px 0}
+.dt-hdr{background:rgba(20,184,166,.07);border-bottom:1px solid rgba(20,184,166,.18);padding:10px 18px;display:flex;align-items:center;justify-content:space-between}
+.dt-title{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.13em;color:var(--geo3);font-weight:600}
+.decision-tree pre{padding:18px 22px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.9;color:#c9d1d9;white-space:pre}
+
+/* TRADE-OFF TABLE */
+.tradeoff-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.tradeoff-table thead tr{background:linear-gradient(90deg,rgba(20,184,166,.09),rgba(99,102,241,.05))}
+.tradeoff-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--geo3);border-bottom:1px solid rgba(20,184,166,.18)}
+.tradeoff-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.35);vertical-align:top;line-height:1.5;font-size:.79rem;color:var(--muted)}
+.tradeoff-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.tradeoff-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.tradeoff-table td:first-child{font-weight:600;color:var(--text)}
+
+/* FAILURE MODES TABLE */
+.fail-table{width:100%;border-collapse:collapse;font-size:.76rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.fail-table thead tr{background:rgba(239,68,68,.06)}
+.fail-table th{padding:8px 11px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.07em;color:var(--no);border-bottom:1px solid rgba(239,68,68,.18)}
+.fail-table td{padding:8px 11px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.78rem;color:var(--muted)}
+.fail-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.fail-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.fail-table td:first-child{font-weight:700;color:var(--text)}
+
+/* EDGE CASE CARDS */
+.ec-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:14px;overflow:hidden}
+.ec-hdr{padding:11px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid rgba(232,121,249,.1);background:rgba(232,121,249,.03)}
+.ec-num{font-family:var(--fc);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;padding:2px 9px;border-radius:9px;background:rgba(232,121,249,.12);color:var(--st);border:1px solid rgba(232,121,249,.2);flex-shrink:0}
+.ec-title{font-family:var(--fh);font-size:.97rem;font-weight:700;color:var(--text)}
+.ec-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.ec-card.collapsed .ec-toggle{transform:rotate(-90deg)}
+.ec-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.ec-card.collapsed .ec-body{max-height:0;opacity:0}
+.ec-inner{padding:0 18px 14px}
+.ec-meta{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;margin:10px 0}
+.ec-key{font-family:var(--fc);font-size:.7rem;color:var(--dim);padding-top:2px}
+.ec-val{font-size:.86rem;color:var(--muted);line-height:1.6}
+.ec-val strong{color:var(--text)}
+
+/* FAIL OPEN / CLOSED */
+.fail-mode{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.fm{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:13px 15px}
+.fm.open{border-left:3px solid var(--lean)}
+.fm.closed{border-left:3px solid var(--kd)}
+.fm-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.09em;font-weight:700;margin-bottom:7px}
+.fm.open .fm-label{color:var(--lean)}.fm.closed .fm-label{color:var(--kd)}
+.fm p{font-size:.85rem;color:var(--muted);line-height:1.6;margin-bottom:5px}
+.fm strong{color:var(--text)}
+
+/* DISTRIBUTED TWIST */
+.dist-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.dist-table thead tr{background:rgba(99,102,241,.06)}
+.dist-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em;color:var(--s2);border-bottom:1px solid rgba(99,102,241,.18)}
+.dist-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.79rem;color:var(--muted)}
+.dist-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dist-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dist-table td:first-child{font-weight:600;color:var(--text)}
+
+/* DIAGRAM */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.geo{border:1px solid rgba(20,184,166,.2)}.diag.geo .diag-hdr{background:rgba(20,184,166,.06);border-bottom:1px solid rgba(20,184,166,.18)}.diag.geo .diag-title{color:var(--geo3)}
+.diag.st{border:1px solid rgba(232,121,249,.2)}.diag.st .diag-hdr{background:rgba(232,121,249,.06);border-bottom:1px solid rgba(232,121,249,.18)}.diag.st .diag-title{color:var(--st)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.geo{background:rgba(20,184,166,.07);border:1px solid rgba(20,184,166,.2)}
+.callout.st{background:rgba(232,121,249,.07);border:1px solid rgba(232,121,249,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.geo .callout-title{color:var(--geo3)}
+.callout.st .callout-title{color:var(--st)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(20,184,166,.09),rgba(99,102,241,.05));border:1px solid rgba(20,184,166,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--geo);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic;padding-right:28px}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--geo3);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* SERIES COMPLETE */
+.series-complete{background:linear-gradient(135deg,rgba(20,184,166,.07),rgba(99,102,241,.05),rgba(245,158,11,.04));border:1px solid rgba(20,184,166,.2);border-radius:12px;padding:24px 28px;margin:28px 0;text-align:center}
+.series-complete h3{font-family:var(--fh);font-size:1.25rem;font-weight:700;color:var(--text);margin-bottom:10px}
+.series-complete p{font-size:.88rem;color:var(--muted);line-height:1.65;max-width:580px;margin:0 auto 18px}
+.sc-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.scp{font-family:var(--fc);font-size:.67rem;padding:4px 12px;border-radius:20px}
+.scp1{background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.3);color:var(--geo3)}
+.scp2{background:rgba(14,165,233,.1);border:1px solid rgba(14,165,233,.3);color:var(--kd)}
+.scp3{background:rgba(5,150,105,.12);border:1px solid rgba(5,150,105,.3);color:var(--cass4);font-weight:700}
+
+mark{background:rgba(20,184,166,.14);color:var(--geo);border-radius:3px;padding:1px 4px}
+mark.v{background:rgba(99,102,241,.14);color:var(--s2)}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.pk{background:rgba(232,121,249,.12);color:var(--st)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.st-patterns,.fail-mode{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Geospatial Indexing · L6/L7 Series</div>
+    <div class="sb-title">Spatio-Temporal, Decision Framework & Mastery</div>
+    <div class="sb-part">Part 3 — The Complete Playbook</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Spatio-Temporal</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#st-what">What It Is</a></li>
+      <li class="ni sub"><a href="#st-approaches">Four Approaches</a></li>
+      <li class="ni sub"><a href="#st-patterns">Four Query Patterns</a></li>
+      <li class="ni sub"><a href="#st-l7">L6 vs L7 Answer</a></li>
+    </li>
+    <li class="ng"><div class="nl">Comprehensive Comparison</div>
+      <li class="ni sub"><a href="#variant-table">8-Variant Comparison Table</a></li>
+      <li class="ni sub"><a href="#decision-tree">Decision Framework Tree</a></li>
+    </li>
+    <li class="ng"><div class="nl">Trade-offs & Nuances</div>
+      <li class="ni sub"><a href="#tradeoffs">Fundamental Trade-offs Matrix</a></li>
+      <li class="ni sub"><a href="#distributed">Distributed Systems Twist</a></li>
+      <li class="ni sub"><a href="#failure-modes">Failure Modes Deep-Dive</a></li>
+      <li class="ni sub"><a href="#fail-open">Fail-Open vs Fail-Closed</a></li>
+    </li>
+    <li class="ng"><div class="nl">Edge Cases</div>
+      <li class="ni sub"><a href="#ec1">EC1: Antimeridian Problem</a></li>
+      <li class="ni sub"><a href="#ec2">EC2: Pole Singularity</a></li>
+      <li class="ni sub"><a href="#ec3">EC3: Duplicates at Same Location</a></li>
+      <li class="ni sub"><a href="#ec4">EC4: Dense City vs Sparse Rural</a></li>
+      <li class="ni sub"><a href="#ec5">EC5: International Date Line</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+      <li class="ni"><a href="#series-complete">Series Complete</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Geospatial Indexing & Location-Based Systems · L6/L7 Series · Part 3</div>
+  <h1>Spatio-Temporal,<br>Decision Framework<br>& Mastery</h1>
+  <div class="hero-meta">
+    <span>⏱️ Spatio-temporal: 4 approaches, 4 query patterns</span>
+    <span>📊 8-variant comparison table (all index types)</span>
+    <span>🌳 Complete decision tree with reasoning</span>
+    <span>⚖️ 6-dimension trade-offs matrix</span>
+    <span>🔀 Distributed systems twist: sharding behavior per index</span>
+    <span>🧩 5 "most candidates miss this" edge cases</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Part 1: Core + QuadTree</span>
+    <span class="part-pill">Part 2: KD-Tree & R-Tree</span>
+    <span class="part-pill ap">Part 3: Decision Framework & Mastery</span>
+  </div>
+  <p style="margin-top:14px">Parts 1 and 2 covered the four major index types in depth. Part 3 is the synthesis layer: spatio-temporal indexing (time as a dimension), the comprehensive variant comparison across eight index types, the complete decision framework that produces the right choice for any system, trade-offs and distributed systems behavior, and the five edge cases that separate candidates who've thought deeply from those who haven't.</p>
+</section>
+
+<!-- SPATIO-TEMPORAL -->
+<div class="sec-hdr" id="st-section"><h2>Spatio-Temporal Indexing</h2></div>
+
+<div class="callout st" id="st-what">
+  <div class="callout-title">What It Is — Time as a Dimension</div>
+  <p><strong>One-sentence definition:</strong> Extending spatial indexes to include time, enabling queries like "Where was vehicle X at 3 PM?" or "What vehicles were within 1km of this point between 2–4 PM?"</p>
+  <p style="margin-top:8px"><strong>The core insight:</strong> Time is just another dimension. A moving object traces a path in 3D (x, y, t) space. But time has special properties: it <strong>only moves forward</strong>, and it's the query dimension most frequently used for filtering — which enables aggressive time-based pruning that purely spatial indexes can't exploit.</p>
+</div>
+
+<h3 id="st-approaches" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:22px 0 14px">Four Approaches to Spatio-Temporal Indexing</h3>
+
+<div class="approach-list">
+  <div class="approach" id="st-ap1">
+    <div class="approach-hdr" onclick="toggleAP(this)">
+      <span class="ap-num">Approach 1</span>
+      <span class="ap-title">Time-Partitioned Spatial Indexes</span>
+      <span class="ap-toggle">▾</span>
+    </div>
+    <div class="ap-body"><div class="ap-inner">
+      <div class="diag st">
+        <div class="diag-hdr"><span class="diag-title">Time-Bucketed Spatial Index Structure</span></div>
+        <pre>Index structure:
+├── 2024-01-15-08:00 → GeoHash/S2 spatial index for this hour
+├── 2024-01-15-09:00 → GeoHash/S2 spatial index for this hour
+├── 2024-01-15-10:00 → GeoHash/S2 spatial index for this hour
+└── ...
+
+Query "drivers near P between 14:00–16:00":
+  1. Retrieve index for 14:00, 15:00 buckets
+  2. For each: query spatial index for nearby GeoHash cells
+  3. Union results, deduplicate by driver_id
+  4. Calculate exact distances, filter to radius</pre>
+      </div>
+      <div class="callout good">
+        <div class="callout-title">Pros and Cons</div>
+        <ul>
+          <li><strong>Pro:</strong> Simple — reuses existing spatial indexes. Each bucket is just a regular GeoHash/S2 lookup.</li>
+          <li><strong>Pro:</strong> Old data easily archived or deleted — just drop old time buckets.</li>
+          <li><strong>Pro:</strong> Bucket size is tunable — 1 minute for high-res, 1 hour for historical.</li>
+          <li><strong>Con:</strong> Cross-boundary queries (e.g., 13:45–14:15) need two index lookups and a union.</li>
+          <li><strong>Con:</strong> Storage grows linearly — every time bucket stores every object's location.</li>
+        </ul>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="approach" id="st-ap2">
+    <div class="approach-hdr" onclick="toggleAP(this)">
+      <span class="ap-num">Approach 2</span>
+      <span class="ap-title">Space-Partitioned Temporal Indexes</span>
+      <span class="ap-toggle">▾</span>
+    </div>
+    <div class="ap-body"><div class="ap-inner">
+      <div class="diag st">
+        <div class="diag-hdr"><span class="diag-title">Per-Cell Time-Series</span></div>
+        <pre>For each spatial cell, maintain a time-series:
+├── Cell u09tun → [{t:08:00, drivers:[A,B,C]}, {t:08:01, drivers:[A,D]}, ...]
+├── Cell u09tup → [{t:08:00, drivers:[E,F]}, {t:08:01, drivers:[E,G,F]}, ...]
+└── ...
+
+Query "history of cell u09tun from 14:00–16:00":
+  1. Direct cell lookup — O(1)
+  2. Scan time-series for the cell within range
+  3. Very fast — all data is co-located by cell</pre>
+      </div>
+      <div class="callout good">
+        <div class="callout-title">Pros and Cons</div>
+        <ul>
+          <li><strong>Pro:</strong> "What happened in this location over time?" queries are extremely fast.</li>
+          <li><strong>Pro:</strong> Natural fit for geofencing — "when was anyone in region R?"</li>
+          <li><strong>Con:</strong> Moving objects cross many cells. A driver covering 10 cells in 1 hour writes to 10 different time-series — expensive storage and fan-out writes.</li>
+          <li><strong>Con:</strong> "Where was driver X at time T?" requires finding which cell X was in — can't index by driver directly.</li>
+        </ul>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="approach" id="st-ap3">
+    <div class="approach-hdr" onclick="toggleAP(this)">
+      <span class="ap-num">Approach 3</span>
+      <span class="ap-title">Combined Space-Time Indexing (3D R-Tree / Octree)</span>
+      <span class="ap-toggle">▾</span>
+    </div>
+    <div class="ap-body"><div class="ap-inner">
+      <p style="font-size:.87rem;color:var(--muted);line-height:1.65;margin-top:10px">Treats (x, y, t) as three dimensions and applies a 3D R-Tree or Octree directly. True spatio-temporal queries in one index pass — no partition lookups or unions needed.</p>
+      <div class="callout warn">
+        <div class="callout-title">The Fundamental Problem: Time Doesn't Behave Like Space</div>
+        <ul>
+          <li>Space is symmetric — you can query north just as easily as south. Time is asymmetric — you only ever query the past.</li>
+          <li>Space is bounded — Earth has finite coordinates. Time is unbounded — it keeps growing.</li>
+          <li>3D R-Trees degrade as the time dimension grows without bound — MBRs in the time direction become huge.</li>
+          <li><strong>Result:</strong> Theoretically elegant, practically limited. Used in academic research more than production systems.</li>
+        </ul>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="approach" id="st-ap4">
+    <div class="approach-hdr" onclick="toggleAP(this)">
+      <span class="ap-num">Approach 4</span>
+      <span class="ap-title">Trajectory Indexing — Index Paths, Not Points</span>
+      <span class="ap-toggle">▾</span>
+    </div>
+    <div class="ap-body"><div class="ap-inner">
+      <p style="font-size:.87rem;color:var(--muted);line-height:1.65;margin-top:10px">Instead of indexing point locations at each timestamp, index the <em>trajectory</em> — the entire path an object took as a curve in (x, y, t) space. Specialized structures include TB-Tree, SETI, STRIVE.</p>
+      <div class="callout st">
+        <div class="callout-title">When Trajectory Indexing Makes Sense</div>
+        <ul>
+          <li><strong>Best for:</strong> "What path did vehicle X take between 2 and 4 PM?" (route reconstruction)</li>
+          <li><strong>Best for:</strong> "Did any vehicle ever enter region R?" (trajectory-polygon intersection)</li>
+          <li><strong>Not for:</strong> Real-time tracking — trajectory indexes are built over completed paths, not live positions</li>
+          <li>Used in: Fleet management analytics, sports analytics (ball tracking), animal movement ecology</li>
+        </ul>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<h3 id="st-patterns" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">Four Canonical Query Patterns</h3>
+<div class="st-patterns">
+  <div class="stp">
+    <div class="stp-label">Pattern 1 — "Where was X at time T?"</div>
+    <p>Index by <strong>(entity_id, time)</strong>. Retrieve location directly. No spatial index needed — it's a pure entity-time lookup. Very cheap.</p>
+  </div>
+  <div class="stp">
+    <div class="stp-label">Pattern 2 — "What was near point P at time T?"</div>
+    <p>Use a <strong>time-partitioned spatial index</strong>. Look up the appropriate time bucket. Query spatial index for that bucket. Two-step lookup.</p>
+  </div>
+  <div class="stp">
+    <div class="stp-label">Pattern 3 — "What was near P between T1–T2?"</div>
+    <p>Query <strong>all time buckets in range</strong>. Union the results. Deduplicate. Cost grows linearly with the time window — budget accordingly.</p>
+  </div>
+  <div class="stp">
+    <div class="stp-label">Pattern 4 — "Did X ever enter region R?"</div>
+    <p>Either retrieve all of X's positions and check against R (expensive), or use a <strong>trajectory index</strong> if this query is frequent. Trajectory intersection is the right abstraction.</p>
+  </div>
+</div>
+
+<!-- L6 vs L7 ANSWER -->
+<h3 id="st-l7" style="font-family:var(--fh);font-size:1.1rem;font-weight:600;color:var(--text);margin:28px 0 14px">L6 vs L7 Answer — Delivery Driver Complaint System</h3>
+<p style="font-size:.87rem;color:var(--muted);line-height:1.65;margin-bottom:14px"><em>Interview question: "Design a system to track 10M delivery drivers and answer 'what drivers were within 1km of this complaint location in the past 2 hours?'"</em></p>
+
+<div class="level-compare">
+  <div class="lc-item l6">
+    <div class="lc-label">L6 Answer — Correct but Surface Level</div>
+    <p>"I'd partition by time — hourly buckets. Each bucket has a GeoHash index. The query scans 2 hourly indexes, filters by GeoHash prefix and 8 neighbors, then calculates actual distances to keep only those within 1km."</p>
+  </div>
+  <div class="lc-item l7">
+    <div class="lc-label">L7 Answer — Access Pattern Reasoning + Quantified Expectations</div>
+    <p>"Time partitioning is right, but let me reason about access patterns first. Complaints almost always arrive within hours of the incident — hot data is recent. That shapes the architecture:</p>
+    <p style="margin-top:8px"><strong>Real-time tier (last 24 hours):</strong> All driver positions in memory, GeoHash-indexed per 5-minute bucket. Query hits 2–3 buckets, GeoHash prefix at precision 5 (~5km) narrows to ~0.001% of drivers, exact distance filter finalizes. Expected latency: &lt;20ms p99.</p>
+    <p style="margin-top:8px"><strong>Archive tier (older data):</strong> GeoHash-partitioned Parquet files in columnar storage (BigQuery). Queried rarely — the 1% of complaints that are delayed. Higher latency acceptable.</p>
+    <p style="margin-top:8px"><strong>Quantified:</strong> 99% of complaint queries hit only the real-time tier. 2-hour window = 24 five-minute buckets = ~0.0001% of the daily driver-position dataset. The GeoHash precision-5 filter reduces to ~0.001% of that. We're looking at perhaps 500 candidate drivers from 10M, then exact-distance filtering to ~30. Total data touched: ~50KB. This is why &lt;20ms is achievable."</p>
+  </div>
+</div>
+
+<!-- 8-VARIANT COMPARISON TABLE -->
+<div class="sec-hdr" id="variant-table"><h2>Comprehensive Variant Comparison — All 8 Index Types</h2></div>
+
+<table class="var-table">
+  <thead>
+    <tr>
+      <th>Index</th>
+      <th>Core Mechanism</th>
+      <th>Best For</th>
+      <th>Worst For</th>
+      <th>Key Trade-off</th>
+      <th>Failure Mode</th>
+      <th>Real-World User</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="vtag qt">QuadTree</span></td>
+      <td>Recursive quartering of 2D space</td>
+      <td>Static points, region queries</td>
+      <td>Hotspots, high updates, spherical Earth</td>
+      <td>Balance vs write speed</td>
+      <td>Extreme imbalance in clustered data</td>
+      <td>Game engines, some GIS</td>
+    </tr>
+    <tr>
+      <td><span class="vtag kd">KD-Tree</span></td>
+      <td>Binary splits alternating dimensions</td>
+      <td>Nearest-neighbor, k-NN, ML embeddings</td>
+      <td>High updates, >20 dimensions</td>
+      <td>Build time vs query time</td>
+      <td>Full rebuild needed after many inserts</td>
+      <td>ML systems, 3D graphics, LiDAR</td>
+    </tr>
+    <tr>
+      <td><span class="vtag rt">R-Tree</span></td>
+      <td>Grouping objects by bounding rectangles</td>
+      <td>Complex shapes, spatial joins, DB integration</td>
+      <td>Frequent updates, moving objects</td>
+      <td>Query flexibility vs update cost</td>
+      <td>MBR overlap explosion, cascade rebalancing</td>
+      <td>PostGIS, Oracle Spatial, SQLite</td>
+    </tr>
+    <tr>
+      <td><span class="vtag gh">GeoHash</span></td>
+      <td>Bit interleaving + base32 encoding</td>
+      <td>Simple integration, sharding, O(1) updates</td>
+      <td>Exact distance, spherical accuracy near poles</td>
+      <td>Simplicity vs precision</td>
+      <td>Boundary misses, pole distortion</td>
+      <td>Redis, MongoDB, Elasticsearch</td>
+    </tr>
+    <tr>
+      <td><span class="vtag s2">S2</span></td>
+      <td>Cube projection + Hilbert curve cell IDs</td>
+      <td>Spherical accuracy, range queries, Google stack</td>
+      <td>Simplicity (steep learning curve)</td>
+      <td>Correctness vs implementation complexity</td>
+      <td>Over/under-covering regions at precision boundaries</td>
+      <td>Google Maps, Tinder, Yelp</td>
+    </tr>
+    <tr>
+      <td><span class="vtag h3">H3</span></td>
+      <td>Icosahedron + hexagonal grid cells</td>
+      <td>Aggregation, uniform neighbor distance</td>
+      <td>Range queries, DB integration</td>
+      <td>Cell uniformity vs simplicity</td>
+      <td>Pentagon edge cases, no natural linear ordering</td>
+      <td>Uber, Lime, Bird, Airbnb</td>
+    </tr>
+    <tr>
+      <td><span class="vtag" style="background:rgba(255,215,0,.1);color:var(--lean);border:1px solid rgba(255,215,0,.2)">Z-Order</span></td>
+      <td>Bit interleaving (Morton code), 1D projection</td>
+      <td>Simple implementation, DB B-tree integration</td>
+      <td>Locality (diagonal jumps in curve)</td>
+      <td>Simplicity vs locality preservation</td>
+      <td>Range queries include spatial gaps</td>
+      <td>Many spatial DBs as underlying encoding</td>
+    </tr>
+    <tr>
+      <td><span class="vtag" style="background:rgba(99,102,241,.12);color:#a78bfa;border:1px solid rgba(99,102,241,.2)">Hilbert</span></td>
+      <td>Fractal space-filling curve, no jumps</td>
+      <td>Best locality preservation, bulk loading</td>
+      <td>Implementation complexity</td>
+      <td>Locality vs computation overhead</td>
+      <td>Higher computation cost per cell lookup</td>
+      <td>S2 internals, Google systems, R-Tree bulk load</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- DECISION FRAMEWORK -->
+<div class="sec-hdr" id="decision-tree"><h2>Complete Decision Framework with Reasoning</h2></div>
+
+<div class="decision-tree">
+  <div class="dt-hdr"><span class="dt-title">Decision Tree — Every Question With Its Reasoning</span></div>
+  <pre>Q1: Are objects frequently moving? (>10K updates/sec)
+│
+├── YES → Avoid ALL tree structures (QuadTree, R-Tree, KD-Tree)
+│         Why: Tree updates cascade. R-Tree: 7-step cascade per update.
+│         QuadTree: can cause rebalancing. KD-Tree: no rebalance = degrades.
+│   │
+│   └── Q2: Do you need complex spatial queries (polygon, nearest-neighbor)?
+│       ├── YES → Use S2 with cell covering
+│       │         Why: S2 handles moving objects via cell ID update (O(1))
+│       │         and supports sophisticated range queries with cell hierarchies.
+│       │         Accept implementation complexity.
+│       │
+│       └── NO  → Use GeoHash or H3 grid — simple cell membership
+│                 GeoHash: simpler, works with any KV store (Redis, Dynamo)
+│                 H3: uniform cell size → better for aggregation and pricing
+│
+└── NO → Tree structures are viable
+    │
+    └── Q3: Are objects complex shapes (polygons, lines, not just points)?
+        ├── YES → Use R-Tree / PostGIS
+        │         Why: R-Tree is designed for shapes. MBRs bound complex geometry.
+        │         Spatial joins (intersects, contains, within) are native.
+        │         PostGIS GiST index is production-hardened R-Tree.
+        │
+        └── NO  → Points only
+            │
+            └── Q4: What is your primary query type?
+                ├── Nearest-neighbor / k-NN → KD-Tree
+                │   Why: Alternating splits create tighter NN pruning regions.
+                │   Backtrack pruning eliminates entire branches for NN queries.
+                │
+                ├── Range / region queries → QuadTree
+                │   Why: Uniform quartering maps naturally to rectangular regions.
+                │   Easy to determine which quadrants overlap a search rectangle.
+                │
+                └── Both NN and range, or uncertain → S2
+                    Why: Most versatile. S2 cell hierarchy supports both.
+                    Accepts complexity cost for flexibility.
+
+Q5: Do you need spherical Earth accuracy?
+├── YES → Use S2 or H3 (NOT GeoHash)
+│         GeoHash distorts near poles. Cells are not equal-area.
+│         S2/H3 are designed for the sphere — cells are approximately equal-area.
+│
+└── NO  → GeoHash is fine for regional (non-polar, non-antimeridian) services
+
+Q6: Is uniform spatial aggregation important?
+├── YES → Use H3 (hexagonal uniformity)
+│         Every H3 hexagon has 6 equidistant neighbors.
+│         Pricing zones, surge areas, density maps work better with H3.
+│
+└── NO  → S2 or GeoHash based on other factors
+
+Q7: Do you need tight SQL/database integration?
+├── YES → GeoHash (works with any KV or string-indexed DB)
+│         or PostGIS R-Tree (if using PostgreSQL)
+│
+└── NO  → Any option based on above factors</pre>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — Comparing All Variants</div>
+  <p>"The choice between spatial indexes comes down to three questions: Are objects moving frequently? Do I need complex shape queries? Does spherical accuracy matter? For static data with complex shapes, R-Tree wins. For moving objects with simple proximity queries, GeoHash or H3 grids win. For anything at Google scale with accuracy requirements, S2 is the robust choice. Trees give you query flexibility; grids give you update performance. You rarely get both."</p>
+</div>
+
+<!-- TRADE-OFFS MATRIX -->
+<div class="sec-hdr" id="tradeoffs"><h2>Fundamental Trade-offs Matrix</h2></div>
+
+<table class="tradeoff-table">
+  <thead><tr><th>Trade-off</th><th>Optimizes For</th><th>Sacrifices</th><th>Acceptable When</th><th>NOT Acceptable When</th></tr></thead>
+  <tbody>
+    <tr><td>Tree vs Grid</td><td>Query sophistication — polygon intersection, k-NN pruning</td><td>Update performance — every insert may cascade</td><td>Data is static or slow-changing (roads, buildings, restaurants)</td><td>100K+ updates/sec (Uber drivers, live tracking)</td></tr>
+    <tr><td>Precision vs Storage</td><td>Query accuracy — finer cells = more exact proximity</td><td>Storage and index size grow exponentially with precision</td><td>Exact location matters (fraud detection, legal compliance)</td><td>General proximity is enough (nearby restaurants = 5km OK)</td></tr>
+    <tr><td>Spherical vs Flat</td><td>Global accuracy — correct behavior at poles and antimeridian</td><td>Implementation simplicity — flat Earth is trivial math</td><td>Operating globally or at high latitudes</td><td>Regional service in mid-latitudes (Europe, US, most cities)</td></tr>
+    <tr><td>Single vs Multi-level Index</td><td>Implementation simplicity — one index type, one code path</td><td>Query flexibility — single index optimizes for one pattern</td><td>One primary use case (either NN or range, not both)</td><td>Multiple query types — point lookup, radius, polygon</td></tr>
+    <tr><td>Pre-computed vs Runtime</td><td>Query latency — materialized views, pre-aggregated cells</td><td>Freshness and extra storage</td><td>Data changes slowly (H3 pricing zones, GeoHash regions)</td><td>Real-time requirements (live driver positions)</td></tr>
+    <tr><td>Consistency vs Availability</td><td>Correctness — location data is always current</td><td>Latency, partition tolerance under network failure</td><td>Financial or safety critical (nuclear plant perimeter alert)</td><td>User-facing proximity — stale by 30s is acceptable</td></tr>
+  </tbody>
+</table>
+
+<!-- DISTRIBUTED SYSTEMS TWIST -->
+<div class="sec-hdr" id="distributed"><h2>The Distributed Systems Twist</h2></div>
+
+<table class="dist-table">
+  <thead><tr><th>Index Type</th><th>Single-Node Behavior</th><th>Distributed Challenge</th><th>Shardability</th></tr></thead>
+  <tbody>
+    <tr><td>QuadTree</td><td>Elegant recursive structure, fast in memory</td><td>How to shard? By quadrant? Cross-boundary queries hit multiple shards.</td><td>Poor — recursive structure doesn't shard cleanly</td></tr>
+    <tr><td>R-Tree</td><td>Local rebalancing, microseconds per insert</td><td>Split requires: lock leaf → lock parent → coordinate routing table update → replicate. Microsecond op becomes 50ms+.</td><td>Poor — cascading rebalance requires cross-shard coordination</td></tr>
+    <tr><td>KD-Tree</td><td>In-memory, no coordination needed</td><td>Must replicate entire tree or shard at depth boundaries — both are complex.</td><td>Poor — recursive structure, no natural sharding key</td></tr>
+    <tr><td>GeoHash</td><td>Prefix = cell, cell = shard key</td><td>Works naturally! GeoHash prefix is a clean shard key. Range query = range scan on shard.</td><td>Excellent — prefix-based sharding is trivially consistent</td></tr>
+    <tr><td>S2</td><td>Cell ID = integer, hierarchy = ID range</td><td>Cell ID range maps cleanly to row key range in Bigtable/Spanner. Range queries = range scans.</td><td>Excellent — numeric cell IDs shard by range</td></tr>
+    <tr><td>H3</td><td>Compact integer cell IDs per resolution</td><td>Cell IDs are compact integers — hash-based sharding works. No spatial ordering guarantees.</td><td>Good — hash sharding, but no natural range ordering</td></tr>
+  </tbody>
+</table>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — The Coordination Cost Is the Hidden Cost</div>
+  <p>"On a single node, an R-Tree insert might trigger a split — this takes microseconds. In a distributed system, that same split requires: <strong>(1) Lock the leaf node, (2) Lock the parent, (3) Decide split algorithm, (4) Update routing table, (5) Replicate changes to followers.</strong> The microsecond operation becomes 50ms minimum, and you've created a hot-path bottleneck on every write. This is why GeoHash and S2 dominate in distributed systems — their O(1) cell ID computation has no coordination requirement."</p>
+</div>
+
+<div class="callout geo">
+  <div class="callout-title">The Replication Lag Consistency Challenge</div>
+  <p>Single-node: "Is driver A in cell X?" has one source of truth. Distributed with replication: Driver A's location is on shard 1. A rider querying shard 2 may see stale data — driver A moved 30 seconds ago but still appears at old location. <strong>For Uber, 30-second staleness is acceptable</strong> (the driver is on the same street). For a nuclear plant perimeter alert, it is not. Always ask the interviewer: what's the staleness tolerance?</p>
+</div>
+
+<!-- FAILURE MODES -->
+<div class="sec-hdr" id="failure-modes"><h2>Top 5 Failure Scenarios</h2></div>
+
+<table class="fail-table">
+  <thead><tr><th>Failure</th><th>What Happens</th><th>Symptoms</th><th>Recovery</th><th>Prevention</th></tr></thead>
+  <tbody>
+    <tr><td>Hotspot Overload</td><td>One spatial cell has 100x normal traffic (e.g., stadium event)</td><td>P99 latency spikes, shard CPU pegged, write queue builds</td><td>Redistribute data, increase cell precision in hot areas</td><td>Monitor cell population density; dynamic cell splitting above threshold</td></tr>
+    <tr><td>Index Corruption</td><td>Tree structure becomes inconsistent — split creates orphaned node</td><td>Queries miss results (false negatives), occasional crashes</td><td>Rebuild from source data (if available) or WAL replay</td><td>Checksums on tree nodes; periodic consistency checks; WAL for recovery</td></tr>
+    <tr><td>Clock Skew (Temporal)</td><td>Timestamps out of order across nodes — events appear in wrong time buckets</td><td>"Future" events visible, time-range queries miss recent data</td><td>NTP sync, logical clocks (Lamport or vector)</td><td>Bounded skew tolerance (e.g., 500ms); reject events too far in future</td></tr>
+    <tr><td>Boundary Misses</td><td>Nearby objects in adjacent cells — GeoHash boundary splits logically adjacent locations</td><td>Missing expected results near cell edges (user complaint: "why isn't that restaurant shown?")</td><td>Always query cell neighbors in addition to exact cell</td><td>Build neighbor-checking into all proximity queries as a standard pattern</td></tr>
+    <tr><td>Stale Reads (Distributed)</td><td>Replication lag means follower shows old driver location</td><td>Stale positions shown to users, wrong ETA estimates</td><td>Read from leader (higher latency) or accept staleness</td><td>Tune replication lag targets; use read-your-writes for self-queries</td></tr>
+  </tbody>
+</table>
+
+<!-- FAIL OPEN / CLOSED -->
+<div class="sec-hdr" id="fail-open"><h2>Fail-Open vs Fail-Closed</h2></div>
+
+<div class="fail-mode">
+  <div class="fm open">
+    <div class="fm-label">Fail-Open — Return Results Even If Degraded</div>
+    <p>If spatial index is unavailable, scan all data.</p>
+    <p><strong>Pro:</strong> Results are still returned — user experience not completely broken.</p>
+    <p><strong>Con:</strong> 1,000x latency spike. Scanning all data instead of 0.1% of data. Downstream systems overloaded.</p>
+    <p><strong>When correct:</strong> Safety-critical queries — <em>"find nearest hospital"</em> should fail-open, even if slow. A wrong answer (no hospitals) is worse than a slow answer.</p>
+  </div>
+  <div class="fm closed">
+    <div class="fm-label">Fail-Closed — Return Error if Index Unavailable</div>
+    <p>If spatial index is unavailable, return an error immediately.</p>
+    <p><strong>Pro:</strong> Predictable failure. No cascading load on downstream systems.</p>
+    <p><strong>Con:</strong> Feature completely unavailable during index outage.</p>
+    <p><strong>When correct:</strong> Most location-based services — <em>"find nearby restaurants"</em> should fail-closed. Returning 10 million restaurants is worse than returning an error with a retry message.</p>
+  </div>
+</div>
+
+<!-- EDGE CASES -->
+<div class="sec-hdr" id="edge-cases"><h2>Edge Cases Most Candidates Miss</h2></div>
+
+<div class="ec-card" id="ec1-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 1</span>
+    <span class="ec-title">The Antimeridian Problem — The 180° Boundary</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec1">
+    <div class="ec-meta">
+      <span class="ec-key">The problem</span>
+      <span class="ec-val">The antimeridian is the 180°E / -180°W longitude line, running through the Pacific Ocean. A query centered near Fiji spans roughly +170° to -170° longitude — but naively, a bounding box from -170° to +170° includes almost the entire Earth.</span>
+      <span class="ec-key">GeoHash failure</span>
+      <span class="ec-val">GeoHash prefixes "u" and "b" represent locations on opposite sides of the antimeridian — they are geographically adjacent (across the Pacific) but share <strong>no common prefix</strong>. A prefix-based search near the antimeridian returns nothing from the other side.</span>
+      <span class="ec-key">Bounding box failure</span>
+      <span class="ec-val">min_lng = -170, max_lng = +170 misses the antimeridian crossing entirely, scanning almost the entire planet instead of a local area.</span>
+      <span class="ec-key">Solution</span>
+      <span class="ec-val"><strong>Detect crossing:</strong> If max_lng &lt; min_lng after a standard query expansion, the query crosses the antimeridian. Split into two separate queries: one for [lng_min, 180°] and one for [-180°, lng_max]. Union results. S2 and H3 handle this correctly internally.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec2-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 2</span>
+    <span class="ec-title">The Pole Singularity — Search Radius Near lat=90°</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec2">
+    <div class="ec-meta">
+      <span class="ec-key">The problem</span>
+      <span class="ec-val">At the North Pole (lat=90°), all longitude lines converge at a single point. A "1km radius" search becomes a spherical cap — not a circle in lat/lng space.</span>
+      <span class="ec-key">GeoHash failure</span>
+      <span class="ec-val">GeoHash cells become infinitely thin wedges near the poles. A query for nearby objects may require checking hundreds of cells, each covering a tiny sliver of longitude. Cell sizes are wildly non-uniform.</span>
+      <span class="ec-key">Index failure</span>
+      <span class="ec-val">Any flat-Earth index (GeoHash, naive bounding box) returns wildly incorrect results or misses nearby objects entirely near the poles.</span>
+      <span class="ec-key">Solution</span>
+      <span class="ec-val"><strong>Detect polar region</strong> (|lat| > 85°) and switch to spherical math explicitly. S2 and H3 are designed for the sphere — they handle poles correctly without special cases. For GeoHash-based systems: add a warning that the service doesn't support polar regions, which is acceptable for most commercial applications.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec3-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 3</span>
+    <span class="ec-title">The Duplicates Problem — 10,000 Drivers in One Airport Lot</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec3">
+    <div class="ec-meta">
+      <span class="ec-key">The problem</span>
+      <span class="ec-val">10,000 Uber drivers wait in the same airport holding lot. They all report the exact same (or nearly identical) GPS coordinate — within centimeters of each other.</span>
+      <span class="ec-key">QuadTree failure</span>
+      <span class="ec-val">QuadTree keeps splitting trying to separate the points — eventually reaching maximum depth with many nodes each holding a single point. For truly identical coordinates, the split is infinite — you hit the minimum cell size limit.</span>
+      <span class="ec-key">R-Tree failure</span>
+      <span class="ec-val">All 10,000 objects end up in one massive MBR — a single point. This MBR matches every query near the airport, causing massive false positive fan-out.</span>
+      <span class="ec-key">Solution</span>
+      <span class="ec-val"><strong>Bucket multiple objects at the same location</strong> — store a list, not individual entries, per cell below a minimum precision. Or <strong>add random jitter</strong> (±0.0001°) to avoid exact collisions. Or use a separate data structure for the "waiting pool" pattern — a simple queue is better than a spatial index for objects that aren't spatially distinguishable.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec4-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 4</span>
+    <span class="ec-title">The Dense City Problem — Manhattan vs Montana</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec4">
+    <div class="ec-meta">
+      <span class="ec-key">The problem</span>
+      <span class="ec-val">Manhattan has ~1M restaurants in 20 km². Montana has ~1,000 restaurants in 300,000 km². A fixed GeoHash precision returns 10,000 results in NYC for a "nearby" query, and 0 results in rural Montana.</span>
+      <span class="ec-key">Fixed precision failure</span>
+      <span class="ec-val">GeoHash precision 6 (city block) works perfectly in Manhattan but fails in Montana — the search cell has no results. Precision 3 (province) works in Montana but returns the entire borough in NYC.</span>
+      <span class="ec-key">User experience failure</span>
+      <span class="ec-val">NYC user sees 10,000 results with no way to filter. Montana user sees 0 results with no way to expand. Both are bad UX driven by the same fixed-precision choice.</span>
+      <span class="ec-key">Solution</span>
+      <span class="ec-val"><strong>Adaptive precision:</strong> Start at high precision, expand outward until you have N results (e.g., N=20). Cap expansion at max radius. Alternatively, use a two-pass approach: coarse pass to find density, fine pass for results. Or use <strong>pagination with a radius cursor</strong> — return the first 20 results and the radius used, letting the client request more.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="ec-card" id="ec5-card">
+  <div class="ec-hdr" onclick="toggleEC(this)">
+    <span class="ec-num">Edge Case 5</span>
+    <span class="ec-title">The International Date Line — Time Partitions at 180°</span>
+    <span class="ec-toggle">▾</span>
+  </div>
+  <div class="ec-body"><div class="ec-inner" id="ec5">
+    <div class="ec-meta">
+      <span class="ec-key">The problem</span>
+      <span class="ec-val">A ship in the Pacific crosses the International Date Line at 23:30. West of the line: it's January 16th. East of the line: it's January 15th. The ship's events span two calendar dates even though only minutes elapsed.</span>
+      <span class="ec-key">Time-partition failure</span>
+      <span class="ec-val">A time-partitioned spatial index has the ship's events in two different date buckets. A query for "all events in the past 2 hours" may miss events in the adjacent date partition.</span>
+      <span class="ec-key">Why it matters</span>
+      <span class="ec-val">Shipping, aviation, maritime tracking — any system where objects cross the date line. Also applies to Daylight Saving Time transitions (clocks jump forward/back, creating duplicate or missing hours).</span>
+      <span class="ec-key">Solution</span>
+      <span class="ec-val"><strong>Always use UTC internally</strong> — never local time for time partitions. UTC has no date line or DST ambiguities. For queries near partition boundaries: query both adjacent partitions and union results. Add a buffer (e.g., extend both ends of the time range by one partition width) when forming partition keys from user-provided local times.</span>
+    </div>
+  </div></div>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Sound Bite — Trade-offs</div>
+  <p>"The fundamental tension in spatial indexing is between query flexibility and update performance. Tree structures like R-Trees adapt beautifully to data distribution and support sophisticated queries, but every insert potentially cascades through the tree. Grid systems like GeoHash give O(1) updates — just change the cell ID — but range queries become 'query all relevant cells.' At Uber scale with millions of moving drivers, update performance dominates. For Google Maps indexing static roads, R-Trees make sense because you bulk-load once and query forever."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Series-Closing Key Lesson</div>
+  <p>The three-part Geospatial Indexing series builds a layered understanding: Part 1 established the core mental models (space-filling curves, hierarchical decomposition, precision-storage trade-off, static vs dynamic spectrum, spherical Earth breaks flat assumptions) and QuadTree mechanics. Part 2 went deep on KD-Tree (nearest-neighbor pruning, curse of dimensionality, space-filling curve connection) and R-Tree (MBR nesting, overlap as adaptation, why PostGIS uses it and Uber doesn't). Part 3 synthesized everything into the decision framework, the distributed systems reality, and the edge cases that reveal deep understanding.</p>
+  <p>The L7 pattern across all three parts: <strong>every spatial index decision is a workload decision, not a data structure preference</strong>. The right index is determined by update frequency (tree vs grid), query pattern (NN vs range vs shape intersection), dimensionality (low-D tree vs high-D approximate), and spherical accuracy requirement (GeoHash vs S2/H3). Knowing which question to ask first — and why the answer to that question precludes certain choices — is what separates L5 from L7 answers in every location-based system interview.</p>
+</div>
+
+<div class="series-complete" id="series-complete">
+  <h3>🌍 Geospatial Indexing Series — Complete</h3>
+  <p>Three parts from first principles to L7 interview excellence. The complete mental model: geography provides the hierarchy, trees give query flexibility at the cost of update performance, grids give update performance at the cost of query flexibility, S2 is the sphere-correct middle ground, and the right answer always starts with "what are your update patterns?"</p>
+  <div class="sc-pills">
+    <span class="scp scp1">Part 1 · Core Concepts & QuadTree</span>
+    <span class="scp scp2">Part 2 · KD-Tree & R-Tree Deep Dives</span>
+    <span class="scp scp3">Part 3 · Decision Framework & Mastery</span>
+  </div>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleAP(h){h.parentElement.classList.toggle('collapsed')}
+function toggleEC(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
