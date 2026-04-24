@@ -6,6 +6,12 @@
         "file": "pages/kafka/kafka.html"
       }
     ],
+     "Api": [
+      {
+        "title": "Deep Dive-1",
+        "file": "pages/Api/core-1.html"
+      }
+    ],
      "Aritifical Intelligence": [
       {
         "title": "Roadmap",
