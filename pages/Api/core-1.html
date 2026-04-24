@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REST, gRPC & GraphQL (Part 1) — Core Understanding, REST & gRPC Deep Dives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  /* REST = coral/amber */
+  --rest:#E85D04;--rest2:#FB923C;--rest3:#FED7AA;
+  /* gRPC = indigo/purple */
+  --grpc:#6366F1;--grpc2:#A5B4FC;--grpc3:#312E81;
+  /* GraphQL = pink (teased) */
+  --gql:#E535AB;--gql2:#F9A8D4;
+  /* series accent — blue-violet */
+  --api:#4F46E5;--api2:#818CF8;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--rest),var(--rest2),var(--grpc),var(--grpc2),var(--gql));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--api2);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--api2);background:rgba(79,70,229,.1);border:1px solid rgba(79,70,229,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--api)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(79,70,229,.05)}
+.ni.active a{color:var(--api2);border-left-color:var(--api2);background:rgba(79,70,229,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--api2);border-color:var(--api2);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--api2);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--rest2) 30%,var(--grpc2) 56%,var(--gql));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(79,70,229,.1);border-color:var(--api2);color:var(--api2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* ELEVATOR PITCHES */
+.pitch-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.pitch-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:13px 15px}
+.pitch-card.re{border-top:3px solid var(--rest)}
+.pitch-card.gr{border-top:3px solid var(--grpc)}
+.pitch-card.gq{border-top:3px solid var(--gql)}
+.pitch-label{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
+.pitch-card.re .pitch-label{color:var(--rest2)}
+.pitch-card.gr .pitch-label{color:var(--grpc2)}
+.pitch-card.gq .pitch-label{color:var(--gql2)}
+.pitch-card p{font-size:.85rem;color:var(--muted);line-height:1.6}
+.pitch-card strong{color:var(--text)}
+
+/* AHA MOMENT */
+.aha{background:rgba(79,70,229,.06);border:1px solid rgba(79,70,229,.22);border-radius:10px;padding:17px 20px;margin:14px 0;position:relative}
+.aha::before{content:'💡';position:absolute;right:16px;top:14px;font-size:1.2rem;opacity:.4}
+.aha-label{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.12em;color:var(--api2);margin-bottom:9px;font-weight:600}
+.aha p{font-size:.9rem;color:var(--muted);line-height:1.7;padding-right:26px}
+.aha strong{color:var(--text)}
+
+/* RESTAURANT ANALOGY */
+.rest-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:14px 0}
+.ra-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:13px 15px}
+.ra-card.rr{border-left:3px solid var(--rest)}
+.ra-card.rg{border-left:3px solid var(--grpc)}
+.ra-card.rq{border-left:3px solid var(--gql)}
+.ra-title{font-family:var(--fh);font-size:.88rem;font-weight:700;margin-bottom:6px}
+.ra-card.rr .ra-title{color:var(--rest2)}.ra-card.rg .ra-title{color:var(--grpc2)}.ra-card.rq .ra-title{color:var(--gql2)}
+.ra-card p{font-size:.83rem;color:var(--muted);line-height:1.6}
+
+/* FAILURE SCENARIOS TABLE */
+.fail-table{width:100%;border-collapse:collapse;font-size:.76rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.fail-table thead tr{background:var(--surface2)}
+.fail-table th{padding:8px 11px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);color:var(--dim)}
+.fail-table th:nth-child(2){color:var(--rest2)}.fail-table th:nth-child(3){color:var(--grpc2)}.fail-table th:nth-child(4){color:var(--gql2)}
+.fail-table td{padding:8px 11px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.78rem;color:var(--muted)}
+.fail-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.fail-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.fail-table td:first-child{font-weight:600;color:var(--text)}
+
+/* 5 CORE CONCEPTS */
+.concepts{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.con{background:var(--surface);border:1px solid rgba(79,70,229,.18);border-radius:9px;overflow:hidden}
+.con-hdr{padding:10px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;background:rgba(79,70,229,.04)}
+.con-num{font-family:var(--fc);font-size:.64rem;font-weight:700;padding:2px 9px;border-radius:9px;background:rgba(79,70,229,.12);color:var(--api2);border:1px solid rgba(79,70,229,.2);flex-shrink:0}
+.con-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text)}
+.con-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.con.collapsed .con-toggle{transform:rotate(-90deg)}
+.con-body{overflow:hidden;transition:max-height .4s ease,opacity .3s;max-height:9999px;opacity:1}
+.con.collapsed .con-body{max-height:0;opacity:0}
+.con-inner{padding:0 16px 13px;font-size:.87rem;color:var(--muted);line-height:1.65}
+.con-inner strong{color:var(--text)}
+
+/* GUARANTEES TABLE */
+.guar-table{width:100%;border-collapse:collapse;font-size:.77rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.guar-table thead tr{background:var(--surface2)}
+.guar-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border)}
+.guar-table th:nth-child(1){color:var(--dim)}.guar-table th:nth-child(2){color:var(--cass4)}.guar-table th:nth-child(3){color:var(--no)}
+.guar-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.79rem;color:var(--muted)}
+.guar-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.guar-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.guar-table td:first-child{font-weight:700;color:var(--text)}
+
+/* TRIGGER KEYWORDS TABLE */
+.trigger-table{width:100%;border-collapse:collapse;font-size:.78rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.trigger-table thead tr{background:rgba(79,70,229,.06)}
+.trigger-table th{padding:8px 12px;text-align:left;font-family:var(--fc);font-size:.59rem;text-transform:uppercase;letter-spacing:.08em;color:var(--api2);border-bottom:1px solid rgba(79,70,229,.18)}
+.trigger-table td{padding:8px 12px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.79rem;color:var(--muted)}
+.trigger-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.trigger-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.trigger-table td:first-child{font-style:italic;color:var(--text)}
+.trigger-table td:last-child{font-family:var(--fc);font-size:.75rem}
+.tag-rest{background:rgba(232,93,4,.12);color:var(--rest2);border:1px solid rgba(232,93,4,.2);padding:1px 7px;border-radius:8px;font-family:var(--fc);font-size:.7rem;font-weight:700}
+.tag-grpc{background:rgba(99,102,241,.12);color:var(--grpc2);border:1px solid rgba(99,102,241,.2);padding:1px 7px;border-radius:8px;font-family:var(--fc);font-size:.7rem;font-weight:700}
+.tag-gql{background:rgba(229,53,171,.12);color:var(--gql2);border:1px solid rgba(229,53,171,.2);padding:1px 7px;border-radius:8px;font-family:var(--fc);font-size:.7rem;font-weight:700}
+
+/* API VARIANT SECTIONS */
+.api-section{border-radius:14px;overflow:hidden;margin-bottom:32px}
+.api-section.rs{border:1px solid rgba(232,93,4,.25)}
+.api-section.gp{border:1px solid rgba(99,102,241,.25)}
+.api-banner{padding:16px 22px;display:flex;align-items:center;gap:14px}
+.api-section.rs .api-banner{background:linear-gradient(90deg,rgba(232,93,4,.09),rgba(232,93,4,.02))}
+.api-section.gp .api-banner{background:linear-gradient(90deg,rgba(99,102,241,.09),rgba(99,102,241,.02))}
+.api-badge{font-family:var(--fc);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:4px 12px;border-radius:20px;flex-shrink:0}
+.rs .api-badge{background:rgba(232,93,4,.15);color:var(--rest);border:1px solid rgba(232,93,4,.3)}
+.gp .api-badge{background:rgba(99,102,241,.15);color:var(--grpc);border:1px solid rgba(99,102,241,.3)}
+.api-title{font-family:var(--fh);font-size:1.4rem;font-weight:900;color:var(--text)}
+.api-sub{font-family:var(--fb);font-size:.85rem;color:var(--muted);margin-left:auto;flex-shrink:0}
+.api-content{padding:0 22px 20px}
+
+/* AF CARDS */
+.af-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.af-hdr{padding:11px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.af-tag{font-family:var(--fc);font-size:.63rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:2px 9px;border-radius:8px;flex-shrink:0}
+.af-title{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text)}
+.af-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.af-card.collapsed .af-toggle{transform:rotate(-90deg)}
+.af-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.af-card.collapsed .af-body{max-height:0;opacity:0}
+.af-inner{padding:0 16px 14px}
+/* REST card colors */
+.rst-c .af-hdr{background:rgba(232,93,4,.04);border-bottom:1px solid rgba(232,93,4,.12)}
+.rst-c .af-tag{background:rgba(232,93,4,.12);color:var(--rest);border:1px solid rgba(232,93,4,.2)}
+/* gRPC card colors */
+.grp-c .af-hdr{background:rgba(99,102,241,.04);border-bottom:1px solid rgba(99,102,241,.12)}
+.grp-c .af-tag{background:rgba(99,102,241,.12);color:var(--grpc);border:1px solid rgba(99,102,241,.2)}
+
+/* DIAGRAM */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.rs{border:1px solid rgba(232,93,4,.2)}.diag.rs .diag-hdr{background:rgba(232,93,4,.06);border-bottom:1px solid rgba(232,93,4,.18)}.diag.rs .diag-title{color:var(--rest2)}
+.diag.gp{border:1px solid rgba(99,102,241,.2)}.diag.gp .diag-hdr{background:rgba(99,102,241,.06);border-bottom:1px solid rgba(99,102,241,.18)}.diag.gp .diag-title{color:var(--grpc2)}
+.diag.warn{border:1px solid rgba(249,115,22,.2)}.diag.warn .diag-hdr{background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.18)}.diag.warn .diag-title{color:var(--obs)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--api2);border-color:var(--api2)}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.rest{background:rgba(232,93,4,.07);border:1px solid rgba(232,93,4,.2)}
+.callout.grpc{background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.rest .callout-title{color:var(--rest2)}
+.callout.grpc .callout-title{color:var(--grpc2)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* MONITORING TABLE */
+.mon-table{width:100%;border-collapse:collapse;font-size:.77rem;margin:12px 0;border-radius:8px;overflow:hidden}
+.mon-table thead tr{background:var(--surface2)}
+.mon-table th{padding:8px 11px;text-align:left;font-family:var(--fc);font-size:.58rem;text-transform:uppercase;letter-spacing:.07em;color:var(--dim);border-bottom:1px solid var(--border)}
+.mon-table td{padding:8px 11px;border-bottom:1px solid rgba(48,54,61,.3);vertical-align:top;line-height:1.45;font-size:.78rem;color:var(--muted)}
+.mon-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.mon-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.mon-table td:first-child{font-weight:600;color:var(--text);font-family:var(--fc);font-size:.76rem}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(79,70,229,.09),rgba(232,93,4,.04));border:1px solid rgba(79,70,229,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--api2);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic;padding-right:28px}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--api2);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+/* 4-STREAMING PATTERNS */
+.streaming-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.sg-card{background:var(--surface2);border:1px solid rgba(99,102,241,.18);border-radius:8px;padding:11px 13px}
+.sg-label{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--grpc2);margin-bottom:6px}
+.sg-card p{font-size:.83rem;color:var(--muted);line-height:1.55}
+.sg-card strong{color:var(--text)}
+.sg-diag{font-family:var(--fc);font-size:.74rem;color:#c9d1d9;background:#010409;border-radius:5px;padding:8px 10px;margin-top:8px;line-height:1.65;white-space:pre;overflow-x:auto}
+
+mark{background:rgba(79,70,229,.14);color:var(--api2);border-radius:3px;padding:1px 4px}
+mark.rs{background:rgba(232,93,4,.14);color:var(--rest2)}
+mark.gp{background:rgba(99,102,241,.14);color:var(--grpc2)}
+mark.gq{background:rgba(229,53,171,.14);color:var(--gql2)}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.pitch-grid,.rest-cards,.streaming-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">REST · gRPC · GraphQL · L6/L7 Series</div>
+    <div class="sb-title">Core Understanding, REST & gRPC</div>
+    <div class="sb-part">Part 1 — API Communication Paradigms</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Core Understanding</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#pitches">Elevator Pitches</a></li>
+      <li class="ni sub"><a href="#analogy">Restaurant Analogy</a></li>
+      <li class="ni sub"><a href="#failure-scenarios">Failure Scenarios Table</a></li>
+      <li class="ni sub"><a href="#concepts">5 Core Concepts</a></li>
+      <li class="ni sub"><a href="#guarantees">Guarantees vs Not</a></li>
+      <li class="ni sub"><a href="#when">When To Use Which</a></li>
+    </li>
+    <li class="ng"><div class="nl">REST API Deep Dive</div>
+      <li class="ni sub"><a href="#rest-what">A: What It Is</a></li>
+      <li class="ni sub"><a href="#rest-how">B: How It Works</a></li>
+      <li class="ni sub"><a href="#rest-strengths">C: Strengths</a></li>
+      <li class="ni sub"><a href="#rest-limits">D: Limitations</a></li>
+      <li class="ni sub"><a href="#rest-ops">E: Operational</a></li>
+      <li class="ni sub"><a href="#rest-l7">F: L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">gRPC Deep Dive</div>
+      <li class="ni sub"><a href="#grpc-what">A: What It Is</a></li>
+      <li class="ni sub"><a href="#grpc-how">B: How It Works</a></li>
+      <li class="ni sub"><a href="#grpc-strengths">C: Strengths</a></li>
+      <li class="ni sub"><a href="#grpc-limits">D: Limitations</a></li>
+      <li class="ni sub"><a href="#grpc-ops">E: Operational</a></li>
+      <li class="ni sub"><a href="#grpc-l7">F: L6/L7 Nuances</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">REST · gRPC · GraphQL · L6/L7 Series · Part 1</div>
+  <h1>Core Understanding,<br>REST &<br>gRPC Deep Dives</h1>
+  <div class="hero-meta">
+    <span>🍽️ Restaurant analogy for all three paradigms</span>
+    <span>⚙️ 5 core concepts every engineer must internalize</span>
+    <span>🌐 REST: full A–F with cache math, failure modes, L7 nuances</span>
+    <span>⚡ gRPC: proto workflow, 4 streaming patterns, deadline propagation</span>
+    <span>📋 Trigger keywords, scale thresholds, smell test</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill ap">Part 1: Core + REST + gRPC</span>
+    <span class="part-pill">Part 2: GraphQL + Comparison + System Design</span>
+  </div>
+  <p style="margin-top:14px">REST, gRPC, and GraphQL are not competing technologies — they're different answers to fundamentally different questions. This guide builds the mental model from scratch: the restaurant analogy that makes each paradigm click, the five concepts you must internalize to reason about them correctly, and complete A–F deep dives on REST and gRPC covering mechanics, failure modes, operational metrics, and the L7 nuances that separate candidates.</p>
+</section>
+
+<!-- ELEVATOR PITCHES -->
+<div class="sec-hdr" id="pitches"><h2>Elevator Pitches</h2></div>
+
+<div class="pitch-grid">
+  <div class="pitch-card re">
+    <div class="pitch-label">REST</div>
+    <p>HTTP semantics + resource-oriented URLs + standard verbs. <strong>Optimizes for universal accessibility and cacheability.</strong> Any browser, curl, or HTTP client works natively.</p>
+  </div>
+  <div class="pitch-card gr">
+    <div class="pitch-label">gRPC</div>
+    <p>HTTP/2 + Protocol Buffers + generated stubs. <strong>Optimizes for performance and strong contracts in service-to-service communication.</strong> Binary, typed, streaming-native.</p>
+  </div>
+  <div class="pitch-card gq">
+    <div class="pitch-label">GraphQL</div>
+    <p>Query language over any transport. <strong>Optimizes for client flexibility and efficient data fetching.</strong> Clients specify exact data shapes; server returns exactly that.</p>
+  </div>
+</div>
+
+<div class="aha" id="aha-section">
+  <div class="aha-label">The "Aha!" Moment</div>
+  <p>These aren't competing technologies — they're different answers to fundamentally different questions. <strong>REST asks:</strong> "What resources exist and what can I do to them?" <strong>gRPC asks:</strong> "What functions can I call and how fast can I call them?" <strong>GraphQL asks:</strong> "What data do I need and can I get exactly that?" Your choice depends on whether you're building for the web, for microservices, or for diverse clients with varying data needs.</p>
+</div>
+
+<!-- RESTAURANT ANALOGY -->
+<div class="sec-hdr" id="analogy"><h2>The Restaurant Analogy</h2></div>
+
+<div class="rest-cards">
+  <div class="ra-card rr">
+    <div class="ra-title">REST = The Classic Diner</div>
+    <p>There's a menu with numbered items (URLs) and standard actions: ORDER (POST), CHECK (GET), MODIFY (PUT), CANCEL (DELETE). Every table follows the same rules. Item #42 is always the burger. If you want the burger without pickles, you might need two trips: one to order, one to customize. <strong>Simple, everyone understands it, but sometimes inefficient.</strong></p>
+  </div>
+  <div class="ra-card rg">
+    <div class="ra-title">gRPC = The High-End Chef's Kitchen</div>
+    <p>You call the chef directly on a <em>dedicated phone line</em> and speak in a specialized language only the kitchen understands. You can order multiple things simultaneously (streaming), the chef confirms in real-time, and communication is incredibly fast. <strong>But a random person off the street can't just walk in</strong> — they don't speak the language. Perfect for regular customers (internal services) who need speed above all.</p>
+  </div>
+  <div class="ra-card rq">
+    <div class="ra-title">GraphQL = The Personal Concierge</div>
+    <p>You hand the concierge a shopping list: "I want the appetizer from Table 1 but only the calories. The main course from Table 2 but only the ingredients. Reviews but only from this week." The concierge assembles exactly what you asked for — nothing more, nothing less — in one trip. <strong>Incredibly flexible, but the concierge needs sophisticated training to prevent abuse.</strong></p>
+  </div>
+</div>
+
+<!-- FAILURE SCENARIOS TABLE -->
+<div class="sec-hdr" id="failure-scenarios"><h2>How the Analogy Explains Failure Scenarios</h2></div>
+
+<table class="fail-table">
+  <thead>
+    <tr><th>Scenario</th><th>REST (Diner)</th><th>gRPC (Kitchen Line)</th><th>GraphQL (Concierge)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Server overload</td><td>Kitchen puts up "CLOSED" sign (503). Everyone sees it. Clear and predictable.</td><td>Phone line goes dead. Regular customers notice immediately. No ambiguity.</td><td>Concierge overwhelmed — might fulfill partial requests. Hard to know exactly what failed.</td></tr>
+    <tr><td>Breaking change</td><td>Menu item #42 removed. Regular customers confused. Need new menu (/v2/). Maintaining both is expensive.</td><td>Both sides must update their phrasebook simultaneously. Tight coupling requires coordination.</td><td>Can deprecate fields gracefully. Old clients keep working. Most flexible evolution story.</td></tr>
+    <tr><td>Network issues</td><td>Order lost in transit. Client retries — might get double order. Idempotency matters.</td><td>Built-in retry with backoff. Connection can resume mid-stream. Most resilient.</td><td>Single request; if it fails, everything fails. All-or-nothing failure mode.</td></tr>
+    <tr><td>Debugging</td><td>Easy — HTTP status codes, curl, standard tools everywhere.</td><td>Need specialized tools. Binary protocol harder to inspect.</td><td>Must understand query structure. N+1 problems hide in complex queries.</td></tr>
+  </tbody>
+</table>
+
+<!-- 5 CORE CONCEPTS -->
+<div class="sec-hdr" id="concepts"><h2>5 Core Concepts You MUST Internalize</h2></div>
+
+<div class="concepts">
+  <div class="con" id="c1">
+    <div class="con-hdr" onclick="toggleCon(this)">
+      <span class="con-num">Concept 1</span>
+      <span class="con-title">Protocol vs Query Language vs RPC</span>
+      <span class="con-toggle">▾</span>
+    </div>
+    <div class="con-body"><div class="con-inner">
+      <p><strong>REST</strong> is an <em>architectural style</em> built on HTTP — not a protocol, not a specification. It's a set of constraints (stateless, cacheable, uniform interface, layered system) that, when followed, give you properties like scalability and evolvability.</p>
+      <p style="margin-top:8px"><strong>gRPC</strong> is an <em>RPC framework</em> with its own binary protocol running over HTTP/2. It's a concrete implementation with code generation, not an architectural style you follow loosely.</p>
+      <p style="margin-top:8px"><strong>GraphQL</strong> is a <em>query language</em> that can run over any transport (usually HTTP). It defines how clients request data — not the wire protocol for getting it there.</p>
+    </div></div>
+  </div>
+
+  <div class="con" id="c2">
+    <div class="con-hdr" onclick="toggleCon(this)">
+      <span class="con-num">Concept 2</span>
+      <span class="con-title">Contract Location — Where Is the Agreement?</span>
+      <span class="con-toggle">▾</span>
+    </div>
+    <div class="con-body"><div class="con-inner">
+      <p><strong>REST:</strong> Contract is <em>implicit</em> in URL structure and HTTP semantics. Typically documented in OpenAPI/Swagger — but documentation is optional. No compiler checks if your client matches your server.</p>
+      <p style="margin-top:8px"><strong>gRPC:</strong> Contract is <em>explicit</em> in .proto files — code-generated stubs for both client and server from the same source. Compiler enforces compatibility at build time.</p>
+      <p style="margin-top:8px"><strong>GraphQL:</strong> Contract is <em>explicit</em> in the schema and introspectable at runtime. Any client can query the schema itself to discover what's available. Type system enforced at query validation.</p>
+    </div></div>
+  </div>
+
+  <div class="con" id="c3">
+    <div class="con-hdr" onclick="toggleCon(this)">
+      <span class="con-num">Concept 3</span>
+      <span class="con-title">Coupling Spectrum</span>
+      <span class="con-toggle">▾</span>
+    </div>
+    <div class="con-body"><div class="con-inner">
+      <p>REST: <strong>Loosely coupled</strong> in theory (hypermedia ideal), practically medium coupling — clients depend on URL structure.</p>
+      <p style="margin-top:6px">gRPC: <strong>Tightly coupled</strong> — client and server share generated code from the same .proto file. A schema change requires both sides to update.</p>
+      <p style="margin-top:6px">GraphQL: <strong>Flexibly coupled</strong> — schema provides the boundary, clients choose what they need. Clients can evolve independently as long as their fields aren't deprecated.</p>
+      <p style="margin-top:8px"><strong>The interview signal:</strong> Choose coupling level based on ownership. Teams owning both client and server → tighter coupling is fine (gRPC). External developers → loose coupling required (REST or GraphQL).</p>
+    </div></div>
+  </div>
+
+  <div class="con" id="c4">
+    <div class="con-hdr" onclick="toggleCon(this)">
+      <span class="con-num">Concept 4</span>
+      <span class="con-title">Efficiency vs Accessibility Trade-off</span>
+      <span class="con-toggle">▾</span>
+    </div>
+    <div class="con-body"><div class="con-inner">
+      <p><strong>REST</strong> is most accessible — any browser, curl, or HTTP client works with zero setup. This universality is the reason it dominates public APIs.</p>
+      <p style="margin-top:6px"><strong>gRPC</strong> is most efficient — binary encoding (Protocol Buffers) is 3–10x smaller than JSON, HTTP/2 multiplexing eliminates connection overhead, and streaming is native.</p>
+      <p style="margin-top:6px"><strong>GraphQL</strong> is most flexible — clients get exactly the data they need (no over-fetching, no under-fetching), reducing both bandwidth and round trips for complex data shapes.</p>
+    </div></div>
+  </div>
+
+  <div class="con" id="c5">
+    <div class="con-hdr" onclick="toggleCon(this)">
+      <span class="con-num">Concept 5</span>
+      <span class="con-title">Who's In Control?</span>
+      <span class="con-toggle">▾</span>
+    </div>
+    <div class="con-body"><div class="con-inner">
+      <p><strong>REST:</strong> Server defines resources and what you can do to them. Client follows the server's prescribed URL structure and method semantics.</p>
+      <p style="margin-top:6px"><strong>gRPC:</strong> Server defines functions and their exact signatures. Client calls exactly those functions — no more, no less.</p>
+      <p style="margin-top:6px"><strong>GraphQL:</strong> Server defines what's available. Client decides what to fetch. Power shifts to the client — which is both the strength (flexibility) and the risk (clients can write expensive queries).</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- GUARANTEES TABLE -->
+<div class="sec-hdr" id="guarantees"><h2>What Each Guarantees vs Does Not Guarantee</h2></div>
+
+<table class="guar-table">
+  <thead><tr><th>API Style</th><th>✅ Guarantees</th><th>❌ Does NOT Guarantee</th></tr></thead>
+  <tbody>
+    <tr><td>REST</td><td>Statelessness between requests, uniform interface, standard HTTP caching, universal client compatibility</td><td>Response format consistency (no schema enforcement), efficient data fetching, backward compatibility without versioning</td></tr>
+    <tr><td>gRPC</td><td>Strong typing with compiler enforcement, schema evolution rules, efficient binary serialization, bidirectional streaming</td><td>Browser support without proxy, human readability, works through all proxies/firewalls (HTTP/2 often blocked)</td></tr>
+    <tr><td>GraphQL</td><td>Exact data requested = exact data returned, single round-trip for complex queries, schema introspection at runtime</td><td>Query performance (N+1 without optimization), simple authorization model, protection against expensive queries</td></tr>
+  </tbody>
+</table>
+
+<!-- WHEN TO USE -->
+<div class="sec-hdr" id="when"><h2>When Does This Come Up?</h2></div>
+
+<table class="trigger-table">
+  <thead><tr><th>If You Hear…</th><th>Think…</th></tr></thead>
+  <tbody>
+    <tr><td>"Mobile app needs to minimize bandwidth"</td><td><span class="tag-gql">GraphQL</span> (exact selection) or <span class="tag-grpc">gRPC</span> (binary, efficient)</td></tr>
+    <tr><td>"Browser-based client"</td><td><span class="tag-rest">REST</span> or <span class="tag-gql">GraphQL</span> — gRPC-Web is possible but complex</td></tr>
+    <tr><td>"Microservices talking to microservices"</td><td><span class="tag-grpc">gRPC</span> — speed, streaming, strong contracts</td></tr>
+    <tr><td>"Public API for third-party developers"</td><td><span class="tag-rest">REST</span> — universally understood, great tooling</td></tr>
+    <tr><td>"Real-time updates," "streaming," "bidirectional"</td><td><span class="tag-grpc">gRPC</span> (native streaming) or GraphQL Subscriptions</td></tr>
+    <tr><td>"Multiple clients with different data needs"</td><td><span class="tag-gql">GraphQL</span> — each client specifies what it needs</td></tr>
+    <tr><td>"Need to aggregate data from multiple services"</td><td><span class="tag-gql">GraphQL</span> Federation or Backend-for-Frontend pattern</td></tr>
+    <tr><td>"Legacy system integration"</td><td><span class="tag-rest">REST</span> — most compatible</td></tr>
+    <tr><td>"Low latency internal communication"</td><td><span class="tag-grpc">gRPC</span> — binary protocol, HTTP/2 connection reuse</td></tr>
+  </tbody>
+</table>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 Interview Sound Bite</div>
+  <p>"REST optimizes for universal accessibility and cacheability, gRPC optimizes for performance and strong contracts in service-to-service communication, and GraphQL optimizes for client flexibility and efficient data fetching. At Google scale, we typically use all three: gRPC for the service mesh, GraphQL or BFF for client-facing aggregation, and REST for external developer APIs."</p>
+</div>
+
+<!-- REST DEEP DIVE -->
+<div class="sec-hdr" id="rest-deep"><h2>REST API — Complete Deep Dive</h2></div>
+
+<div class="api-section rs">
+  <div class="api-banner">
+    <span class="api-badge">REST</span>
+    <span class="api-title">Resource-Oriented Architecture over HTTP</span>
+    <span class="api-sub">Best for: Public APIs, CRUD, read-heavy workloads</span>
+  </div>
+  <div class="api-content">
+
+    <div class="af-card rst-c" id="rest-what-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">A</span><span class="af-title" id="rest-what">What It Is — The Mental Model</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout rest">
+          <div class="callout-title">One-Sentence Definition</div>
+          <p>REST is an architectural style where you model your domain as <strong>resources (nouns)</strong> and use standard HTTP methods <strong>(verbs)</strong> to perform operations on them.</p>
+        </div>
+        <div class="callout rest">
+          <div class="callout-title">The Core Insight — REST Isn't a Protocol</div>
+          <p>REST is a set of constraints (stateless, cacheable, uniform interface, layered system) that, when followed, give you scalability and evolvability. <strong>Most "REST APIs" are actually HTTP APIs that follow some REST principles.</strong> True REST includes HATEOAS — almost no one implements it.</p>
+        </div>
+        <div class="callout rest">
+          <div class="callout-title">The Inventor's Problem</div>
+          <p>Roy Fielding, while defining HTTP 1.1, asked: "What architectural style makes the web scale to billions of users without central coordination?" REST was his answer — a decentralized, stateless, cacheable system where anyone can participate without prior coordination.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card rst-c" id="rest-how-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">B</span><span class="af-title" id="rest-how">How It Works — Mechanics</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="diag rs">
+          <div class="diag-hdr"><span class="diag-title">Step-by-Step REST Interaction</span></div>
+          <pre>1. CLIENT: "I need user 123's profile"
+   → Constructs: GET /users/123
+   → Headers: Accept: application/json, Authorization: Bearer &lt;token&gt;
+
+2. NETWORK: Request travels over HTTP/1.1 or HTTP/2
+   → May hit CDN cache (GET with cache headers → cache hit!)
+   → Hits reverse proxy → load balancer
+
+3. SERVER: Routes by URL path → UsersController
+   → Routes by method → GET → getUser(id=123)
+   → Fetches from DB/cache, serializes to JSON
+
+4. RESPONSE:
+   → Status: 200 OK
+   → Headers: Content-Type: application/json, Cache-Control: max-age=300
+   → Body: {"id": 123, "name": "Alice", "email": "alice@example.com"}
+
+5. CLIENT → CDN:
+┌────────┐ ──GET──→ ┌───────┐ ──GET──→ ┌──────────┐ ──GET──→ ┌────────┐
+│ Client │          │  CDN  │          │ Load Bal │          │ Server │
+│        │ ←─200── │(cache)│ ←─200── │          │ ←─200── │        │
+└────────┘          └───────┘          └──────────┘          └────────┘
+                        ↓
+               Cache HIT? Return directly.
+               Cache MISS? Forward to origin.</pre>
+        </div>
+        <div class="callout rest">
+          <div class="callout-title">Cache Math — The Power of REST's Cacheability</div>
+          <p>E-commerce API, 5,000 req/sec: 70% GET (cacheable), 30% writes. With 80% cache hit rate on GETs: 5,000 × 0.70 × 0.80 = 2,800 req/sec never hit origin. Origin handles only 2,200 req/sec instead of 5,000. <strong>REST's cacheability is not a nice-to-have — it's a 55% reduction in origin load for free.</strong></p>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card rst-c" id="rest-strengths-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">C</span><span class="af-title" id="rest-strengths">Strengths & Ideal Use Cases</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout good">
+          <div class="callout-title">Where REST Shines</div>
+          <ul>
+            <li><strong>Public APIs:</strong> Any developer with curl can test it immediately — zero setup</li>
+            <li><strong>CRUD-heavy apps:</strong> Resources map naturally to database entities and HTTP verbs</li>
+            <li><strong>Read-heavy workloads:</strong> HTTP caching at CDN/application layer dramatically reduces load</li>
+            <li><strong>Existing infrastructure:</strong> Proxies, firewalls, monitoring, and load balancers all understand HTTP natively</li>
+            <li><strong>Real-world examples:</strong> Stripe (developers integrate quickly), GitHub API, Twitter external API</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card rst-c" id="rest-limits-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">D</span><span class="af-title" id="rest-limits">Limitations & Failure Modes</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="diag rs">
+          <div class="diag-hdr"><span class="diag-title">Over-Fetching and Under-Fetching</span></div>
+          <pre>Client needs: User name + last 3 orders
+
+REST approach:
+  GET /users/123         → Returns 50 fields, client needs 1
+  GET /users/123/orders  → Returns 100 orders, client needs 3
+
+Result: 2 round trips, 10x excess data transfer
+
+N+1 Pattern (Client needs 10 users with departments):
+  Option A (N+1):
+    GET /users           → 10 users
+    GET /departments/1   → for user 1
+    GET /departments/2   → for user 2
+    ... (11 requests total)
+
+  Option B (Embedding):
+    GET /users?include=department  → 1 request but complex API design
+    Slippery slope toward rebuilding GraphQL inside REST</pre>
+        </div>
+        <div class="diag rs">
+          <div class="diag-hdr"><span class="diag-title">The Cache Consistency Failure</span></div>
+          <pre>t=0s:  Client A GETs /products/42, price=$100, cached 5 minutes
+t=1s:  Admin updates price to $150 via PUT /products/42
+t=2s:  Client B GETs /products/42, cache miss → sees $150
+t=3s:  Client A's app shows $100 (still cached!)
+t=4s:  Client A adds to cart at $100
+t=5s:  Server processes order — price mismatch!
+
+REST's cacheability is a feature, but cache invalidation is
+"one of the two hard problems in computer science."
+
+Solution: Short TTLs, Cache-Control: no-cache for sensitive prices,
+         ETags for conditional requests, purge-on-update API</pre>
+        </div>
+        <div class="callout warn">
+          <div class="callout-title">The Four Gotchas</div>
+          <ul>
+            <li><strong>PUT vs PATCH confusion:</strong> PUT = full replace (send all fields), PATCH = partial update (send changed fields only)</li>
+            <li><strong>POST idempotency:</strong> POST is NOT idempotent — retries can create duplicates. Use idempotency keys.</li>
+            <li><strong>HATEOAS rarely implemented:</strong> True REST includes links to related actions in responses. Without it, clients are tightly coupled to URL structure.</li>
+            <li><strong>Status code misuse:</strong> Returning 200 OK with an error in the body breaks all tooling that relies on HTTP semantics.</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card rst-c" id="rest-ops-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">E</span><span class="af-title" id="rest-ops">Operational Considerations</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <table class="mon-table">
+          <thead><tr><th>Metric</th><th>What It Tells You</th><th>Alert Threshold</th></tr></thead>
+          <tbody>
+            <tr><td>Response time p50/p95/p99</td><td>User experience at different percentiles</td><td>p99 &gt; 500ms</td></tr>
+            <tr><td>HTTP 5xx rate</td><td>Server errors — bugs, overload, dependency failures</td><td>&gt; 0.1%</td></tr>
+            <tr><td>HTTP 4xx rate</td><td>Client errors or abuse patterns</td><td>Sudden spike &gt; 5%</td></tr>
+            <tr><td>Cache hit ratio</td><td>Efficiency — low ratio means caching not working</td><td>&lt; 60% for read-heavy</td></tr>
+            <tr><td>Payload size</td><td>Bandwidth, serialization cost, anomalies</td><td>Sudden increase &gt; 2x</td></tr>
+          </tbody>
+        </table>
+        <div class="callout rest">
+          <div class="callout-title">Debugging Quick Reference</div>
+          <ul>
+            <li><strong>High latency, low errors:</strong> Slow database or missing index — check DB query logs</li>
+            <li><strong>Intermittent 502s:</strong> Backend timeout or health check failing — check LB and backend logs</li>
+            <li><strong>Sudden 4xx spike:</strong> Breaking change, client bug, or attack — check access logs for pattern</li>
+            <li><strong>Cache hit ratio dropped:</strong> Changed Cache-Control headers or cache eviction — check Vary header</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card rst-c" id="rest-l7-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">F</span><span class="af-title" id="rest-l7">L6/L7 Nuances</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout rest">
+          <div class="callout-title">The Deep Question</div>
+          <p style="font-style:italic;color:var(--text)">"How do you handle partial failures in a REST API when a client requests data that requires aggregating from multiple backend services?"</p>
+          <p style="margin-top:8px">Strong answer: Return partial responses with a degraded indicator — include what succeeded and flag what failed. Use circuit breakers to avoid cascade failures when a dependency is down. Implement async refresh patterns for non-critical data. Distinguish user-facing consistency requirements (show something) from analytics (exact or nothing).</p>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — Most REST APIs Aren't Actually REST</div>
+          <p>"Most 'REST APIs' are HTTP APIs that use JSON. True REST includes HATEOAS — responses contain links to related actions, letting clients discover capabilities dynamically. Almost no one implements this, which is <strong>why REST APIs require explicit versioning and documentation</strong>. If we followed REST properly, clients would discover capabilities dynamically and breaking changes would be rarer. This is why Fielding himself has called out most APIs as not being truly RESTful."</p>
+        </div>
+        <div class="callout rest">
+          <div class="callout-title">Startup vs Google Scale</div>
+          <p>Startup: REST is fine — over-fetching isn't your problem yet. Ship fast, document well.</p>
+          <p style="margin-top:6px">Google scale: REST's chattiness becomes expensive. A feed might require 50+ backend calls to assemble. Solution: <strong>BFF (Backend for Frontend)</strong> — a service that batches internal gRPC calls and exposes a coarser-grained REST (or GraphQL) API to clients. The BFF pattern is how Google/Facebook avoid building REST chattiness into their client stack.</p>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- gRPC DEEP DIVE -->
+<div class="sec-hdr" id="grpc-deep"><h2>gRPC — Complete Deep Dive</h2></div>
+
+<div class="api-section gp">
+  <div class="api-banner">
+    <span class="api-badge">gRPC</span>
+    <span class="api-title">High-Performance RPC over HTTP/2 with Protocol Buffers</span>
+    <span class="api-sub">Best for: Service-to-service, streaming, strong contracts</span>
+  </div>
+  <div class="api-content">
+
+    <div class="af-card grp-c" id="grpc-what-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">A</span><span class="af-title" id="grpc-what">What It Is — The Mental Model</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout grpc">
+          <div class="callout-title">One-Sentence Definition</div>
+          <p>gRPC is a high-performance RPC framework where you define services and messages in Protocol Buffers, generate client/server code in any language, and communicate over HTTP/2 with built-in streaming and load balancing.</p>
+        </div>
+        <div class="callout grpc">
+          <div class="callout-title">The Core Insight — Network as Function Call</div>
+          <p>gRPC treats the network like a function call between modules in the same program. You call <code>userService.getUser(userId)</code> and forget there's a network involved. <strong>The .proto file is a contract that generates matching client/server code — no manual parsing, no request building.</strong></p>
+        </div>
+        <div class="callout grpc">
+          <div class="callout-title">The Inventor's Problem</div>
+          <p>Google needed to connect millions of services in 12+ languages, handling 10^10+ RPCs per second, with microsecond-sensitive latencies. Stubby (internal predecessor) proved the model; gRPC open-sourced it in 2016.</p>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card grp-c" id="grpc-how-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">B</span><span class="af-title" id="grpc-how">How It Works — Proto → Generated Code → Transport</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="diag gp">
+          <div class="diag-hdr"><span class="diag-title">Step-by-Step gRPC Interaction</span></div>
+          <pre>1. DEFINE (build time) — user.proto:
+   service UserService {
+     rpc GetUser(UserRequest) returns (UserResponse);
+   }
+   message UserRequest { int64 user_id = 1; }
+   message UserResponse { string name = 1; string email = 2; }
+
+2. CODE GENERATION:
+   $ protoc --go_out=. user.proto
+   → Generates: UserServiceClient, UserServiceServer interfaces,
+                UserRequest, UserResponse structs
+
+3. CLIENT CALL (runtime):
+   client := NewUserServiceClient(conn)
+   response, err := client.GetUser(ctx, &UserRequest{UserId: 123})
+   // Looks like a local function call!
+
+   Under the hood:
+   - Serialize UserRequest → binary (Protocol Buffers)
+   - Send over HTTP/2 with path: /UserService/GetUser
+   - Include metadata (auth, tracing headers)
+   - HTTP/2 multiplexes this alongside 1000 other requests
+
+4. SERVER HANDLER:
+   func (s *server) GetUser(ctx context.Context, req *UserRequest) (*UserResponse, error) {
+       user := s.db.Find(req.UserId)
+       return &UserResponse{Name: user.Name, Email: user.Email}, nil
+   }
+   // Deserialization is automatic — generated code handles it</pre>
+        </div>
+        <div class="callout grpc">
+          <div class="callout-title">Performance Numbers vs REST</div>
+          <p>Service mesh with 5 services, 1,000 req/sec: REST requires new HTTP/1.1 connection per request — connection overhead 50–100ms each. gRPC maintains persistent HTTP/2 connections — 5 connections total, multiplexed. Binary serialization: 3–10x smaller payloads, 10x faster parse. <strong>Total latency: REST ~450ms vs gRPC ~150ms (3x faster) for the same multi-hop request.</strong></p>
+        </div>
+        <h3 style="font-family:var(--fh);font-size:1rem;font-weight:600;color:var(--text);margin:16px 0 10px">The Four gRPC Streaming Patterns</h3>
+        <div class="streaming-grid">
+          <div class="sg-card">
+            <div class="sg-label">1. Unary (Request/Response)</div>
+            <p>One request, one response. Equivalent to a normal HTTP request.</p>
+            <div class="sg-diag">rpc GetUser(Request) returns (Response);
+Client ──Request──→ Server
+Client ←─Response── Server</div>
+            <p style="margin-top:6px;font-size:.8rem;color:var(--dim)">Use: Standard lookups, mutations</p>
+          </div>
+          <div class="sg-card">
+            <div class="sg-label">2. Server Streaming</div>
+            <p>One request, stream of responses. Server sends data until done.</p>
+            <div class="sg-diag">rpc ListUsers(Request) returns (stream Response);
+Client ──Request──→ Server
+Client ←─Response 1── Server
+Client ←─Response 2── Server
+Client ←─Response N── Server</div>
+            <p style="margin-top:6px;font-size:.8rem;color:var(--dim)">Use: Large downloads, real-time feeds</p>
+          </div>
+          <div class="sg-card">
+            <div class="sg-label">3. Client Streaming</div>
+            <p>Stream of requests, one response. Client uploads chunks.</p>
+            <div class="sg-diag">rpc UploadFile(stream Request) returns (Response);
+Client ──Chunk 1──→ Server
+Client ──Chunk 2──→ Server
+Client ──Chunk N──→ Server
+Client ←─Summary── Server</div>
+            <p style="margin-top:6px;font-size:.8rem;color:var(--dim)">Use: File upload, batch writes</p>
+          </div>
+          <div class="sg-card">
+            <div class="sg-label">4. Bidirectional Streaming</div>
+            <p>Both sides stream independently and simultaneously.</p>
+            <div class="sg-diag">rpc Chat(stream Message) returns (stream Message);
+Client ←──→ Server
+(Both directions, independently)</div>
+            <p style="margin-top:6px;font-size:.8rem;color:var(--dim)">Use: Chat, real-time collab, gaming</p>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card grp-c" id="grpc-strengths-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">C</span><span class="af-title" id="grpc-strengths">Strengths & Ideal Use Cases</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout good">
+          <div class="callout-title">Where gRPC Shines</div>
+          <ul>
+            <li><strong>Polyglot service mesh:</strong> One .proto file generates compatible code in Go, Java, Python, C++ — no manual client library maintenance</li>
+            <li><strong>Performance-critical paths:</strong> Protobuf parse: ~1–5μs vs JSON parse ~50–100μs. At 100K req/sec, that's 5–10 seconds of CPU saved per second.</li>
+            <li><strong>Streaming use cases:</strong> Live dashboards, large file transfers with backpressure, bidirectional chat</li>
+            <li><strong>Real-world users:</strong> Google Cloud APIs, etcd cluster communication, Netflix inter-service, Square backend</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card grp-c" id="grpc-limits-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">D</span><span class="af-title" id="grpc-limits">Limitations & Failure Modes</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="diag warn">
+          <div class="diag-hdr"><span class="diag-title">Deadline Propagation — The Hidden Failure</span></div>
+          <pre>t=0ms:    Client calls ServiceA.GetData() with 1000ms deadline
+t=50ms:   ServiceA calls ServiceB.Process() — inherits 950ms deadline
+t=100ms:  ServiceB calls ServiceC.Compute() — inherits 900ms deadline
+t=600ms:  ServiceC starts expensive computation...
+t=1000ms: Client's deadline expires!
+
+What happens:
+  - Client's context cancelled → gRPC propagates CANCELLED upstream
+  - ServiceA ctx.Done() triggers → cleanup, return error  ✓
+  - ServiceB ctx.Done() triggers → cleanup, return error  ✓
+  - ServiceC... STILL COMPUTING                           ✗
+
+ServiceC wasted 400ms of CPU on a request nobody needed.
+
+Solution: Check ctx.Done() or ctx.Err() periodically in long operations.
+          For every gRPC handler: if ctx.Err() != nil { return nil, ctx.Err() }</pre>
+        </div>
+        <div class="diag gp">
+          <div class="diag-hdr"><span class="diag-title">Proto Schema Evolution Rules — What You Can and Cannot Do</span></div>
+          <pre>// v1 — original schema
+message User {
+  int32 age = 1;
+  string name = 2;
+}
+
+// v2 — WRONG: changed field type (breaks compatibility!)
+message User {
+  string age = 1;   ← Changed int32 → string. Old clients will misparse.
+  string name = 2;
+}
+
+// v2 — RIGHT: add new field, keep old
+message User {
+  int32 age = 1;         ← Unchanged. Old clients still read this.
+  string name = 2;       ← Unchanged.
+  int32 age_years = 3;   ← New field. Old clients ignore it safely.
+}
+
+RULES you must never break:
+  ✗ Never change field numbers (field 1 is always field 1)
+  ✗ Never change field wire types (int32 stays int32)
+  ✗ Never reuse field numbers (even for deleted fields)
+  ✓ Adding new fields is always safe (old clients ignore unknown)
+  ✓ Mark deprecated fields with [deprecated = true] + reserved
+  ✓ Use optional fields for new additions</pre>
+        </div>
+        <div class="callout warn">
+          <div class="callout-title">Browser Support & Load Balancer Gotchas</div>
+          <ul>
+            <li><strong>Browser limitation:</strong> Browsers can't access HTTP/2 binary frames directly. Need gRPC-Web + Envoy proxy to translate — adds latency and another failure point.</li>
+            <li><strong>L4 LB problem:</strong> HTTP/2 multiplexes all requests on one TCP connection. L4 load balancer sees one connection and routes ALL requests to one backend. Need L7 LB (Envoy, Istio) or client-side load balancing.</li>
+            <li><strong>Message size limit:</strong> Default 4MB max message size. Large payloads silently fail or cause errors. Use streaming instead.</li>
+            <li><strong>Corporate proxy blocking:</strong> Some network proxies block HTTP/2 or gRPC's framing. Internal services are fine; crossing corporate networks may not be.</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card grp-c" id="grpc-ops-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">E</span><span class="af-title" id="grpc-ops">Operational Considerations</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <table class="mon-table">
+          <thead><tr><th>Metric</th><th>What It Tells You</th><th>Alert Threshold</th></tr></thead>
+          <tbody>
+            <tr><td>Request duration (by method)</td><td>Per-RPC latency — track each method separately</td><td>p99 &gt; method-specific SLO</td></tr>
+            <tr><td>Status code distribution</td><td>Error rates by gRPC status type</td><td>UNAVAILABLE &gt; 1%, INTERNAL &gt; 0.1%</td></tr>
+            <tr><td>Active streams</td><td>Connection health — sudden drop signals failure</td><td>Sudden drop ≥ 50%</td></tr>
+            <tr><td>Deadline exceeded rate</td><td>Timeout tuning needed or backend too slow</td><td>&gt; 0.5%</td></tr>
+            <tr><td>Retry rate</td><td>Backend instability or flapping</td><td>&gt; 5%</td></tr>
+          </tbody>
+        </table>
+        <div class="callout grpc">
+          <div class="callout-title">Debugging Quick Reference</div>
+          <ul>
+            <li><strong>DEADLINE_EXCEEDED:</strong> Slow backend, tight deadline, or network issues — use distributed tracing (Jaeger, Zipkin)</li>
+            <li><strong>UNAVAILABLE:</strong> Backend down or connection failed — check backend health probes and DNS</li>
+            <li><strong>RESOURCE_EXHAUSTED:</strong> Server overloaded or hitting connection limits — check server-side metrics</li>
+            <li><strong>Uneven load distribution:</strong> L4 LB routing all requests to one backend — switch to L7 or client-side LB</li>
+          </ul>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="af-card grp-c" id="grpc-l7-card">
+      <div class="af-hdr" onclick="toggleAF(this)">
+        <span class="af-tag">F</span><span class="af-title" id="grpc-l7">L6/L7 Nuances</span>
+        <span class="af-toggle">▾</span>
+      </div>
+      <div class="af-body"><div class="af-inner">
+        <div class="callout grpc">
+          <div class="callout-title">The Deep Question</div>
+          <p style="font-style:italic;color:var(--text)">"When would you choose gRPC over REST for a service that also has browser clients?"</p>
+          <p style="margin-top:8px">Strong answer: "I'd use a split architecture. gRPC for all internal service-to-service communication — this is where the performance and streaming benefits matter. For browser clients, expose a REST or GraphQL API via a BFF layer. The BFF translates browser-friendly HTTP/JSON calls into gRPC calls to internal services. This gives you gRPC's performance for 95% of traffic (internal) while maintaining REST's accessibility for browser clients."</p>
+        </div>
+        <div class="insight">
+          <div class="insight-label">L6/L7 Insight — gRPC Is Really About Culture</div>
+          <p>"gRPC's biggest benefit isn't performance — it's the contract culture it enforces. When every service-to-service call requires a .proto file, you can't have implicit contracts. Schema evolution rules are baked in. Code generation eliminates 'my client expects field X but your server returns field_x.' <strong>The performance is a bonus; the contract discipline is the architectural win.</strong> At Google scale, explicit contracts across thousands of services are what prevent the distributed monolith problem."</p>
+        </div>
+      </div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Part 1 Key Lesson</div>
+  <p>The three paradigms optimize for different things: REST for universal accessibility (any client, HTTP caching), gRPC for performance and contract discipline (binary, typed, streaming, HTTP/2), GraphQL for client flexibility (exact data shapes, single round-trip for complex queries). None is universally better — the choice is a function of who the client is, what the performance requirements are, and who owns both sides of the contract.</p>
+  <p>The L7 signal for REST: knowing that HATEOAS is the missing piece that would enable true evolvability, and that BFF is the pattern that resolves REST's chattiness at scale. The L7 signal for gRPC: knowing that deadline propagation must be explicitly checked in every handler, that L4 load balancers break HTTP/2 multiplexing, and that <strong>the real value of gRPC is the contract culture it enforces, not just the raw performance numbers</strong>.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleCon(h){h.parentElement.classList.toggle('collapsed')}
+function toggleAF(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
