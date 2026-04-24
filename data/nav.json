@@ -6,6 +6,12 @@
         "file": "pages/kafka/kafka.html"
       }
     ],
+     "Aritifical Intelligence": [
+      {
+        "title": "Roadmap",
+        "file": "pages/Artifical Intelligence/Roadmap.html"
+      }
+    ],
     "Cassandra": [
       {
         "title": "Internals",
