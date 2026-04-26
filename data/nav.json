@@ -1,6 +1,18 @@
 {
    "Coding": {
         "Djisktras": [
+       {
+        "title": "Core-1",
+        "file": "pages/Coding/Djisktras/deep-1.html"
+      },
+           {
+        "title": "Core-2",
+        "file": "pages/Coding/Djisktras/deep-2.html"
+      },
+           {
+        "title": "Core-3",
+        "file": "pages/Coding/Djisktras/deep-3.html"
+      },
       {
         "title": "Prob-2",
         "file": "pages/Coding/Djisktras/core-1.html"
