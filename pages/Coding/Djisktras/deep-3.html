@@ -1,1 +1,1619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dijkstra Mastery · Part 3 — Selection, Patterns &amp; Frameworks · Google L5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================
+     RESET + TOKENS  (matches Part 1 / Part 2)
+  =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #0a0d12;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --surface-3: #232a36;
+    --border: #21262d;
+    --border-soft: rgba(240, 246, 252, 0.08);
+    --text: #e6edf3;
+    --text-dim: #b0b8c1;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+
+    --amber: #F5A623;
+    --amber-soft: #f0b95c;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --blue: #58a6ff;
+    --blue-soft: rgba(88, 166, 255, 0.12);
+    --magenta: #d264e8;
+    --green: #7ee787;
+
+    --tk-keyword: #ff7b72;
+    --tk-string: #a5d6ff;
+    --tk-number: #79c0ff;
+    --tk-func: #d2a8ff;
+    --tk-builtin: #79c0ff;
+    --tk-comment: #8b949e;
+    --tk-self: #ffa657;
+    --tk-default: #c9d1d9;
+
+    --font-display: "Playfair Display", Georgia, serif;
+    --font-body: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --sidebar-width: 320px;
+    --content-max: 880px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(245, 166, 35, 0.04), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(88, 166, 255, 0.04), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  ::selection { background: rgba(245, 166, 35, 0.35); color: #fff; }
+
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--amber), var(--amber-soft), var(--blue));
+    z-index: 1000; transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-width); height: 100vh;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 28px 20px 80px;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .series-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .doc-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .part-pill {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 22px;
+    line-height: 1.4;
+  }
+
+  .search-wrap { margin-bottom: 24px; position: relative; }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #search:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  #search::placeholder { color: var(--text-faint); }
+
+  .nav-section { margin-bottom: 18px; }
+  .nav-section-title {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-left: 12px;
+  }
+  .nav-section ul { list-style: none; }
+  .nav-section li a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14.5px;
+    padding: 7px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    transition: all 0.18s ease;
+    line-height: 1.4;
+  }
+  .nav-section li a:hover { color: var(--text); background: var(--surface); }
+  .nav-section li a.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+    border-left-color: var(--blue);
+    font-weight: 500;
+  }
+
+  .menu-toggle {
+    display: none;
+    position: fixed; top: 16px; left: 16px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  /* MAIN */
+  .main {
+    margin-left: var(--sidebar-width);
+    padding: 64px 64px 120px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.7s ease-out both;
+  }
+  .content { max-width: var(--content-max); margin: 0 auto; }
+
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* HERO */
+  .hero { margin-bottom: 60px; }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 26px;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 6vw, 84px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  .hero-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 45%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px 36px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .part-toggle { display: flex; gap: 10px; margin-bottom: 36px; flex-wrap: wrap; }
+  .part-btn {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .part-btn:hover { color: var(--text); border-color: var(--text-faint); }
+  .part-btn.current {
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border-color: var(--blue);
+  }
+  .hero-intro {
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1.75;
+    max-width: 780px;
+  }
+
+  hr.divider {
+    border: 0; height: 1px;
+    background: var(--border);
+    margin: 56px 0;
+  }
+  hr.divider-soft {
+    border: 0; height: 1px;
+    background: var(--border-soft);
+    margin: 32px 0;
+  }
+
+  /* SECTION HEADERS */
+  section { margin-bottom: 80px; scroll-margin-top: 24px; }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+  }
+  .section-eyebrow .num { color: var(--text-faint); margin-right: 10px; }
+
+  h1.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(38px, 4.5vw, 56px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+    color: #fff;
+  }
+  h1.section-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 50%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2.subsection-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 56px 0 12px;
+    color: #fff;
+    scroll-margin-top: 24px;
+  }
+  h2.subsection-title .label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--amber);
+    margin-right: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  h3.minor-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 14px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  h4.tiny-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin: 24px 0 10px;
+  }
+
+  p { margin-bottom: 16px; color: var(--text-dim); }
+  p strong { color: #fff; font-weight: 600; }
+  p em { color: var(--text); font-style: italic; }
+  ul, ol { margin: 12px 0 18px 0; padding-left: 26px; color: var(--text-dim); }
+  ul li, ol li { margin-bottom: 8px; line-height: 1.7; }
+  ul li::marker { color: var(--amber); }
+  ol li::marker { color: var(--amber); font-family: var(--font-mono); font-weight: 600; }
+
+  code.inline {
+    font-family: var(--font-mono);
+    color: var(--amber-soft);
+    background: rgba(245, 166, 35, 0.08);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0 22px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .callout-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout p { color: var(--text-dim); margin-bottom: 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.insight { border-left-color: var(--blue); }
+  .callout.insight .callout-label { color: var(--blue); }
+  .callout.warning {
+    border-left-color: var(--coral);
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.06), var(--surface) 30%);
+  }
+  .callout.warning .callout-label { color: var(--coral); }
+  .callout.shine { border-left-color: var(--teal); }
+  .callout.shine .callout-label { color: var(--teal); }
+  .callout.gold {
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.06), var(--surface) 35%);
+  }
+  .callout.gold .callout-label { color: var(--gold); }
+
+  /* CODE BLOCKS */
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 18px 0 24px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+  }
+  .code-lang {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .code-lang.python::before {
+    content: "● ";
+    color: var(--amber);
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.18s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text-faint); background: var(--surface); }
+  .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
+  .code-block pre {
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .code-block code {
+    font-family: var(--font-mono);
+    color: var(--tk-default);
+    white-space: pre;
+  }
+
+  .tk-k { color: var(--tk-keyword); }
+  .tk-s { color: var(--tk-string); }
+  .tk-n { color: var(--tk-number); }
+  .tk-f { color: var(--tk-func); }
+  .tk-b { color: var(--tk-builtin); }
+  .tk-c { color: var(--tk-comment); font-style: italic; }
+  .tk-d { color: var(--tk-self); }
+  .tk-o { color: #ff7b72; }
+
+  /* DIAGRAM blocks */
+  .diagram {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 22px 0 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram::before {
+    content: "DIAGRAM";
+    position: absolute;
+    top: 10px; left: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    padding: 3px 9px;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .diagram pre {
+    padding: 44px 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  /* TABLES */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 18px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table.styled {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+  }
+  table.styled thead {
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.18), rgba(88, 166, 255, 0.1));
+  }
+  table.styled th {
+    text-align: left;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.styled td {
+    padding: 13px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  table.styled tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+  table.styled tbody tr:last-child td { border-bottom: none; }
+  table.styled tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
+  table.styled td.row-label {
+    color: var(--amber);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+  }
+  table.styled td.algo-cell {
+    color: var(--teal);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+  }
+  table.styled td.cx-cell {
+    color: var(--blue);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  mark.hl {
+    background: rgba(245, 166, 35, 0.18);
+    color: var(--amber-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-style: normal;
+  }
+  mark.hl-blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--blue);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-teal {
+    background: rgba(0, 191, 165, 0.15);
+    color: var(--teal);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-gold {
+    background: rgba(255, 215, 0, 0.15);
+    color: var(--gold);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ===========================================================
+     INTERVIEW STEPS  (numbered timeline)
+  =========================================================== */
+  .interview-steps {
+    position: relative;
+    margin: 22px 0 32px;
+  }
+  .istep {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 22px;
+    padding-bottom: 24px;
+    position: relative;
+  }
+  .istep:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 32px;
+    top: 60px;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--amber) 0%, rgba(245, 166, 35, 0.2) 100%);
+  }
+  .istep .istep-num {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 2px solid var(--amber);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    font-style: italic;
+    color: var(--amber);
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 0 0 6px var(--bg);
+  }
+  .istep .istep-content {
+    padding-top: 8px;
+  }
+  .istep .istep-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .istep .istep-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+    line-height: 1.25;
+  }
+  .istep .istep-body {
+    color: var(--text-dim);
+    font-size: 15.5px;
+    line-height: 1.65;
+  }
+  .istep .istep-body ul { margin: 6px 0 0; padding-left: 22px; }
+  .istep .istep-body li { font-size: 15px; }
+
+  @media (max-width: 768px) {
+    .istep { grid-template-columns: 56px 1fr; gap: 14px; }
+    .istep .istep-num { width: 48px; height: 48px; font-size: 20px; }
+    .istep:not(:last-child)::before { left: 24px; top: 52px; }
+  }
+
+  /* ===========================================================
+     SKILL GRID  (what L5 interviewers look for)
+  =========================================================== */
+  .skill-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+    margin: 22px 0;
+  }
+  .skill-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 6px;
+    padding: 16px 20px;
+    transition: transform 0.2s, border-left-color 0.2s;
+  }
+  .skill-card:hover {
+    transform: translateY(-2px);
+    border-left-color: var(--amber);
+  }
+  .skill-card .sc-name {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .skill-card .sc-test {
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  /* ===========================================================
+     PATTERN BLOCK  (Section 11 patterns)
+  =========================================================== */
+  .pattern-block {
+    background: linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin: 18px 0 24px;
+  }
+  .pattern-block .pb-num {
+    display: inline-block;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    font-style: italic;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    width: 28px;
+    height: 28px;
+    text-align: center;
+    line-height: 26px;
+    border-radius: 50%;
+    margin-right: 10px;
+  }
+  .pattern-block .pb-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.3;
+    display: inline;
+    vertical-align: middle;
+  }
+  .pattern-block .pb-body {
+    margin-top: 12px;
+  }
+  .pattern-block .pb-body p:last-child { margin-bottom: 0; }
+
+  /* ===========================================================
+     BIG ONE-PAGE SUMMARY CARD  (the screenshot moment)
+  =========================================================== */
+  .summary-card {
+    background: linear-gradient(135deg, #0c1017 0%, #0d1117 50%, #131825 100%);
+    border: 2px solid var(--amber);
+    border-radius: 18px;
+    padding: 0;
+    margin: 32px 0;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 30px 80px -30px rgba(245, 166, 35, 0.4),
+                0 0 0 1px rgba(245, 166, 35, 0.15);
+  }
+  .summary-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--amber), var(--gold), var(--amber));
+  }
+  .summary-card::after {
+    content: "🏆";
+    position: absolute;
+    top: -16px;
+    right: 28px;
+    font-size: 32px;
+    background: var(--bg);
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--amber);
+  }
+
+  .summary-header {
+    padding: 28px 36px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .summary-header .sh-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .summary-header .sh-title {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.15;
+    margin-bottom: 4px;
+  }
+  .summary-header .sh-sub {
+    color: var(--text-dim);
+    font-size: 14px;
+    font-style: italic;
+  }
+
+  .summary-body {
+    padding: 24px 36px 32px;
+  }
+
+  /* Main formula block */
+  .master-formula {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    margin-bottom: 22px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--tk-default);
+  }
+  .master-formula .label-line {
+    color: var(--amber);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* Section grid in the summary card */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+  }
+  .sum-block {
+    background: rgba(13, 17, 23, 0.6);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .sum-block .sb-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent, var(--amber));
+    margin-bottom: 10px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 6px;
+  }
+  .sum-block.amber { --accent: var(--amber); }
+  .sum-block.blue { --accent: var(--blue); }
+  .sum-block.teal { --accent: var(--teal); }
+  .sum-block.coral { --accent: var(--coral); }
+  .sum-block.green { --accent: var(--green); }
+  .sum-block.gold { --accent: var(--gold); }
+
+  .sum-block .sb-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .sum-block .sb-line .key {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .sum-block .sb-line .val {
+    font-family: var(--font-mono);
+    color: var(--text);
+    font-size: 13px;
+    text-align: right;
+  }
+  .sum-block .sb-line .val.code-style {
+    color: var(--amber-soft);
+  }
+
+  /* COMBINE/STATE/SOURCE/DS — vertical formula list */
+  .formula-list .fl-row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 5px 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .formula-list .fl-row .lhs {
+    color: var(--text-muted);
+    min-width: 90px;
+    font-size: 12px;
+  }
+  .formula-list .fl-row .rhs {
+    color: var(--text);
+    flex: 1;
+    text-align: right;
+  }
+
+  /* BACK TO TOP */
+  #back-top {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 90;
+    transition: all 0.25s;
+    opacity: 0; pointer-events: none;
+  }
+  #back-top.visible { opacity: 1; pointer-events: auto; }
+  #back-top:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(245, 166, 35, 0.3);
+  }
+
+  @media (max-width: 1024px) {
+    .main { padding: 56px 32px 100px; }
+    .summary-header { padding: 24px 24px 18px; }
+    .summary-body { padding: 20px 24px 28px; }
+  }
+  @media (max-width: 768px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      width: 280px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; padding: 70px 22px 80px; }
+    .hero-title { font-size: 42px; }
+    h1.section-title { font-size: 32px; }
+    h2.subsection-title { font-size: 24px; }
+    .hero-meta { gap: 14px 22px; font-size: 14.5px; }
+    .summary-header .sh-title { font-size: 22px; }
+  }
+
+  .nav-section li.hidden { display: none; }
+  .nav-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰ Menu</button>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+  <div class="series-header">Dijkstra Mastery · Google L5</div>
+  <div class="doc-title">Selection, Patterns &amp; Frameworks</div>
+  <div class="part-pill">Part 3 of 3 — The Decision Layer</div>
+
+  <div class="search-wrap">
+    <input id="search" type="text" placeholder="Search sections..." aria-label="Search sections" />
+  </div>
+
+  <nav>
+    <div class="nav-section" data-group="Introduction">
+      <div class="nav-section-title">Introduction</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 10">
+      <div class="nav-section-title">§10 · Selection Tree</div>
+      <ul>
+        <li><a href="#decision-tree">Decision Tree</a></li>
+        <li><a href="#selection-table">Quick Selection Table</a></li>
+        <li><a href="#optimizing">"What Are You Optimizing?"</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 11">
+      <div class="nav-section-title">§11 · Common Patterns</div>
+      <ul>
+        <li><a href="#p1">1 · Early Termination</a></li>
+        <li><a href="#p2">2 · Stale Entry Skip</a></li>
+        <li><a href="#p3">3 · Grid as Graph</a></li>
+        <li><a href="#p4">4 · Dict vs Array</a></li>
+        <li><a href="#p5">5 · Multiple Dimensions</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 12">
+      <div class="nav-section-title">§12 · Interview Framework</div>
+      <ul>
+        <li><a href="#steps">6-Step Execution</a></li>
+        <li><a href="#l5-skills">What L5 Looks For</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 13">
+      <div class="nav-section-title">§13 · Quick Reference</div>
+      <ul>
+        <li><a href="#all-templates">All Templates Glance</a></li>
+        <li><a href="#one-pager">🏆 One-Page Summary</a></li>
+      </ul>
+    </div>
+  </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="main">
+  <div class="content">
+
+    <!-- ===================== HERO ===================== -->
+    <header class="hero" id="overview">
+      <div class="breadcrumb">Dijkstra Mastery · Google L5 · Part 3 of 3</div>
+      <h1 class="hero-title">
+        From <span class="accent">Recognition</span><br/>
+        to <span class="accent">Execution</span>
+      </h1>
+
+      <div class="hero-meta">
+        <span>🌳 The decision tree that picks the algorithm in 5 seconds</span>
+        <span>🧰 Five patterns and tricks that show up in every problem</span>
+      </div>
+      <div class="hero-meta">
+        <span>🎯 The 6-step interview framework + what L5 actually scores</span>
+        <span>🏆 The one-page summary cheat card · screenshot this</span>
+      </div>
+
+      <div class="part-toggle">
+        <a href="#" class="part-btn">Part 1: Core + Variations 1–4</a>
+        <a href="#" class="part-btn">Part 2: Variations 5–7</a>
+        <a href="#" class="part-btn current">Part 3: Selection &amp; Frameworks</a>
+      </div>
+
+      <p class="hero-intro">
+        Parts 1 and 2 gave you all the templates. Part 3 is what turns those templates into a <em>weapon</em>: the decision tree that pattern-matches the right one in seconds, the recurring tricks that show up in every Dijkstra problem regardless of variation, the 6-step framework you walk down out loud during the interview, and the one-page summary card that compresses the entire series into something you can screenshot and review the morning of the on-site.
+      </p>
+
+      <hr class="divider" />
+    </header>
+
+    <!-- ===================== SECTION 10: SELECTION DECISION TREE ===================== -->
+    <section id="section-10">
+      <div class="section-eyebrow"><span class="num">§10</span>Algorithm Selection</div>
+      <h1 class="section-title">The <span class="accent">Decision Tree</span></h1>
+
+      <p style="max-width: 760px;">Every shortest-path problem walks down the same three questions: are weights given, what kind, and what's the cost structure? Run that tree in your head on the first read of the problem — by the time you're done parsing the input, you should already know the algorithm.</p>
+
+      <h2 class="subsection-title" id="decision-tree"><span class="label">📌</span>Decision Tree for Algorithm Selection</h2>
+
+      <div class="diagram">
+<pre>                         SHORTEST PATH PROBLEM
+                                |
+                    Are edge weights given?
+                       /              \
+                     YES               NO
+                      |                 |
+              EXPLICIT GRAPH      IMPLICIT GRAPH
+                      |                 |
+            What are the weights?     Define states &amp;
+                /    |    \           transitions
+               /     |     \              |
+          All=1   0 &amp; 1   Variable    What are costs?
+            |       |        |          /    |     \
+          BFS    0-1 BFS  Dijkstra  All=1  0&amp;1  Variable
+                                      |     |      |
+                                    BFS  0-1BFS  Dijkstra</pre>
+      </div>
+
+      <!-- Quick selection table -->
+      <h2 class="subsection-title" id="selection-table"><span class="label">📌</span>Quick Selection Table</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Edge Weights</th>
+              <th>Algorithm</th>
+              <th>Data Structure</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">All equal (unweighted)</td><td class="algo-cell">BFS</td><td>Queue (deque)</td><td class="cx-cell">O(V + E)</td></tr>
+            <tr><td class="row-label">Only 0 and 1</td><td class="algo-cell">0-1 BFS</td><td>Deque</td><td class="cx-cell">O(V + E)</td></tr>
+            <tr><td class="row-label">X and X+1</td><td class="algo-cell">Normalized 0-1 BFS</td><td>Deque</td><td class="cx-cell">O(V + E)</td></tr>
+            <tr><td class="row-label">Small integers</td><td class="algo-cell">Edge splitting + BFS</td><td>Queue</td><td class="cx-cell">O(V + E × max_w)</td></tr>
+            <tr><td class="row-label">Variable non-negative</td><td class="algo-cell">Dijkstra</td><td>Min-Heap</td><td class="cx-cell">O((V+E) log V)</td></tr>
+            <tr><td class="row-label">Negative weights</td><td class="algo-cell">Bellman-Ford</td><td>Array</td><td class="cx-cell">O(V × E)</td></tr>
+            <tr><td class="row-label">All-pairs</td><td class="algo-cell">Floyd-Warshall</td><td>2D array</td><td class="cx-cell">O(V³)</td></tr>
+            <tr><td class="row-label">With heuristic</td><td class="algo-cell">A*</td><td>Min-Heap</td><td class="cx-cell">O((V+E) log V)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- What are you optimizing? -->
+      <h2 class="subsection-title" id="optimizing"><span class="label">📌</span>"What Are You Optimizing?"</h2>
+
+      <p>Once you've picked an algorithm, the next question is what its inner-loop relaxation does. This table maps optimisation target → relaxation formula → variation name in one glance.</p>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Optimization Target</th>
+              <th>Relaxation Formula</th>
+              <th>Variation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Minimize total cost</td><td><code class="inline">new = old + weight</code></td><td class="algo-cell">Standard Dijkstra</td></tr>
+            <tr><td class="row-label">Minimize maximum edge</td><td><code class="inline">new = max(old, weight)</code></td><td class="algo-cell">Minimax</td></tr>
+            <tr><td class="row-label">Maximize minimum edge</td><td><code class="inline">new = min(old, weight)</code> + max-heap</td><td class="algo-cell">Maximin</td></tr>
+            <tr><td class="row-label">Minimize cost with constraint</td><td><code class="inline">dist[node][constraint]</code></td><td class="algo-cell">State Expansion</td></tr>
+            <tr><td class="row-label">Find K-th best</td><td>Pop nodes up to K times</td><td class="algo-cell">K-th Shortest</td></tr>
+            <tr><td class="row-label">Nearest from multiple sources</td><td>All sources at <code class="inline">dist=0</code></td><td class="algo-cell">Multi-Source</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 11: COMMON PATTERNS ===================== -->
+    <section id="section-11">
+      <div class="section-eyebrow"><span class="num">§11</span>Common Patterns &amp; Tricks</div>
+      <h1 class="section-title">The <span class="accent">Five Tricks</span> That Show Up Everywhere</h1>
+
+      <p style="max-width: 760px;">These show up in nearly every Dijkstra problem regardless of variation. Drilling them into muscle memory is what turns a 30-minute coding session into a 10-minute one.</p>
+
+      <!-- Pattern 1 -->
+      <div class="pattern-block" id="p1">
+        <span class="pb-num">1</span>
+        <span class="pb-title">Early Termination</span>
+        <div class="pb-body">
+          <p>When you only need the distance to <strong>one</strong> target, return the moment it's popped from the heap. Greedy guarantee says: that's the final shortest distance.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang python">Python · Early Exit</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code><span class="tk-c"># When you only need distance to ONE target:</span>
+<span class="tk-k">if</span> u == target:
+    <span class="tk-k">return</span> d  <span class="tk-c"># STOP HERE — guaranteed shortest!</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern 2 -->
+      <div class="pattern-block" id="p2">
+        <span class="pb-num">2</span>
+        <span class="pb-title">Stale Entry Skip</span>
+        <div class="pb-body">
+          <p>Always include this check immediately after popping. The heap can hold outdated entries (a better path was found before this one came up); skipping them is essentially free and prevents wasted relaxations.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang python">Python · The Critical Skip</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code><span class="tk-c"># ALWAYS include this in Dijkstra:</span>
+<span class="tk-k">if</span> d &gt; dist[u]:
+    <span class="tk-k">continue</span>  <span class="tk-c"># This entry is outdated — a better path was found</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern 3 -->
+      <div class="pattern-block" id="p3">
+        <span class="pb-num">3</span>
+        <span class="pb-title">Grid as Graph</span>
+        <div class="pb-body">
+          <p>Cells are nodes, adjacent cells are edges. Memorise <code class="inline">dirs = [(0,1),(0,-1),(1,0),(-1,0)]</code> and the bounds-check pattern — they appear in roughly half of L5 graph problems.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang python">Python · Grid Neighbour Iteration</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code><span class="tk-c"># Grid problems: cells are nodes, adjacent cells are edges</span>
+dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>), (<span class="tk-n">0</span>,-<span class="tk-n">1</span>), (<span class="tk-n">1</span>,<span class="tk-n">0</span>), (-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+<span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+    nr, nc = r+dr, c+dc
+    <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n:
+        <span class="tk-c"># Process neighbor (nr, nc)</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern 4 -->
+      <div class="pattern-block" id="p4">
+        <span class="pb-num">4</span>
+        <span class="pb-title">Dictionary vs Array for <code style="font-family: var(--font-mono); font-size: 0.95em; color: var(--amber-soft);">dist</code></span>
+        <div class="pb-body">
+          <p>Pick the container that fits the state space. Arrays are faster when you have dense integer-indexed nodes; dictionaries are necessary when state keys are tuples, strings, or sparse.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang python">Python · Choosing the Container</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code><span class="tk-c"># ARRAY: when nodes are 0 to N-1 (dense)</span>
+dist = [<span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)] * n
+
+<span class="tk-c"># 2D ARRAY: when grid</span>
+dist = [[<span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+
+<span class="tk-c"># DICTIONARY: when states are sparse/complex (implicit graphs)</span>
+dist = {}  <span class="tk-c"># dist[state] = cost</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pattern 5 -->
+      <div class="pattern-block" id="p5">
+        <span class="pb-num">5</span>
+        <span class="pb-title">Multiple Dimensions in <code style="font-family: var(--font-mono); font-size: 0.95em; color: var(--amber-soft);">dist</code></span>
+        <div class="pb-body">
+          <p>State Expansion (Variation 2) lives or dies on this one. The number of dimensions follows the constraints — one extra constraint = one extra dimension on <code class="inline">dist</code>.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang python">Python · Dimensional Templates</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code><span class="tk-c"># 1D: Standard</span>
+dist[node]
+
+<span class="tk-c"># 2D: With one constraint</span>
+dist[node][stops]
+dist[node][fuel]
+
+<span class="tk-c"># 3D: Grid with constraint</span>
+dist[row][col][removals]
+
+<span class="tk-c"># Bitmask: Keys/items collected</span>
+dist[row][col][keys_bitmask]</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 12: INTERVIEW FRAMEWORK ===================== -->
+    <section id="section-12">
+      <div class="section-eyebrow"><span class="num">§12</span>Interview Execution Framework</div>
+      <h1 class="section-title">The <span class="accent">Six Steps</span> You Walk Out Loud</h1>
+
+      <p style="max-width: 760px;">Run these in order. The first three are pre-coding (mostly verbal — communicating your thinking is half the score), the next three are coding and verification. Don't skip steps even if you "see the answer" — the interviewer is grading the walk, not just the destination.</p>
+
+      <h2 class="subsection-title" id="steps"><span class="label">📌</span>Step-By-Step When You See a Shortest-Path Problem</h2>
+
+      <div class="interview-steps">
+        <div class="istep">
+          <div class="istep-num">1</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 1</div>
+            <div class="istep-title">IDENTIFY</div>
+            <div class="istep-body">
+              <ul>
+                <li>Is this a shortest-path problem?</li>
+                <li>What are nodes? What are edges? What are weights?</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="istep">
+          <div class="istep-num">2</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 2</div>
+            <div class="istep-title">CLASSIFY</div>
+            <div class="istep-body">
+              <ul>
+                <li>Which variation? (Standard / State Expansion / Multi-Source / etc.)</li>
+                <li>What are edge weights? (Equal / 0-1 / Variable)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="istep">
+          <div class="istep-num">3</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 3</div>
+            <div class="istep-title">SELECT ALGORITHM</div>
+            <div class="istep-body">
+              <p>Use the decision tree from §10 above. Justify your pick out loud — "weights vary so heap-based Dijkstra; if they were 0/1 I'd switch to a deque for an <code class="inline">O(V+E)</code> win."</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="istep">
+          <div class="istep-num">4</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 4</div>
+            <div class="istep-title">CODE</div>
+            <div class="istep-body">
+              <ul>
+                <li>Use the appropriate template (don't reinvent — recall)</li>
+                <li>Handle edge cases as you go</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="istep">
+          <div class="istep-num">5</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 5</div>
+            <div class="istep-title">ANALYZE</div>
+            <div class="istep-body">
+              <ul>
+                <li>Time complexity</li>
+                <li>Space complexity</li>
+                <li>Can it be optimized? (e.g., 0-1 BFS instead of Dijkstra?)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="istep">
+          <div class="istep-num">6</div>
+          <div class="istep-content">
+            <div class="istep-label">Step 6</div>
+            <div class="istep-title">TEST</div>
+            <div class="istep-body">
+              <ul>
+                <li>Small example dry run</li>
+                <li>Edge cases: empty graph, single node, unreachable target</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L5 Skills -->
+      <h2 class="subsection-title" id="l5-skills"><span class="label">📌</span>What Google L5 Interviewers Look For</h2>
+
+      <p>The skill column is what they're scoring. The "How They Test" column is what they say or do to probe it. Knowing both lets you actively serve up the signal instead of waiting to be tested.</p>
+
+      <div class="skill-grid">
+        <div class="skill-card">
+          <div class="sc-name">Problem Recognition</div>
+          <div class="sc-test">Can you identify it's a graph / Dijkstra problem?</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">State Modeling</div>
+          <div class="sc-test">Can you define the right state for state expansion?</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Algorithm Selection</div>
+          <div class="sc-test">BFS vs 0-1 BFS vs Dijkstra — can you justify?</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Clean Code</div>
+          <div class="sc-test">Template-based, no bugs, clear variable names.</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Edge Cases</div>
+          <div class="sc-test">Disconnected nodes, early termination, impossible paths.</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Optimization</div>
+          <div class="sc-test">Stale skip, early termination, pruning.</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Tradeoff Discussion</div>
+          <div class="sc-test">Time vs space, exact vs approximate.</div>
+        </div>
+        <div class="skill-card">
+          <div class="sc-name">Follow-ups</div>
+          <div class="sc-test">Can you extend to path reconstruction? Track which source?</div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 13: QUICK REFERENCE ===================== -->
+    <section id="section-13">
+      <div class="section-eyebrow"><span class="num">§13</span>Quick Reference</div>
+      <h1 class="section-title">All <span class="accent">Templates</span> at a Glance</h1>
+
+      <p style="max-width: 760px;">Every variation reduced to its single change. If you can recall this table from memory, you've internalised the entire series.</p>
+
+      <h2 class="subsection-title" id="all-templates"><span class="label">📌</span>The Seven Changes</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Template</th>
+              <th>Core Loop Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Standard</td><td><code class="inline">new = d + w</code></td></tr>
+            <tr><td class="row-label">Minimax</td><td><code class="inline">new = max(d, w)</code></td></tr>
+            <tr><td class="row-label">Multi-Source</td><td><code class="inline">for src in sources: heap.push(0, src)</code></td></tr>
+            <tr><td class="row-label">0-1 BFS</td><td><code class="inline">if w==0: front else: back</code></td></tr>
+            <tr><td class="row-label">State Expansion</td><td><code class="inline">dist[node][state]</code> · extra dimension</td></tr>
+            <tr><td class="row-label">K-th Shortest</td><td><code class="inline">count[node] += 1</code> · allow K pops</td></tr>
+            <tr><td class="row-label">Implicit</td><td><code class="inline">get_neighbors(state)</code> on the fly</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- ===================== ONE-PAGE SUMMARY ===================== -->
+      <h2 class="subsection-title" id="one-pager"><span class="label">🏆</span>One-Page Summary — Screenshot This!</h2>
+
+      <p style="max-width: 760px;">If the morning of the interview you only have time for one page of review, this is the page. Everything from §1 through §13 compressed.</p>
+
+      <div class="summary-card">
+        <div class="summary-header">
+          <div class="sh-eyebrow">Master Cheat Card · Google L5</div>
+          <div class="sh-title">Dijkstra Master Formula</div>
+          <div class="sh-sub">One algorithm · seven faces · one screenshot</div>
+        </div>
+
+        <div class="summary-body">
+
+          <!-- Master Formula -->
+          <div class="master-formula"><span class="label-line">Master Formula</span>while heap:
+    d, state = heappop(heap)
+    if is_target(state): return d
+    if d &gt; dist[state]: continue
+    for next_state, w in neighbors(state):
+        new_d = COMBINE(d, w)     <span style="color: var(--amber);">← THIS CHANGES!</span>
+        if new_d &lt; dist[next_state]:
+            dist[next_state] = new_d
+            heappush(heap, (new_d, next_state))</div>
+
+          <!-- 4-block summary grid -->
+          <div class="summary-grid">
+
+            <!-- COMBINE -->
+            <div class="sum-block coral">
+              <div class="sb-label">COMBINE Function</div>
+              <div class="formula-list">
+                <div class="fl-row"><span class="lhs">Standard</span><span class="rhs">d + w</span></div>
+                <div class="fl-row"><span class="lhs">Minimax</span><span class="rhs">max(d, w)</span></div>
+                <div class="fl-row"><span class="lhs">Maximin</span><span class="rhs">min(d, w)</span></div>
+              </div>
+            </div>
+
+            <!-- STATE -->
+            <div class="sum-block blue">
+              <div class="sb-label">STATE Definition</div>
+              <div class="formula-list">
+                <div class="fl-row"><span class="lhs">Simple</span><span class="rhs">node</span></div>
+                <div class="fl-row"><span class="lhs">Expanded</span><span class="rhs">(node, constraint)</span></div>
+                <div class="fl-row"><span class="lhs">Grid</span><span class="rhs">(row, col)</span></div>
+                <div class="fl-row"><span class="lhs">Grid+</span><span class="rhs">(row, col, constraint)</span></div>
+                <div class="fl-row"><span class="lhs">Implicit</span><span class="rhs">problem-specific tuple</span></div>
+              </div>
+            </div>
+
+            <!-- SOURCE -->
+            <div class="sum-block teal">
+              <div class="sb-label">SOURCE Initialization</div>
+              <div class="formula-list">
+                <div class="fl-row"><span class="lhs">Single</span><span class="rhs">heap = [(0, source)]</span></div>
+                <div class="fl-row"><span class="lhs">Multi</span><span class="rhs">heap = [(0, s) for s in sources]</span></div>
+              </div>
+            </div>
+
+            <!-- DATA STRUCTURE -->
+            <div class="sum-block gold">
+              <div class="sb-label">Data Structure</div>
+              <div class="formula-list">
+                <div class="fl-row"><span class="lhs">BFS</span><span class="rhs">deque · all weights equal</span></div>
+                <div class="fl-row"><span class="lhs">0-1 BFS</span><span class="rhs">deque · weights 0/1</span></div>
+                <div class="fl-row"><span class="lhs">Dijkstra</span><span class="rhs">min-heap · variable weights</span></div>
+                <div class="fl-row"><span class="lhs">A*</span><span class="rhs">min-heap · with heuristic</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ASCII version preserved for completeness -->
+      <h4 class="tiny-title">ASCII version (preserved from source)</h4>
+      <div class="diagram">
+<pre>╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║   DIJKSTRA MASTER FORMULA:                               ║
+║                                                          ║
+║   while heap:                                            ║
+║       d, state = heappop(heap)                           ║
+║       if is_target(state): return d                      ║
+║       if d &gt; dist[state]: continue                       ║
+║       for next_state, w in neighbors(state):             ║
+║           new_d = COMBINE(d, w)     ← THIS CHANGES!      ║
+║           if new_d &lt; dist[next_state]:                   ║
+║               dist[next_state] = new_d                   ║
+║               heappush(heap, (new_d, next_state))        ║
+║                                                          ║
+║   COMBINE function:                                      ║
+║     Standard:  d + w                                     ║
+║     Minimax:   max(d, w)                                 ║
+║     Maximin:   min(d, w)                                 ║
+║                                                          ║
+║   STATE definition:                                      ║
+║     Simple:    node                                      ║
+║     Expanded:  (node, constraint)                        ║
+║     Grid:      (row, col)                                ║
+║     Grid+:     (row, col, constraint)                    ║
+║     Implicit:  problem-specific tuple                    ║
+║                                                          ║
+║   SOURCE initialization:                                 ║
+║     Single:    heap = [(0, source)]                      ║
+║     Multi:     heap = [(0, s) for s in sources]          ║
+║                                                          ║
+║   DATA STRUCTURE:                                        ║
+║     BFS:       deque        (all weights equal)          ║
+║     0-1 BFS:   deque        (weights 0/1)                ║
+║     Dijkstra:  min-heap     (variable weights)           ║
+║     A*:        min-heap     (with heuristic)             ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝</pre>
+      </div>
+
+      <hr class="divider" />
+
+      <p style="text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin-top: 40px;">
+        End of Part 3 · End of Series · Dijkstra Mastery for Google L5
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+  /* PROGRESS BAR */
+  const progressBar = document.getElementById('progress-bar');
+  function updateProgress() {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  /* BACK TO TOP */
+  const backTop = document.getElementById('back-top');
+  function toggleBackTop() {
+    if (window.scrollY > 500) backTop.classList.add('visible');
+    else backTop.classList.remove('visible');
+  }
+  window.addEventListener('scroll', toggleBackTop, { passive: true });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* SIDEBAR ACTIVE STATE */
+  const navLinks = Array.from(document.querySelectorAll('.nav-section li a'));
+  const sectionMap = navLinks.map(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    return { link, el };
+  }).filter(s => s.el);
+
+  function setActiveSection() {
+    const offset = 120;
+    let current = sectionMap[0];
+    for (const s of sectionMap) {
+      const top = s.el.getBoundingClientRect().top;
+      if (top - offset <= 0) current = s;
+      else break;
+    }
+    navLinks.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', setActiveSection, { passive: true });
+  setActiveSection();
+
+  /* COPY BUTTONS */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code-block');
+      const code = block ? block.querySelector('pre code, pre') : null;
+      if (!code) return;
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1600);
+      } catch (e) {
+        btn.textContent = 'Error';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      }
+    });
+  });
+
+  /* SEARCH */
+  const searchInput = document.getElementById('search');
+  const navSections = Array.from(document.querySelectorAll('.nav-section'));
+  searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    navSections.forEach(group => {
+      const items = Array.from(group.querySelectorAll('li'));
+      let anyVisible = false;
+      items.forEach(li => {
+        const text = li.innerText.toLowerCase();
+        const groupTitle = group.querySelector('.nav-section-title').innerText.toLowerCase();
+        const match = !q || text.includes(q) || groupTitle.includes(q);
+        li.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
+      });
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  });
+
+  /* MOBILE MENU */
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-section li a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
 
