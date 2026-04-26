@@ -1,1 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dijkstra Mastery · Part 1 — Core &amp; Variations 1–4 · Google L5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================
+     RESET + TOKENS
+  =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #0a0d12;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --surface-3: #232a36;
+    --border: #21262d;
+    --border-soft: rgba(240, 246, 252, 0.08);
+    --text: #e6edf3;
+    --text-dim: #b0b8c1;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+
+    --amber: #F5A623;
+    --amber-soft: #f0b95c;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --blue: #58a6ff;
+    --blue-soft: rgba(88, 166, 255, 0.12);
+    --magenta: #d264e8;
+    --green: #7ee787;
+
+    /* Python token colors */
+    --tk-keyword: #ff7b72;     /* def, while, if, return */
+    --tk-string: #a5d6ff;      /* "strings" */
+    --tk-number: #79c0ff;      /* numbers */
+    --tk-func: #d2a8ff;        /* function calls */
+    --tk-builtin: #79c0ff;     /* range, len, float */
+    --tk-comment: #8b949e;     /* comments */
+    --tk-self: #ffa657;        /* self, cls */
+    --tk-decor: #ffa657;       /* decorators */
+    --tk-default: #c9d1d9;
+
+    --font-display: "Playfair Display", Georgia, serif;
+    --font-body: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --sidebar-width: 320px;
+    --content-max: 880px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(245, 166, 35, 0.04), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(88, 166, 255, 0.04), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  ::selection { background: rgba(245, 166, 35, 0.35); color: #fff; }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--amber), var(--amber-soft), var(--blue));
+    z-index: 1000; transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-width); height: 100vh;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 28px 20px 80px;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .series-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .doc-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .part-pill {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 22px;
+    line-height: 1.4;
+  }
+
+  .search-wrap { margin-bottom: 24px; position: relative; }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #search:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  #search::placeholder { color: var(--text-faint); }
+
+  .nav-section { margin-bottom: 18px; }
+  .nav-section-title {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-left: 12px;
+  }
+  .nav-section ul { list-style: none; }
+  .nav-section li a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14.5px;
+    padding: 7px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    transition: all 0.18s ease;
+    line-height: 1.4;
+  }
+  .nav-section li a:hover { color: var(--text); background: var(--surface); }
+  .nav-section li a.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+    border-left-color: var(--blue);
+    font-weight: 500;
+  }
+
+  .menu-toggle {
+    display: none;
+    position: fixed; top: 16px; left: 16px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  /* MAIN */
+  .main {
+    margin-left: var(--sidebar-width);
+    padding: 64px 64px 120px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.7s ease-out both;
+  }
+  .content { max-width: var(--content-max); margin: 0 auto; }
+
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* HERO */
+  .hero { margin-bottom: 60px; }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 26px;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 6vw, 84px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  .hero-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 45%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px 36px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .part-toggle { display: flex; gap: 10px; margin-bottom: 36px; flex-wrap: wrap; }
+  .part-btn {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .part-btn:hover { color: var(--text); border-color: var(--text-faint); }
+  .part-btn.current {
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border-color: var(--blue);
+  }
+  .hero-intro {
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1.75;
+    max-width: 780px;
+  }
+
+  hr.divider {
+    border: 0; height: 1px;
+    background: var(--border);
+    margin: 56px 0;
+  }
+  hr.divider-soft {
+    border: 0; height: 1px;
+    background: var(--border-soft);
+    margin: 32px 0;
+  }
+
+  /* SECTION HEADERS */
+  section { margin-bottom: 80px; scroll-margin-top: 24px; }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+  }
+  .section-eyebrow .num { color: var(--text-faint); margin-right: 10px; }
+
+  h1.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(38px, 4.5vw, 56px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+    color: #fff;
+  }
+  h1.section-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 50%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2.subsection-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 56px 0 12px;
+    color: #fff;
+    scroll-margin-top: 24px;
+  }
+  h2.subsection-title .label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--amber);
+    margin-right: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  h3.minor-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 14px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  h4.tiny-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin: 24px 0 10px;
+  }
+
+  p { margin-bottom: 16px; color: var(--text-dim); }
+  p strong { color: #fff; font-weight: 600; }
+  p em { color: var(--text); font-style: italic; }
+  ul, ol { margin: 12px 0 18px 0; padding-left: 26px; color: var(--text-dim); }
+  ul li, ol li { margin-bottom: 8px; line-height: 1.7; }
+  ul li::marker { color: var(--amber); }
+  ol li::marker { color: var(--amber); font-family: var(--font-mono); font-weight: 600; }
+
+  code.inline {
+    font-family: var(--font-mono);
+    color: var(--amber-soft);
+    background: rgba(245, 166, 35, 0.08);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0 22px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .callout-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout p { color: var(--text-dim); margin-bottom: 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.insight { border-left-color: var(--blue); }
+  .callout.insight .callout-label { color: var(--blue); }
+  .callout.warning {
+    border-left-color: var(--coral);
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.06), var(--surface) 30%);
+  }
+  .callout.warning .callout-label { color: var(--coral); }
+  .callout.shine { border-left-color: var(--teal); }
+  .callout.shine .callout-label { color: var(--teal); }
+  .callout.gold {
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.06), var(--surface) 35%);
+  }
+  .callout.gold .callout-label { color: var(--gold); }
+  .callout.magenta { border-left-color: var(--magenta); }
+  .callout.magenta .callout-label { color: var(--magenta); }
+  .callout.signal {
+    border-left-color: var(--blue);
+    background: linear-gradient(90deg, rgba(88, 166, 255, 0.08), var(--surface) 35%);
+  }
+  .callout.signal .callout-label { color: var(--blue); }
+
+  /* CODE BLOCKS */
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 18px 0 24px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+  }
+  .code-lang {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .code-lang.python::before {
+    content: "● ";
+    color: var(--amber);
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.18s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text-faint); background: var(--surface); }
+  .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
+  .code-block pre {
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .code-block code {
+    font-family: var(--font-mono);
+    color: var(--tk-default);
+    white-space: pre;
+  }
+
+  /* Python syntax tokens */
+  .tk-k { color: var(--tk-keyword); }       /* keywords */
+  .tk-s { color: var(--tk-string); }        /* strings */
+  .tk-n { color: var(--tk-number); }        /* numbers */
+  .tk-f { color: var(--tk-func); }          /* function names */
+  .tk-b { color: var(--tk-builtin); }       /* builtins */
+  .tk-c { color: var(--tk-comment); font-style: italic; } /* comments */
+  .tk-d { color: var(--tk-self); }          /* decorators / self */
+  .tk-o { color: #ff7b72; }                  /* operators */
+  .tk-cls { color: var(--tk-func); font-weight: 600; }  /* class */
+
+  /* DIAGRAM blocks */
+  .diagram {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 22px 0 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram::before {
+    content: "DIAGRAM";
+    position: absolute;
+    top: 10px; left: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    padding: 3px 9px;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .diagram pre {
+    padding: 44px 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  /* TABLES */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 18px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table.styled {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+  }
+  table.styled thead {
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.18), rgba(88, 166, 255, 0.1));
+  }
+  table.styled th {
+    text-align: left;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.styled td {
+    padding: 13px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  table.styled tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+  table.styled tbody tr:last-child td { border-bottom: none; }
+  table.styled tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
+  table.styled td.row-label {
+    color: var(--amber);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+  }
+
+  /* Variation cards (overview at section 2) */
+  .variation-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 22px 0;
+  }
+  .var-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 22px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .var-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--text-faint);
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,0.6);
+  }
+  .var-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--accent, var(--amber));
+  }
+  .var-card .var-num {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 800;
+    font-style: italic;
+    line-height: 1;
+    color: var(--accent, var(--amber));
+    opacity: 0.85;
+  }
+  .var-card .var-name {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
+    margin: 6px 0 8px;
+    line-height: 1.25;
+  }
+  .var-card .var-change {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent, var(--amber));
+    background: rgba(245, 166, 35, 0.08);
+    border: 1px solid rgba(245, 166, 35, 0.25);
+    padding: 4px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 10px;
+  }
+  .var-card .var-line {
+    color: var(--text-dim);
+    font-size: 14.5px;
+    line-height: 1.55;
+  }
+  .var-card.v1 { --accent: var(--amber); }
+  .var-card.v1 .var-change { background: rgba(245, 166, 35, 0.08); border-color: rgba(245, 166, 35, 0.25); color: var(--amber); }
+  .var-card.v2 { --accent: var(--blue); }
+  .var-card.v2 .var-change { background: rgba(88, 166, 255, 0.08); border-color: rgba(88, 166, 255, 0.25); color: var(--blue); }
+  .var-card.v3 { --accent: var(--teal); }
+  .var-card.v3 .var-change { background: rgba(0, 191, 165, 0.08); border-color: rgba(0, 191, 165, 0.25); color: var(--teal); }
+  .var-card.v4 { --accent: var(--magenta); }
+  .var-card.v4 .var-change { background: rgba(210, 100, 232, 0.08); border-color: rgba(210, 100, 232, 0.25); color: var(--magenta); }
+  .var-card.v5 { --accent: var(--coral); }
+  .var-card.v5 .var-change { background: rgba(255, 107, 107, 0.08); border-color: rgba(255, 107, 107, 0.25); color: var(--coral); }
+  .var-card.v6 { --accent: var(--gold); }
+  .var-card.v6 .var-change { background: rgba(255, 215, 0, 0.08); border-color: rgba(255, 215, 0, 0.25); color: var(--gold); }
+  .var-card.v7 { --accent: var(--green); }
+  .var-card.v7 .var-change { background: rgba(126, 231, 135, 0.08); border-color: rgba(126, 231, 135, 0.25); color: var(--green); }
+
+  /* Big variation header (per-variation page section) */
+  .variation-header {
+    background: linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent, var(--amber));
+    border-radius: 12px;
+    padding: 26px 30px;
+    margin: 30px 0 24px;
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 22px;
+    align-items: center;
+  }
+  .variation-header.h1 { --accent: var(--amber); }
+  .variation-header.h2 { --accent: var(--blue); }
+  .variation-header.h3 { --accent: var(--teal); }
+  .variation-header.h4 { --accent: var(--magenta); }
+  .variation-header.h5 { --accent: var(--coral); }
+  .variation-header.h6 { --accent: var(--gold); }
+  .variation-header.h7 { --accent: var(--green); }
+
+  .variation-header .vh-num {
+    font-family: var(--font-display);
+    font-size: 76px;
+    font-weight: 800;
+    font-style: italic;
+    line-height: 0.85;
+    color: var(--accent);
+    text-align: center;
+  }
+  .variation-header .vh-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .variation-header .vh-title {
+    font-family: var(--font-display);
+    font-size: 30px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.15;
+    margin-bottom: 6px;
+  }
+  .variation-header .vh-tag {
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  @media (max-width: 768px) {
+    .variation-header { grid-template-columns: 1fr; gap: 6px; padding: 22px; }
+    .variation-header .vh-num { font-size: 56px; text-align: left; }
+  }
+
+  /* Property table (vertical) */
+  .property-list {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 18px 0 24px;
+  }
+  .property-list .row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 18px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-soft);
+    align-items: start;
+  }
+  .property-list .row:last-child { border-bottom: none; }
+  .property-list .row:nth-child(odd) { background: rgba(255, 255, 255, 0.015); }
+  .property-list .key {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    color: var(--amber);
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .property-list .val {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* Complexity pills */
+  .complexity-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 16px 0 20px;
+  }
+  .cx-pill {
+    background: linear-gradient(135deg, rgba(0, 191, 165, 0.10), rgba(0, 191, 165, 0.03));
+    border: 1px solid rgba(0, 191, 165, 0.3);
+    border-radius: 8px;
+    padding: 12px 18px;
+    flex: 1 1 200px;
+    min-width: 180px;
+  }
+  .cx-pill.space {
+    background: linear-gradient(135deg, rgba(88, 166, 255, 0.10), rgba(88, 166, 255, 0.03));
+    border-color: rgba(88, 166, 255, 0.3);
+  }
+  .cx-pill .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 4px;
+  }
+  .cx-pill.space .label { color: var(--blue); }
+  .cx-pill .value {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  mark.hl {
+    background: rgba(245, 166, 35, 0.18);
+    color: var(--amber-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-style: normal;
+  }
+  mark.hl-blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--blue);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-coral {
+    background: rgba(255, 107, 107, 0.15);
+    color: var(--coral);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-teal {
+    background: rgba(0, 191, 165, 0.15);
+    color: var(--teal);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* Analogy box (the "water" analogy) */
+  .analogy-box {
+    background:
+      radial-gradient(circle at top right, rgba(88, 166, 255, 0.12), transparent 60%),
+      linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 36px;
+    margin: 24px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .analogy-box::before {
+    content: "💧";
+    position: absolute;
+    top: -8px;
+    left: 28px;
+    font-size: 30px;
+    background: var(--bg);
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .analogy-box .ab-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 12px;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+  .analogy-box .ab-text {
+    font-family: var(--font-display);
+    font-size: 19px;
+    line-height: 1.55;
+    color: #fff;
+    font-style: italic;
+    font-weight: 500;
+  }
+
+  /* BACK TO TOP */
+  #back-top {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 90;
+    transition: all 0.25s;
+    opacity: 0; pointer-events: none;
+  }
+  #back-top.visible { opacity: 1; pointer-events: auto; }
+  #back-top:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(245, 166, 35, 0.3);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 1024px) {
+    .main { padding: 56px 32px 100px; }
+    .property-list .row { grid-template-columns: 160px 1fr; }
+  }
+  @media (max-width: 768px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      width: 280px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; padding: 70px 22px 80px; }
+    .hero-title { font-size: 42px; }
+    h1.section-title { font-size: 32px; }
+    h2.subsection-title { font-size: 24px; }
+    .hero-meta { gap: 14px 22px; font-size: 14.5px; }
+    .property-list .row { grid-template-columns: 1fr; gap: 4px; }
+  }
+
+  .nav-section li.hidden { display: none; }
+  .nav-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰ Menu</button>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+  <div class="series-header">Dijkstra Mastery · Google L5</div>
+  <div class="doc-title">Core Algorithm &amp; Variations 1–4</div>
+  <div class="part-pill">Part 1 of 3 — Foundations</div>
+
+  <div class="search-wrap">
+    <input id="search" type="text" placeholder="Search sections..." aria-label="Search sections" />
+  </div>
+
+  <nav>
+    <div class="nav-section" data-group="Introduction">
+      <div class="nav-section-title">Introduction</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 1">
+      <div class="nav-section-title">§1 · Core Algorithm</div>
+      <ul>
+        <li><a href="#what-is">What is Dijkstra?</a></li>
+        <li><a href="#core-template">Core Template</a></li>
+        <li><a href="#core-properties">Core Properties</a></li>
+        <li><a href="#when-fails">When Dijkstra Fails</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 2">
+      <div class="nav-section-title">§2 · 7 Variations Glance</div>
+      <ul>
+        <li><a href="#variations-glance">All 7 At A Glance</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 3">
+      <div class="nav-section-title">§3 · Variation 1</div>
+      <ul>
+        <li><a href="#v1-signal">Standard · Problem Signal</a></li>
+        <li><a href="#v1-grid">Grid Version</a></li>
+        <li><a href="#v1-path">Path Reconstruction</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 4">
+      <div class="nav-section-title">§4 · Variation 2</div>
+      <ul>
+        <li><a href="#v2-signal">State Expansion · Signal</a></li>
+        <li><a href="#v2-idea">Core Idea</a></li>
+        <li><a href="#v2-when">When To Use</a></li>
+        <li><a href="#v2-flights">Cheapest Flights, K Stops</a></li>
+        <li><a href="#v2-obstacles">K Obstacle Removals</a></li>
+        <li><a href="#v2-keys">Keys &amp; Doors (Bitmask)</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 5">
+      <div class="nav-section-title">§5 · Variation 3</div>
+      <ul>
+        <li><a href="#v3-signal">Multi-Source · Signal</a></li>
+        <li><a href="#v3-idea">Core Idea</a></li>
+        <li><a href="#v3-weighted">Weighted Grid</a></li>
+        <li><a href="#v3-bfs">Unweighted BFS</a></li>
+        <li><a href="#v3-tracking">With Source Tracking</a></li>
+        <li><a href="#v3-classic">Classic Problems</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Section 6">
+      <div class="nav-section-title">§6 · Variation 4</div>
+      <ul>
+        <li><a href="#v4-signal">0-1 BFS · Signal</a></li>
+        <li><a href="#v4-idea">Core Idea</a></li>
+        <li><a href="#v4-template">Template</a></li>
+        <li><a href="#v4-grid">Grid Template</a></li>
+        <li><a href="#v4-norm">Normalization Trick</a></li>
+        <li><a href="#v4-mistake">Common Mistake</a></li>
+      </ul>
+    </div>
+  </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="main">
+  <div class="content">
+
+    <!-- ===================== HERO ===================== -->
+    <header class="hero" id="overview">
+      <div class="breadcrumb">Dijkstra Mastery · Google L5 · Part 1 of 3</div>
+      <h1 class="hero-title">
+        <span class="accent">Dijkstra</span><br/>
+        Mastery — <span class="accent">Foundations</span>
+      </h1>
+
+      <div class="hero-meta">
+        <span>🏆 The master cheat sheet for Google L5</span>
+        <span>🧠 One algorithm, seven variations, one master template</span>
+      </div>
+      <div class="hero-meta">
+        <span>📐 Standard · State Expansion · Multi-Source · 0-1 BFS</span>
+        <span>🐍 Production-grade Python templates, ready to memorize</span>
+      </div>
+
+      <div class="part-toggle">
+        <a href="#" class="part-btn current">Part 1: Core + Variations 1–4</a>
+        <a href="#" class="part-btn">Part 2: Variations 5–7</a>
+        <a href="#" class="part-btn">Part 3: Selection &amp; Frameworks</a>
+      </div>
+
+      <p class="hero-intro">
+        Most engineers learn Dijkstra once and stop. Staff-level signal comes from recognizing that <em>almost every</em> shortest-path problem is a Dijkstra problem in disguise — with one line of the inner loop changed, or one extra dimension on the state. This is the master cheat sheet that lets you walk into any L5 graph problem and pattern-match instantly: identify the variation, recall the template, write the code. Part 1 covers the core algorithm, gives you the bird's-eye view of all seven variations, and then deep-dives the first four: <strong>Standard</strong>, <strong>State Expansion</strong>, <strong>Multi-Source</strong>, and <strong>0-1 BFS</strong>.
+      </p>
+
+      <hr class="divider" />
+    </header>
+
+    <!-- ===================== SECTION 1: CORE ALGORITHM ===================== -->
+    <section id="section-1">
+      <div class="section-eyebrow"><span class="num">§1</span>Core Algorithm</div>
+      <h1 class="section-title">The <span class="accent">Master Algorithm</span></h1>
+
+      <!-- What is Dijkstra -->
+      <h2 class="subsection-title" id="what-is"><span class="label">📌</span>What is Dijkstra?</h2>
+
+      <p>A <strong>greedy algorithm</strong> that finds the shortest path from a source to all other nodes in a weighted graph with <mark class="hl">non-negative edge weights</mark>.</p>
+
+      <h4 class="tiny-title">The One Analogy</h4>
+      <div class="analogy-box">
+        <div class="ab-label">The water analogy</div>
+        <div class="ab-text">
+          Water poured from source. Flows to the nearest point first, then gradually spreads. <strong>The first time water reaches any node = the shortest path.</strong>
+        </div>
+      </div>
+
+      <!-- Core Template -->
+      <h2 class="subsection-title" id="core-template"><span class="label">📌</span>Core Template — Memorize This</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Master Template</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+
+<span class="tk-k">def</span> <span class="tk-f">dijkstra</span>(graph, source):
+    dist = {node: <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>) <span class="tk-k">for</span> node <span class="tk-k">in</span> graph}
+    dist[source] = <span class="tk-n">0</span>
+    heap = [(<span class="tk-n">0</span>, source)]
+
+    <span class="tk-k">while</span> heap:
+        d, u = heapq.heappop(heap)
+
+        <span class="tk-k">if</span> d &gt; dist[u]:  <span class="tk-c"># Skip stale entries</span>
+            <span class="tk-k">continue</span>
+
+        <span class="tk-k">for</span> v, weight <span class="tk-k">in</span> graph[u]:
+            new_dist = d + weight
+            <span class="tk-k">if</span> new_dist &lt; dist[v]:
+                dist[v] = new_dist
+                heapq.heappush(heap, (new_dist, v))
+
+    <span class="tk-k">return</span> dist</code></pre>
+      </div>
+
+      <h4 class="tiny-title">Complexity</h4>
+      <div class="complexity-row">
+        <div class="cx-pill">
+          <div class="label">Time</div>
+          <div class="value">O((V + E) log V)</div>
+        </div>
+        <div class="cx-pill space">
+          <div class="label">Space</div>
+          <div class="value">O(V + E)</div>
+        </div>
+      </div>
+
+      <!-- Core Properties -->
+      <h2 class="subsection-title" id="core-properties"><span class="label">📌</span>Core Properties</h2>
+
+      <div class="property-list">
+        <div class="row">
+          <div class="key">Greedy guarantee</div>
+          <div class="val">Once a node is popped from the heap, its distance is <strong>FINALIZED</strong>.</div>
+        </div>
+        <div class="row">
+          <div class="key">Non-negative only</div>
+          <div class="val">Negative edges <mark class="hl-coral">break</mark> Dijkstra.</div>
+        </div>
+        <div class="row">
+          <div class="key">Early termination</div>
+          <div class="val">If you only need <code class="inline">dist</code> to ONE target, return when target is popped.</div>
+        </div>
+        <div class="row">
+          <div class="key">Stale entry skip</div>
+          <div class="val"><code class="inline">if d &gt; dist[u]: continue</code> — critical optimization.</div>
+        </div>
+      </div>
+
+      <!-- When Dijkstra fails -->
+      <h2 class="subsection-title" id="when-fails"><span class="label">📌</span>When Dijkstra FAILS — Use Alternatives</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>Algorithm</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Negative edges exist</td><td>Bellman-Ford <code class="inline">O(V × E)</code></td></tr>
+            <tr><td class="row-label">All edges weight 1</td><td>BFS <code class="inline">O(V + E)</code></td></tr>
+            <tr><td class="row-label">Edges weight 0 or 1</td><td>0-1 BFS <code class="inline">O(V + E)</code></td></tr>
+            <tr><td class="row-label">All-pairs shortest path</td><td>Floyd-Warshall <code class="inline">O(V³)</code></td></tr>
+            <tr><td class="row-label">Have a heuristic</td><td>A*</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 2: ALL 7 AT A GLANCE ===================== -->
+    <section id="section-2">
+      <div class="section-eyebrow"><span class="num">§2</span>All 7 Variations at a Glance</div>
+      <h1 class="section-title">The <span class="accent">Seven Faces</span> of Dijkstra</h1>
+
+      <p style="max-width: 760px;">Every variation below is the <em>same algorithm</em> with one mechanical change. Study the "Key Change" column — that's the entire difference. Once you can name all seven on sight, you've internalized the pattern.</p>
+
+      <div id="variations-glance" class="variation-grid">
+        <div class="var-card v1">
+          <div class="var-num">01</div>
+          <div class="var-name">Standard Dijkstra</div>
+          <div class="var-change">dist + weight</div>
+          <div class="var-line">Basic shortest path.</div>
+        </div>
+        <div class="var-card v2">
+          <div class="var-num">02</div>
+          <div class="var-name">State Expansion</div>
+          <div class="var-change">dist[node][state]</div>
+          <div class="var-line">Extra constraint dimension.</div>
+        </div>
+        <div class="var-card v3">
+          <div class="var-num">03</div>
+          <div class="var-name">Multi-Source</div>
+          <div class="var-change">All sources at d=0</div>
+          <div class="var-line">Multiple starting points.</div>
+        </div>
+        <div class="var-card v4">
+          <div class="var-num">04</div>
+          <div class="var-name">0-1 BFS</div>
+          <div class="var-change">Deque front/back</div>
+          <div class="var-line">Weights only 0 and 1.</div>
+        </div>
+        <div class="var-card v5">
+          <div class="var-num">05</div>
+          <div class="var-name">Minimax</div>
+          <div class="var-change">max(dist, weight)</div>
+          <div class="var-line">Minimize worst single edge.</div>
+        </div>
+        <div class="var-card v6">
+          <div class="var-num">06</div>
+          <div class="var-name">K-th Shortest</div>
+          <div class="var-change">Pop nodes K times</div>
+          <div class="var-line">K-th best path.</div>
+        </div>
+        <div class="var-card v7">
+          <div class="var-num">07</div>
+          <div class="var-name">Implicit Graph</div>
+          <div class="var-change">Generate neighbors</div>
+          <div class="var-line">No explicit graph given.</div>
+        </div>
+      </div>
+
+      <h4 class="tiny-title">ASCII Cheat Card</h4>
+      <div class="diagram">
+<pre>╔════╦══════════════════════╦══════════════════════╦══════════════════════════════╗
+║  # ║ Variation            ║ Key Change           ║ One-Liner                    ║
+╠════╬══════════════════════╬══════════════════════╬══════════════════════════════╣
+║  1 ║ Standard Dijkstra    ║ dist + weight        ║ Basic shortest path          ║
+║  2 ║ State Expansion      ║ dist[node][state]    ║ Extra constraint dimension   ║
+║  3 ║ Multi-Source         ║ All sources at d=0   ║ Multiple starting points     ║
+║  4 ║ 0-1 BFS              ║ Deque front/back     ║ Weights only 0 and 1         ║
+║  5 ║ Minimax              ║ max(dist, weight)    ║ Minimize worst single edge   ║
+║  6 ║ K-th Shortest        ║ Pop nodes K times    ║ K-th best path               ║
+║  7 ║ Implicit Graph       ║ Generate neighbors   ║ No explicit graph given      ║
+╚════╩══════════════════════╩══════════════════════╩══════════════════════════════╝</pre>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 3: VARIATION 1 ===================== -->
+    <section id="section-3">
+      <div class="section-eyebrow"><span class="num">§3</span>Variation 1</div>
+      <h1 class="section-title">Standard <span class="accent">Dijkstra</span></h1>
+
+      <div class="variation-header h1">
+        <div class="vh-num">01</div>
+        <div>
+          <div class="vh-meta">Variation 1 · The baseline</div>
+          <div class="vh-title">Standard Dijkstra</div>
+          <div class="vh-tag"><code class="inline">new = dist + weight</code> · the change-line is just addition</div>
+        </div>
+      </div>
+
+      <h2 class="subsection-title" id="v1-signal"><span class="label">📌</span>Problem Signal</h2>
+      <div class="callout signal">
+        <div class="callout-label">Recognize this when you see…</div>
+        <p>"Find shortest / cheapest path", weighted graph, non-negative weights.</p>
+      </div>
+
+      <!-- Grid Version -->
+      <h2 class="subsection-title" id="v1-grid"><span class="label">📌</span>Grid Version</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Dijkstra on Grid</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+
+<span class="tk-k">def</span> <span class="tk-f">dijkstra_grid</span>(grid):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    dist = [[<span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)] * n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    dist[<span class="tk-n">0</span>][<span class="tk-n">0</span>] = grid[<span class="tk-n">0</span>][<span class="tk-n">0</span>]
+    heap = [(grid[<span class="tk-n">0</span>][<span class="tk-n">0</span>], <span class="tk-n">0</span>, <span class="tk-n">0</span>)]
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>), (<span class="tk-n">0</span>,-<span class="tk-n">1</span>), (<span class="tk-n">1</span>,<span class="tk-n">0</span>), (-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">while</span> heap:
+        d, r, c = heapq.heappop(heap)
+        <span class="tk-k">if</span> r == m-<span class="tk-n">1</span> <span class="tk-k">and</span> c == n-<span class="tk-n">1</span>:
+            <span class="tk-k">return</span> d
+        <span class="tk-k">if</span> d &gt; dist[r][c]:
+            <span class="tk-k">continue</span>
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n:
+                nd = d + grid[nr][nc]
+                <span class="tk-k">if</span> nd &lt; dist[nr][nc]:
+                    dist[nr][nc] = nd
+                    heapq.heappush(heap, (nd, nr, nc))
+
+    <span class="tk-k">return</span> dist[m-<span class="tk-n">1</span>][n-<span class="tk-n">1</span>]</code></pre>
+      </div>
+
+      <!-- Path Reconstruction -->
+      <h2 class="subsection-title" id="v1-path"><span class="label">📌</span>With Path Reconstruction</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Dijkstra + Parent Tracking</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+
+<span class="tk-k">def</span> <span class="tk-f">dijkstra_with_path</span>(graph, source, target):
+    dist = {node: <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>) <span class="tk-k">for</span> node <span class="tk-k">in</span> graph}
+    parent = {node: <span class="tk-k">None</span> <span class="tk-k">for</span> node <span class="tk-k">in</span> graph}
+    dist[source] = <span class="tk-n">0</span>
+    heap = [(<span class="tk-n">0</span>, source)]
+
+    <span class="tk-k">while</span> heap:
+        d, u = heapq.heappop(heap)
+        <span class="tk-k">if</span> u == target:
+            <span class="tk-k">break</span>
+        <span class="tk-k">if</span> d &gt; dist[u]:
+            <span class="tk-k">continue</span>
+        <span class="tk-k">for</span> v, w <span class="tk-k">in</span> graph[u]:
+            <span class="tk-k">if</span> d + w &lt; dist[v]:
+                dist[v] = d + w
+                parent[v] = u
+                heapq.heappush(heap, (d + w, v))
+
+    <span class="tk-c"># Reconstruct path</span>
+    path = []
+    node = target
+    <span class="tk-k">while</span> node <span class="tk-k">is not</span> <span class="tk-k">None</span>:
+        path.append(node)
+        node = parent[node]
+    path.reverse()
+
+    <span class="tk-k">return</span> dist[target], path</code></pre>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 4: VARIATION 2 ===================== -->
+    <section id="section-4">
+      <div class="section-eyebrow"><span class="num">§4</span>Variation 2</div>
+      <h1 class="section-title">State <span class="accent">Expansion</span></h1>
+
+      <div class="variation-header h2">
+        <div class="vh-num">02</div>
+        <div>
+          <div class="vh-meta">Variation 2 · The L5 differentiator</div>
+          <div class="vh-title">State Expansion</div>
+          <div class="vh-tag"><code class="inline">dist[node][state]</code> · add a dimension to the state</div>
+        </div>
+      </div>
+
+      <h2 class="subsection-title" id="v2-signal"><span class="label">📌</span>Problem Signal</h2>
+      <div class="callout signal">
+        <div class="callout-label">Recognize this when you see…</div>
+        <p>Extra constraint: <em>"at most K stops"</em>, <em>"budget limit"</em>, <em>"collect keys"</em>, <em>"K obstacles removed"</em>.</p>
+      </div>
+
+      <!-- Core Idea -->
+      <h2 class="subsection-title" id="v2-idea"><span class="label">📌</span>Core Idea</h2>
+      <div class="diagram">
+<pre>Normal:   dist[node]            = shortest distance
+Expanded: dist[node][constraint_value] = shortest distance with THIS constraint
+
+State becomes: (node, constraint_remaining)</pre>
+      </div>
+
+      <!-- When to Use -->
+      <h2 class="subsection-title" id="v2-when"><span class="label">📌</span>When To Use</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Problem Clue</th>
+              <th>Extra State Dimension</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">"At most K obstacles removed"</td><td><code class="inline">remaining_removals</code></td></tr>
+            <tr><td class="row-label">"At most K stops"</td><td><code class="inline">stops_used</code></td></tr>
+            <tr><td class="row-label">"Budget / fuel constraint"</td><td><code class="inline">budget_remaining</code></td></tr>
+            <tr><td class="row-label">"Collect keys to open doors"</td><td><code class="inline">keys_bitmask</code></td></tr>
+            <tr><td class="row-label">"Can use special ability X times"</td><td><code class="inline">ability_count</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Cheapest flights -->
+      <h2 class="subsection-title" id="v2-flights"><span class="label">📌</span>Template: Cheapest Flights with K Stops</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Cheapest Flights, K Stops</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+<span class="tk-k">from</span> collections <span class="tk-k">import</span> defaultdict
+
+<span class="tk-k">def</span> <span class="tk-f">cheapest_flight</span>(n, flights, src, dst, k):
+    graph = defaultdict(<span class="tk-b">list</span>)
+    <span class="tk-k">for</span> u, v, price <span class="tk-k">in</span> flights:
+        graph[u].append((v, price))
+
+    INF = <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)
+    <span class="tk-c"># dist[city][stops_used] = minimum cost</span>
+    dist = [[INF] * (k + <span class="tk-n">2</span>) <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(n)]
+    dist[src][<span class="tk-n">0</span>] = <span class="tk-n">0</span>
+    heap = [(<span class="tk-n">0</span>, src, <span class="tk-n">0</span>)]  <span class="tk-c"># (cost, city, stops_used)</span>
+
+    <span class="tk-k">while</span> heap:
+        cost, city, stops = heapq.heappop(heap)
+
+        <span class="tk-k">if</span> city == dst:
+            <span class="tk-k">return</span> cost
+
+        <span class="tk-k">if</span> cost &gt; dist[city][stops]:
+            <span class="tk-k">continue</span>
+
+        <span class="tk-k">if</span> stops + <span class="tk-n">1</span> &gt; k + <span class="tk-n">1</span>:
+            <span class="tk-k">continue</span>
+
+        <span class="tk-k">for</span> neighbor, price <span class="tk-k">in</span> graph[city]:
+            new_cost = cost + price
+            new_stops = stops + <span class="tk-n">1</span>
+            <span class="tk-k">if</span> new_cost &lt; dist[neighbor][new_stops]:
+                dist[neighbor][new_stops] = new_cost
+                heapq.heappush(heap, (new_cost, neighbor, new_stops))
+
+    <span class="tk-k">return</span> -<span class="tk-n">1</span></code></pre>
+      </div>
+
+      <!-- K obstacles -->
+      <h2 class="subsection-title" id="v2-obstacles"><span class="label">📌</span>Template: Grid with K Obstacle Removals (BFS)</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Shortest Path with K Obstacle Removals</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">from</span> collections <span class="tk-k">import</span> deque
+
+<span class="tk-k">def</span> <span class="tk-f">shortest_path_k_obstacles</span>(grid, k):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    visited = [[[<span class="tk-k">False</span>]*(k+<span class="tk-n">1</span>) <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(n)] <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    visited[<span class="tk-n">0</span>][<span class="tk-n">0</span>][k] = <span class="tk-k">True</span>
+    queue = deque([(<span class="tk-n">0</span>, <span class="tk-n">0</span>, k, <span class="tk-n">0</span>)])
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">while</span> queue:
+        r, c, rem, steps = queue.popleft()
+        <span class="tk-k">if</span> r == m-<span class="tk-n">1</span> <span class="tk-k">and</span> c == n-<span class="tk-n">1</span>:
+            <span class="tk-k">return</span> steps
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n:
+                <span class="tk-k">if</span> grid[nr][nc] == <span class="tk-n">0</span> <span class="tk-k">and not</span> visited[nr][nc][rem]:
+                    visited[nr][nc][rem] = <span class="tk-k">True</span>
+                    queue.append((nr, nc, rem, steps+<span class="tk-n">1</span>))
+                <span class="tk-k">elif</span> grid[nr][nc] == <span class="tk-n">1</span> <span class="tk-k">and</span> rem &gt; <span class="tk-n">0</span> <span class="tk-k">and not</span> visited[nr][nc][rem-<span class="tk-n">1</span>]:
+                    visited[nr][nc][rem-<span class="tk-n">1</span>] = <span class="tk-k">True</span>
+                    queue.append((nr, nc, rem-<span class="tk-n">1</span>, steps+<span class="tk-n">1</span>))
+    <span class="tk-k">return</span> -<span class="tk-n">1</span></code></pre>
+      </div>
+
+      <!-- Keys & Doors -->
+      <h2 class="subsection-title" id="v2-keys"><span class="label">📌</span>Template: Keys and Doors (Bitmask BFS)</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Bitmask BFS for Keys</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">from</span> collections <span class="tk-k">import</span> deque
+
+<span class="tk-k">def</span> <span class="tk-f">shortest_path_all_keys</span>(grid):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    total_keys = <span class="tk-n">0</span>
+    start_r = start_c = <span class="tk-n">0</span>
+
+    <span class="tk-k">for</span> r <span class="tk-k">in</span> <span class="tk-b">range</span>(m):
+        <span class="tk-k">for</span> c <span class="tk-k">in</span> <span class="tk-b">range</span>(n):
+            <span class="tk-k">if</span> grid[r][c] == <span class="tk-s">'@'</span>:
+                start_r, start_c = r, c
+            <span class="tk-k">elif</span> grid[r][c].islower():
+                total_keys += <span class="tk-n">1</span>
+
+    target = (<span class="tk-n">1</span> &lt;&lt; total_keys) - <span class="tk-n">1</span>
+    visited = <span class="tk-b">set</span>()
+    visited.add((start_r, start_c, <span class="tk-n">0</span>))
+    queue = deque([(start_r, start_c, <span class="tk-n">0</span>, <span class="tk-n">0</span>)])
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">while</span> queue:
+        r, c, keys, steps = queue.popleft()
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n:
+                cell = grid[nr][nc]
+                <span class="tk-k">if</span> cell == <span class="tk-s">'#'</span>:
+                    <span class="tk-k">continue</span>
+                <span class="tk-k">if</span> cell.isupper() <span class="tk-k">and not</span> (keys &amp; (<span class="tk-n">1</span> &lt;&lt; (<span class="tk-b">ord</span>(cell.lower())-<span class="tk-b">ord</span>(<span class="tk-s">'a'</span>)))):
+                    <span class="tk-k">continue</span>
+                new_keys = keys
+                <span class="tk-k">if</span> cell.islower():
+                    new_keys = keys | (<span class="tk-n">1</span> &lt;&lt; (<span class="tk-b">ord</span>(cell)-<span class="tk-b">ord</span>(<span class="tk-s">'a'</span>)))
+                <span class="tk-k">if</span> new_keys == target:
+                    <span class="tk-k">return</span> steps + <span class="tk-n">1</span>
+                <span class="tk-k">if</span> (nr, nc, new_keys) <span class="tk-k">not in</span> visited:
+                    visited.add((nr, nc, new_keys))
+                    queue.append((nr, nc, new_keys, steps+<span class="tk-n">1</span>))
+    <span class="tk-k">return</span> -<span class="tk-n">1</span></code></pre>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 5: VARIATION 3 ===================== -->
+    <section id="section-5">
+      <div class="section-eyebrow"><span class="num">§5</span>Variation 3</div>
+      <h1 class="section-title">Multi-Source <span class="accent">Dijkstra</span></h1>
+
+      <div class="variation-header h3">
+        <div class="vh-num">03</div>
+        <div>
+          <div class="vh-meta">Variation 3 · One-line change, huge impact</div>
+          <div class="vh-title">Multi-Source Dijkstra</div>
+          <div class="vh-tag">All sources start at <code class="inline">d=0</code> · seed the heap with every source</div>
+        </div>
+      </div>
+
+      <h2 class="subsection-title" id="v3-signal"><span class="label">📌</span>Problem Signal</h2>
+      <div class="callout signal">
+        <div class="callout-label">Recognize this when you see…</div>
+        <p>"Distance to nearest X", "farthest from any X", "simultaneously from all".</p>
+      </div>
+
+      <!-- Core Idea -->
+      <h2 class="subsection-title" id="v3-idea"><span class="label">📌</span>Core Idea</h2>
+      <div class="diagram">
+<pre>Normal:       Push ONE source at dist=0
+Multi-Source: Push ALL sources at dist=0
+
+That's the ONLY change!</pre>
+      </div>
+
+      <!-- Weighted Grid -->
+      <h2 class="subsection-title" id="v3-weighted"><span class="label">📌</span>Template: Weighted Grid</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Multi-Source Dijkstra (weighted)</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+
+<span class="tk-k">def</span> <span class="tk-f">multi_source_dijkstra</span>(grid, cost, sources):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    INF = <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)
+    dist = [[INF]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    heap = []
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">for</span> r, c <span class="tk-k">in</span> sources:
+        dist[r][c] = <span class="tk-n">0</span>
+        heapq.heappush(heap, (<span class="tk-n">0</span>, r, c))
+
+    <span class="tk-k">while</span> heap:
+        d, r, c = heapq.heappop(heap)
+        <span class="tk-k">if</span> d &gt; dist[r][c]:
+            <span class="tk-k">continue</span>
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n <span class="tk-k">and</span> grid[nr][nc] != <span class="tk-s">'#'</span>:
+                nd = d + cost[nr][nc]
+                <span class="tk-k">if</span> nd &lt; dist[nr][nc]:
+                    dist[nr][nc] = nd
+                    heapq.heappush(heap, (nd, nr, nc))
+    <span class="tk-k">return</span> dist</code></pre>
+      </div>
+
+      <!-- Unweighted BFS -->
+      <h2 class="subsection-title" id="v3-bfs"><span class="label">📌</span>Template: Unweighted BFS Version</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Multi-Source BFS (unweighted)</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">from</span> collections <span class="tk-k">import</span> deque
+
+<span class="tk-k">def</span> <span class="tk-f">multi_source_bfs</span>(grid, sources):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    INF = <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)
+    dist = [[INF]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    queue = deque()
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">for</span> r, c <span class="tk-k">in</span> sources:
+        dist[r][c] = <span class="tk-n">0</span>
+        queue.append((r, c))
+
+    <span class="tk-k">while</span> queue:
+        r, c = queue.popleft()
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n <span class="tk-k">and</span> dist[nr][nc] == INF <span class="tk-k">and</span> grid[nr][nc] != <span class="tk-s">'#'</span>:
+                dist[nr][nc] = dist[r][c] + <span class="tk-n">1</span>
+                queue.append((nr, nc))
+    <span class="tk-k">return</span> dist</code></pre>
+      </div>
+
+      <!-- With tracking -->
+      <h2 class="subsection-title" id="v3-tracking"><span class="label">📌</span>With Nearest-Source Tracking</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · Multi-Source + Nearest Source</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">import</span> heapq
+
+<span class="tk-k">def</span> <span class="tk-f">multi_source_with_tracking</span>(grid, cost, sources):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    INF = <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)
+    dist = [[INF]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    nearest = [[<span class="tk-k">None</span>]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    heap = []
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">for</span> r, c <span class="tk-k">in</span> sources:
+        dist[r][c] = <span class="tk-n">0</span>
+        nearest[r][c] = (r, c)
+        heapq.heappush(heap, (<span class="tk-n">0</span>, r, c))
+
+    <span class="tk-k">while</span> heap:
+        d, r, c = heapq.heappop(heap)
+        <span class="tk-k">if</span> d &gt; dist[r][c]:
+            <span class="tk-k">continue</span>
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n <span class="tk-k">and</span> grid[nr][nc] != <span class="tk-s">'#'</span>:
+                nd = d + cost[nr][nc]
+                <span class="tk-k">if</span> nd &lt; dist[nr][nc]:
+                    dist[nr][nc] = nd
+                    nearest[nr][nc] = nearest[r][c]
+                    heapq.heappush(heap, (nd, nr, nc))
+
+    <span class="tk-k">return</span> dist, nearest</code></pre>
+      </div>
+
+      <!-- Classic problems -->
+      <h2 class="subsection-title" id="v3-classic"><span class="label">📌</span>Classic Problems</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Problem</th>
+              <th>Sources</th>
+              <th>What to Find</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Walls and Gates</td><td>All gates (0)</td><td>Distance to nearest gate</td></tr>
+            <tr><td class="row-label">01 Matrix</td><td>All 0-cells</td><td>Distance to nearest 0</td></tr>
+            <tr><td class="row-label">As Far from Land</td><td>All land (1)</td><td>Max distance to nearest land</td></tr>
+            <tr><td class="row-label">Hospital &amp; House</td><td>All hospitals</td><td>Nearest hospital per house</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SECTION 6: VARIATION 4 — 0-1 BFS ===================== -->
+    <section id="section-6">
+      <div class="section-eyebrow"><span class="num">§6</span>Variation 4</div>
+      <h1 class="section-title">0-1 <span class="accent">BFS</span></h1>
+
+      <div class="variation-header h4">
+        <div class="vh-num">04</div>
+        <div>
+          <div class="vh-meta">Variation 4 · The clever optimization</div>
+          <div class="vh-title">0-1 BFS</div>
+          <div class="vh-tag">Deque · push 0-cost to front, 1-cost to back · drops the log V factor</div>
+        </div>
+      </div>
+
+      <h2 class="subsection-title" id="v4-signal"><span class="label">📌</span>Problem Signal</h2>
+      <div class="callout signal">
+        <div class="callout-label">Recognize this when you see…</div>
+        <p>Edge weights are <strong>only 0 and 1</strong>. Or <em>reducible</em> to 0 and 1.</p>
+      </div>
+
+      <!-- Core idea -->
+      <h2 class="subsection-title" id="v4-idea"><span class="label">📌</span>Core Idea</h2>
+      <div class="diagram">
+<pre>Cost 0 neighbor → push to FRONT of deque
+Cost 1 neighbor → push to BACK of deque
+
+Deque stays sorted with at most 2 levels!
+No heap needed → O(V+E) instead of O((V+E)logV)</pre>
+      </div>
+
+      <div class="complexity-row">
+        <div class="cx-pill">
+          <div class="label">Time (vs Dijkstra)</div>
+          <div class="value">O(V + E)</div>
+        </div>
+        <div class="cx-pill space">
+          <div class="label">Saved factor</div>
+          <div class="value">log V</div>
+        </div>
+      </div>
+
+      <!-- Template -->
+      <h2 class="subsection-title" id="v4-template"><span class="label">📌</span>Template</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · 0-1 BFS</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">from</span> collections <span class="tk-k">import</span> deque
+
+<span class="tk-k">def</span> <span class="tk-f">zero_one_bfs</span>(graph, source):
+    dist = {node: <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>) <span class="tk-k">for</span> node <span class="tk-k">in</span> graph}
+    dist[source] = <span class="tk-n">0</span>
+    dq = deque([source])
+
+    <span class="tk-k">while</span> dq:
+        u = dq.popleft()
+        <span class="tk-k">for</span> v, w <span class="tk-k">in</span> graph[u]:
+            new_dist = dist[u] + w
+            <span class="tk-k">if</span> new_dist &lt; dist[v]:
+                dist[v] = new_dist
+                <span class="tk-k">if</span> w == <span class="tk-n">0</span>:
+                    dq.appendleft(v)  <span class="tk-c"># Free → FRONT</span>
+                <span class="tk-k">else</span>:
+                    dq.append(v)      <span class="tk-c"># Cost 1 → BACK</span>
+    <span class="tk-k">return</span> dist</code></pre>
+      </div>
+
+      <!-- Grid template -->
+      <h2 class="subsection-title" id="v4-grid"><span class="label">📌</span>Grid Template</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · 0-1 BFS on Grid</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-k">from</span> collections <span class="tk-k">import</span> deque
+
+<span class="tk-k">def</span> <span class="tk-f">zero_one_bfs_grid</span>(grid):
+    m, n = <span class="tk-b">len</span>(grid), <span class="tk-b">len</span>(grid[<span class="tk-n">0</span>])
+    INF = <span class="tk-b">float</span>(<span class="tk-s">'inf'</span>)
+    dist = [[INF]*n <span class="tk-k">for</span> _ <span class="tk-k">in</span> <span class="tk-b">range</span>(m)]
+    dist[<span class="tk-n">0</span>][<span class="tk-n">0</span>] = <span class="tk-n">0</span>
+    dq = deque([(<span class="tk-n">0</span>, <span class="tk-n">0</span>)])
+    dirs = [(<span class="tk-n">0</span>,<span class="tk-n">1</span>),(<span class="tk-n">0</span>,-<span class="tk-n">1</span>),(<span class="tk-n">1</span>,<span class="tk-n">0</span>),(-<span class="tk-n">1</span>,<span class="tk-n">0</span>)]
+
+    <span class="tk-k">while</span> dq:
+        r, c = dq.popleft()
+        <span class="tk-k">for</span> dr, dc <span class="tk-k">in</span> dirs:
+            nr, nc = r+dr, c+dc
+            <span class="tk-k">if</span> <span class="tk-n">0</span> &lt;= nr &lt; m <span class="tk-k">and</span> <span class="tk-n">0</span> &lt;= nc &lt; n:
+                cost = grid[nr][nc]  <span class="tk-c"># 0 or 1</span>
+                nd = dist[r][c] + cost
+                <span class="tk-k">if</span> nd &lt; dist[nr][nc]:
+                    dist[nr][nc] = nd
+                    <span class="tk-k">if</span> cost == <span class="tk-n">0</span>:
+                        dq.appendleft((nr, nc))
+                    <span class="tk-k">else</span>:
+                        dq.append((nr, nc))
+
+    <span class="tk-k">return</span> dist[m-<span class="tk-n">1</span>][n-<span class="tk-n">1</span>]</code></pre>
+      </div>
+
+      <!-- Normalization -->
+      <h2 class="subsection-title" id="v4-norm"><span class="label">📌</span>Edge-Weight Normalization Trick</h2>
+
+      <div class="callout insight">
+        <div class="callout-label">When the weights aren't literally 0 and 1</div>
+        <p>Costs are <code class="inline">X</code> and <code class="inline">X+1</code> (e.g., 2 and 3)?</p>
+        <ul style="margin-bottom: 0;">
+          <li>Subtract X from all → costs become 0 and 1</li>
+          <li>Use 0-1 BFS for deque ordering</li>
+          <li>Track <strong>real distances</strong> using original weights</li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">Classic Problems</h4>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Problem</th>
+              <th>Cost 0</th>
+              <th>Cost 1</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Obstacle removal</td><td>Empty cell</td><td>Obstacle cell</td></tr>
+            <tr><td class="row-label">Follow signs in grid</td><td>Follow arrow</td><td>Change direction</td></tr>
+            <tr><td class="row-label">Flip edges in directed graph</td><td>Forward edge</td><td>Reverse edge</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Common Mistake -->
+      <h2 class="subsection-title" id="v4-mistake"><span class="label">📌</span>Common Mistake</h2>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang python">Python · The Trap vs The Fix</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code><span class="tk-c"># ❌ WRONG: Using visited array</span>
+<span class="tk-k">if</span> visited[v]: <span class="tk-k">continue</span>
+
+<span class="tk-c"># ✅ CORRECT: Check distance improvement</span>
+<span class="tk-k">if</span> new_dist &lt; dist[v]:  <span class="tk-c"># A node CAN be updated multiple times</span></code></pre>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-label">Why this matters</div>
+        <p>In 0-1 BFS, a node can be discovered through a cost-1 path first, then later improved through a cost-0 path. A naive <code class="inline">visited</code> set blocks that improvement and gives you a wrong answer. <strong>Always relax on distance, never on visited-flag.</strong></p>
+      </div>
+
+      <hr class="divider" />
+
+      <p style="text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin-top: 40px;">
+        End of Part 1 · Continue to Part 2 for Variations 5–7
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+  /* PROGRESS BAR */
+  const progressBar = document.getElementById('progress-bar');
+  function updateProgress() {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  /* BACK TO TOP */
+  const backTop = document.getElementById('back-top');
+  function toggleBackTop() {
+    if (window.scrollY > 500) backTop.classList.add('visible');
+    else backTop.classList.remove('visible');
+  }
+  window.addEventListener('scroll', toggleBackTop, { passive: true });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* SIDEBAR ACTIVE STATE */
+  const navLinks = Array.from(document.querySelectorAll('.nav-section li a'));
+  const sectionMap = navLinks.map(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    return { link, el };
+  }).filter(s => s.el);
+
+  function setActiveSection() {
+    const offset = 120;
+    let current = sectionMap[0];
+    for (const s of sectionMap) {
+      const top = s.el.getBoundingClientRect().top;
+      if (top - offset <= 0) current = s;
+      else break;
+    }
+    navLinks.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', setActiveSection, { passive: true });
+  setActiveSection();
+
+  /* COPY BUTTONS */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code-block');
+      const code = block ? block.querySelector('pre code, pre') : null;
+      if (!code) return;
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1600);
+      } catch (e) {
+        btn.textContent = 'Error';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      }
+    });
+  });
+
+  /* SEARCH */
+  const searchInput = document.getElementById('search');
+  const navSections = Array.from(document.querySelectorAll('.nav-section'));
+  searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    navSections.forEach(group => {
+      const items = Array.from(group.querySelectorAll('li'));
+      let anyVisible = false;
+      items.forEach(li => {
+        const text = li.innerText.toLowerCase();
+        const groupTitle = group.querySelector('.nav-section-title').innerText.toLowerCase();
+        const match = !q || text.includes(q) || groupTitle.includes(q);
+        li.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
+      });
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  });
+
+  /* MOBILE MENU */
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-section li a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
