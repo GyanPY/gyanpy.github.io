@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Part 2 — GraphQL Deep Dive & Variant Comparison · L6/L7 Series</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================
+     RESET + BASE TOKENS
+  =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #0a0d12;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --surface-3: #232a36;
+    --border: #21262d;
+    --border-soft: rgba(240, 246, 252, 0.08);
+    --text: #e6edf3;
+    --text-dim: #b0b8c1;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+
+    --amber: #F5A623;
+    --amber-soft: #f0b95c;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --blue: #58a6ff;
+    --blue-soft: rgba(88, 166, 255, 0.12);
+    --magenta: #d264e8;
+
+    --font-display: "Playfair Display", Georgia, serif;
+    --font-body: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --sidebar-width: 310px;
+    --content-max: 880px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Subtle starfield/noise atmosphere */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(245, 166, 35, 0.04), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(88, 166, 255, 0.04), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  ::selection { background: rgba(245, 166, 35, 0.35); color: #fff; }
+
+  /* ===========================================================
+     READING PROGRESS BAR
+  =========================================================== */
+  #progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--amber), var(--amber-soft), var(--blue));
+    z-index: 1000;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+  }
+
+  /* ===========================================================
+     SIDEBAR
+  =========================================================== */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 28px 20px 80px;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .series-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+
+  .doc-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+
+  .part-pill {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 22px;
+    line-height: 1.4;
+  }
+
+  .search-wrap {
+    margin-bottom: 24px;
+    position: relative;
+  }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #search:focus {
+    outline: none;
+    border-color: var(--blue);
+    background: var(--surface-2);
+  }
+  #search::placeholder { color: var(--text-faint); }
+
+  .nav-section {
+    margin-bottom: 18px;
+  }
+  .nav-section-title {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-left: 12px;
+  }
+  .nav-section ul { list-style: none; }
+  .nav-section li a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14.5px;
+    padding: 7px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    transition: all 0.18s ease;
+    line-height: 1.4;
+  }
+  .nav-section li a:hover {
+    color: var(--text);
+    background: var(--surface);
+  }
+  .nav-section li a.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+    border-left-color: var(--blue);
+    font-weight: 500;
+  }
+
+  /* Mobile menu toggle */
+  .menu-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  /* ===========================================================
+     MAIN CONTENT
+  =========================================================== */
+  .main {
+    margin-left: var(--sidebar-width);
+    padding: 64px 64px 120px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.7s ease-out both;
+  }
+  .content {
+    max-width: var(--content-max);
+    margin: 0 auto;
+  }
+
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===========================================================
+     HERO
+  =========================================================== */
+  .hero { margin-bottom: 60px; }
+
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 26px;
+  }
+
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 6vw, 84px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  .hero-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 45%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px 36px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .part-toggle {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+  }
+  .part-btn {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .part-btn:hover {
+    color: var(--text);
+    border-color: var(--text-faint);
+  }
+  .part-btn.current {
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border-color: var(--blue);
+  }
+
+  .hero-intro {
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1.75;
+    max-width: 780px;
+  }
+
+  hr.divider {
+    border: 0;
+    height: 1px;
+    background: var(--border);
+    margin: 56px 0;
+  }
+  hr.divider-soft {
+    border: 0;
+    height: 1px;
+    background: var(--border-soft);
+    margin: 32px 0;
+  }
+
+  /* ===========================================================
+     SECTION HEADERS
+  =========================================================== */
+  section { margin-bottom: 80px; scroll-margin-top: 24px; }
+
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+  }
+  .section-eyebrow .num {
+    color: var(--text-faint);
+    margin-right: 10px;
+  }
+
+  h1.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(38px, 4.5vw, 56px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+    color: #fff;
+  }
+  h1.section-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 50%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2.subsection-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 56px 0 8px;
+    color: #fff;
+    scroll-margin-top: 24px;
+  }
+  h2.subsection-title .label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--amber);
+    margin-right: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  h3.minor-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 14px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+
+  h4.tiny-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin: 24px 0 10px;
+  }
+
+  /* ===========================================================
+     PARAGRAPHS & LISTS
+  =========================================================== */
+  p { margin-bottom: 16px; color: var(--text-dim); }
+  p strong { color: #fff; font-weight: 600; }
+  p em { color: var(--text); font-style: italic; }
+
+  ul, ol {
+    margin: 12px 0 18px 0;
+    padding-left: 26px;
+    color: var(--text-dim);
+  }
+  ul li, ol li {
+    margin-bottom: 8px;
+    line-height: 1.7;
+  }
+  ul li::marker { color: var(--amber); }
+  ol li::marker { color: var(--amber); font-family: var(--font-mono); font-weight: 600; }
+
+  a.inline-link {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(88, 166, 255, 0.4);
+  }
+
+  /* ===========================================================
+     CALLOUT BOXES
+  =========================================================== */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0 22px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .callout-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout p { color: var(--text-dim); margin-bottom: 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .callout.insight {
+    border-left-color: var(--blue);
+  }
+  .callout.insight .callout-label { color: var(--blue); }
+
+  .callout.warning {
+    border-left-color: var(--coral);
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.06), var(--surface) 30%);
+  }
+  .callout.warning .callout-label { color: var(--coral); }
+
+  .callout.shine {
+    border-left-color: var(--teal);
+  }
+  .callout.shine .callout-label { color: var(--teal); }
+
+  .callout.gold {
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.05), var(--surface) 35%);
+  }
+  .callout.gold .callout-label { color: var(--gold); }
+
+  /* ===========================================================
+     CODE BLOCKS
+  =========================================================== */
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 18px 0 24px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+  }
+  .code-lang {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.18s;
+  }
+  .copy-btn:hover {
+    color: var(--text);
+    border-color: var(--text-faint);
+    background: var(--surface);
+  }
+  .copy-btn.copied {
+    color: var(--teal);
+    border-color: var(--teal);
+  }
+  .code-block pre {
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .code-block code {
+    font-family: var(--font-mono);
+    color: #c9d1d9;
+    white-space: pre;
+  }
+
+  /* token-style hints */
+  .code-block .tk-c { color: #8b949e; font-style: italic; }   /* comment */
+  .code-block .tk-k { color: #ff7b72; }                         /* keyword */
+  .code-block .tk-s { color: #a5d6ff; }                         /* string */
+  .code-block .tk-n { color: #d2a8ff; }                         /* name */
+  .code-block .tk-y { color: #ffa657; }                         /* type */
+  .code-block .tk-p { color: #79c0ff; }                         /* punctuation/special */
+  .code-block .tk-f { color: #d2a8ff; }                         /* function */
+
+  /* ===========================================================
+     ASCII / TEXT DIAGRAMS
+  =========================================================== */
+  .diagram {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 22px 0 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram::before {
+    content: "DIAGRAM";
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    padding: 3px 9px;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .diagram pre {
+    padding: 44px 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  /* ===========================================================
+     TABLES
+  =========================================================== */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 24px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table.styled {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+  }
+  table.styled thead {
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.18), rgba(88, 166, 255, 0.1));
+  }
+  table.styled th {
+    text-align: left;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  table.styled td {
+    padding: 14px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  table.styled tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  table.styled tbody tr:last-child td { border-bottom: none; }
+  table.styled tbody tr:hover {
+    background: rgba(88, 166, 255, 0.04);
+  }
+  table.styled td.tier-rest {
+    color: var(--blue);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  table.styled td.tier-grpc {
+    color: var(--teal);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  table.styled td.tier-graphql {
+    color: var(--magenta);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  table.styled td.row-label {
+    color: var(--amber);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ===========================================================
+     CARD GRIDS
+  =========================================================== */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin: 22px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 22px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: var(--text-faint);
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,0.6);
+  }
+  .card-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .card p { margin-bottom: 0; font-size: 15px; }
+
+  /* ===========================================================
+     QUOTE / INTERVIEWER NOTE
+  =========================================================== */
+  blockquote.interviewer {
+    position: relative;
+    background: var(--surface);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+    padding: 22px 28px 22px 60px;
+    margin: 22px 0 26px;
+    font-style: italic;
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+  }
+  blockquote.interviewer::before {
+    content: "\201C";
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    font-family: var(--font-display);
+    font-size: 80px;
+    line-height: 1;
+    color: var(--amber);
+    opacity: 0.4;
+  }
+  blockquote.interviewer .attrib {
+    display: block;
+    font-style: normal;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 12px;
+  }
+
+  mark.hl {
+    background: rgba(245, 166, 35, 0.18);
+    color: var(--amber-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-style: normal;
+  }
+  mark.hl-blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--blue);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ===========================================================
+     STAT / NUMBER ROWS
+  =========================================================== */
+  .savings-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 18px 0 22px;
+  }
+  .savings-pill {
+    background: linear-gradient(135deg, rgba(0, 191, 165, 0.12), rgba(0, 191, 165, 0.04));
+    border: 1px solid rgba(0, 191, 165, 0.35);
+    border-radius: 8px;
+    padding: 14px 22px;
+    flex: 1 1 200px;
+    min-width: 180px;
+  }
+  .savings-pill .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--teal);
+    margin-bottom: 4px;
+  }
+  .savings-pill .value {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.1;
+  }
+  .savings-pill .sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* ===========================================================
+     VARIANT LEGEND (3-pill)
+  =========================================================== */
+  .variant-legend {
+    display: flex;
+    gap: 14px;
+    margin: 18px 0 24px;
+    flex-wrap: wrap;
+  }
+  .v-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    letter-spacing: 0.04em;
+  }
+  .v-chip .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .v-chip.rest .dot { background: var(--blue); }
+  .v-chip.grpc .dot { background: var(--teal); }
+  .v-chip.graphql .dot { background: var(--magenta); }
+
+  /* ===========================================================
+     BACK TO TOP
+  =========================================================== */
+  #back-top {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 90;
+    transition: all 0.25s;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #back-top.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #back-top:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(245, 166, 35, 0.3);
+  }
+
+  /* ===========================================================
+     RESPONSIVE
+  =========================================================== */
+  @media (max-width: 1024px) {
+    .main { padding: 56px 32px 100px; }
+  }
+
+  @media (max-width: 768px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      width: 280px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; padding: 70px 22px 80px; }
+    .hero-title { font-size: 42px; }
+    h1.section-title { font-size: 32px; }
+    h2.subsection-title { font-size: 24px; }
+    .hero-meta { gap: 14px 22px; font-size: 14.5px; }
+    .savings-pill .value { font-size: 22px; }
+  }
+
+  /* ===========================================================
+     SEARCH HIDE
+  =========================================================== */
+  .nav-section li.hidden { display: none; }
+  .nav-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰ Menu</button>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+  <div class="series-header">REST · gRPC · GraphQL · L6/L7 Series</div>
+  <div class="doc-title">GraphQL Deep Dive &amp; Variant Comparison</div>
+  <div class="part-pill">Part 2 — API Communication Paradigms</div>
+
+  <div class="search-wrap">
+    <input id="search" type="text" placeholder="Search sections..." aria-label="Search sections" />
+  </div>
+
+  <nav>
+    <div class="nav-section" data-group="Introduction">
+      <div class="nav-section-title">Introduction</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="GraphQL Deep Dive">
+      <div class="nav-section-title">GraphQL Deep Dive</div>
+      <ul>
+        <li><a href="#graphql-a">A: What It Is</a></li>
+        <li><a href="#graphql-b">B: How It Works</a></li>
+        <li><a href="#graphql-c">C: Strengths &amp; Use Cases</a></li>
+        <li><a href="#graphql-d">D: Limitations &amp; Failure Modes</a></li>
+        <li><a href="#graphql-e">E: Operational</a></li>
+        <li><a href="#graphql-f">F: L6/L7 Nuances</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Comparison">
+      <div class="nav-section-title">Comparison</div>
+      <ul>
+        <li><a href="#comparison">Variant Comparison Table</a></li>
+      </ul>
+    </div>
+  </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="main">
+  <div class="content">
+
+    <!-- ===================== HERO ===================== -->
+    <header class="hero" id="overview">
+      <div class="breadcrumb">REST · gRPC · GraphQL · L6/L7 Series · Part 2</div>
+      <h1 class="hero-title">
+        <span class="accent">GraphQL</span> Deep Dive<br/>
+        &amp; The <span class="accent">Variant Verdict</span>
+      </h1>
+
+      <div class="hero-meta">
+        <span>🧬 Schema, resolvers, and the inverted control model</span>
+        <span>⚙️ N+1, complexity attacks, and operational realities</span>
+      </div>
+      <div class="hero-meta">
+        <span>📊 Three-way comparison across 11 dimensions</span>
+        <span>🎯 The L6/L7 nuance interviewers actually probe for</span>
+      </div>
+
+      <div class="part-toggle">
+        <a href="#" class="part-btn">Part 1: Core + REST + gRPC</a>
+        <a href="#" class="part-btn current">Part 2: GraphQL + Comparison</a>
+      </div>
+
+      <p class="hero-intro">
+        REST optimized for cacheability. gRPC optimized for performance and contracts. GraphQL inverted the question entirely — what if the <em>client</em> decided the response shape? This part walks the full A–F deep dive on GraphQL: how it works under the hood, where it shines, where it fails, what to instrument in production, and the L6/L7 nuance that separates strong candidates from staff-level ones. We close with the comprehensive variant comparison that makes the trade-offs explicit.
+      </p>
+
+      <hr class="divider" />
+    </header>
+
+    <!-- ===================== GRAPHQL DEEP DIVE ===================== -->
+    <section id="graphql-deepdive">
+      <div class="section-eyebrow"><span class="num">2.3</span>Variant Deep-Dive</div>
+      <h1 class="section-title"><span class="accent">GraphQL</span></h1>
+
+      <div class="variant-legend">
+        <span class="v-chip rest"><span class="dot"></span>REST</span>
+        <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+        <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+      </div>
+
+      <!-- ===================== A: WHAT IT IS ===================== -->
+      <h2 class="subsection-title" id="graphql-a"><span class="label">A</span>What It Is — The Mental Model</h2>
+
+      <h4 class="tiny-title">One-Sentence Definition</h4>
+      <div class="callout">
+        <div class="callout-label">Definition</div>
+        <p>GraphQL is a query language and runtime for APIs where <strong>clients specify the exact shape of data they need</strong>, and the server returns exactly that — no more, no less.</p>
+      </div>
+
+      <h4 class="tiny-title">The Core Insight</h4>
+      <div class="callout insight">
+        <div class="callout-label">Inversion of control</div>
+        <p>GraphQL <strong>inverts the control</strong>. Instead of the server dictating <em>"here's what you get,"</em> the client says <em>"here's what I want."</em> The server publishes a schema of what's possible, and clients choose their path through it. This eliminates <mark class="hl">over-fetching</mark>, <mark class="hl">under-fetching</mark>, and the need for custom endpoints.</p>
+      </div>
+
+      <h4 class="tiny-title">The Inventor's Problem</h4>
+      <p>Facebook's mobile app had <strong>50+ different screens</strong>, each needing different slices of data. Creating custom REST endpoints for each was unsustainable. They needed <em>one</em> endpoint where any client could describe its data needs precisely.</p>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== B: HOW IT WORKS ===================== -->
+      <h2 class="subsection-title" id="graphql-b"><span class="label">B</span>How It Works — Mechanics Deep-Dive</h2>
+
+      <h3 class="minor-title">Step-by-Step of a GraphQL Interaction</h3>
+
+      <h4 class="tiny-title">1 · Schema Definition (server)</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">GraphQL SDL</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>type User {
+  id: ID!
+  name: String!
+  email: String
+  posts(last: Int): [Post!]!
+}
+
+type Post {
+  id: ID!
+  title: String!
+  content: String!
+  author: User!
+}
+
+type Query {
+  user(id: ID!): User
+  posts: [Post!]!
+}</code></pre>
+      </div>
+
+      <h4 class="tiny-title">2 · Client Query</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">GraphQL Query</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre><code>query GetUserWithPosts {
+  user(id: "123") {
+    name
+    posts(last: 3) {
+      title
+    }
+  }
+}</code></pre>
+      </div>
+
+      <h4 class="tiny-title">3 · Server Parsing &amp; Validation</h4>
+      <ul>
+        <li>Parse query into <strong>AST</strong></li>
+        <li>Validate against schema (types exist, fields valid)</li>
+        <li>Check authorization</li>
+      </ul>
+
+      <h4 class="tiny-title">4 · Resolver Execution</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JavaScript</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>// Resolvers define how to fetch each field
+Query: {
+  user: (_, { id }) =&gt; db.users.find(id)
+},
+User: {
+  posts: (user, { last }) =&gt; db.posts.findByUser(user.id).limit(last)
+}
+
+// Execution order:
+// 1. Resolve Query.user      → User object
+// 2. Resolve User.name        → "Alice"
+// 3. Resolve User.posts       → [Post, Post, Post]
+// 4. For each Post, resolve Post.title</code></pre>
+      </div>
+
+      <h4 class="tiny-title">5 · Response Assembly</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>{
+  "data": {
+    "user": {
+      "name": "Alice",
+      "posts": [
+        { "title": "First Post" },
+        { "title": "Second Post" },
+        { "title": "Third Post" }
+      ]
+    }
+  }
+}</code></pre>
+      </div>
+
+      <h4 class="tiny-title">6 · Client Receives</h4>
+      <ul>
+        <li>Response shape <strong>exactly matches</strong> query shape</li>
+        <li>Only requested fields present</li>
+      </ul>
+
+      <hr class="divider-soft" />
+
+      <h3 class="minor-title">Concrete Example with Real Numbers</h3>
+      <p><strong>Scenario:</strong> Mobile app home screen, REST vs GraphQL.</p>
+
+      <div class="callout">
+        <div class="callout-label">Home Screen Requirements</div>
+        <ul style="margin-bottom: 0;">
+          <li>Current user: <em>name, avatar</em></li>
+          <li>5 recent notifications: <em>message, timestamp</em></li>
+          <li>3 trending posts: <em>title, author name, like count</em></li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">REST Approach</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">REST · 3 Round Trips</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>Request 1: GET /users/me
+           (returns 30 fields, need 2)              → 4KB
+Request 2: GET /notifications?limit=5
+           (returns 5 objects × 20 fields)          → 8KB
+Request 3: GET /posts/trending?limit=3
+           (returns 3 objects × 15 fields)          → 6KB
+
+Total: 3 round trips, ~18KB transferred
+On 3G: ~300ms per request = ~900ms + parsing</code></pre>
+      </div>
+
+      <h4 class="tiny-title">GraphQL Approach</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">GraphQL · 1 Round Trip</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>query HomeScreen {
+  me { name avatar }
+  notifications(limit: 5) { message timestamp }
+  trending(limit: 3) { title author { name } likeCount }
+}
+
+Total: 1 round trip, ~2KB transferred
+On 3G: ~300ms + parsing = ~350ms</code></pre>
+      </div>
+
+      <div class="savings-row">
+        <div class="savings-pill">
+          <div class="label">Latency Reduction</div>
+          <div class="value">66%</div>
+          <div class="sub">~900ms → ~350ms on 3G</div>
+        </div>
+        <div class="savings-pill">
+          <div class="label">Bandwidth Reduction</div>
+          <div class="value">89%</div>
+          <div class="sub">~18KB → ~2KB transferred</div>
+        </div>
+        <div class="savings-pill">
+          <div class="label">Round Trips</div>
+          <div class="value">3 → 1</div>
+          <div class="sub">single request, single response</div>
+        </div>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <h3 class="minor-title">Data Structures Involved</h3>
+      <ul>
+        <li><strong>Schema:</strong> Type definitions (type system stored in memory)</li>
+        <li><strong>AST:</strong> Query parsed into tree for execution planning</li>
+        <li><strong>Resolver map:</strong> Function registry keyed by type + field</li>
+        <li><strong>DataLoader:</strong> Batching/caching layer to solve N+1</li>
+        <li><strong>Execution context:</strong> Per-request state, auth info, dataloaders</li>
+      </ul>
+
+      <h3 class="minor-title">Communication Pattern</h3>
+      <div class="diagram">
+<pre>┌────────┐                 ┌───────────────┐               ┌──────────┐
+│ Client │                 │ GraphQL       │               │ Data     │
+│        │──POST /graphql──│ Server        │───resolve────→│ Sources  │
+│        │    {query}      │               │               │ (DB,APIs)│
+│        │←───{data}───────│  ┌─────────┐  │←──data────────│          │
+│        │                 │  │ Schema  │  │               │          │
+│        │                 │  │Resolvers│  │               │          │
+│        │                 │  └─────────┘  │               │          │
+└────────┘                 └───────────────┘               └──────────┘</pre>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== C: STRENGTHS ===================== -->
+      <h2 class="subsection-title" id="graphql-c"><span class="label">C</span>Strengths &amp; Ideal Use Cases</h2>
+
+      <h3 class="minor-title">Where It Shines</h3>
+
+      <h4 class="tiny-title">Multiple Clients with Different Needs</h4>
+      <ul>
+        <li><strong>iOS app:</strong> Wants minimal data (bandwidth constrained)</li>
+        <li><strong>Android app:</strong> Slightly different screen layout</li>
+        <li><strong>Web app:</strong> Richer data, more comfortable with payload size</li>
+      </ul>
+      <div class="callout shine">
+        <div class="callout-label">Outcome</div>
+        <p>One API serves all three with different queries. <strong>No custom endpoints per client.</strong></p>
+      </div>
+
+      <h4 class="tiny-title">Rapidly Evolving Frontend</h4>
+      <blockquote class="interviewer">
+        Product: "Can we add the user's company logo to this screen?"<br/>
+        <strong>REST:</strong> Backend adds new endpoint or new field, deploy, coordinate.<br/>
+        <strong>GraphQL:</strong> Frontend adds <code style="font-family: var(--font-mono); color: var(--amber-soft); font-size: 14px;">company { logo }</code> to query — done.
+        <span class="attrib">Frontend velocity, dramatically increased</span>
+      </blockquote>
+
+      <h4 class="tiny-title">Aggregating Microservices</h4>
+      <div class="diagram">
+<pre>┌─────────────────────────────┐
+│      GraphQL Gateway        │
+│  (Apollo Federation, etc.)  │
+└─────────────────────────────┘
+       /        |        \
+   ┌─────┐  ┌──────┐  ┌─────────┐
+   │Users│  │Orders│  │Products │
+   └─────┘  └──────┘  └─────────┘</pre>
+      </div>
+      <p>Client queries: <em>user's orders with product details.</em> Gateway: <strong>automatically joins across services.</strong></p>
+
+      <h4 class="tiny-title">Self-Documenting API</h4>
+      <ul>
+        <li>Introspection query reveals entire schema</li>
+        <li>Tools (GraphQL Playground, GraphiQL) auto-generate docs</li>
+        <li>Frontend TypeScript types auto-generated from schema</li>
+      </ul>
+
+      <h3 class="minor-title">The "Sweet Spot"</h3>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-eyebrow">Use case 1</div>
+          <div class="card-title">Frontend Outpacing Backend</div>
+          <p>Client teams shipping faster than the backend team can keep up with new endpoints.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Use case 2</div>
+          <div class="card-title">Bandwidth-Sensitive Mobile</div>
+          <p>Mobile apps where every kilobyte and round-trip on cellular networks matters.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Use case 3</div>
+          <div class="card-title">Rich Domain Relationships</div>
+          <p>Complex domains with many entities and traversals between them.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Use case 4</div>
+          <div class="card-title">Cross-Service Aggregation</div>
+          <p>Need to stitch results from many microservices into a single, coherent response.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Use case 5</div>
+          <div class="card-title">Rapid Prototyping</div>
+          <p>Schema-first iteration: change shape, ship — no endpoint plumbing.</p>
+        </div>
+      </div>
+
+      <h3 class="minor-title">Real-World Examples</h3>
+      <ul>
+        <li><strong>GitHub API v4:</strong> GraphQL for complex repository queries</li>
+        <li><strong>Shopify:</strong> GraphQL for storefront APIs</li>
+        <li><strong>Facebook:</strong> Original inventor, powers mobile apps</li>
+        <li><strong>Netflix (partial):</strong> GraphQL for specific use cases with Federation</li>
+      </ul>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== D: LIMITATIONS ===================== -->
+      <h2 class="subsection-title" id="graphql-d"><span class="label">D</span>Limitations &amp; Failure Modes</h2>
+
+      <h3 class="minor-title">Where It Breaks Down</h3>
+
+      <h4 class="tiny-title">N+1 Query Problem (Unbatched Resolvers)</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">GraphQL Query</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>posts(limit: 100) {
+  author { name }   # Resolves SEPARATELY for each post
+}
+
+Naive execution:
+- 1 query:    Get 100 posts
+- 100 queries: Get author for each post
+= 101 database queries for one GraphQL request!</code></pre>
+      </div>
+
+      <div class="callout shine">
+        <div class="callout-label">Solution: DataLoader pattern</div>
+        <ul style="margin: 6px 0 0;">
+          <li>Collect all author IDs: <code style="font-family: var(--font-mono); color: var(--amber-soft);">[1, 2, 3, 1, 5, ...]</code></li>
+          <li>Batch into ONE query: <code style="font-family: var(--font-mono); color: var(--amber-soft);">SELECT * FROM users WHERE id IN (...)</code></li>
+          <li>Cache within request</li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">Query Complexity Attacks</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Malicious GraphQL</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>{
+  posts {
+    comments {
+      author {
+        posts {
+          comments {
+            author { ... }   # Arbitrarily deep nesting
+          }
+        }
+      }
+    }
+  }
+}</code></pre>
+      </div>
+      <div class="callout warning">
+        <div class="callout-label">Without Protection</div>
+        <p>A single query can <strong>DoS your database.</strong></p>
+      </div>
+      <p><strong>Solutions:</strong></p>
+      <ul>
+        <li>Query depth limiting (max 5–10 levels)</li>
+        <li>Query complexity scoring (estimated cost)</li>
+        <li>Timeout enforcement</li>
+        <li>Persisted queries (only allow known queries)</li>
+      </ul>
+
+      <h4 class="tiny-title">HTTP Caching Doesn't Work Naturally</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Caching Mismatch</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>REST:    GET /users/123  →  CDN caches by URL ✓
+
+GraphQL: POST /graphql with query in body
+         → URL is always the same
+         → Body can be anything
+         → Standard CDN can't cache ✗</code></pre>
+      </div>
+      <p><strong>Solutions:</strong></p>
+      <ul>
+        <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">GET</code> with query param (limited by URL length)</li>
+        <li>Persisted queries with IDs</li>
+        <li>Application-level caching</li>
+        <li>Normalized client cache (Apollo Client)</li>
+      </ul>
+
+      <h4 class="tiny-title">Authorization Complexity</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Auth Surface</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>REST: /admin/users  →  403 if not admin (simple middleware)
+
+GraphQL: All in one query
+{
+  myProfile { ... }      # Anyone can access
+  allUsers { ... }       # Admin only!
+  billingInfo { ... }    # Finance team only!
+}</code></pre>
+      </div>
+      <p><strong>You need field-level authorization:</strong></p>
+      <ul>
+        <li>Check permission per resolver</li>
+        <li>Complex auth rules, easy to miss a field</li>
+        <li>Security audit becomes harder</li>
+      </ul>
+
+      <hr class="divider-soft" />
+
+      <h3 class="minor-title">The Failure Scenario Walkthrough</h3>
+      <p><strong>Scenario:</strong> A slow resolver blocks the entire response.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Query</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>{
+  fastData          # 5ms resolver
+  mediumData        # 50ms resolver
+  slowExternalApi   # 2000ms resolver (third-party API)
+}</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">Default Execution Timeline</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>t=0ms:    Start all resolvers (parallel by default)
+t=5ms:    fastData resolved
+t=50ms:   mediumData resolved
+t=2000ms: slowExternalApi finally returns
+t=2000ms: Response sent to client</code></pre>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-label">The Problem</div>
+        <p>The user waits <strong>2 seconds</strong> even though 99% of the data was ready in 50ms.</p>
+      </div>
+
+      <p><strong>Solutions:</strong></p>
+      <ol>
+        <li><strong><code style="font-family: var(--font-mono); color: var(--amber-soft);">@defer</code> directive (experimental):</strong> first response at 50ms with <code style="font-family: var(--font-mono); color: var(--amber-soft);">fastData</code> + <code style="font-family: var(--font-mono); color: var(--amber-soft);">mediumData</code>; second payload streams in <code style="font-family: var(--font-mono); color: var(--amber-soft);">slowExternalApi</code> at 2000ms.</li>
+        <li><strong>Timeout the slow resolver:</strong> return partial data + error for <code style="font-family: var(--font-mono); color: var(--amber-soft);">slowExternalApi</code>.</li>
+        <li><strong>Don't put slow data in the same query:</strong> client makes a separate request for the laggard.</li>
+      </ol>
+
+      <hr class="divider-soft" />
+
+      <h3 class="minor-title">Hidden Assumptions</h3>
+      <ul>
+        <li>Resolvers are reasonably fast</li>
+        <li>You're implementing DataLoader or equivalent</li>
+        <li>You have complexity / depth limits</li>
+        <li>Your schema is designed by someone who understands GraphQL</li>
+        <li>Clients are trusted (or you have rate limiting)</li>
+      </ul>
+
+      <h3 class="minor-title">The "Gotcha" Scenarios</h3>
+      <div class="callout warning">
+        <div class="callout-label">⚠️ Watch out for</div>
+        <ul style="margin-bottom: 0;">
+          <li>Giant queries that fetch the entire database</li>
+          <li>Deep nesting causing combinatorial explosion</li>
+          <li>Mutations not idempotent (no retry safety)</li>
+          <li>File uploads (need special handling, multipart)</li>
+          <li>Schema evolution removing fields (breaks clients)</li>
+          <li>Overly complex resolvers without caching</li>
+        </ul>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== E: OPERATIONAL ===================== -->
+      <h2 class="subsection-title" id="graphql-e"><span class="label">E</span>Operational Considerations</h2>
+
+      <h3 class="minor-title">How Do You Monitor GraphQL?</h3>
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>What It Tells You</th>
+              <th>Alert Threshold</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">Query duration (by operation name)</td><td>Performance per "endpoint equivalent"</td><td>p99 &gt; 500ms</td></tr>
+            <tr><td class="row-label">Resolver duration (by type.field)</td><td>Where time is spent</td><td>Single resolver &gt; 200ms</td></tr>
+            <tr><td class="row-label">Query complexity score</td><td>Abuse potential</td><td>&gt; configured max</td></tr>
+            <tr><td class="row-label">Error rate (validation, resolver, network)</td><td>Different root causes</td><td>&gt; 0.5%</td></tr>
+            <tr><td class="row-label">Query depth distribution</td><td>Schema usage patterns</td><td>Depth &gt; 10</td></tr>
+            <tr><td class="row-label">Schema type usage</td><td>What clients actually use</td><td>Unused types = remove</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="minor-title">How Do You Debug GraphQL Issues?</h3>
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Symptom</th>
+              <th>Likely Cause</th>
+              <th>Investigation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="row-label">High latency, single query</td><td>N+1 problem, no DataLoader</td><td>Enable resolver timing, check DB queries</td></tr>
+            <tr><td class="row-label">High memory usage</td><td>Large result sets, no pagination</td><td>Add limits, enforce pagination</td></tr>
+            <tr><td class="row-label">Validation errors spike</td><td>Schema change, client version mismatch</td><td>Check schema deployment</td></tr>
+            <tr><td class="row-label">Partial errors in response</td><td>One resolver failed, others succeeded</td><td>Check error extension for which field</td></tr>
+            <tr><td class="row-label">Intermittent timeouts</td><td>Slow external dependency</td><td>Trace specific resolver, add timeout</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="minor-title">How Do You Tune GraphQL?</h3>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-eyebrow">Tuning lever 1</div>
+          <div class="card-title">DataLoader Everywhere</div>
+          <p>Batch and deduplicate every cross-record fetch within a request boundary.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Tuning lever 2</div>
+          <div class="card-title">Query Complexity Limits</div>
+          <p>Assign a cost to fields and enforce a max budget per query.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Tuning lever 3</div>
+          <div class="card-title">Persisted Queries</div>
+          <p>Hash queries; clients send only the hash. Smaller payload, cacheable.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Tuning lever 4</div>
+          <div class="card-title">Response Caching</div>
+          <p>Cache common query results — application layer, since CDN cache is hard.</p>
+        </div>
+        <div class="card">
+          <div class="card-eyebrow">Tuning lever 5</div>
+          <div class="card-title">Federation</div>
+          <p>Split a monolithic schema across services with a federated gateway.</p>
+        </div>
+      </div>
+
+      <h3 class="minor-title">Migration Story — Adopting GraphQL</h3>
+      <ol>
+        <li>Start with a <strong>BFF</strong> (Backend for Frontend) layer</li>
+        <li>GraphQL <strong>wraps existing REST APIs</strong> initially</li>
+        <li>Add schema incrementally, one domain at a time</li>
+        <li>Migrate <strong>heavy hitters</strong> (high-traffic queries) first</li>
+        <li>Eventually: direct database access, retire REST internally</li>
+        <li>Optimize with DataLoader, caching, tracing</li>
+      </ol>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== F: L6/L7 NUANCES ===================== -->
+      <h2 class="subsection-title" id="graphql-f"><span class="label">F</span>The L6/L7 Nuances</h2>
+
+      <h3 class="minor-title">The Question That Shows Deep Understanding</h3>
+      <blockquote class="interviewer">
+        How do you design authorization in GraphQL when you have complex business rules like <em>"users can see their own orders, managers can see their team's orders, and admins can see all orders"</em>?
+        <span class="attrib">Interviewer · Staff-level signal</span>
+      </blockquote>
+
+      <div class="callout gold">
+        <div class="callout-label">🏆 Strong Answer</div>
+        <p>Discuss <strong>field-level authorization</strong>, directive-based auth (<code style="font-family: var(--font-mono); color: var(--amber-soft); font-size: 14px;">@auth(role: ADMIN)</code>), context-based checks in resolvers, and the challenge of <strong>not leaking existence information</strong> (returning <code style="font-family: var(--font-mono); color: var(--amber-soft); font-size: 14px;">null</code> vs. access denied). Mention the importance of auth at the gateway level vs. resolver level, and how to <strong>audit and test auth rules comprehensively</strong>.</p>
+      </div>
+
+      <h3 class="minor-title">Non-Obvious Insight</h3>
+      <div class="callout insight">
+        <div class="callout-label">🔬 The Hidden Trade-Off</div>
+        <p>GraphQL solves over-fetching and under-fetching, but it creates a new problem: <mark class="hl-blue">unpredictable server load</mark>. With REST, you control exactly what work each endpoint does. With GraphQL, <strong>any client can construct a query that joins 10 tables</strong>. This is why production GraphQL requires <strong>query cost analysis</strong> — you need to know the cost of a query <em>before</em> executing it, or a single malicious query can take down your database.</p>
+      </div>
+
+      <h3 class="minor-title">Google-Scale vs. Startup-Scale</h3>
+      <div class="card-grid">
+        <div class="card" style="border-left: 3px solid var(--teal);">
+          <div class="card-eyebrow" style="color: var(--teal);">Startup-Scale</div>
+          <div class="card-title">GraphQL Is Magical</div>
+          <p>Ship frontend features faster. Schema-first iteration. One API, many clients. The win is velocity.</p>
+        </div>
+        <div class="card" style="border-left: 3px solid var(--amber);">
+          <div class="card-eyebrow" style="color: var(--amber);">Google-Scale</div>
+          <div class="card-title">A Governance Challenge</div>
+          <ul style="margin-bottom: 0; padding-left: 20px; color: var(--text-dim); font-size: 14.5px;">
+            <li>Who can add fields? <em>(Schema review process)</em></li>
+            <li>How to deprecate without breaking? <em>(Deprecation tracking)</em></li>
+            <li>How to prevent client abuse? <em>(Persisted queries + cost analysis)</em></li>
+            <li>How to trace across federated services? <em>(Distributed tracing)</em></li>
+            <li>Schema versioning across 100+ services <em>(Federation, registry)</em></li>
+          </ul>
+        </div>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== COMPARISON TABLE ===================== -->
+    <section id="comparison">
+      <div class="section-eyebrow"><span class="num">2.4</span>Variant Verdict</div>
+      <h1 class="section-title">Comprehensive <span class="accent">Variant Comparison</span></h1>
+
+      <p style="margin-bottom: 24px; max-width: 760px;">Eleven dimensions, three paradigms, side-by-side. This table is the artifact most worth memorising — it's the shape of every "which one would you pick?" follow-up at L6/L7.</p>
+
+      <div class="variant-legend">
+        <span class="v-chip rest"><span class="dot"></span>REST</span>
+        <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+        <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+      </div>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th style="min-width: 160px;">Aspect</th>
+              <th>REST</th>
+              <th>gRPC</th>
+              <th>GraphQL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Core Mechanism</td>
+              <td>Resources + HTTP verbs. URL identifies resource, method (GET/POST/PUT/DELETE) identifies action.</td>
+              <td>RPC with proto contracts. Strongly-typed function calls with code generation.</td>
+              <td>Query language over schema. Client specifies data shape, server resolves.</td>
+            </tr>
+            <tr>
+              <td class="row-label">Transport</td>
+              <td class="tier-rest">HTTP/1.1 or HTTP/2</td>
+              <td class="tier-grpc">HTTP/2 (required)</td>
+              <td class="tier-graphql">Usually HTTP (any transport possible)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Serialization</td>
+              <td class="tier-rest">JSON (typically), also XML, YAML</td>
+              <td class="tier-grpc">Protocol Buffers (binary)</td>
+              <td class="tier-graphql">JSON</td>
+            </tr>
+            <tr>
+              <td class="row-label">Typing</td>
+              <td>None (or OpenAPI optional)</td>
+              <td>Strong, compile-time enforced</td>
+              <td>Strong schema, runtime validated</td>
+            </tr>
+            <tr>
+              <td class="row-label">Best For</td>
+              <td>Public APIs, browser clients, CRUD resources, caching critical</td>
+              <td>Service-to-service, streaming, low latency, polyglot</td>
+              <td>Multiple clients, bandwidth-sensitive, aggregation, rapid frontend iteration</td>
+            </tr>
+            <tr>
+              <td class="row-label">Worst For</td>
+              <td>Complex aggregations, bandwidth-constrained mobile, many clients with different needs</td>
+              <td>Browser direct, debugging ease, human inspection</td>
+              <td>High-frequency queries, caching requirements, simple CRUD</td>
+            </tr>
+            <tr>
+              <td class="row-label">Key Trade-off</td>
+              <td>Simplicity vs. flexibility (over/under-fetching)</td>
+              <td>Performance vs. accessibility (binary, HTTP/2 only)</td>
+              <td>Client power vs. server control (DoS potential)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Failure Mode</td>
+              <td>Version breakage, over-fetching waste</td>
+              <td>Proto mismatch, binary debugging hard</td>
+              <td>N+1 queries, complexity attacks, slow resolvers</td>
+            </tr>
+            <tr>
+              <td class="row-label">Caching</td>
+              <td><mark class="hl">Excellent</mark> (HTTP caching, CDN)</td>
+              <td>Custom (not built-in)</td>
+              <td>Difficult (requires work)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Streaming</td>
+              <td>SSE / Webhooks (bolt-on)</td>
+              <td><mark class="hl">Native</mark> (4 patterns)</td>
+              <td>Subscriptions (WebSocket, typically)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Real-World User</td>
+              <td>Stripe, Twilio, GitHub (v3)</td>
+              <td>Google, Netflix, Etcd</td>
+              <td>Facebook, GitHub (v4), Shopify</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout insight" style="margin-top: 32px;">
+        <div class="callout-label">📌 The Verdict in One Line</div>
+        <p>If <strong>cacheability and ubiquity</strong> matter most → <span style="color: var(--blue); font-weight: 600;">REST</span>. If <strong>performance and contracts</strong> matter most → <span style="color: var(--teal); font-weight: 600;">gRPC</span>. If <strong>client flexibility and aggregation</strong> matter most → <span style="color: var(--magenta); font-weight: 600;">GraphQL</span>. None of them is universally "better" — the question always reduces to <em>what does this specific system optimise for?</em></p>
+      </div>
+
+      <hr class="divider" />
+
+      <p style="text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin-top: 40px;">
+        End of Part 2 · L6/L7 Series
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+  /* ===================== READING PROGRESS ===================== */
+  const progressBar = document.getElementById('progress-bar');
+  function updateProgress() {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  /* ===================== BACK TO TOP ===================== */
+  const backTop = document.getElementById('back-top');
+  function toggleBackTop() {
+    if (window.scrollY > 500) backTop.classList.add('visible');
+    else backTop.classList.remove('visible');
+  }
+  window.addEventListener('scroll', toggleBackTop, { passive: true });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* ===================== SIDEBAR ACTIVE STATE ===================== */
+  const navLinks = Array.from(document.querySelectorAll('.nav-section li a'));
+  const sectionMap = navLinks.map(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    return { link, el };
+  }).filter(s => s.el);
+
+  function setActiveSection() {
+    const offset = 120;
+    let current = sectionMap[0];
+    for (const s of sectionMap) {
+      const top = s.el.getBoundingClientRect().top;
+      if (top - offset <= 0) current = s;
+      else break;
+    }
+    navLinks.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', setActiveSection, { passive: true });
+  setActiveSection();
+
+  /* ===================== COPY BUTTONS ===================== */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code-block');
+      const code = block ? block.querySelector('pre code, pre') : null;
+      if (!code) return;
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1600);
+      } catch (e) {
+        btn.textContent = 'Error';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      }
+    });
+  });
+
+  /* ===================== SEARCH ===================== */
+  const searchInput = document.getElementById('search');
+  const navSections = Array.from(document.querySelectorAll('.nav-section'));
+
+  searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    navSections.forEach(group => {
+      const items = Array.from(group.querySelectorAll('li'));
+      let anyVisible = false;
+      items.forEach(li => {
+        const text = li.innerText.toLowerCase();
+        const groupTitle = group.querySelector('.nav-section-title').innerText.toLowerCase();
+        const match = !q || text.includes(q) || groupTitle.includes(q);
+        li.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
+      });
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  });
+
+  /* ===================== MOBILE MENU ===================== */
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-section li a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
