@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Part 3 — Failure Walkthroughs, Mental Models &amp; Decisions · L6/L7 Series</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================
+     RESET + TOKENS  (matches Part 1 / Part 2)
+  =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #0a0d12;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --surface-3: #232a36;
+    --border: #21262d;
+    --border-soft: rgba(240, 246, 252, 0.08);
+    --text: #e6edf3;
+    --text-dim: #b0b8c1;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+
+    --amber: #F5A623;
+    --amber-soft: #f0b95c;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --blue: #58a6ff;
+    --blue-soft: rgba(88, 166, 255, 0.12);
+    --magenta: #d264e8;
+
+    --font-display: "Playfair Display", Georgia, serif;
+    --font-body: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --sidebar-width: 310px;
+    --content-max: 880px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(245, 166, 35, 0.04), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(88, 166, 255, 0.04), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  ::selection { background: rgba(245, 166, 35, 0.35); color: #fff; }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--amber), var(--amber-soft), var(--blue));
+    z-index: 1000; transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-width); height: 100vh;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 28px 20px 80px;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .series-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .doc-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .part-pill {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 22px;
+    line-height: 1.4;
+  }
+
+  .search-wrap { margin-bottom: 24px; position: relative; }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #search:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  #search::placeholder { color: var(--text-faint); }
+
+  .nav-section { margin-bottom: 18px; }
+  .nav-section-title {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-left: 12px;
+  }
+  .nav-section ul { list-style: none; }
+  .nav-section li a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14.5px;
+    padding: 7px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    transition: all 0.18s ease;
+    line-height: 1.4;
+  }
+  .nav-section li a:hover { color: var(--text); background: var(--surface); }
+  .nav-section li a.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+    border-left-color: var(--blue);
+    font-weight: 500;
+  }
+
+  .menu-toggle {
+    display: none;
+    position: fixed; top: 16px; left: 16px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  /* MAIN */
+  .main {
+    margin-left: var(--sidebar-width);
+    padding: 64px 64px 120px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.7s ease-out both;
+  }
+  .content { max-width: var(--content-max); margin: 0 auto; }
+
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* HERO */
+  .hero { margin-bottom: 60px; }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 26px;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 6vw, 84px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  .hero-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 45%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px 36px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .part-toggle { display: flex; gap: 12px; margin-bottom: 36px; flex-wrap: wrap; }
+  .part-btn {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .part-btn:hover { color: var(--text); border-color: var(--text-faint); }
+  .part-btn.current {
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border-color: var(--blue);
+  }
+  .hero-intro {
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1.75;
+    max-width: 780px;
+  }
+
+  hr.divider {
+    border: 0; height: 1px;
+    background: var(--border);
+    margin: 56px 0;
+  }
+  hr.divider-soft {
+    border: 0; height: 1px;
+    background: var(--border-soft);
+    margin: 32px 0;
+  }
+
+  /* SECTION HEADERS */
+  section { margin-bottom: 80px; scroll-margin-top: 24px; }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+  }
+  .section-eyebrow .num { color: var(--text-faint); margin-right: 10px; }
+
+  h1.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(38px, 4.5vw, 56px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+    color: #fff;
+  }
+  h1.section-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 50%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2.subsection-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 56px 0 12px;
+    color: #fff;
+    scroll-margin-top: 24px;
+  }
+  h2.subsection-title .label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--amber);
+    margin-right: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  h3.minor-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 14px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  h4.tiny-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin: 24px 0 10px;
+  }
+
+  p { margin-bottom: 16px; color: var(--text-dim); }
+  p strong { color: #fff; font-weight: 600; }
+  p em { color: var(--text); font-style: italic; }
+  ul, ol { margin: 12px 0 18px 0; padding-left: 26px; color: var(--text-dim); }
+  ul li, ol li { margin-bottom: 8px; line-height: 1.7; }
+  ul li::marker { color: var(--amber); }
+  ol li::marker { color: var(--amber); font-family: var(--font-mono); font-weight: 600; }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0 22px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .callout-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout p { color: var(--text-dim); margin-bottom: 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.insight { border-left-color: var(--blue); }
+  .callout.insight .callout-label { color: var(--blue); }
+  .callout.warning {
+    border-left-color: var(--coral);
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.06), var(--surface) 30%);
+  }
+  .callout.warning .callout-label { color: var(--coral); }
+  .callout.shine { border-left-color: var(--teal); }
+  .callout.shine .callout-label { color: var(--teal); }
+  .callout.gold {
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.05), var(--surface) 35%);
+  }
+  .callout.gold .callout-label { color: var(--gold); }
+  .callout.magenta { border-left-color: var(--magenta); }
+  .callout.magenta .callout-label { color: var(--magenta); }
+
+  /* CODE BLOCKS */
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 18px 0 24px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+  }
+  .code-lang {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.18s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text-faint); background: var(--surface); }
+  .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
+  .code-block pre {
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .code-block code {
+    font-family: var(--font-mono);
+    color: #c9d1d9;
+    white-space: pre;
+  }
+
+  /* DIAGRAM blocks (ASCII) */
+  .diagram {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 22px 0 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram::before {
+    content: "DIAGRAM";
+    position: absolute;
+    top: 10px; left: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    padding: 3px 9px;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .diagram pre {
+    padding: 44px 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  /* TABLES */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 24px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table.styled {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14.5px;
+  }
+  table.styled thead {
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.18), rgba(88, 166, 255, 0.1));
+  }
+  table.styled th {
+    text-align: left;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  table.styled td {
+    padding: 14px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  table.styled tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+  table.styled tbody tr:last-child td { border-bottom: none; }
+  table.styled tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
+  table.styled td.row-label {
+    color: var(--amber);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+  }
+  table.styled td.tier-rest { color: var(--blue); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+  table.styled td.tier-grpc { color: var(--teal); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+  table.styled td.tier-graphql { color: var(--magenta); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+
+  /* CARDS */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin: 22px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 22px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: var(--text-faint);
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,0.6);
+  }
+  .card-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .card p { margin-bottom: 0; font-size: 15px; }
+
+  /* QUOTES */
+  blockquote.interviewer {
+    position: relative;
+    background: var(--surface);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+    padding: 22px 28px 22px 60px;
+    margin: 22px 0 26px;
+    font-style: italic;
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+  }
+  blockquote.interviewer::before {
+    content: "\201C";
+    position: absolute;
+    top: -10px; left: 16px;
+    font-family: var(--font-display);
+    font-size: 80px;
+    line-height: 1;
+    color: var(--amber);
+    opacity: 0.4;
+  }
+  blockquote.interviewer .attrib {
+    display: block;
+    font-style: normal;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-top: 12px;
+  }
+
+  mark.hl {
+    background: rgba(245, 166, 35, 0.18);
+    color: var(--amber-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-style: normal;
+  }
+  mark.hl-blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--blue);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-coral {
+    background: rgba(255, 107, 107, 0.15);
+    color: var(--coral);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-teal {
+    background: rgba(0, 191, 165, 0.15);
+    color: var(--teal);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* VARIANT LEGEND */
+  .variant-legend { display: flex; gap: 14px; margin: 18px 0 24px; flex-wrap: wrap; }
+  .v-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    letter-spacing: 0.04em;
+  }
+  .v-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .v-chip.rest .dot { background: var(--blue); }
+  .v-chip.grpc .dot { background: var(--teal); }
+  .v-chip.graphql .dot { background: var(--magenta); }
+
+  /* ===========================================================
+     TIMELINE COMPONENT  (NEW IN PART 3)
+  =========================================================== */
+  .scenario-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.08), rgba(88, 166, 255, 0.05));
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin: 18px 0 30px;
+    flex-wrap: wrap;
+  }
+  .scenario-banner .icon {
+    font-size: 26px;
+    line-height: 1;
+  }
+  .scenario-banner .scenario-text {
+    color: var(--text-dim);
+    font-size: 16px;
+    flex: 1;
+    min-width: 250px;
+  }
+  .scenario-banner .scenario-text strong { color: #fff; }
+  .scenario-stats {
+    display: flex; gap: 18px; flex-wrap: wrap; margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .scenario-stats span { color: var(--amber-soft); }
+
+  .timeline-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 30px 0 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .timeline-header h3 {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+    line-height: 1.2;
+  }
+  .timeline-header .v-chip { margin-left: auto; }
+
+  .timeline {
+    position: relative;
+    margin: 18px 0 36px;
+  }
+  .timeline-item {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 22px;
+    position: relative;
+    padding-bottom: 22px;
+  }
+  .timeline-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 84px;
+    top: 22px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+  .t-stamp {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: right;
+    padding-top: 4px;
+    position: relative;
+    line-height: 1.4;
+  }
+  .t-stamp::after {
+    content: "";
+    position: absolute;
+    right: -28px;
+    top: 7px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--blue);
+    z-index: 2;
+    box-shadow: 0 0 0 4px var(--bg);
+  }
+  .timeline.rest .t-stamp::after { border-color: var(--blue); }
+  .timeline.grpc .t-stamp::after { border-color: var(--teal); }
+  .timeline.graphql .t-stamp::after { border-color: var(--magenta); }
+  .timeline-item.crash .t-stamp {
+    color: var(--coral);
+  }
+  .timeline-item.crash .t-stamp::after {
+    background: var(--coral);
+    border-color: var(--coral);
+    box-shadow: 0 0 0 4px var(--bg), 0 0 16px rgba(255, 107, 107, 0.5);
+    animation: pulseCrash 2s ease-in-out infinite;
+  }
+  .timeline-item.recovery .t-stamp { color: var(--teal); }
+  .timeline-item.recovery .t-stamp::after {
+    background: var(--teal);
+    border-color: var(--teal);
+    box-shadow: 0 0 0 4px var(--bg), 0 0 12px rgba(0, 191, 165, 0.4);
+  }
+  @keyframes pulseCrash {
+    0%, 100% { box-shadow: 0 0 0 4px var(--bg), 0 0 16px rgba(255, 107, 107, 0.5); }
+    50%      { box-shadow: 0 0 0 4px var(--bg), 0 0 24px rgba(255, 107, 107, 0.85); }
+  }
+
+  .t-content { padding-top: 0; min-width: 0; }
+  .t-content .t-title {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .timeline-item.crash .t-content .t-title { color: var(--coral); }
+  .timeline-item.recovery .t-content .t-title { color: var(--teal); }
+  .t-content .t-body {
+    color: var(--text-dim);
+    font-size: 15.5px;
+    line-height: 1.65;
+  }
+  .t-content .t-body p { margin-bottom: 10px; font-size: 15.5px; }
+  .t-content .t-body ul { margin: 6px 0 8px; padding-left: 22px; font-size: 15.5px; }
+  .t-content .t-mini-code {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: #c9d1d9;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.55;
+  }
+  .t-content .t-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    margin: 4px 6px 4px 0;
+  }
+  .t-content .t-tag.good { color: var(--teal); border: 1px solid rgba(0, 191, 165, 0.3); }
+  .t-content .t-tag.bad { color: var(--coral); border: 1px solid rgba(255, 107, 107, 0.3); }
+  .t-content .t-tag.warn { color: var(--amber); border: 1px solid rgba(245, 166, 35, 0.3); }
+
+  /* QUESTIONS GRID (decision questions) */
+  .question-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 14px 0;
+  }
+  .question-card .q {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 6px;
+    font-style: italic;
+  }
+  .question-card .why {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin-bottom: 10px;
+  }
+  .question-card ul { margin: 6px 0 0; padding-left: 20px; }
+  .question-card li { font-size: 15px; }
+
+  /* SOUND BITE */
+  .soundbite {
+    background:
+      radial-gradient(circle at top right, rgba(245, 166, 35, 0.15), transparent 60%),
+      linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 36px 38px;
+    margin: 32px 0 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .soundbite::before {
+    content: "🔑";
+    position: absolute;
+    top: -10px;
+    left: 30px;
+    font-size: 36px;
+    background: var(--bg);
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .soundbite .sb-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+  .soundbite .sb-text {
+    font-family: var(--font-display);
+    font-size: 20px;
+    line-height: 1.55;
+    color: #fff;
+    font-style: italic;
+    font-weight: 500;
+  }
+  .soundbite .sb-text mark {
+    background: rgba(245, 166, 35, 0.2);
+    color: var(--amber-soft);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-style: normal;
+  }
+
+  /* BACK TO TOP */
+  #back-top {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 90;
+    transition: all 0.25s;
+    opacity: 0; pointer-events: none;
+  }
+  #back-top.visible { opacity: 1; pointer-events: auto; }
+  #back-top:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(245, 166, 35, 0.3);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 1024px) {
+    .main { padding: 56px 32px 100px; }
+  }
+  @media (max-width: 768px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      width: 280px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; padding: 70px 22px 80px; }
+    .hero-title { font-size: 42px; }
+    h1.section-title { font-size: 32px; }
+    h2.subsection-title { font-size: 24px; }
+    .hero-meta { gap: 14px 22px; font-size: 14.5px; }
+    .timeline-item { grid-template-columns: 70px 1fr; gap: 16px; }
+    .timeline-item:not(:last-child)::before { left: 64px; }
+    .t-stamp::after { right: -22px; }
+    .scenario-banner { padding: 16px 18px; }
+  }
+
+  .nav-section li.hidden { display: none; }
+  .nav-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰ Menu</button>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+  <div class="series-header">REST · gRPC · GraphQL · L6/L7 Series</div>
+  <div class="doc-title">Failure Walkthroughs, Mental Models &amp; Decisions</div>
+  <div class="part-pill">Part 3 — When It Breaks &amp; How To Choose</div>
+
+  <div class="search-wrap">
+    <input id="search" type="text" placeholder="Search sections..." aria-label="Search sections" />
+  </div>
+
+  <nav>
+    <div class="nav-section" data-group="Introduction">
+      <div class="nav-section-title">Introduction</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Walkthrough">
+      <div class="nav-section-title">2.5 · Walkthrough</div>
+      <ul>
+        <li><a href="#scenario">The Scenario</a></li>
+        <li><a href="#rest-walk">REST Walkthrough</a></li>
+        <li><a href="#grpc-walk">gRPC Walkthrough</a></li>
+        <li><a href="#graphql-walk">GraphQL Walkthrough</a></li>
+        <li><a href="#key-diff">Key Differences</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Mental Models">
+      <div class="nav-section-title">2.6 · Mental Models</div>
+      <ul>
+        <li><a href="#mm-rest">REST: Resources</a></li>
+        <li><a href="#mm-grpc">gRPC: Services</a></li>
+        <li><a href="#mm-graphql">GraphQL: Schema</a></li>
+        <li><a href="#mm-failure">Failure Modes</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Decisions">
+      <div class="nav-section-title">2.7 · Decision Framework</div>
+      <ul>
+        <li><a href="#dec-tree">Decision Tree</a></li>
+        <li><a href="#dec-questions">Questions to Ask</a></li>
+        <li><a href="#dec-hybrid">Hybrid Approaches</a></li>
+        <li><a href="#dec-migration">Migration Paths</a></li>
+        <li><a href="#dec-soundbite">Sound Bite</a></li>
+      </ul>
+    </div>
+  </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="main">
+  <div class="content">
+
+    <!-- ===================== HERO ===================== -->
+    <header class="hero" id="overview">
+      <div class="breadcrumb">REST · gRPC · GraphQL · L6/L7 Series · Part 3</div>
+      <h1 class="hero-title">
+        When It <span class="accent">Breaks</span><br/>
+        &amp; How To <span class="accent">Choose</span>
+      </h1>
+
+      <div class="hero-meta">
+        <span>🧨 Three timelines · how each paradigm fails differently</span>
+        <span>🧠 The visual mental models that make each click</span>
+      </div>
+      <div class="hero-meta">
+        <span>🌳 Decision tree across 7 branching questions</span>
+        <span>🔀 Hybrid architectures &amp; migration paths</span>
+      </div>
+
+      <div class="part-toggle">
+        <a href="#" class="part-btn">Part 1: Core + REST + gRPC</a>
+        <a href="#" class="part-btn">Part 2: GraphQL + Comparison</a>
+        <a href="#" class="part-btn current">Part 3: Failure + Decisions</a>
+      </div>
+
+      <p class="hero-intro">
+        Theory only earns its keep under failure. Part 3 walks through what actually happens when one microservice crashes at <code style="font-family: var(--font-mono); color: var(--amber-soft); font-size: 16px;">t=10s</code> — separately, in REST, gRPC, and GraphQL — then steps back to the visual mental models that make each paradigm click, and closes with the decision tree, the questions, and the sound bite that decides which one fits the system in front of you.
+      </p>
+
+      <hr class="divider" />
+    </header>
+
+    <!-- ===================== 2.5 WALKTHROUGH ===================== -->
+    <section id="walkthrough">
+      <div class="section-eyebrow"><span class="num">2.5</span>Detailed Example Walkthrough</div>
+      <h1 class="section-title">One Crash, <span class="accent">Three Paradigms</span></h1>
+
+      <div id="scenario" class="scenario-banner">
+        <div class="icon">🛒</div>
+        <div class="scenario-text">
+          <strong>Scenario:</strong> E-commerce app — "Get Order Details" fanning out across 5 services. Then, at <span style="color: var(--coral); font-weight: 600;">t=10s</span>, one service crashes.
+          <div class="scenario-stats">
+            <span>5 services</span>
+            <span>1000 req/sec</span>
+            <span>crash @ t=10s</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="variant-legend">
+        <span class="v-chip rest"><span class="dot"></span>REST</span>
+        <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+        <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+      </div>
+
+      <!-- ===================== REST WALKTHROUGH ===================== -->
+      <div class="timeline-header" id="rest-walk">
+        <h3>REST Walkthrough</h3>
+        <span class="v-chip rest"><span class="dot"></span>REST</span>
+      </div>
+
+      <div class="timeline rest">
+        <div class="timeline-item">
+          <div class="t-stamp">t=0s</div>
+          <div class="t-content">
+            <div class="t-title">Normal operation</div>
+            <div class="t-body">
+              <pre class="t-mini-code">Client       → API Gateway:   GET /orders/789
+Gateway      → Order Service:  GET /internal/orders/789
+Order Svc    → User Service:   GET /internal/users/123
+Order Svc    → Product Svc:    GET /internal/products/456</pre>
+              <p>All responses JSON, ~5ms each hop.</p>
+              <span class="t-tag good">~20ms total</span>
+              <span class="t-tag">4 HTTP requests</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=5s</div>
+          <div class="t-content">
+            <div class="t-title">Pattern continues</div>
+            <div class="t-body">
+              <p>Cache hit rate: <strong>40%</strong> (User/Product data often cached).</p>
+              <span class="t-tag">Effective Product Svc load: 600 req/sec</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item crash">
+          <div class="t-stamp">t=10s</div>
+          <div class="t-content">
+            <div class="t-title">⚠️ Product Service CRASHES</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=10.5s</div>
+          <div class="t-content">
+            <div class="t-title">Detection</div>
+            <div class="t-body">
+              <ul>
+                <li>Order Service's request to Product Service: <mark class="hl-coral">connection refused</mark></li>
+                <li>Returns <strong>503</strong> to Gateway</li>
+                <li>Gateway returns <strong>503</strong> to client</li>
+              </ul>
+              <p><strong>Impact:</strong> Order details completely unavailable. Client sees: <em>"Error fetching order"</em></p>
+              <span class="t-tag bad">Complete failure</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=11s</div>
+          <div class="t-content">
+            <div class="t-title">Recovery attempt (if retry configured)</div>
+            <div class="t-body">
+              <ul>
+                <li>Retry 1: Product Service still down</li>
+                <li>Client timeout: Order failed</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=15s</div>
+          <div class="t-content">
+            <div class="t-title">Circuit breaker kicks in</div>
+            <div class="t-body">
+              <p>Order Service: <em>"Product Service is down, skip enrichment."</em></p>
+              <p>Returns partial response: order data <strong>without</strong> product details. Client sees: order with product ID only, no product name/image.</p>
+              <span class="t-tag warn">Graceful degradation — but requires explicit coding</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=30s</div>
+          <div class="t-content">
+            <div class="t-title">Product Service back up</div>
+            <div class="t-body">
+              <p>Circuit breaker half-open: allow some requests.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item recovery">
+          <div class="t-stamp">t=35s</div>
+          <div class="t-content">
+            <div class="t-title">Product Service healthy</div>
+            <div class="t-body">
+              <p>Circuit breaker closed: <strong>normal operation</strong>.</p>
+              <span class="t-tag good">Recovered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== gRPC WALKTHROUGH ===================== -->
+      <div class="timeline-header" id="grpc-walk">
+        <h3>gRPC Walkthrough</h3>
+        <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+      </div>
+
+      <div class="timeline grpc">
+        <div class="timeline-item">
+          <div class="t-stamp">t=0s</div>
+          <div class="t-content">
+            <div class="t-title">Normal operation</div>
+            <div class="t-body">
+              <p>All services connected via persistent HTTP/2. No connection setup per request.</p>
+              <pre class="t-mini-code">Client call:    orderService.GetOrderDetails(orderId: 789)
+Internal calls:
+  userService.GetUser(userId: 123)        — multiplexed
+  productService.GetProduct(productId: 456) — multiplexed</pre>
+              <p>All binary, all parallel, deadline: 100ms.</p>
+              <span class="t-tag good">~10ms total</span>
+              <span class="t-tag">faster serialization, no connection overhead</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=5s</div>
+          <div class="t-content">
+            <div class="t-title">Pattern continues</div>
+            <div class="t-body">
+              <p>Single HTTP/2 connection to each service, thousands of calls multiplexed.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item crash">
+          <div class="t-stamp">t=10s</div>
+          <div class="t-content">
+            <div class="t-title">⚠️ Product Service CRASHES</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=10.1s</div>
+          <div class="t-content">
+            <div class="t-title">Detection — <mark class="hl-teal">faster than REST</mark></div>
+            <div class="t-body">
+              <ul>
+                <li>HTTP/2 connection dies → <strong>immediate notification</strong></li>
+                <li>Outstanding requests get <code style="font-family: var(--font-mono); color: var(--coral);">UNAVAILABLE</code> status</li>
+                <li>No timeout wait — we <em>know</em> it's down</li>
+              </ul>
+              <span class="t-tag good">~100ms detection (vs ~500ms REST)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=10.2s</div>
+          <div class="t-content">
+            <div class="t-title">Automatic retry (gRPC retry policy)</div>
+            <div class="t-body">
+              <p>gRPC config: retry on <code style="font-family: var(--font-mono); color: var(--amber-soft);">UNAVAILABLE</code>, max 3 attempts.</p>
+              <ul>
+                <li>Attempt 2: Still down</li>
+                <li>Attempt 3: Still down</li>
+                <li>Return <code style="font-family: var(--font-mono); color: var(--coral);">UNAVAILABLE</code> to client</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=10.5s</div>
+          <div class="t-content">
+            <div class="t-title">Client has error — but with rich context</div>
+            <div class="t-body">
+              <p>gRPC <strong>deadline propagation</strong> ensured we didn't wait. Client knows: Product Service <em>specifically</em> failed.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=11s</div>
+          <div class="t-content">
+            <div class="t-title">Load balancer removes dead instance</div>
+            <div class="t-body">
+              <p>If multiple Product Service instances, traffic routes to healthy ones.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=12s</div>
+          <div class="t-content">
+            <div class="t-title">If only one instance: all requests failing</div>
+            <div class="t-body">
+              <p>Circuit breaker in service mesh (Istio / Envoy): <strong>OPEN</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=15s</div>
+          <div class="t-content">
+            <div class="t-title">Graceful degradation</div>
+            <div class="t-body">
+              <p>gRPC can return partial with error:</p>
+              <pre class="t-mini-code">response: { order: {...}, errors: ["product unavailable"] }</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=30s</div>
+          <div class="t-content">
+            <div class="t-title">Product Service back</div>
+            <div class="t-body">
+              <p>Health check passes → LB includes instance. gRPC connections re-established.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item recovery">
+          <div class="t-stamp">t=31s</div>
+          <div class="t-content">
+            <div class="t-title">Normal operation resumed</div>
+            <div class="t-body">
+              <span class="t-tag good">Recovered — 4s faster than REST</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== GRAPHQL WALKTHROUGH ===================== -->
+      <div class="timeline-header" id="graphql-walk">
+        <h3>GraphQL Walkthrough</h3>
+        <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+      </div>
+
+      <div class="timeline graphql">
+        <div class="timeline-item">
+          <div class="t-stamp">t=0s</div>
+          <div class="t-content">
+            <div class="t-title">Normal operation</div>
+            <div class="t-body">
+              <p>Client query:</p>
+              <pre class="t-mini-code">query {
+  order(id: "789") {
+    id
+    user { name email }
+    items {
+      product { name price image }
+      quantity
+    }
+  }
+}</pre>
+              <p>GraphQL server resolves:</p>
+              <ol style="margin: 4px 0 8px; padding-left: 22px;">
+                <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">order</code> → Order Service</li>
+                <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">order.user</code> → User Service (DataLoader batches)</li>
+                <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">items[*].product</code> → Product Service (DataLoader batches)</li>
+              </ol>
+              <p>Single response: all data, exact fields requested.</p>
+              <span class="t-tag good">~15ms total</span>
+              <span class="t-tag">1 round trip</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=5s</div>
+          <div class="t-content">
+            <div class="t-title">Pattern continues</div>
+            <div class="t-body">
+              <p>DataLoader: if 10 orders share the same user, only <strong>1 user fetch</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item crash">
+          <div class="t-stamp">t=10s</div>
+          <div class="t-content">
+            <div class="t-title">⚠️ Product Service CRASHES</div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=10.5s</div>
+          <div class="t-content">
+            <div class="t-title">Resolver fails — <mark class="hl">handled gracefully</mark></div>
+            <div class="t-body">
+              <p>Product resolver throws error. GraphQL handles it gracefully:</p>
+              <pre class="t-mini-code">{
+  "data": {
+    "order": {
+      "id": "789",
+      "user": { "name": "Alice", "email": "a@b.com" },
+      "items": [
+        {
+          "product": null,           // Failed
+          "quantity": 2
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "message": "Product service unavailable",
+      "path": ["order", "items", 0, "product"],
+      "extensions": { "code": "SERVICE_UNAVAILABLE" }
+    }
+  ]
+}</pre>
+              <p><strong>Key:</strong> Client gets <mark class="hl">partial data</mark> with error details. <em>This is GraphQL's superpower in failure scenarios.</em></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=11s</div>
+          <div class="t-content">
+            <div class="t-title">Client handles gracefully</div>
+            <div class="t-body">
+              <p>Shows order, shows user, shows <em>"Product temporarily unavailable"</em>.</p>
+              <span class="t-tag good">Much better UX than complete failure</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=12s</div>
+          <div class="t-content">
+            <div class="t-title">Continued partial operation</div>
+            <div class="t-body">
+              <p>GraphQL naturally returns what it can. <strong>No explicit circuit breaker coding needed</strong> — resolvers just fail.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="t-stamp">t=30s</div>
+          <div class="t-content">
+            <div class="t-title">Product Service back</div>
+            <div class="t-body">
+              <p>Resolvers start succeeding. No reconnection logic — just an HTTP request that succeeds.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="timeline-item recovery">
+          <div class="t-stamp">t=31s</div>
+          <div class="t-content">
+            <div class="t-title">Normal operation</div>
+            <div class="t-body">
+              <p>Full data returned.</p>
+              <span class="t-tag good">Recovered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- ===================== KEY DIFFERENCES ===================== -->
+      <h2 class="subsection-title" id="key-diff"><span class="label">▣</span>Key Differences Highlighted</h2>
+
+      <div class="table-wrap">
+        <table class="styled">
+          <thead>
+            <tr>
+              <th>Aspect</th>
+              <th>REST</th>
+              <th>gRPC</th>
+              <th>GraphQL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Detection time</td>
+              <td>~500ms (connection timeout)</td>
+              <td class="tier-grpc">~100ms (HTTP/2 knows immediately)</td>
+              <td>~500ms (HTTP request fails)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Recovery info</td>
+              <td>503 status, no details</td>
+              <td>UNAVAILABLE with metadata</td>
+              <td class="tier-graphql">Partial data + error array with paths</td>
+            </tr>
+            <tr>
+              <td class="row-label">Client UX during failure</td>
+              <td>Complete failure or requires explicit partial support</td>
+              <td>Complete failure or requires explicit partial</td>
+              <td class="tier-graphql">Natural partial response built-in</td>
+            </tr>
+            <tr>
+              <td class="row-label">Retry mechanism</td>
+              <td>Manual (Retry-After header)</td>
+              <td class="tier-grpc">Built-in (configurable)</td>
+              <td>Manual at resolver level</td>
+            </tr>
+            <tr>
+              <td class="row-label">Graceful degradation</td>
+              <td>Requires explicit coding</td>
+              <td>Requires explicit coding</td>
+              <td class="tier-graphql">Inherent in execution model</td>
+            </tr>
+            <tr>
+              <td class="row-label">Debug info</td>
+              <td>HTTP status + body</td>
+              <td>gRPC status code + details</td>
+              <td>Error array with path</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== 2.6 MENTAL MODELS ===================== -->
+    <section id="mental-models">
+      <div class="section-eyebrow"><span class="num">2.6</span>Visual Mental Models</div>
+      <h1 class="section-title">The <span class="accent">Diagrams</span> That Make Each Click</h1>
+
+      <p style="max-width: 760px;">Three paradigms, three completely different mental geometries. Memorize these — they're the fastest way to recover the right answer mid-interview when the pressure spikes.</p>
+
+      <!-- REST -->
+      <h2 class="subsection-title" id="mm-rest"><span class="label">▣</span>REST: Resources and Operations</h2>
+      <div class="diagram">
+<pre>                    ┌─────────────────────────────────────┐
+                    │           REST API                  │
+                    └─────────────────────────────────────┘
+                                    │
+         ┌──────────────────────────┼──────────────────────────┐
+         ▼                          ▼                          ▼
+   ┌──────────┐              ┌──────────┐              ┌──────────┐
+   │ /users   │              │ /orders  │              │/products │
+   │ Resource │              │ Resource │              │ Resource │
+   └──────────┘              └──────────┘              └──────────┘
+         │                          │                          │
+    ┌────┴────┐                ┌────┴────┐                ┌────┴────┐
+    │GET│POST │                │GET│POST │                │GET│POST │
+    │PUT│DEL  │                │PUT│DEL  │                │PUT│DEL  │
+    └─────────┘                └─────────┘                └─────────┘</pre>
+      </div>
+      <div class="callout">
+        <div class="callout-label">Example</div>
+        <p><strong>Client request:</strong> <code style="font-family: var(--font-mono); color: var(--amber-soft);">GET /users/123</code></p>
+        <p><strong>Server response:</strong> <code style="font-family: var(--font-mono); color: var(--amber-soft);">{"id": 123, "name": "Alice", ...&lt;all fields&gt;...}</code></p>
+      </div>
+      <div class="callout warning">
+        <div class="callout-label">Problem</div>
+        <p>Client only needed <code style="font-family: var(--font-mono); color: var(--coral);">name</code>, got <strong>50 fields</strong>.</p>
+      </div>
+
+      <!-- gRPC -->
+      <h2 class="subsection-title" id="mm-grpc"><span class="label">▣</span>gRPC: Services and Methods</h2>
+      <div class="diagram">
+<pre>┌─────────────────────────────────────────────────────────────────┐
+│                         .proto file                              │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │  UserService    │  │  OrderService   │  │  ProductService │  │
+│  ├─────────────────┤  ├─────────────────┤  ├─────────────────┤  │
+│  │ GetUser()       │  │ GetOrder()      │  │ GetProduct()    │  │
+│  │ ListUsers()     │  │ CreateOrder()   │  │ Search()        │  │
+│  │ UpdateUser()    │  │ StreamOrders()  │  │ BulkGet()       │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                        Code Generation
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+         ┌──────────┐    ┌──────────┐    ┌──────────┐
+         │  Go      │    │   Java   │    │  Python  │
+         │  Client  │    │  Client  │    │  Client  │
+         └──────────┘    └──────────┘    └──────────┘
+                    ╲           │           ╱
+                     ╲──── HTTP/2 ────────╱
+                            │
+                     ┌──────────────┐
+                     │   Server     │
+                     │ (any lang)   │
+                     └──────────────┘</pre>
+      </div>
+      <div class="callout shine">
+        <div class="callout-label">Example</div>
+        <p><strong>Client call:</strong> <code style="font-family: var(--font-mono); color: var(--teal);">userClient.GetUser(UserRequest{id: 123})</code></p>
+        <p><strong>Response:</strong> <code style="font-family: var(--font-mono); color: var(--teal);">UserResponse{name: "Alice", email: "a@b.com"}</code></p>
+        <p style="margin-top: 8px;"><mark class="hl-teal">Type-safe</mark>, binary, <strong>FAST</strong>.</p>
+      </div>
+
+      <!-- GraphQL -->
+      <h2 class="subsection-title" id="mm-graphql"><span class="label">▣</span>GraphQL: Schema and Query</h2>
+      <div class="diagram">
+<pre>┌─────────────────────────────────────────────────────────────────┐
+│                        GraphQL Schema                            │
+│                                                                  │
+│  type Query {                    type User {                     │
+│    user(id: ID!): User             id: ID!                       │
+│    order(id: ID!): Order           name: String!                 │
+│  }                                 email: String                 │
+│                                    orders: [Order!]!             │
+│  type Order {                    }                               │
+│    id: ID!                                                       │
+│    items: [Item!]!               ──── Graph of Types ────        │
+│    user: User!                        (navigate any path)        │
+│  }                                                               │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │    Single Endpoint    │
+                    │    POST /graphql      │
+                    └───────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+  ┌───────────┐           ┌───────────┐           ┌───────────┐
+  │ iOS Query │           │Android Qry│           │ Web Query │
+  │{user{name}│           │{user{name │           │{user{name │
+  │}          │           │  email}}  │           │  orders}} │
+  └───────────┘           └───────────┘           └───────────┘
+        │                       │                       │
+        ▼                       ▼                       ▼
+  ┌───────────┐           ┌───────────┐           ┌───────────┐
+  │{user:     │           │{user:     │           │{user:     │
+  │  {name}}  │           │  {name,   │           │  {name,   │
+  │           │           │   email}} │           │   orders} │
+  └───────────┘           └───────────┘           └───────────┘</pre>
+      </div>
+      <div class="callout magenta">
+        <div class="callout-label">Insight</div>
+        <p>Each client asks for <strong>exactly</strong> what it needs. <em>One endpoint, infinite flexibility.</em></p>
+      </div>
+
+      <!-- Failure Modes -->
+      <h2 class="subsection-title" id="mm-failure"><span class="label">▣</span>Failure Modes Comparison</h2>
+
+      <h4 class="tiny-title">Normal Operation</h4>
+      <div class="diagram">
+<pre>═══════════════════════════════════════════════════════════════
+REST:          Client ──GET──→ Service A ──GET──→ Service B
+                      ←─JSON──          ←─JSON──
+
+gRPC:          Client ══RPC══&gt; Service A ══RPC══&gt; Service B
+                      &lt;══════          &lt;══════
+               (persistent connections, binary)
+
+GraphQL:       Client ──query──→ GraphQL ──resolve──→ Service A
+                                          ──resolve──→ Service B
+                      ←─{data}────────────←─────────
+               (single request, multiple resolvers)</pre>
+      </div>
+
+      <h4 class="tiny-title">During Failure (Service B Down)</h4>
+      <div class="diagram">
+<pre>═══════════════════════════════════════════════════════════════
+REST:          Client ──GET──→ Service A ──GET──✖ Service B
+                      ←─503──           (timeout)
+               COMPLETE FAILURE unless explicit handling
+
+gRPC:          Client ══RPC══&gt; Service A ══RPC══✖ Service B
+                      &lt;═UNAVAIL═        (instant detection)
+               Status code tells you EXACTLY what failed
+
+GraphQL:       Client ──query──→ GraphQL ──resolve──→ Service A ✓
+                                          ──resolve──✖ Service B
+                      ←─{data: {...}, errors: [{path: "..B.."}]}──
+               PARTIAL DATA RETURNED with error path</pre>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== 2.7 DECISION FRAMEWORK ===================== -->
+    <section id="decision">
+      <div class="section-eyebrow"><span class="num">2.7</span>Decision Framework</div>
+      <h1 class="section-title">The <span class="accent">Decision Tree</span> &amp; The Sound Bite</h1>
+
+      <p style="max-width: 760px;">No paradigm is universally "better." This is the framework that turns the question <em>"which API style?"</em> into a small set of mechanical branches you can walk in under a minute.</p>
+
+      <!-- Decision Tree -->
+      <h2 class="subsection-title" id="dec-tree"><span class="label">▣</span>Decision Tree for API Style Selection</h2>
+      <div class="diagram">
+<pre>═══════════════════════════════════════
+Q1: Is this for external third-party developers?
+├── YES → Strongly consider REST
+│   └── Q2: Do they need complex nested queries?
+│       ├── YES → Offer GraphQL as secondary option
+│       │         (GitHub model: REST v3 + GraphQL v4)
+│       └── NO → REST only (Stripe, Twilio model)
+│
+└── NO (internal or first-party) →
+    │
+    Q3: Is this service-to-service (no humans in the loop)?
+    ├── YES → Strongly consider gRPC
+    │   └── Q4: Do you need streaming?
+    │       ├── YES → gRPC (native streaming)
+    │       └── NO → gRPC still wins (performance + contracts)
+    │
+    └── NO (has user-facing client) →
+        │
+        Q5: Multiple client platforms with different needs?
+        ├── YES → Strongly consider GraphQL
+        │   └── Q6: Do you control all clients?
+        │       ├── YES → GraphQL (full flexibility)
+        │       └── NO → GraphQL + persisted queries (security)
+        │
+        └── NO (single client type) →
+            │
+            Q7: Is HTTP caching critical (CDN, edge)?
+            ├── YES → REST (best HTTP caching)
+            │
+            └── NO → Either REST or GraphQL based on:
+                    - Team familiarity
+                    - Complexity of data relationships
+                    - Frontend team velocity needs</pre>
+      </div>
+
+      <!-- Questions -->
+      <h2 class="subsection-title" id="dec-questions"><span class="label">▣</span>Questions to Ask Yourself (or the Interviewer)</h2>
+
+      <div class="question-card">
+        <div class="q">"Who are the clients?"</div>
+        <div class="why">Determines accessibility requirements</div>
+        <ul>
+          <li>External developers → <mark class="hl-blue">REST</mark></li>
+          <li>Internal services → <mark class="hl-teal">gRPC</mark></li>
+          <li>Multiple app platforms → <span style="color: var(--magenta); font-weight: 600;">GraphQL</span></li>
+        </ul>
+      </div>
+
+      <div class="question-card">
+        <div class="q">"What's the read/write ratio?"</div>
+        <div class="why">Determines caching strategy</div>
+        <ul>
+          <li>Read-heavy → REST (HTTP caching) or gRPC (response caching)</li>
+          <li>Write-heavy → Matters less, all roughly equal</li>
+        </ul>
+      </div>
+
+      <div class="question-card">
+        <div class="q">"How coupled can we be?"</div>
+        <div class="why">Determines contract flexibility</div>
+        <ul>
+          <li>Loosely coupled (can't coordinate deploys) → REST, GraphQL</li>
+          <li>Tightly coupled (shared deployment) → gRPC fine</li>
+        </ul>
+      </div>
+
+      <div class="question-card">
+        <div class="q">"What's the latency budget?"</div>
+        <div class="why">Determines protocol efficiency needs</div>
+        <ul>
+          <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">&lt;50ms</code> strict → gRPC (binary, HTTP/2)</li>
+          <li><code style="font-family: var(--font-mono); color: var(--amber-soft);">100ms</code> acceptable → Any</li>
+        </ul>
+      </div>
+
+      <div class="question-card">
+        <div class="q">"Is the data shape fixed or variable?"</div>
+        <div class="why">Determines query flexibility</div>
+        <ul>
+          <li>Fixed → REST, gRPC (simpler)</li>
+          <li>Variable per client → GraphQL</li>
+        </ul>
+      </div>
+
+      <!-- Hybrid -->
+      <h2 class="subsection-title" id="dec-hybrid"><span class="label">▣</span>Migration and Hybrid Approaches</h2>
+
+      <h3 class="minor-title">Can Variants Be Combined?</h3>
+      <p>Absolutely — <strong>mature systems often use all three</strong>:</p>
+
+      <div class="diagram">
+<pre>┌─────────────────────────────────────────────────────────────┐
+│                        API GATEWAY                          │
+│  ┌──────────────┐  ┌───────────────┐  ┌──────────────────┐  │
+│  │ REST         │  │ GraphQL       │  │ gRPC-Web         │  │
+│  │ /api/v1/*    │  │ /graphql      │  │ (for browsers)   │  │
+│  └──────┬───────┘  └───────┬───────┘  └────────┬─────────┘  │
+└─────────┼──────────────────┼───────────────────┼────────────┘
+          │                  │                   │
+          └─────────┬────────┴───────────────────┘
+                    │
+          ┌─────────▼──────────┐
+          │   gRPC Service     │
+          │      Mesh          │
+          │ ┌─────┐  ┌─────┐   │
+          │ │Svc A│◄─►Svc B│   │
+          │ └──┬──┘  └──┬──┘   │
+          │    └────┬───┘      │
+          │ ┌───────▼───────┐  │
+          │ │    Svc C      │  │
+          │ └───────────────┘  │
+          └────────────────────┘</pre>
+      </div>
+
+      <div class="callout insight">
+        <div class="callout-label">The Hybrid Pattern</div>
+        <p><strong>External:</strong> REST (public developers) + GraphQL (apps).<br/>
+        <strong>Internal:</strong> gRPC everywhere.</p>
+      </div>
+
+      <!-- Migration -->
+      <h2 class="subsection-title" id="dec-migration"><span class="label">▣</span>Migration Path Examples</h2>
+
+      <h3 class="minor-title">REST → GraphQL</h3>
+      <ol>
+        <li>Add GraphQL layer that <strong>wraps</strong> REST endpoints</li>
+        <li>Migrate high-value queries first (home screen, feed)</li>
+        <li>Add <strong>DataLoader</strong> to batch REST calls</li>
+        <li>Gradually add direct database resolvers</li>
+        <li>Deprecate redundant REST endpoints</li>
+        <li>Keep REST for public API, GraphQL for apps</li>
+      </ol>
+
+      <h3 class="minor-title">REST → gRPC</h3>
+      <ol>
+        <li>Add gRPC endpoints alongside REST</li>
+        <li>Generate REST from gRPC using <strong>transcoding</strong></li>
+        <li>Migrate internal callers to gRPC</li>
+        <li>Keep REST facade for external via transcoding</li>
+        <li>Eventually: gRPC is source of truth, REST is auto-generated</li>
+      </ol>
+
+      <!-- Sound Bite -->
+      <h2 class="subsection-title" id="dec-soundbite"><span class="label">▣</span>The Sound Bite</h2>
+      <p>If you only memorise one thing from the entire series, memorise this. It's the answer to <em>"compare REST, gRPC, and GraphQL"</em> compressed into a single paragraph that signals staff-level thinking.</p>
+
+      <div class="soundbite">
+        <div class="sb-label">Sound bite · for the interview</div>
+        <div class="sb-text">
+          REST is <mark>HTTP-native with great caching but chatty</mark>; gRPC is <mark>blazing fast with strong contracts but limited to internal services</mark>; GraphQL is <mark>maximally flexible but requires careful cost management</mark>. The sophisticated answer is often <em>"all three"</em> — gRPC for the service mesh, GraphQL for client aggregation, REST at the edge for external developers. <strong>Choose based on who's consuming and what guarantees you need.</strong>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <p style="text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin-top: 40px;">
+        End of Part 3 · L6/L7 Series · API Communication Paradigms
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+  /* PROGRESS BAR */
+  const progressBar = document.getElementById('progress-bar');
+  function updateProgress() {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  /* BACK TO TOP */
+  const backTop = document.getElementById('back-top');
+  function toggleBackTop() {
+    if (window.scrollY > 500) backTop.classList.add('visible');
+    else backTop.classList.remove('visible');
+  }
+  window.addEventListener('scroll', toggleBackTop, { passive: true });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* SIDEBAR ACTIVE STATE */
+  const navLinks = Array.from(document.querySelectorAll('.nav-section li a'));
+  const sectionMap = navLinks.map(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    return { link, el };
+  }).filter(s => s.el);
+
+  function setActiveSection() {
+    const offset = 120;
+    let current = sectionMap[0];
+    for (const s of sectionMap) {
+      const top = s.el.getBoundingClientRect().top;
+      if (top - offset <= 0) current = s;
+      else break;
+    }
+    navLinks.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', setActiveSection, { passive: true });
+  setActiveSection();
+
+  /* SEARCH */
+  const searchInput = document.getElementById('search');
+  const navSections = Array.from(document.querySelectorAll('.nav-section'));
+  searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    navSections.forEach(group => {
+      const items = Array.from(group.querySelectorAll('li'));
+      let anyVisible = false;
+      items.forEach(li => {
+        const text = li.innerText.toLowerCase();
+        const groupTitle = group.querySelector('.nav-section-title').innerText.toLowerCase();
+        const match = !q || text.includes(q) || groupTitle.includes(q);
+        li.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
+      });
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  });
+
+  /* MOBILE MENU */
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-section li a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
