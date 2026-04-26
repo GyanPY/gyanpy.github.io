@@ -1,0 +1,1980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Part 4 — Trade-Offs, Edges &amp; The L6/L7 Differentiator · L6/L7 Series</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================
+     RESET + TOKENS  (matches Parts 1-3)
+  =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #0a0d12;
+    --surface: #161b22;
+    --surface-2: #1c2230;
+    --surface-3: #232a36;
+    --border: #21262d;
+    --border-soft: rgba(240, 246, 252, 0.08);
+    --text: #e6edf3;
+    --text-dim: #b0b8c1;
+    --text-muted: #8b949e;
+    --text-faint: #6e7681;
+
+    --amber: #F5A623;
+    --amber-soft: #f0b95c;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --blue: #58a6ff;
+    --blue-soft: rgba(88, 166, 255, 0.12);
+    --magenta: #d264e8;
+
+    --font-display: "Playfair Display", Georgia, serif;
+    --font-body: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --sidebar-width: 310px;
+    --content-max: 880px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(245, 166, 35, 0.04), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(88, 166, 255, 0.04), transparent 40%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  ::selection { background: rgba(245, 166, 35, 0.35); color: #fff; }
+
+  /* PROGRESS BAR */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--amber), var(--amber-soft), var(--blue));
+    z-index: 1000; transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(245, 166, 35, 0.4);
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-width); height: 100vh;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 28px 20px 80px;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .series-header {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--blue);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .doc-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 16px;
+  }
+  .part-pill {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 22px;
+    line-height: 1.4;
+  }
+
+  .search-wrap { margin-bottom: 24px; position: relative; }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #search:focus { outline: none; border-color: var(--blue); background: var(--surface-2); }
+  #search::placeholder { color: var(--text-faint); }
+
+  .nav-section { margin-bottom: 18px; }
+  .nav-section-title {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    padding-left: 12px;
+  }
+  .nav-section ul { list-style: none; }
+  .nav-section li a {
+    display: block;
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 14.5px;
+    padding: 7px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    transition: all 0.18s ease;
+    line-height: 1.4;
+  }
+  .nav-section li a:hover { color: var(--text); background: var(--surface); }
+  .nav-section li a.active {
+    color: var(--blue);
+    background: var(--blue-soft);
+    border-left-color: var(--blue);
+    font-weight: 500;
+  }
+
+  .menu-toggle {
+    display: none;
+    position: fixed; top: 16px; left: 16px;
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 14px;
+  }
+
+  /* MAIN */
+  .main {
+    margin-left: var(--sidebar-width);
+    padding: 64px 64px 120px;
+    position: relative;
+    z-index: 1;
+    animation: pageFadeIn 0.7s ease-out both;
+  }
+  .content { max-width: var(--content-max); margin: 0 auto; }
+
+  @keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* HERO */
+  .hero { margin-bottom: 60px; }
+  .breadcrumb {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 26px;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(48px, 6vw, 84px);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  .hero-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 45%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px 36px;
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 16px;
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 8px; }
+
+  .part-toggle { display: flex; gap: 10px; margin-bottom: 36px; flex-wrap: wrap; }
+  .part-btn {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .part-btn:hover { color: var(--text); border-color: var(--text-faint); }
+  .part-btn.current {
+    color: var(--blue);
+    background: rgba(88, 166, 255, 0.08);
+    border-color: var(--blue);
+  }
+  .hero-intro {
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1.75;
+    max-width: 780px;
+  }
+
+  hr.divider {
+    border: 0; height: 1px;
+    background: var(--border);
+    margin: 56px 0;
+  }
+  hr.divider-soft {
+    border: 0; height: 1px;
+    background: var(--border-soft);
+    margin: 32px 0;
+  }
+
+  /* SECTION HEADERS */
+  section { margin-bottom: 80px; scroll-margin-top: 24px; }
+  .section-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+  }
+  .section-eyebrow .num { color: var(--text-faint); margin-right: 10px; }
+
+  h1.section-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(38px, 4.5vw, 56px);
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+    color: #fff;
+  }
+  h1.section-title .accent {
+    background: linear-gradient(115deg, #F5A623 0%, #f0b95c 50%, #f5d896 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2.subsection-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 56px 0 12px;
+    color: #fff;
+    scroll-margin-top: 24px;
+  }
+  h2.subsection-title .label {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--amber);
+    margin-right: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  h3.minor-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 22px;
+    margin: 32px 0 14px;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  h4.tiny-title {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-soft);
+    margin: 24px 0 10px;
+  }
+
+  p { margin-bottom: 16px; color: var(--text-dim); }
+  p strong { color: #fff; font-weight: 600; }
+  p em { color: var(--text); font-style: italic; }
+  ul, ol { margin: 12px 0 18px 0; padding-left: 26px; color: var(--text-dim); }
+  ul li, ol li { margin-bottom: 8px; line-height: 1.7; }
+  ul li::marker { color: var(--amber); }
+  ol li::marker { color: var(--amber); font-family: var(--font-mono); font-weight: 600; }
+
+  code.inline {
+    font-family: var(--font-mono);
+    color: var(--amber-soft);
+    background: rgba(245, 166, 35, 0.08);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.92em;
+  }
+
+  /* CALLOUTS */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber);
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0 22px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+  .callout-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .callout p { color: var(--text-dim); margin-bottom: 8px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.insight { border-left-color: var(--blue); }
+  .callout.insight .callout-label { color: var(--blue); }
+  .callout.warning {
+    border-left-color: var(--coral);
+    background: linear-gradient(90deg, rgba(255, 107, 107, 0.06), var(--surface) 30%);
+  }
+  .callout.warning .callout-label { color: var(--coral); }
+  .callout.shine { border-left-color: var(--teal); }
+  .callout.shine .callout-label { color: var(--teal); }
+  .callout.gold {
+    border-left-color: var(--gold);
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.06), var(--surface) 35%);
+  }
+  .callout.gold .callout-label { color: var(--gold); }
+  .callout.magenta { border-left-color: var(--magenta); }
+  .callout.magenta .callout-label { color: var(--magenta); }
+
+  /* CODE BLOCKS */
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 18px 0 24px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+  }
+  .code-lang {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.18s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--text-faint); background: var(--surface); }
+  .copy-btn.copied { color: var(--teal); border-color: var(--teal); }
+  .code-block pre {
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .code-block code {
+    font-family: var(--font-mono);
+    color: #c9d1d9;
+    white-space: pre;
+  }
+
+  /* DIAGRAM blocks */
+  .diagram {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 22px 0 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .diagram::before {
+    content: "DIAGRAM";
+    position: absolute;
+    top: 10px; left: 14px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--amber);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.3);
+    padding: 3px 9px;
+    border-radius: 3px;
+    z-index: 2;
+  }
+  .diagram pre {
+    padding: 44px 18px 20px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  /* ===========================================================
+     COLOR-CODED TRADE-OFF TABLES (NEW IN PART 4)
+  =========================================================== */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 18px 0 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+  table.styled {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.styled th {
+    text-align: left;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.styled td {
+    padding: 14px 16px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  table.styled tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+  table.styled tbody tr:last-child td { border-bottom: none; }
+  table.styled tbody tr:hover { background: rgba(88, 166, 255, 0.04); }
+  table.styled td.row-label {
+    color: var(--amber);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.04em;
+    min-width: 130px;
+  }
+  table.styled td.cell-good { color: var(--teal); }
+  table.styled td.cell-bad { color: var(--coral); }
+
+  /* paradigm-specific table headers */
+  table.tradeoff-rest thead {
+    background: linear-gradient(90deg, rgba(88, 166, 255, 0.22), rgba(88, 166, 255, 0.06));
+  }
+  table.tradeoff-rest thead th { border-bottom-color: rgba(88, 166, 255, 0.35); }
+  table.tradeoff-grpc thead {
+    background: linear-gradient(90deg, rgba(0, 191, 165, 0.22), rgba(0, 191, 165, 0.05));
+  }
+  table.tradeoff-grpc thead th { border-bottom-color: rgba(0, 191, 165, 0.35); }
+  table.tradeoff-graphql thead {
+    background: linear-gradient(90deg, rgba(210, 100, 232, 0.22), rgba(210, 100, 232, 0.05));
+  }
+  table.tradeoff-graphql thead th { border-bottom-color: rgba(210, 100, 232, 0.35); }
+
+  /* generic gradient header for non-paradigm tables */
+  table.styled.generic thead {
+    background: linear-gradient(90deg, rgba(245, 166, 35, 0.18), rgba(88, 166, 255, 0.1));
+  }
+
+  table.styled td.tier-rest { color: var(--blue); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+  table.styled td.tier-grpc { color: var(--teal); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+  table.styled td.tier-graphql { color: var(--magenta); font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
+
+  /* CARDS */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    margin: 22px 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 22px;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    border-color: var(--text-faint);
+    box-shadow: 0 12px 28px -10px rgba(0,0,0,0.6);
+  }
+  .card-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .card-title {
+    font-family: var(--font-display);
+    font-size: 19px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .card p { margin-bottom: 0; font-size: 15px; }
+
+  /* FAIL CARDS (open vs closed) */
+  .fail-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin: 22px 0;
+  }
+  .fail-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px;
+  }
+  .fail-card.open { border-top: 3px solid var(--teal); }
+  .fail-card.closed { border-top: 3px solid var(--coral); }
+  .fail-card .fc-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .fail-card.open .fc-label { color: var(--teal); }
+  .fail-card.closed .fc-label { color: var(--coral); }
+  .fail-card .fc-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+  .fail-card .fc-body {
+    color: var(--text-dim);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* QUOTES */
+  blockquote.interviewer {
+    position: relative;
+    background: var(--surface);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 8px 8px 0;
+    padding: 22px 28px 22px 60px;
+    margin: 22px 0 26px;
+    font-style: italic;
+    color: var(--text);
+    font-size: 17px;
+    line-height: 1.7;
+  }
+  blockquote.interviewer::before {
+    content: "\201C";
+    position: absolute;
+    top: -10px; left: 16px;
+    font-family: var(--font-display);
+    font-size: 80px;
+    line-height: 1;
+    color: var(--amber);
+    opacity: 0.4;
+  }
+
+  mark.hl {
+    background: rgba(245, 166, 35, 0.18);
+    color: var(--amber-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-style: normal;
+  }
+  mark.hl-blue {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--blue);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-coral {
+    background: rgba(255, 107, 107, 0.15);
+    color: var(--coral);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-teal {
+    background: rgba(0, 191, 165, 0.15);
+    color: var(--teal);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  mark.hl-magenta {
+    background: rgba(210, 100, 232, 0.15);
+    color: var(--magenta);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* VARIANT LEGEND / CHIPS */
+  .variant-legend { display: flex; gap: 14px; margin: 18px 0 24px; flex-wrap: wrap; }
+  .v-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  .v-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .v-chip.rest .dot { background: var(--blue); }
+  .v-chip.grpc .dot { background: var(--teal); }
+  .v-chip.graphql .dot { background: var(--magenta); }
+  .v-chip.rest { color: var(--blue); border-color: rgba(88, 166, 255, 0.3); }
+  .v-chip.grpc { color: var(--teal); border-color: rgba(0, 191, 165, 0.3); }
+  .v-chip.graphql { color: var(--magenta); border-color: rgba(210, 100, 232, 0.3); }
+
+  /* ===========================================================
+     EDGE CASE CARDS (NEW IN PART 4)
+  =========================================================== */
+  .edge-case {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 24px;
+    background: linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 30px 32px;
+    margin: 26px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .edge-case::before {
+    content: "";
+    position: absolute;
+    top: 0; right: 0;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, rgba(245, 166, 35, 0.08), transparent 70%);
+    pointer-events: none;
+  }
+  .edge-num {
+    font-family: var(--font-display);
+    font-size: 90px;
+    font-weight: 800;
+    line-height: 0.85;
+    font-style: italic;
+    background: linear-gradient(135deg, #F5A623 0%, #f0b95c 60%, rgba(245, 166, 35, 0.4) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    letter-spacing: -0.02em;
+  }
+  .edge-content { min-width: 0; }
+  .edge-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .edge-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: rgba(255, 215, 0, 0.08);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .edge-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 14px;
+  }
+  .edge-content p { font-size: 16px; }
+  .edge-content p:first-of-type { color: var(--text); }
+
+  @media (max-width: 768px) {
+    .edge-case { grid-template-columns: 1fr; padding: 22px; gap: 12px; }
+    .edge-num { font-size: 64px; }
+  }
+
+  /* SOUND BITE */
+  .soundbite {
+    background:
+      radial-gradient(circle at top right, rgba(245, 166, 35, 0.15), transparent 60%),
+      linear-gradient(135deg, var(--surface), var(--surface-2));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 36px 38px;
+    margin: 32px 0 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .soundbite::before {
+    content: "🔑";
+    position: absolute;
+    top: -10px;
+    left: 30px;
+    font-size: 36px;
+    background: var(--bg);
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .soundbite .sb-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 14px;
+    margin-top: 10px;
+    font-weight: 600;
+  }
+  .soundbite .sb-text {
+    font-family: var(--font-display);
+    font-size: 20px;
+    line-height: 1.55;
+    color: #fff;
+    font-style: italic;
+    font-weight: 500;
+  }
+  .soundbite .sb-text mark {
+    background: rgba(245, 166, 35, 0.2);
+    color: var(--amber-soft);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-style: normal;
+  }
+
+  /* BACK TO TOP */
+  #back-top {
+    position: fixed;
+    bottom: 28px; right: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 90;
+    transition: all 0.25s;
+    opacity: 0; pointer-events: none;
+  }
+  #back-top.visible { opacity: 1; pointer-events: auto; }
+  #back-top:hover {
+    color: var(--amber);
+    border-color: var(--amber);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px -4px rgba(245, 166, 35, 0.3);
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 1024px) {
+    .main { padding: 56px 32px 100px; }
+    .fail-cards { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 768px) {
+    .menu-toggle { display: block; }
+    .sidebar {
+      transform: translateX(-100%);
+      transition: transform 0.3s ease;
+      width: 280px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .main { margin-left: 0; padding: 70px 22px 80px; }
+    .hero-title { font-size: 42px; }
+    h1.section-title { font-size: 32px; }
+    h2.subsection-title { font-size: 24px; }
+    .hero-meta { gap: 14px 22px; font-size: 14.5px; }
+  }
+
+  .nav-section li.hidden { display: none; }
+  .nav-section.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu">☰ Menu</button>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside class="sidebar" id="sidebar" aria-label="Section navigation">
+  <div class="series-header">REST · gRPC · GraphQL · L6/L7 Series</div>
+  <div class="doc-title">Trade-Offs, Edges &amp; The L6/L7 Differentiator</div>
+  <div class="part-pill">Part 4 — Where Complexity Hides</div>
+
+  <div class="search-wrap">
+    <input id="search" type="text" placeholder="Search sections..." aria-label="Search sections" />
+  </div>
+
+  <nav>
+    <div class="nav-section" data-group="Introduction">
+      <div class="nav-section-title">Introduction</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Trade-offs">
+      <div class="nav-section-title">3.1 · Trade-Offs Matrix</div>
+      <ul>
+        <li><a href="#tradeoffs-rest">REST Trade-Offs</a></li>
+        <li><a href="#tradeoffs-grpc">gRPC Trade-Offs</a></li>
+        <li><a href="#tradeoffs-graphql">GraphQL Trade-Offs</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Distributed Twist">
+      <div class="nav-section-title">3.2 · Distributed Systems Twist</div>
+      <ul>
+        <li><a href="#dist-rest">REST Distributed</a></li>
+        <li><a href="#dist-grpc">gRPC Distributed</a></li>
+        <li><a href="#dist-graphql">GraphQL Federation</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Failure Modes">
+      <div class="nav-section-title">3.3 · Failure Modes</div>
+      <ul>
+        <li><a href="#fail-rest">REST Failures</a></li>
+        <li><a href="#fail-grpc">gRPC Failures</a></li>
+        <li><a href="#fail-graphql">GraphQL Failures</a></li>
+        <li><a href="#fail-open-closed">Fail-Open vs Fail-Closed</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Edge Cases">
+      <div class="nav-section-title">3.4 · Edge Cases</div>
+      <ul>
+        <li><a href="#edge-1">01 · PATCH vs PUT</a></li>
+        <li><a href="#edge-2">02 · Bidi Streaming Order</a></li>
+        <li><a href="#edge-3">03 · Circular References</a></li>
+        <li><a href="#edge-4">04 · N+1 Across Boundaries</a></li>
+        <li><a href="#edge-5">05 · Metadata Size Limits</a></li>
+        <li><a href="#boundaries">Boundary Conditions</a></li>
+      </ul>
+    </div>
+
+    <div class="nav-section" data-group="Final">
+      <div class="nav-section-title">Final</div>
+      <ul>
+        <li><a href="#soundbite">Sound Bite</a></li>
+      </ul>
+    </div>
+  </nav>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main class="main">
+  <div class="content">
+
+    <!-- ===================== HERO ===================== -->
+    <header class="hero" id="overview">
+      <div class="breadcrumb">REST · gRPC · GraphQL · L6/L7 Series · Part 4</div>
+      <h1 class="hero-title">
+        The <span class="accent">Trade-Offs</span><br/>
+        &amp; The <span class="accent">Edges</span> That Decide
+      </h1>
+
+      <div class="hero-meta">
+        <span>⚖️ Three trade-off matrices · what each paradigm sacrifices</span>
+        <span>🌐 What changes in distributed systems &amp; federation</span>
+      </div>
+      <div class="hero-meta">
+        <span>💥 Failure mode tables · blast radius &amp; prevention</span>
+        <span>🎯 Five edge cases that flip the interviewer's read</span>
+      </div>
+
+      <div class="part-toggle">
+        <a href="#" class="part-btn">Part 1: REST + gRPC</a>
+        <a href="#" class="part-btn">Part 2: GraphQL</a>
+        <a href="#" class="part-btn">Part 3: Failure + Decisions</a>
+        <a href="#" class="part-btn current">Part 4: Trade-Offs + Edges</a>
+      </div>
+
+      <p class="hero-intro">
+        This is the chapter that separates senior from staff. Knowing what each paradigm <em>does</em> is table stakes. Staff-level signal comes from articulating what each one <strong>sacrifices</strong> — and naming the edge cases most candidates never bring up unprompted. Below: the three fundamental trade-off axes per paradigm, what changes when each runs in production distributed systems, the failure mode tables you'll be quizzed on, and the five "most candidates miss this" scenarios that flip the interviewer's read.
+      </p>
+
+      <hr class="divider" />
+    </header>
+
+    <!-- ===================== 3.1 TRADE-OFFS ===================== -->
+    <section id="tradeoffs">
+      <div class="section-eyebrow"><span class="num">3.1</span>Fundamental Trade-Offs Matrix</div>
+      <h1 class="section-title">What Each Paradigm <span class="accent">Sacrifices</span></h1>
+
+      <p style="max-width: 760px;">Three paradigms, three sets of optimization choices. Read each row as: <em>"In exchange for X, you give up Y — and that's only OK when Z."</em> The interviewer's question isn't <em>"is this fast?"</em> It's <em>"do you know what you're trading away?"</em></p>
+
+      <div class="variant-legend">
+        <span class="v-chip rest"><span class="dot"></span>REST</span>
+        <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+        <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+      </div>
+
+      <!-- REST TRADE-OFFS -->
+      <h2 class="subsection-title" id="tradeoffs-rest"><span class="label">▣</span>REST Trade-Offs</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-rest">
+          <thead>
+            <tr>
+              <th>Trade-Off</th>
+              <th>Optimizes</th>
+              <th>Sacrifices</th>
+              <th>When Acceptable</th>
+              <th>When NOT Acceptable</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Simplicity vs Efficiency</td>
+              <td class="cell-good">Maximum simplicity, universal tooling</td>
+              <td class="cell-bad">Bandwidth (over-fetching), latency (multiple calls)</td>
+              <td>Public API, team velocity matters</td>
+              <td>Mobile on slow networks, aggregation-heavy</td>
+            </tr>
+            <tr>
+              <td class="row-label">Cacheability vs Flexibility</td>
+              <td class="cell-good">HTTP caching, CDN-friendly</td>
+              <td class="cell-bad">Query flexibility (fixed endpoints)</td>
+              <td>Read-heavy, high cache hit rate</td>
+              <td>Dynamic queries, personalized content</td>
+            </tr>
+            <tr>
+              <td class="row-label">Discoverability vs Security</td>
+              <td class="cell-good">Self-documenting URLs</td>
+              <td class="cell-bad">Enumeration attacks possible</td>
+              <td>Internal APIs, developer experience focus</td>
+              <td>High-security, hidden endpoints needed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- gRPC TRADE-OFFS -->
+      <h2 class="subsection-title" id="tradeoffs-grpc"><span class="label">▣</span>gRPC Trade-Offs</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-grpc">
+          <thead>
+            <tr>
+              <th>Trade-Off</th>
+              <th>Optimizes</th>
+              <th>Sacrifices</th>
+              <th>When Acceptable</th>
+              <th>When NOT Acceptable</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Performance vs Accessibility</td>
+              <td class="cell-good">Binary efficiency, streaming</td>
+              <td class="cell-bad">Browser compatibility, debuggability</td>
+              <td>Internal services, performance-critical</td>
+              <td>Public APIs, human debugging needed</td>
+            </tr>
+            <tr>
+              <td class="row-label">Strong Typing vs Flexibility</td>
+              <td class="cell-good">Compile-time contracts, code gen</td>
+              <td class="cell-bad">Runtime flexibility, duck typing</td>
+              <td>Polyglot microservices, safety matters</td>
+              <td>Rapid prototyping, loose schemas</td>
+            </tr>
+            <tr>
+              <td class="row-label">HTTP/2 vs Compatibility</td>
+              <td class="cell-good">Multiplexing, streams, headers</td>
+              <td class="cell-bad">Legacy proxy compatibility</td>
+              <td>Modern infrastructure, internal</td>
+              <td>Old corporate firewalls, proxy-heavy</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- GraphQL TRADE-OFFS -->
+      <h2 class="subsection-title" id="tradeoffs-graphql"><span class="label">▣</span>GraphQL Trade-Offs</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-graphql">
+          <thead>
+            <tr>
+              <th>Trade-Off</th>
+              <th>Optimizes</th>
+              <th>Sacrifices</th>
+              <th>When Acceptable</th>
+              <th>When NOT Acceptable</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Client Control vs Server Predictability</td>
+              <td class="cell-good">Exact data queries, frontend velocity</td>
+              <td class="cell-bad">Predictable server load, simple caching</td>
+              <td>Multiple clients, trusted clients</td>
+              <td>DoS concern, strict SLOs</td>
+            </tr>
+            <tr>
+              <td class="row-label">Aggregation vs Debugging</td>
+              <td class="cell-good">Single request, no waterfalls</td>
+              <td class="cell-bad">Complex traces, N+1 hidden</td>
+              <td>Mobile apps, complex UIs</td>
+              <td>Simple CRUD, observability priority</td>
+            </tr>
+            <tr>
+              <td class="row-label">Schema Flexibility vs Breaking Changes</td>
+              <td class="cell-good">Additive evolution, field deprecation</td>
+              <td class="cell-bad">Harder to remove features</td>
+              <td>Long-lived APIs, gradual migration</td>
+              <td>Clean slate refactors needed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== 3.2 DISTRIBUTED SYSTEMS TWIST ===================== -->
+    <section id="distributed">
+      <div class="section-eyebrow"><span class="num">3.2</span>The Distributed Systems Twist</div>
+      <h1 class="section-title">When the Network Becomes <span class="accent">the Problem</span></h1>
+
+      <p style="max-width: 760px;">Single-node behavior is the easy part. Production is distributed — and each paradigm changes character once it crosses a network boundary. New failure modes, new consistency challenges, new coordination costs that don't appear in the local case.</p>
+
+      <!-- REST Distributed -->
+      <h2 class="subsection-title" id="dist-rest"><span class="label">▣</span>REST in Distributed Systems</h2>
+
+      <h4 class="tiny-title">Single-Node Behavior</h4>
+      <ul>
+        <li>Request comes in, routes to handler, queries DB, returns JSON</li>
+        <li>Simple, predictable, easy to reason about</li>
+      </ul>
+
+      <h4 class="tiny-title">Distributed Behavior (Microservices)</h4>
+      <div class="diagram">
+<pre>┌────────┐    REST    ┌─────────────┐    REST    ┌──────────┐
+│ Client │───────────▶│ Service A   │───────────▶│Service B │
+└────────┘            └─────────────┘            └──────────┘
+                             │
+                        ┌────┴────┐
+                        ▼         ▼
+                   ┌─────┐   ┌─────┐
+                   │DB A │   │Svc C│
+                   └─────┘   └─────┘</pre>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-label">New problems</div>
+        <ul style="margin-bottom: 0;">
+          <li>Request tracing across services (need correlation IDs)</li>
+          <li>Timeouts compound (A's timeout = B's timeout + C's timeout + …)</li>
+          <li>Retry storms (A retries → B retries → 2× traffic to C)</li>
+          <li>Inconsistent error handling (B returns 500, C returns 503 — what does A return?)</li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">New Failure Modes</h4>
+      <ul>
+        <li><strong>Partial failure:</strong> B succeeds, C fails — what's the response?</li>
+        <li><strong>Cache inconsistency:</strong> A caches B's response, B's data changes</li>
+        <li><strong>Version skew:</strong> A expects v1 response, B deployed v2</li>
+      </ul>
+
+      <h4 class="tiny-title">Consistency Challenges</h4>
+      <ul>
+        <li>No built-in transaction semantics across calls</li>
+        <li>Eventual consistency by default</li>
+        <li>Must implement <strong>saga pattern</strong> for distributed transactions</li>
+      </ul>
+
+      <h4 class="tiny-title">Coordination Cost</h4>
+      <ul>
+        <li>Each hop adds ~1–5ms network latency</li>
+        <li>Each hop requires connection (connection pooling helps)</li>
+        <li>Each hop is a potential failure point</li>
+      </ul>
+
+      <hr class="divider-soft" />
+
+      <!-- gRPC Distributed -->
+      <h2 class="subsection-title" id="dist-grpc"><span class="label">▣</span>gRPC in Distributed Systems</h2>
+
+      <h4 class="tiny-title">Single-Node Behavior</h4>
+      <ul>
+        <li>Client calls function, server executes, returns strongly-typed response</li>
+        <li>Binary, fast, type-safe</li>
+      </ul>
+
+      <h4 class="tiny-title">Distributed Behavior</h4>
+      <div class="diagram">
+<pre>┌────────┐    gRPC    ┌─────────────┐    gRPC    ┌──────────┐
+│ Client │═══════════▶│ Service A   │═══════════▶│Service B │
+└────────┘   stream   └─────────────┘   stream   └──────────┘
+     ║              ║
+     ║  deadline: 100ms       
+     ║              ║
+     ▼              ▼
+  ctx.Done()    ctx.Done()  ← Propagated cancellation</pre>
+      </div>
+
+      <div class="callout shine">
+        <div class="callout-label">Benefits</div>
+        <ul style="margin-bottom: 0;">
+          <li><strong>Deadline propagation:</strong> B knows it has only 50ms left</li>
+          <li><strong>Cancellation propagation:</strong> Client cancels → B stops work</li>
+          <li><strong>Built-in retry policies:</strong> Declarative, not coded</li>
+          <li><strong>Request hedging:</strong> Send to 2 backends, take first response</li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">New Failure Modes</h4>
+      <ul>
+        <li><strong>Proto version mismatch:</strong> A generated from <code class="inline">v1.proto</code>, B from <code class="inline">v2.proto</code></li>
+        <li><strong>HTTP/2 connection exhaustion:</strong> Too many concurrent streams</li>
+        <li><strong>Head-of-line blocking</strong> at TCP level (mitigated by connection pools)</li>
+      </ul>
+
+      <h4 class="tiny-title">Consistency Challenges</h4>
+      <ul>
+        <li>Still no distributed transactions built-in</li>
+        <li>But: interceptors can add transaction context</li>
+        <li>Metadata can carry saga state</li>
+      </ul>
+
+      <h4 class="tiny-title">Coordination Cost</h4>
+      <ul>
+        <li>Lower per-request (reused connections)</li>
+        <li>But: connection management overhead</li>
+        <li>Careful load balancing needed (<strong>L7, not L4</strong>)</li>
+      </ul>
+
+      <hr class="divider-soft" />
+
+      <!-- GraphQL Distributed -->
+      <h2 class="subsection-title" id="dist-graphql"><span class="label">▣</span>GraphQL in Distributed Systems (Federation)</h2>
+
+      <h4 class="tiny-title">Single-Node Behavior</h4>
+      <ul>
+        <li>Query comes in, resolvers execute, response assembled</li>
+        <li>All local, all synchronous (by default)</li>
+      </ul>
+
+      <h4 class="tiny-title">Distributed Behavior (Federation)</h4>
+      <div class="diagram">
+<pre>┌────────┐            ┌─────────────────────┐
+│ Client │───query───▶│  GraphQL Gateway    │
+└────────┘            └─────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        ┌─────────┐     ┌─────────┐     ┌─────────┐
+        │ Users   │     │ Orders  │     │Products │
+        │ Subgraph│     │ Subgraph│     │Subgraph │
+        └─────────┘     └─────────┘     └─────────┘</pre>
+      </div>
+
+      <div class="callout magenta">
+        <div class="callout-label">Federation Magic</div>
+        <ul style="margin-bottom: 0;">
+          <li>Gateway understands which subgraph owns which type</li>
+          <li>Query plan: <em>"Get user from Users, enrich with orders from Orders"</em></li>
+          <li>Automatic entity resolution between subgraphs</li>
+        </ul>
+      </div>
+
+      <h4 class="tiny-title">New Failure Modes</h4>
+      <ul>
+        <li><strong>Subgraph unavailable:</strong> Partial response (good) or total failure (depends on query)</li>
+        <li><strong>Schema composition conflict:</strong> Two subgraphs define same type differently</li>
+        <li><strong>N+1 across subgraphs:</strong> Gateway must batch entity requests</li>
+      </ul>
+
+      <h4 class="tiny-title">Consistency Challenges</h4>
+      <ul>
+        <li>Each subgraph has its own consistency</li>
+        <li>Gateway can't guarantee cross-subgraph consistency</li>
+        <li>Eventual consistency is the norm</li>
+      </ul>
+
+      <h4 class="tiny-title">Coordination Cost</h4>
+      <ul>
+        <li>Query planning overhead (parse, plan, fan-out)</li>
+        <li>Multiple subgraph round trips (though parallelized)</li>
+        <li>Schema synchronization across subgraphs</li>
+      </ul>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== 3.3 FAILURE MODES ===================== -->
+    <section id="failure-modes">
+      <div class="section-eyebrow"><span class="num">3.3</span>Failure Modes Deep-Dive</div>
+      <h1 class="section-title">How Each One <span class="accent">Breaks</span> in Production</h1>
+
+      <p style="max-width: 760px;">Six dimensions for each paradigm: what happens, how to detect it, how to recover, the blast radius, and how to prevent the next one. Memorize the row labels — they're the categories interviewers walk down.</p>
+
+      <!-- REST Failure Modes -->
+      <h2 class="subsection-title" id="fail-rest"><span class="label">▣</span>REST Failure Modes</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-rest">
+          <thead>
+            <tr>
+              <th>Failure</th>
+              <th>What Happens</th>
+              <th>Detection</th>
+              <th>Recovery</th>
+              <th>Blast Radius</th>
+              <th>Prevention</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Downstream timeout</td>
+              <td>HTTP request to dependency times out</td>
+              <td>High p99 latency, 504s</td>
+              <td>Circuit breaker, fallback response</td>
+              <td>Single endpoint's users</td>
+              <td>Appropriate timeouts, bulkheads</td>
+            </tr>
+            <tr>
+              <td class="row-label">Cache stampede</td>
+              <td>Popular cache entry expires, all requests hit DB</td>
+              <td>Sudden DB spike, high latency</td>
+              <td>Cache warming, probabilistic expiry</td>
+              <td>All users of that resource</td>
+              <td>Stale-while-revalidate, locking</td>
+            </tr>
+            <tr>
+              <td class="row-label">Retry storm</td>
+              <td>Failures trigger retries, 2×/3× load</td>
+              <td>Increasing error rate, saturation</td>
+              <td>Exponential backoff, jitter, CB</td>
+              <td>Entire service chain</td>
+              <td>Client-side rate limiting</td>
+            </tr>
+            <tr>
+              <td class="row-label">Version mismatch</td>
+              <td>Client expects v1 fields, server sends v2</td>
+              <td>Parse errors, support tickets</td>
+              <td>Version negotiation, gradual rollout</td>
+              <td>Users on old client version</td>
+              <td>API versioning strategy</td>
+            </tr>
+            <tr>
+              <td class="row-label">Idempotency violation</td>
+              <td>POST retried, duplicate created</td>
+              <td>Duplicate records, inconsistent state</td>
+              <td>Idempotency keys</td>
+              <td>Users who retried</td>
+              <td>Require idempotency token</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- gRPC Failure Modes -->
+      <h2 class="subsection-title" id="fail-grpc"><span class="label">▣</span>gRPC Failure Modes</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-grpc">
+          <thead>
+            <tr>
+              <th>Failure</th>
+              <th>What Happens</th>
+              <th>Detection</th>
+              <th>Recovery</th>
+              <th>Blast Radius</th>
+              <th>Prevention</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Proto mismatch</td>
+              <td>Client/server generated from different proto</td>
+              <td>UNIMPLEMENTED, INVALID_ARGUMENT</td>
+              <td>Redeploy with matching proto</td>
+              <td>All calls using new field</td>
+              <td>Proto version pinning, CI checks</td>
+            </tr>
+            <tr>
+              <td class="row-label">Deadline exceeded</td>
+              <td>Cumulative latency exceeds deadline</td>
+              <td>DEADLINE_EXCEEDED status</td>
+              <td>Increase deadline, optimize chain</td>
+              <td>Single request</td>
+              <td>Deadline budgeting</td>
+            </tr>
+            <tr>
+              <td class="row-label">Connection exhaustion</td>
+              <td>Too many concurrent streams</td>
+              <td>RESOURCE_EXHAUSTED</td>
+              <td>Connection pooling, increase limits</td>
+              <td>New requests</td>
+              <td>Capacity planning</td>
+            </tr>
+            <tr>
+              <td class="row-label">Binary incompatibility</td>
+              <td>Protobuf wire format broken</td>
+              <td>Serialization errors</td>
+              <td>Rollback, regenerate</td>
+              <td>All communication</td>
+              <td>Backward compatibility rules</td>
+            </tr>
+            <tr>
+              <td class="row-label">Load balancing failure</td>
+              <td>L4 LB sends all to one backend</td>
+              <td>One hot backend, uneven metrics</td>
+              <td>Use L7 LB, client-side balancing</td>
+              <td>Subset of traffic</td>
+              <td>Architecture review</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- GraphQL Failure Modes -->
+      <h2 class="subsection-title" id="fail-graphql"><span class="label">▣</span>GraphQL Failure Modes</h2>
+      <div class="table-wrap">
+        <table class="styled tradeoff-graphql">
+          <thead>
+            <tr>
+              <th>Failure</th>
+              <th>What Happens</th>
+              <th>Detection</th>
+              <th>Recovery</th>
+              <th>Blast Radius</th>
+              <th>Prevention</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">N+1 query explosion</td>
+              <td>Each item resolves separately</td>
+              <td>High DB query count, slow responses</td>
+              <td>Add DataLoader</td>
+              <td>Queries with lists</td>
+              <td>DataLoader by default</td>
+            </tr>
+            <tr>
+              <td class="row-label">Query complexity attack</td>
+              <td>Malicious deep/wide query</td>
+              <td>CPU spike, DB overload</td>
+              <td>Query timeout, complexity limit</td>
+              <td>Entire service</td>
+              <td>Complexity analysis, depth limit</td>
+            </tr>
+            <tr>
+              <td class="row-label">Resolver timeout</td>
+              <td>Slow backend blocks response</td>
+              <td>High latency, partial errors</td>
+              <td>Resolver-level timeout</td>
+              <td>Users of that field</td>
+              <td>Timeout per resolver</td>
+            </tr>
+            <tr>
+              <td class="row-label">Schema breaking change</td>
+              <td>Field removed, client queries it</td>
+              <td>Validation errors</td>
+              <td>Rollback, deprecation path</td>
+              <td>All clients using field</td>
+              <td>Deprecation before removal</td>
+            </tr>
+            <tr>
+              <td class="row-label">Authorization bypass</td>
+              <td>Field-level auth missed</td>
+              <td>Data leak</td>
+              <td>Add auth directive</td>
+              <td>Affected data</td>
+              <td>Comprehensive auth testing</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- Fail-Open vs Fail-Closed -->
+      <h2 class="subsection-title" id="fail-open-closed"><span class="label">▣</span>Fail-Open vs Fail-Closed Analysis</h2>
+
+      <div class="fail-cards">
+        <div class="fail-card open">
+          <div class="fc-label">Fail-Open</div>
+          <div class="fc-title">Allow on failure</div>
+          <p class="fc-body">When something fails, allow the operation to proceed (potentially with degraded data). Best when the failed piece is an <em>enhancement</em>, not a critical guarantee.</p>
+        </div>
+        <div class="fail-card closed">
+          <div class="fc-label">Fail-Closed</div>
+          <div class="fc-title">Reject on failure</div>
+          <p class="fc-body">When something fails, reject the operation entirely. Required for auth, payments, anything where partial state is dangerous.</p>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="styled generic">
+          <thead>
+            <tr>
+              <th>API Style</th>
+              <th>Default Behavior</th>
+              <th>When to Override</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="tier-rest">REST</td>
+              <td>Fail-closed (return 5xx)</td>
+              <td>Fail-open when data is enhancement (recommendations)</td>
+            </tr>
+            <tr>
+              <td class="tier-grpc">gRPC</td>
+              <td>Fail-closed (return error status)</td>
+              <td>Fail-open with partial response for non-critical</td>
+            </tr>
+            <tr>
+              <td class="tier-graphql">GraphQL</td>
+              <td>Fail-open (partial data + errors array)</td>
+              <td>Fail-closed for auth failures, critical data</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 class="tiny-title">GraphQL's Partial Failure Model</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-lang">JSON · GraphQL Response</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+<pre><code>{
+  "data": {
+    "user": {
+      "name": "Alice",
+      "creditScore": null,      // Sensitive service failed
+      "recommendations": null   // Nice-to-have failed
+    }
+  },
+  "errors": [
+    { "path": ["user", "creditScore"], "message": "Service unavailable" },
+    { "path": ["user", "recommendations"], "message": "Timeout" }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="callout warning">
+        <div class="callout-label">Powerful — but dangerous</div>
+        <p>This is GraphQL's superpower in failure scenarios — and its biggest footgun. <strong>The client must handle partial data correctly.</strong> A naive client that just reads <code class="inline">data.user.creditScore</code> without checking the errors array will silently treat <em>"service down"</em> as <em>"no credit score"</em> — which is a different (and often dangerous) thing.</p>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== 3.4 EDGE CASES ===================== -->
+    <section id="edge-cases">
+      <div class="section-eyebrow"><span class="num">3.4</span>Edge Cases That Impress Interviewers</div>
+      <h1 class="section-title">The <span class="accent">Five Things</span> Most Candidates Miss</h1>
+
+      <p style="max-width: 760px;">Each of these, brought up unprompted, is the moment the interviewer's read of you flips from <em>"good engineer"</em> to <em>"thinks like staff."</em> They're chosen for one reason: most senior candidates don't surface them, and most staff candidates do.</p>
+
+      <!-- Edge case 1 -->
+      <div class="edge-case" id="edge-1">
+        <div class="edge-num">01</div>
+        <div class="edge-content">
+          <div class="edge-meta">
+            <span class="v-chip rest"><span class="dot"></span>REST</span>
+            <span class="edge-tag">Most Candidates Miss This</span>
+          </div>
+          <h3 class="edge-title">PATCH vs PUT in Concurrent Updates</h3>
+          <p><strong>Scenario:</strong> Two clients read the same user, then update different fields concurrently.</p>
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">Concurrent PUT (the bug)</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>t=0:  User = {name: "Alice", email: "a@b.com", age: 30}
+t=1:  Client A reads user
+t=2:  Client B reads user
+t=3:  Client A: PUT /users/123 {"name": "Alicia", "email": "a@b.com", "age": 30}
+t=4:  Client B: PUT /users/123 {"name": "Alice", "email": "alice@new.com", "age": 30}
+t=5:  Result: {name: "Alice", email: "alice@new.com", age: 30}
+      Client A's change LOST!</code></pre>
+          </div>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">PATCH (the fix)</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>t=3:  Client A: PATCH /users/123 {"name": "Alicia"}
+t=4:  Client B: PATCH /users/123 {"email": "alice@new.com"}
+t=5:  Result: {name: "Alicia", email: "alice@new.com", age: 30}
+      Both changes preserved!</code></pre>
+          </div>
+
+          <div class="callout gold">
+            <div class="callout-label">🏆 The Sophisticated Answer</div>
+            <ul style="margin-bottom: 0;">
+              <li>Use <strong>PATCH</strong> for partial updates</li>
+              <li>Add <strong>ETags</strong> for optimistic locking</li>
+              <li>Client B's PUT would <em>fail</em> if the ETag had changed</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edge case 2 -->
+      <div class="edge-case" id="edge-2">
+        <div class="edge-num">02</div>
+        <div class="edge-content">
+          <div class="edge-meta">
+            <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+            <span class="edge-tag">Most Candidates Miss This</span>
+          </div>
+          <h3 class="edge-title">Bidirectional Streaming Ordering Guarantees</h3>
+          <p><strong>Scenario:</strong> A chat application using a bidirectional gRPC stream.</p>
+          <p><strong>Common assumption:</strong> Messages arrive in the order sent. <mark class="hl-coral">Not always true.</mark></p>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">The Reality of Bidi Streams</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>- Messages within ONE stream:        Ordered (TCP guarantees)
+- Messages across client/server directions: NO ordering guarantee
+
+Chat(stream Message) returns (stream Message)
+
+Client sends: [A, B, C]
+Server sends: [1, 2, 3]
+
+Client might receive: [1, B, 2, A, 3, C]   ← INTERLEAVED
+
+Why: HTTP/2 multiplexes, and both sides send independently</code></pre>
+          </div>
+
+          <div class="callout gold">
+            <div class="callout-label">🏆 The Sophisticated Answer</div>
+            <ul style="margin-bottom: 0;">
+              <li>For ordering across directions, include <strong>sequence numbers</strong></li>
+              <li>For causal ordering, use <strong>vector clocks</strong> or explicit dependencies</li>
+              <li>Or: use separate <strong>unidirectional streams</strong> with coordination</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edge case 3 -->
+      <div class="edge-case" id="edge-3">
+        <div class="edge-num">03</div>
+        <div class="edge-content">
+          <div class="edge-meta">
+            <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+            <span class="edge-tag">Most Candidates Miss This</span>
+          </div>
+          <h3 class="edge-title">Circular References &amp; Infinite Recursion</h3>
+          <p><strong>Scenario:</strong> Schema with a bidirectional relationship — and a malicious or naive query.</p>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">Schema · Bidirectional Relationship</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>type User {
+  friends: [User!]!   # User has friends who are Users
+}</code></pre>
+          </div>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">Query · Combinatorial Explosion</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>{
+  user(id: "1") {
+    friends {
+      friends {
+        friends {
+          friends {
+            # ... infinite
+          }
+        }
+      }
+    }
+  }
+}</code></pre>
+          </div>
+
+          <p>The naive resolver will:</p>
+          <ol>
+            <li>Get user 1's friends → <code class="inline">[2, 3, 4]</code></li>
+            <li>For each, get their friends → <code class="inline">[1, 5, 6, 2, 3, 1, 1, …]</code></li>
+            <li><mark class="hl-coral">Explodes combinatorially</mark></li>
+          </ol>
+
+          <div class="callout gold">
+            <div class="callout-label">🏆 The Sophisticated Answer</div>
+            <ul style="margin-bottom: 0;">
+              <li><strong>Query depth limiting</strong> (reject queries &gt; N levels)</li>
+              <li><strong>Query complexity analysis</strong> (assign cost to <code class="inline">User.friends</code>)</li>
+              <li>DataLoader prevents <em>re-fetching</em> the same user…</li>
+              <li>…but doesn't prevent the explosion — you still need the limits</li>
+              <li>Consider <strong>cursor-based pagination</strong> on <code class="inline">friends</code></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edge case 4 -->
+      <div class="edge-case" id="edge-4">
+        <div class="edge-num">04</div>
+        <div class="edge-content">
+          <div class="edge-meta">
+            <span class="v-chip rest"><span class="dot"></span>REST</span>
+            <span class="v-chip graphql"><span class="dot"></span>GraphQL</span>
+            <span class="edge-tag">Most Candidates Miss This</span>
+          </div>
+          <h3 class="edge-title">N+1 Across API Boundaries</h3>
+          <p><strong>Scenario:</strong> A GraphQL gateway calling REST microservices behind it.</p>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">GraphQL Query at the Gateway</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>{
+  orders(limit: 100) {
+    product {
+      seller {
+        name
+      }
+    }
+  }
+}</code></pre>
+          </div>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">Naive Fan-Out · 102 REST Calls</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>- 1   call:  GET /orders?limit=100             → 100 orders
+- 100 calls: GET /products/{id}                → 100 products  (can batch to 1)
+- 100 calls: GET /users/{sellerId}             → 100 different sellers!
+
+Even with DataLoader, if all sellers are different:
+1 + 1 + 100 = 102 REST calls for ONE GraphQL query</code></pre>
+          </div>
+
+          <div class="callout gold">
+            <div class="callout-label">🏆 The Sophisticated Answer</div>
+            <ul style="margin-bottom: 0;">
+              <li>Add <strong>batch endpoints</strong>: <code class="inline">GET /users?ids=1,2,3,4...</code></li>
+              <li>Or: REST services expose <strong>gRPC for internal</strong>, GraphQL calls gRPC</li>
+              <li>Or: move to <strong>federated GraphQL</strong> (Users subgraph handles batch)</li>
+              <li>Monitor: track <em>"REST calls per GraphQL query"</em> as a metric</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edge case 5 -->
+      <div class="edge-case" id="edge-5">
+        <div class="edge-num">05</div>
+        <div class="edge-content">
+          <div class="edge-meta">
+            <span class="v-chip grpc"><span class="dot"></span>gRPC</span>
+            <span class="edge-tag">Most Candidates Miss This</span>
+          </div>
+          <h3 class="edge-title">Metadata Size Limits &amp; Propagation</h3>
+          <p><strong>Scenario:</strong> Passing a JWT through a chain of services.</p>
+          <p>gRPC <strong>metadata</strong> works like HTTP headers. Default max size: <strong>8KB</strong> (configurable).</p>
+
+          <div class="code-block">
+            <div class="code-header">
+              <span class="code-lang">The Compounding Problem</span>
+              <button class="copy-btn" type="button">Copy</button>
+            </div>
+<pre><code>- JWT with many claims:  2KB
+- Add tracing:           500B
+- Add custom context:    1KB
+- Chain of 4 services, each adds context...
+
+By the last service: Approaching or exceeding the limit
+What happens: RESOURCE_EXHAUSTED error</code></pre>
+          </div>
+
+          <div class="callout gold">
+            <div class="callout-label">🏆 The Sophisticated Answer</div>
+            <ul style="margin-bottom: 0;">
+              <li><strong>Don't pass the full JWT</strong> — extract claims at the gateway</li>
+              <li>Pass <strong>only necessary claims</strong> as discrete metadata</li>
+              <li>Use <strong>claim caching</strong> (JWT ID → cached claims)</li>
+              <li>Monitor metadata size per RPC</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider-soft" />
+
+      <!-- Boundary Conditions -->
+      <h2 class="subsection-title" id="boundaries"><span class="label">▣</span>Boundary Conditions</h2>
+
+      <h4 class="tiny-title">What Happens at Exactly N=0?</h4>
+      <div class="table-wrap">
+        <table class="styled generic">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>REST</th>
+              <th>gRPC</th>
+              <th>GraphQL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Empty list response</td>
+              <td><code class="inline">[]</code> or 200 OK with empty array</td>
+              <td>Empty repeated field</td>
+              <td><code class="inline">[]</code> in response</td>
+            </tr>
+            <tr>
+              <td class="row-label">No matching resource</td>
+              <td>404 Not Found (or 200 with null?)</td>
+              <td>NOT_FOUND status</td>
+              <td><code class="inline">null</code> with no error (nullable) or error (non-null)</td>
+            </tr>
+            <tr>
+              <td class="row-label">Zero timeout</td>
+              <td>Immediate timeout (often buggy)</td>
+              <td>DEADLINE_EXCEEDED immediately</td>
+              <td>Request may still process</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4 class="tiny-title">What Happens at Exactly N=MAX?</h4>
+      <div class="table-wrap">
+        <table class="styled generic">
+          <thead>
+            <tr>
+              <th>Scenario</th>
+              <th>REST</th>
+              <th>gRPC</th>
+              <th>GraphQL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="row-label">Max page size</td>
+              <td>Return max, ignore larger request</td>
+              <td>Return max, maybe warn in metadata</td>
+              <td>Enforce at resolver, return max</td>
+            </tr>
+            <tr>
+              <td class="row-label">Max request size</td>
+              <td>413 Payload Too Large</td>
+              <td>RESOURCE_EXHAUSTED</td>
+              <td>Parse error or resolver error</td>
+            </tr>
+            <tr>
+              <td class="row-label">Max connections</td>
+              <td>503 Service Unavailable, queue</td>
+              <td>Queued or rejected</td>
+              <td>Connection-level, same as REST</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <hr class="divider" />
+    </section>
+
+    <!-- ===================== SOUND BITE ===================== -->
+    <section id="soundbite">
+      <div class="section-eyebrow">Final · The L6/L7 Differentiator</div>
+      <h1 class="section-title">The <span class="accent">Sound Bite</span> About Trade-Offs</h1>
+
+      <p style="max-width: 760px;">Memorize this paragraph. It's the answer to <em>"compare the trade-offs of REST, gRPC, and GraphQL"</em> compressed into the version that signals staff-level thinking — because it doesn't pick a winner, it names the structural insight.</p>
+
+      <div class="soundbite">
+        <div class="sb-label">Sound bite · for the L6/L7 interview</div>
+        <div class="sb-text">
+          The fundamental trade-off across REST, gRPC, and GraphQL is <mark>who bears complexity</mark>. REST puts complexity <mark>on the server</mark> (designing good resources), gRPC puts it <mark>in the build system</mark> (proto management), and GraphQL puts it <mark>on query execution</mark> (DataLoader, complexity limits, resolver optimization). At L7 scale, you realize there's <strong>no free lunch</strong> — every API style pushes complexity somewhere, and the sophisticated choice depends on <em>where your team can best absorb that complexity</em>.
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <p style="text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin-top: 40px;">
+        End of Part 4 · L6/L7 Series · Trade-Offs &amp; Edges
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<button id="back-top" aria-label="Back to top">↑</button>
+
+<script>
+  /* PROGRESS BAR */
+  const progressBar = document.getElementById('progress-bar');
+  function updateProgress() {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    progressBar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+  }
+  window.addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  /* BACK TO TOP */
+  const backTop = document.getElementById('back-top');
+  function toggleBackTop() {
+    if (window.scrollY > 500) backTop.classList.add('visible');
+    else backTop.classList.remove('visible');
+  }
+  window.addEventListener('scroll', toggleBackTop, { passive: true });
+  backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  /* SIDEBAR ACTIVE STATE */
+  const navLinks = Array.from(document.querySelectorAll('.nav-section li a'));
+  const sectionMap = navLinks.map(link => {
+    const id = link.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    return { link, el };
+  }).filter(s => s.el);
+
+  function setActiveSection() {
+    const offset = 120;
+    let current = sectionMap[0];
+    for (const s of sectionMap) {
+      const top = s.el.getBoundingClientRect().top;
+      if (top - offset <= 0) current = s;
+      else break;
+    }
+    navLinks.forEach(l => l.classList.remove('active'));
+    if (current) current.link.classList.add('active');
+  }
+  window.addEventListener('scroll', setActiveSection, { passive: true });
+  setActiveSection();
+
+  /* COPY BUTTONS */
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const block = btn.closest('.code-block');
+      const code = block ? block.querySelector('pre code, pre') : null;
+      if (!code) return;
+      const text = code.innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied ✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1600);
+      } catch (e) {
+        btn.textContent = 'Error';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      }
+    });
+  });
+
+  /* SEARCH */
+  const searchInput = document.getElementById('search');
+  const navSections = Array.from(document.querySelectorAll('.nav-section'));
+  searchInput.addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    navSections.forEach(group => {
+      const items = Array.from(group.querySelectorAll('li'));
+      let anyVisible = false;
+      items.forEach(li => {
+        const text = li.innerText.toLowerCase();
+        const groupTitle = group.querySelector('.nav-section-title').innerText.toLowerCase();
+        const match = !q || text.includes(q) || groupTitle.includes(q);
+        li.classList.toggle('hidden', !match);
+        if (match) anyVisible = true;
+      });
+      group.classList.toggle('hidden', !anyVisible);
+    });
+  });
+
+  /* MOBILE MENU */
+  const menuToggle = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  menuToggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-section li a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
