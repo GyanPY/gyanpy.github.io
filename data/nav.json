@@ -280,6 +280,28 @@
         "title": "Deep Dive-5",
         "file": "pages/Api/core-5.html"
       }
+    ],
+      "Protocols": [
+      {
+        "title": "Deep Dive-1",
+        "file": "pages/Protocols/core-1.html"
+      },
+       {
+        "title": "Deep Dive-2",
+        "file": "pages/Protocols/core-2.html"
+      },
+       {
+        "title": "Deep Dive-3",
+        "file": "pages/Protocols/core-3.html"
+      },
+       {
+        "title": "Deep Dive-4",
+        "file": "pages/Protocols/core-4.html"
+      },
+       {
+        "title": "Deep Dive-5",
+        "file": "pages/Protocols/core-5.html"
+      }
     ]
   },
   "Interview": {
