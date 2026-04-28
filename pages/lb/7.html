@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Load Balancer Internals (Part 7) — When to Use L7 (ALB) vs L4 (NLB)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  /* L4 = teal, L7 = violet */
+  --l4:#00C9A7;--l4d:#0D9488;--l4l:#5EEAD4;
+  --l7:#8B5CF6;--l7d:#6D28D9;--l7l:#C4B5FD;
+  /* series accent */
+  --lb:#326CE5;--lb2:#5B8FEF;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--l4),var(--l4l),var(--l7),var(--l7l),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--lb2);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--l7l);background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--l7)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(139,92,246,.05)}
+.ni.active a{color:var(--l7l);border-left-color:var(--l7l);background:rgba(139,92,246,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--l7l);border-color:var(--l7l);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--l7l);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--l4l) 35%,var(--l7l) 62%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(139,92,246,.1);border-color:var(--l7l);color:var(--l7l)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* POSTAL ANALOGY */
+.postal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.postal-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.postal-card.l4c{border-top:3px solid var(--l4)}
+.postal-card.l7c{border-top:3px solid var(--l7)}
+.postal-label{font-family:var(--fc);font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.postal-card.l4c .postal-label{color:var(--l4l)}
+.postal-card.l7c .postal-label{color:var(--l7l)}
+.postal-card p{font-size:.86rem;color:var(--muted);line-height:1.65}
+.postal-card strong{color:var(--text)}
+
+/* TRADE-OFF BAR */
+.tradeoff-bar{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:14px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.tb-item{display:flex;align-items:center;gap:6px;font-family:var(--fc);font-size:.76rem}
+.tb-l4{color:var(--l4l)}.tb-l7{color:var(--l7l)}.tb-sep{color:var(--dim);font-size:.7rem}
+
+/* SCENARIO CARDS */
+.scenario-card{background:var(--surface);border:1px solid var(--border);border-radius:11px;margin-bottom:16px;overflow:hidden}
+.sc-hdr{padding:12px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none;border-bottom:1px solid rgba(139,92,246,.1);background:rgba(139,92,246,.04)}
+.sc-num{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:2px 9px;border-radius:9px;background:rgba(139,92,246,.12);color:var(--l7);border:1px solid rgba(139,92,246,.2);flex-shrink:0}
+.sc-title{font-family:var(--fh);font-size:.98rem;font-weight:700;color:var(--text)}
+.sc-badge{font-family:var(--fc);font-size:.66rem;font-weight:700;padding:2px 9px;border-radius:9px;margin-left:auto;flex-shrink:0}
+.sc-badge.l7-badge{background:rgba(139,92,246,.12);color:var(--l7l);border:1px solid rgba(139,92,246,.2)}
+.sc-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;flex-shrink:0}
+.scenario-card.collapsed .sc-toggle{transform:rotate(-90deg)}
+.sc-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.scenario-card.collapsed .sc-body{max-height:0;opacity:0}
+.sc-inner{padding:0 18px 16px}
+.sc-situation{font-size:.88rem;color:var(--muted);line-height:1.65;margin:10px 0 8px;padding-left:4px;border-left:2px solid var(--border)}
+
+/* DIAGRAM */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.l4{border:1px solid rgba(0,201,167,.2)}.diag.l4 .diag-hdr{background:rgba(0,201,167,.06);border-bottom:1px solid rgba(0,201,167,.18)}.diag.l4 .diag-title{color:var(--l4l)}
+.diag.l7{border:1px solid rgba(139,92,246,.2)}.diag.l7 .diag-hdr{background:rgba(139,92,246,.06);border-bottom:1px solid rgba(139,92,246,.18)}.diag.l7 .diag-title{color:var(--l7l)}
+.diag.both{border:1px solid rgba(50,108,229,.2)}.diag.both .diag-hdr{background:rgba(50,108,229,.06);border-bottom:1px solid rgba(50,108,229,.18)}.diag.both .diag-title{color:var(--lb2)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.l4{background:rgba(0,201,167,.07);border:1px solid rgba(0,201,167,.2)}
+.callout.l7{background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.l4 .callout-title{color:var(--l4l)}
+.callout.l7 .callout-title{color:var(--l7l)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* DECISION MATRIX TABLE */
+.dm-table{width:100%;border-collapse:collapse;font-size:.77rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.dm-table thead tr{background:var(--surface2)}
+.dm-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;border-bottom:1px solid var(--border)}
+.dm-table th:nth-child(1){color:var(--dim)}
+.dm-table th:nth-child(2){color:var(--l4l)}
+.dm-table th:nth-child(3){color:var(--l7l)}
+.dm-table td{padding:8px 13px;border-bottom:1px solid rgba(48,54,61,.35);vertical-align:top;line-height:1.45;font-size:.8rem;color:var(--muted)}
+.dm-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.dm-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.dm-table td:first-child{color:var(--text);font-weight:600}
+.dm-table td.yes{color:var(--cass4);font-family:var(--fc);font-weight:700}
+.dm-table td.no{color:var(--no);font-family:var(--fc)}
+.dm-table td.ok{color:var(--lean);font-family:var(--fc)}
+
+/* OTP CHECKLIST */
+.otp-checklist{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+.otp-check{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-radius:7px;font-size:.86rem}
+.otp-check.yes{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15)}
+.otp-check.no{background:rgba(107,114,128,.06);border:1px solid rgba(107,114,128,.15)}
+.otp-check .oc-icon{font-size:.9rem;flex-shrink:0;margin-top:2px}
+.otp-check p{color:var(--muted);line-height:1.55}
+.otp-check strong{color:var(--text)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* SOUNDBITE */
+.soundbite{background:linear-gradient(135deg,rgba(139,92,246,.09),rgba(0,201,167,.04));border:1px solid rgba(139,92,246,.25);border-radius:10px;padding:20px 22px;margin:20px 0;position:relative}
+.soundbite::before{content:'🔑';position:absolute;right:16px;top:14px;font-size:1.4rem;opacity:.4}
+.soundbite-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--l7l);margin-bottom:10px;font-weight:600}
+.soundbite p{font-size:.92rem;line-height:1.7;color:var(--text);font-style:italic;padding-right:28px}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--l7l);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+mark{background:rgba(139,92,246,.14);color:var(--l7l);border-radius:3px;padding:1px 4px}
+mark.l4{background:rgba(0,201,167,.14);color:var(--l4l)}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.rd{background:rgba(255,107,107,.12);color:var(--no)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.postal-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Load Balancer Internals · L6/L7 Series</div>
+    <div class="sb-title">When to Use L7 (ALB) vs L4 (NLB)</div>
+    <div class="sb-part">Part 7 — The Decision Guide</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Foundation</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#analogy">The Postal Analogy</a></li>
+    </li>
+    <li class="ng"><div class="nl">10 Scenarios for L7</div>
+      <li class="ni sub"><a href="#sc1">1: Multiple Services, One Domain</a></li>
+      <li class="ni sub"><a href="#sc2">2: Host-Based Routing (Multi-Tenant)</a></li>
+      <li class="ni sub"><a href="#sc3">3: WAF / DDoS Protection</a></li>
+      <li class="ni sub"><a href="#sc4">4: WebSocket or gRPC Routing</a></li>
+      <li class="ni sub"><a href="#sc5">5: Sticky Sessions</a></li>
+      <li class="ni sub"><a href="#sc6">6: Request Transformation</a></li>
+      <li class="ni sub"><a href="#sc7">7: Advanced Health Checks</a></li>
+      <li class="ni sub"><a href="#sc8">8: Detailed Access Logs</a></li>
+      <li class="ni sub"><a href="#sc9">9: Canary / Blue-Green Deployments</a></li>
+      <li class="ni sub"><a href="#sc10">10: Auth Offloading (Cognito/OIDC)</a></li>
+    </li>
+    <li class="ng"><div class="nl">Reference</div>
+      <li class="ni sub"><a href="#decision-matrix">Decision Matrix</a></li>
+      <li class="ni sub"><a href="#otp-rationale">Why NLB for the OTP Service</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Load Balancer Internals · L6/L7 Series · Part 7</div>
+  <h1>When to Use L7 (ALB)<br>Instead of L4 (NLB)</h1>
+  <div class="hero-meta">
+    <span>📮 The postal analogy — opening the envelope vs routing the address</span>
+    <span>🗺️ 10 concrete scenarios where ALB is the right call</span>
+    <span>⚡ Path routing · WAF · WebSocket · canary · auth offloading</span>
+    <span>📊 Complete decision matrix — 15 requirements compared</span>
+    <span>✅ Why NLB was chosen for the OTP service — with reasoning</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill">Parts 1–6: LB Fundamentals</span>
+    <span class="part-pill ap">Part 7: L7 vs L4 Decision Guide</span>
+  </div>
+  <p style="margin-top:14px">The most common architectural question in load balancer design: when do you need L7 (ALB) and when is L4 (NLB) the right choice? This is not about which is "better" — they optimize for different things. L4 is faster and simpler because it routes without reading the request content. L7 is smarter because it understands HTTP — headers, paths, cookies, query parameters. Ten concrete scenarios show exactly when L7 intelligence is worth the trade-off.</p>
+</section>
+
+<!-- POSTAL ANALOGY -->
+<div class="sec-hdr" id="analogy"><h2>The Fundamental Difference — The Postal Analogy</h2></div>
+
+<div class="postal-grid">
+  <div class="postal-card l4c">
+    <div class="postal-label">L4 (NLB) — The Address Reader</div>
+    <p>Like a mail sorter who <strong>only reads the address on the envelope</strong> (IP + port). They don't open the envelope. They just route it to the right building. Fast, because they never touch the contents. But they can't route to the right <em>department</em> — they don't know what's inside.</p>
+  </div>
+  <div class="postal-card l7c">
+    <div class="postal-label">L7 (ALB) — The Content Reader</div>
+    <p>Like a mail sorter who <strong>opens the envelope, reads the letter, understands what it's about</strong>, and routes it to the right department, the right person, even the right desk. Smarter because it understands the content — but slower because opening every envelope takes time.</p>
+  </div>
+</div>
+
+<div class="tradeoff-bar">
+  <span class="tb-item tb-l4">⚡ L4 is faster</span>
+  <span class="tb-sep">—</span>
+  <span class="tb-item" style="color:var(--dim)">because it doesn't open the envelope</span>
+  <span class="tb-sep">|</span>
+  <span class="tb-item tb-l7">🧠 L7 is smarter</span>
+  <span class="tb-sep">—</span>
+  <span class="tb-item" style="color:var(--dim)">because it understands the content</span>
+</div>
+
+<!-- SCENARIOS -->
+<div class="sec-hdr" id="scenarios"><h2>10 Scenarios Where L7 Is the Right Call</h2></div>
+
+<!-- SC1 -->
+<div class="scenario-card" id="sc1-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 1</span>
+    <span class="sc-title" id="sc1">Multiple Services Behind One Domain</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation"><strong>The most common reason to use L7.</strong> You have one domain (api.mycompany.com) but multiple backend services.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Path-Based Routing</span></div>
+      <pre>One domain — four services:
+
+  api.mycompany.com/auth/*      → Target Group: Auth Service pods
+  api.mycompany.com/users/*     → Target Group: User Service pods
+  api.mycompany.com/payments/*  → Target Group: Payment Service pods
+  api.mycompany.com/otp/*       → Target Group: OTP Service pods
+
+Why L4 can't do this:
+  NLB only sees IP addresses and port numbers.
+  It has NO idea what the URL path is.
+  It can't tell /auth/login from /payments/charge.
+  Both would go to the same place.
+
+Rule of thumb: Multiple services behind one domain → almost certainly need L7.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC2 -->
+<div class="scenario-card" id="sc2-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 2</span>
+    <span class="sc-title" id="sc2">Host-Based Routing — Multi-Tenant SaaS</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">Each customer has their own subdomain: acme.myapp.com, bigcorp.myapp.com, startup.myapp.com. They need to route to different backends.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Host Header Routing</span></div>
+      <pre>ALB inspects the HTTP Host header:
+
+  Host: acme.myapp.com        → Target Group: Acme dedicated cluster
+  Host: bigcorp.myapp.com     → Target Group: BigCorp dedicated cluster
+  Host: *.myapp.com           → Target Group: Shared cluster (default)
+
+NLB can't do this — it doesn't read HTTP headers.
+It only knows the destination IP, not the hostname the client requested.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC3 -->
+<div class="scenario-card" id="sc3-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 3</span>
+    <span class="sc-title" id="sc3">WAF / DDoS Protection — Public-Facing Services</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">Your service is public-facing and needs protection against SQL injection, XSS, known bad IPs, bot traffic, and application-layer DDoS (slowloris attacks).</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">AWS WAF + ALB Integration</span></div>
+      <pre>Internet → CloudFront (optional) → WAF → ALB → Your Service
+
+WAF rules (applied before request reaches your code):
+  ✗ Block requests with SQL injection patterns in query params
+  ✗ Block requests from known bad IPs (threat intelligence feeds)
+  ✓ Rate limit: max 1,000 requests/sec per IP address
+  ✗ Block requests with suspicious User-Agent strings
+  ✗ Geo-block: only allow traffic from specific countries</pre>
+    </div>
+    <div class="callout fail">
+      <div class="callout-title">NLB + WAF — The Complexity Problem</div>
+      <p>NLB doesn't support AWS WAF directly. You'd need to put CloudFront with WAF in front of NLB — adding latency, complexity, and another failure point. <strong>If WAF is a core requirement, ALB is the simpler architecture.</strong></p>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC4 -->
+<div class="scenario-card" id="sc4-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 4</span>
+    <span class="sc-title" id="sc4">WebSocket or gRPC Mixed Routing</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">Your app uses WebSockets for real-time features AND HTTP for regular API calls, and they need to go to different backends.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Protocol-Aware Routing</span></div>
+      <pre>WebSocket routing (ALB understands HTTP Upgrade headers):
+  Path: /ws/*  + Header: Upgrade=websocket  → WebSocket Target Group
+  Path: /api/* (no Upgrade header)           → REST API Target Group
+
+gRPC routing (ALB understands Content-Type):
+  Content-Type: application/grpc            → gRPC Target Group
+  Everything else                           → HTTP Target Group
+
+Note: NLB CAN handle WebSockets and gRPC (they're just TCP connections),
+but it CANNOT route them to different backends based on protocol.
+Everything goes to the same destination regardless of upgrade headers.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC5 -->
+<div class="scenario-card" id="sc5-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 5</span>
+    <span class="sc-title" id="sc5">Sticky Sessions — Stateful Applications</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">A stateful application stores session data in memory on a specific server (legacy apps, game servers). Alice must always go to Pod 3; Bob must always go to Pod 7.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">Cookie-Based vs IP-Based Sticky Sessions</span></div>
+      <pre>ALB Cookie-Based Sticky Sessions:
+  First request from Alice:
+    ALB picks Pod 3 → sets cookie: AWSALB=pod3-hash
+  
+  All subsequent requests from Alice:
+    ALB reads AWSALB cookie → routes to Pod 3 always ✅
+
+NLB IP-Based Sticky Sessions:
+  Routes based on source IP address
+
+  Problem 1: Corporate NAT
+    1,000 employees share one IP → ALL go to same pod
+    Pod is overloaded; other pods are idle
+
+  Problem 2: Mobile users
+    IP changes when switching from WiFi to 4G
+    Session is lost — user is routed to different pod
+
+ALB cookie-based stickiness survives IP changes and works
+correctly through corporate NAT.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC6 -->
+<div class="scenario-card" id="sc6-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 6</span>
+    <span class="sc-title" id="sc6">Request Transformation & Header Manipulation</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">You need to modify requests before they reach your backend: add trace headers, redirect HTTP→HTTPS, redirect www to apex domain, or return fixed health check responses.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Rules — Request Transformation</span></div>
+      <pre>ALB Rule 1: HTTP → HTTPS redirect
+  If scheme = HTTP → Redirect to HTTPS (301 Permanent)
+  Clients are automatically upgraded — no code needed
+
+ALB Rule 2: www → apex redirect
+  If Host = www.myapp.com → Redirect to myapp.com (301)
+
+ALB Rule 3: Fixed health check response
+  If path = /health → Return fixed 200 "OK"
+  No backend needed — ALB responds directly
+  Faster than hitting your app for every LB health probe
+
+ALB Rule 4: Add tracing header
+  For all other requests → Forward to backend
+                         + Add X-Request-ID: {uuid} header
+
+NLB limitation:
+  NLB passes TCP packets through UNTOUCHED.
+  It cannot read, modify, add, or remove HTTP headers.
+  It has no concept of HTTP — it only sees bytes.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC7 -->
+<div class="scenario-card" id="sc7-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 7</span>
+    <span class="sc-title" id="sc7">Advanced Health Checks</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">You need to verify that backends are truly healthy — not just that the port is open. The app could be returning 500 errors while the port is accepting connections.</p>
+    <div class="diag both">
+      <div class="diag-hdr"><span class="diag-title">Shallow vs Deep Health Checks</span></div>
+      <pre>L4 (NLB) Shallow Health Check:
+  "Can I connect to port 8080?"
+  Port open → ✅ Healthy
+  Problem: App could be returning 500 errors!
+           Database connection lost → 500 on every request
+           NLB still routes traffic to the "healthy" port
+
+L7 (ALB) Deep Health Check:
+  "Does GET /health/ready return HTTP 200 with body containing 'OK'?"
+  
+  Your /health/ready endpoint can check:
+    ✓ Database is connected and responding
+    ✓ Redis is reachable
+    ✓ External dependencies are up
+    ✓ No out-of-memory conditions
+  
+  If any dependency fails → endpoint returns 503
+  → ALB marks backend UNHEALTHY → stops routing
+  → Only genuinely healthy backends receive traffic ✅
+
+ALB health check options:
+  - Hit any HTTP path (/health/ready, /ping, /_status)
+  - Check for specific status codes (200, 201, not just "port open")
+  - Match response body content ("OK" or {"status":"healthy"})
+  - Different thresholds per target group (failures needed to mark unhealthy)</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC8 -->
+<div class="scenario-card" id="sc8-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 8</span>
+    <span class="sc-title" id="sc8">Detailed Access Logs for Debugging</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">You need rich request-level logs to debug production issues — which endpoints are failing, which clients are causing errors, what response times look like per path.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Log Entry vs NLB Log Entry</span></div>
+      <pre>ALB Access Log (rich — HTTP-level detail):
+  timestamp:     2024-01-15T03:22:15Z
+  client_ip:     203.0.113.50
+  request:       "POST /v1/otp/verify HTTP/1.1"
+  status:        429
+  response_time: 0.003s
+  target_ip:     10.0.1.45
+  user_agent:    "LoginService/2.1"
+  ssl_cipher:    ECDHE-RSA-AES128-GCM-SHA256
+  request_size:  256 bytes
+  response_size: 89 bytes
+
+NLB Log (sparse — connection-level only):
+  timestamp:     2024-01-15T03:22:15Z
+  client_ip:     203.0.113.50
+  destination:   10.0.1.45:8080
+  bytes_sent:    256
+  bytes_received: 89
+  (no HTTP method, no path, no status code, no headers)
+
+"If you're debugging why specific API calls are failing at 3 AM,
+ ALB logs are invaluable. NLB logs tell you traffic is flowing,
+ but not what's happening inside the traffic."</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC9 -->
+<div class="scenario-card" id="sc9-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 9</span>
+    <span class="sc-title" id="sc9">Canary / Blue-Green Deployments at LB Level</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">You want to send 10% of traffic to a new version and 90% to the old version — without changing your application code or Kubernetes configuration.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB Weighted Target Groups</span></div>
+      <pre>ALB Weighted Target Groups:
+  Target Group v1 (weight: 90) → Old version pods
+  Target Group v2 (weight: 10) → New version pods (canary)
+
+Gradual rollout:
+  Week 1:  90/10  → Monitor error rate, latency for v2
+  Week 2:  70/30  → Still looks good → expand
+  Week 3:  50/50  → Validate at scale
+  Week 4:   0/100 → Full migration complete
+
+Instant rollback:
+  If v2 shows elevated errors → change weights back to 100/0
+  No deployment required — just update the LB rule
+  Rollback takes seconds
+
+NLB limitation:
+  NLB does NOT support weighted routing.
+  You'd need to manage this at the Kubernetes level
+  via Istio, service mesh, or Argo Rollouts instead —
+  which adds significant complexity to the deployment pipeline.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- SC10 -->
+<div class="scenario-card" id="sc10-card">
+  <div class="sc-hdr" onclick="toggleSC(this)">
+    <span class="sc-num">Scenario 10</span>
+    <span class="sc-title" id="sc10">Authentication Offloading — Cognito / OIDC</span>
+    <span class="sc-badge l7-badge">Use ALB</span>
+    <span class="sc-toggle">▾</span>
+  </div>
+  <div class="sc-body"><div class="sc-inner">
+    <p class="sc-situation">You want the load balancer to handle authentication before traffic reaches your service — useful for internal dashboards, admin panels, or simple web apps where you don't want to implement auth in your application.</p>
+    <div class="diag l7">
+      <div class="diag-hdr"><span class="diag-title">ALB + Cognito / OIDC Auth Offloading</span></div>
+      <pre>ALB + Cognito Integration:
+
+  1. User hits ALB → ALB checks for valid session token
+  2. No token / expired token → ALB redirects to Cognito login page
+  3. User authenticates in Cognito (Google SSO, username/password)
+  4. Cognito issues JWT token → sends user back to ALB
+  5. ALB validates token → forwards request to backend
+     WITH authenticated user info in headers:
+       X-Amzn-Oidc-Identity: user@example.com
+       X-Amzn-Oidc-Data: {jwt with user claims}
+
+  6. Your service reads headers — zero auth logic needed in your code
+
+Use cases:
+  → Internal dashboards: /admin requires employee login
+  → Partner portals: external partners authenticate via SAML
+  → Simple web apps: don't want to build auth from scratch
+
+NLB can't do this — it doesn't understand HTTP,
+let alone OAuth 2.0 / OIDC token flows.</pre>
+    </div>
+  </div></div>
+</div>
+
+<!-- DECISION MATRIX -->
+<div class="sec-hdr" id="decision-matrix"><h2>The Decision Matrix</h2></div>
+
+<table class="dm-table">
+  <thead>
+    <tr><th>Requirement</th><th>L4 (NLB)</th><th>L7 (ALB)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Single service, backend clients</td><td class="yes">✅ Right choice</td><td class="ok">⚠️ Overkill</td></tr>
+    <tr><td>Multiple services, one domain</td><td class="no">❌ Can't do it</td><td class="yes">✅ Path routing</td></tr>
+    <tr><td>Path-based or host-based routing</td><td class="no">❌ No HTTP awareness</td><td class="yes">✅ Native support</td></tr>
+    <tr><td>WAF / DDoS protection</td><td class="no">❌ Needs CloudFront workaround</td><td class="yes">✅ AWS WAF native</td></tr>
+    <tr><td>WebSocket/gRPC mixed routing</td><td class="no">❌ Same destination for all</td><td class="yes">✅ Protocol-aware</td></tr>
+    <tr><td>Sticky sessions (cookie-based)</td><td class="no">❌ IP-only (breaks NAT/mobile)</td><td class="yes">✅ Cookie-based</td></tr>
+    <tr><td>HTTP→HTTPS redirect</td><td class="no">❌ NLB passes bytes through</td><td class="yes">✅ Rule-based redirect</td></tr>
+    <tr><td>Detailed access logs (HTTP-level)</td><td class="no">❌ Connection-level only</td><td class="yes">✅ Full HTTP details</td></tr>
+    <tr><td>Weighted routing (canary)</td><td class="no">❌ Not supported</td><td class="yes">✅ Target group weights</td></tr>
+    <tr><td>Auth offloading (Cognito/OIDC)</td><td class="no">❌ No HTTP understanding</td><td class="yes">✅ Native integration</td></tr>
+    <tr><td>Ultra-low latency (&lt;1ms)</td><td class="yes">✅ No parsing overhead</td><td class="no">❌ 1–3ms added</td></tr>
+    <tr><td>Static IPs for client whitelisting</td><td class="yes">✅ Elastic IPs native</td><td class="no">❌ Need Global Accelerator</td></tr>
+    <tr><td>Millions of connections/sec</td><td class="yes">✅ Connection per-sec</td><td class="no">❌ HTTP parsing overhead</td></tr>
+    <tr><td>TCP/UDP (non-HTTP) protocols</td><td class="yes">✅ Any protocol</td><td class="no">❌ HTTP only</td></tr>
+    <tr><td>Cost at very high throughput</td><td class="yes">✅ Per-GB pricing</td><td class="no">❌ Per-request pricing</td></tr>
+  </tbody>
+</table>
+
+<!-- OTP SERVICE RATIONALE -->
+<div class="sec-hdr" id="otp-rationale"><h2>Why NLB Was Chosen for the OTP Service</h2></div>
+
+<div class="otp-checklist">
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>Single service (OTP service only)</strong> — no path routing needed to different backends</p></div>
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>Backend-to-backend clients (not public-facing)</strong> — no browser clients, no human users hitting this directly</p></div>
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>No path-based routing needed</strong> — all traffic goes to the same OTP service</p></div>
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>Low latency is critical (p99 &lt; 50ms)</strong> — NLB's &lt;1ms vs ALB's 1–3ms matters when the budget is tight</p></div>
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>Need static IPs for client whitelisting</strong> — internal services whitelist by IP; ALB IPs change dynamically</p></div>
+  <div class="otp-check yes"><span class="oc-icon">✅</span><p><strong>Auth and rate limiting handled in middleware</strong> — these concerns are addressed in application code, not the LB</p></div>
+  <div class="otp-check no"><span class="oc-icon">❌</span><p><strong>No WAF needed</strong> — this is an internal service, not exposed to the public internet</p></div>
+  <div class="otp-check no"><span class="oc-icon">❌</span><p><strong>No WebSocket or mixed protocols</strong> — pure gRPC service, single protocol throughout</p></div>
+  <div class="otp-check no"><span class="oc-icon">❌</span><p><strong>No sticky sessions</strong> — the service is stateless; any pod can handle any request</p></div>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — Match the Tool to Current Requirements</div>
+  <p>"Every checkbox points to NLB for the OTP service. Using ALB would add 1–3ms of unnecessary latency on every request for features we don't use. <strong>But if tomorrow the OTP service becomes public-facing, or we add more services behind the same domain, or we need WAF — we switch to ALB.</strong> The important thing is matching the tool to the current requirements, not over-engineering for hypothetical futures. Architecture decisions should be reversible when requirements change."</p>
+</div>
+
+<div class="soundbite">
+  <div class="soundbite-label">🔑 The Interview One-Liner</div>
+  <p>"ALB is the right choice when you need L7 intelligence — path routing, WAF, header manipulation, auth offloading. But for a single internal service with backend clients where latency matters, NLB gives us lower latency, static IPs, and we handle HTTP concerns in middleware. We'd move to ALB if requirements change — like going public-facing or adding multiple services behind one domain."</p>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Part 7</div>
+  <p>The L4 vs L7 decision is not about which load balancer is "better" — it's about <strong>what intelligence the load balancer needs to have</strong>. L4 routes by IP and port. It's fast, universal, and handles any protocol. L7 routes by HTTP content: URL paths, host headers, cookies, query parameters, request body. It's smarter but adds parsing overhead.</p>
+  <p>The trigger for L7 is always the same: <strong>do you need the load balancer to understand what's inside the request?</strong> Multiple services behind one domain → L7 (path routing). WAF → L7 (content inspection). Auth offloading → L7 (JWT validation). Canary deployments → L7 (weighted routing). Sticky sessions beyond IP → L7 (cookie reading). If none of these apply — single service, internal clients, latency-critical — L4 is the right choice and L7 adds cost and latency for nothing.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleSC(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
