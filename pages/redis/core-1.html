@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis Internals (Part 1) — Hash Slots, Shards, Replicas & Failover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#6e7681;
+  --strong:#F5A623;--lean:#FFD700;--no:#FF6B6B;--obs:#f97316;
+  --cass4:#10b981;
+  /* Redis red */
+  --rd:#DC382D;--rd2:#FF6B6B;--rd3:#FFB3AE;
+  /* shard colors */
+  --s1:#0EA5E9;--s2:#8B5CF6;--s3:#10B981;--s4:#F59E0B;
+  --master:#0EA5E9;--replica:#6366F1;
+  --fh:'Playfair Display',Georgia,serif;
+  --fb:'Source Serif 4',Georgia,serif;
+  --fc:'JetBrains Mono','Fira Code',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--fb);line-height:1.75;display:flex;min-height:100vh;opacity:0;animation:fi .5s ease forwards}
+@keyframes fi{to{opacity:1}}
+#progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--rd),var(--rd2),var(--master),var(--replica),var(--cass4));width:0%;z-index:1000;transition:width .1s}
+
+/* SIDEBAR */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;display:flex;flex-direction:column;transition:transform .3s}
+#sidebar::-webkit-scrollbar{width:3px}#sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+.sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1}
+.sb-series{font-family:var(--fc);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--rd2);margin-bottom:3px}
+.sb-title{font-family:var(--fh);font-size:.88rem;font-weight:700;color:var(--text);line-height:1.25;margin-bottom:4px}
+.sb-part{font-family:var(--fc);font-size:.68rem;color:var(--rd2);background:rgba(220,56,45,.1);border:1px solid rgba(220,56,45,.3);padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:12px}
+#search{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--fb);font-size:.78rem;outline:none;transition:border-color .2s}
+#search:focus{border-color:var(--rd)}#search::placeholder{color:var(--dim)}
+#navlist{padding:8px 0 24px;list-style:none}.ng{margin-bottom:2px}
+.nl{padding:8px 16px 4px;font-family:var(--fc);font-size:.59rem;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--dim)}
+.ni a{display:block;padding:4px 16px 4px 24px;font-family:var(--fb);font-size:.78rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent;transition:all .14s;line-height:1.4}
+.ni a:hover{color:var(--text);background:rgba(220,56,45,.05)}
+.ni.active a{color:var(--rd2);border-left-color:var(--rd2);background:rgba(220,56,45,.07)}
+.ni.sub a{padding-left:32px;font-size:.73rem}.ni.hidden,.ng.hidden{display:none}
+#hbtn{display:none;position:fixed;top:10px;left:10px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 10px;cursor:pointer;color:var(--text);font-size:.78rem;align-items:center;gap:5px}
+
+/* MAIN */
+#main{margin-left:268px;flex:1;max-width:960px;padding:50px 52px 100px;min-width:0}
+#btt{position:fixed;bottom:26px;right:26px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:9px 13px;font-family:var(--fc);font-size:.72rem;cursor:pointer;transition:all .2s;z-index:99;opacity:0;pointer-events:none}
+#btt.vis{opacity:1;pointer-events:all}#btt:hover{background:var(--surface2);color:var(--rd2);border-color:var(--rd2);transform:translateY(-2px)}
+
+/* HERO */
+.hero{margin-bottom:52px;padding-bottom:36px;border-bottom:1px solid var(--border)}
+.hero-eye{font-family:var(--fc);font-size:.67rem;letter-spacing:.18em;text-transform:uppercase;color:var(--rd2);margin-bottom:12px}
+.hero h1{font-family:var(--fh);font-size:2.5rem;font-weight:900;line-height:1.1;margin-bottom:14px;background:linear-gradient(130deg,#e6edf3 8%,var(--rd2) 35%,var(--master) 60%,var(--cass4));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-meta{font-size:.85rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}
+.hero p{font-size:.87rem;color:var(--dim);line-height:1.65;margin-top:16px}
+.part-nav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.part-pill{font-family:var(--fc);font-size:.68rem;padding:4px 11px;border-radius:20px;border:1px solid var(--border);color:var(--muted)}
+.part-pill.ap{background:rgba(220,56,45,.1);border-color:var(--rd2);color:var(--rd2)}
+
+/* SECTION HEADERS */
+.sec-hdr{margin:50px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.sec-hdr h2{font-family:var(--fh);font-size:1.75rem;font-weight:700;color:var(--text)}
+
+/* DISTINCTION BOX */
+.distinction{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.dist-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:14px 16px}
+.dist-card.slots{border-top:3px solid var(--lean)}
+.dist-card.shards{border-top:3px solid var(--rd)}
+.dist-label{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.dist-card.slots .dist-label{color:var(--lean)}.dist-card.shards .dist-label{color:var(--rd2)}
+.dist-num{font-family:var(--fc);font-size:1.8rem;font-weight:700;margin-bottom:4px}
+.dist-card.slots .dist-num{color:var(--lean)}.dist-card.shards .dist-num{color:var(--rd2)}
+.dist-card p{font-size:.85rem;color:var(--muted);line-height:1.6}
+.dist-card strong{color:var(--text)}
+
+/* REFERENCE TABLE */
+.ref-table{width:100%;border-collapse:collapse;font-size:.79rem;margin:14px 0;border-radius:8px;overflow:hidden}
+.ref-table thead tr{background:rgba(220,56,45,.07)}
+.ref-table th{padding:9px 13px;text-align:left;font-family:var(--fc);font-size:.6rem;text-transform:uppercase;letter-spacing:.09em;color:var(--rd2);border-bottom:1px solid rgba(220,56,45,.18)}
+.ref-table td{padding:9px 13px;border-bottom:1px solid rgba(48,54,61,.4);color:var(--muted);vertical-align:top;line-height:1.5;font-size:.8rem}
+.ref-table tbody tr:nth-child(odd){background:rgba(22,27,34,.5)}
+.ref-table tbody tr:nth-child(even){background:rgba(28,33,41,.4)}
+.ref-table td:first-child{font-weight:700;color:var(--text)}
+.ref-table td.fixed{color:var(--lean);font-family:var(--fc);font-size:.78rem}
+.ref-table td.flex{color:var(--rd2);font-family:var(--fc);font-size:.78rem}
+
+/* SHARD SCALE VISUAL */
+.shard-scale{display:flex;flex-direction:column;gap:16px;margin:14px 0}
+.ss-row{background:var(--surface);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.ss-hdr{padding:9px 14px;display:flex;align-items:center;gap:10px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.ss-label{font-family:var(--fc);font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--rd2)}
+.ss-cap{font-family:var(--fc);font-size:.7rem;color:var(--cass4);margin-left:auto}
+.ss-shards{display:flex;gap:8px;padding:12px 14px;flex-wrap:wrap}
+.ss-shard{flex:1;min-width:120px;background:var(--surface2);border:1px solid rgba(14,165,233,.2);border-radius:7px;padding:9px 11px}
+.ss-shard.s1{border-color:rgba(14,165,233,.25);background:rgba(14,165,233,.05)}
+.ss-shard.s2{border-color:rgba(139,92,246,.25);background:rgba(139,92,246,.05)}
+.ss-shard.s3{border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.05)}
+.ss-shard.s4{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.05)}
+.ss-shard-name{font-family:var(--fc);font-size:.65rem;font-weight:700;text-transform:uppercase;margin-bottom:4px}
+.ss-shard.s1 .ss-shard-name{color:var(--s1)}.ss-shard.s2 .ss-shard-name{color:var(--s2)}
+.ss-shard.s3 .ss-shard-name{color:var(--s3)}.ss-shard.s4 .ss-shard-name{color:var(--s4)}
+.ss-shard p{font-family:var(--fc);font-size:.72rem;color:var(--muted);line-height:1.55}
+.ss-shard strong{color:var(--text)}
+
+/* RESHARDING TIMELINE */
+.reshard-timeline{display:flex;flex-direction:column;gap:3px;margin:14px 0}
+.rt-phase{border-radius:7px;padding:11px 14px;border:1px solid var(--border)}
+.rt-phase.before{background:rgba(22,27,34,.5);border-color:rgba(48,54,61,.6)}
+.rt-phase.during{background:rgba(245,158,11,.05);border-color:rgba(245,158,11,.2)}
+.rt-phase.after{background:rgba(16,185,129,.05);border-color:rgba(16,185,129,.2)}
+.rt-label{font-family:var(--fc);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin-bottom:6px}
+.rt-phase.before .rt-label{color:var(--muted)}
+.rt-phase.during .rt-label{color:var(--lean)}
+.rt-phase.after .rt-label{color:var(--cass4)}
+.rt-phase p,.rt-phase ul{font-size:.86rem;color:var(--muted);line-height:1.6}
+.rt-phase ul{padding-left:14px}.rt-phase li{margin-bottom:3px}
+.rt-phase strong{color:var(--text)}
+.rt-arr{text-align:center;color:var(--dim);font-family:var(--fc);font-size:.85rem;padding:2px 0}
+
+/* REPLICA CONFIG CARDS */
+.replica-configs{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.rc-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.rc-hdr{padding:11px 18px;display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.rc-badge{font-family:var(--fc);font-size:.65rem;font-weight:700;padding:2px 9px;border-radius:10px;flex-shrink:0}
+.rc-title{font-family:var(--fh);font-size:.97rem;font-weight:700;color:var(--text)}
+.rc-toggle{color:var(--dim);font-size:.74rem;transition:transform .3s;margin-left:auto;flex-shrink:0}
+.rc-card.collapsed .rc-toggle{transform:rotate(-90deg)}
+.rc-body{overflow:hidden;transition:max-height .5s ease,opacity .3s;max-height:9999px;opacity:1}
+.rc-card.collapsed .rc-body{max-height:0;opacity:0}
+.rc-inner{padding:0 18px 16px}
+/* 0 replicas */
+.rc0 .rc-hdr{border-bottom:1px solid rgba(255,107,107,.15);background:rgba(255,107,107,.04)}
+.rc0 .rc-badge{background:rgba(255,107,107,.12);color:var(--no);border:1px solid rgba(255,107,107,.2)}
+/* 1 replica */
+.rc1 .rc-hdr{border-bottom:1px solid rgba(16,185,129,.15);background:rgba(16,185,129,.04)}
+.rc1 .rc-badge{background:rgba(16,185,129,.12);color:var(--cass4);border:1px solid rgba(16,185,129,.2)}
+/* 2 replicas */
+.rc2 .rc-hdr{border-bottom:1px solid rgba(14,165,233,.15);background:rgba(14,165,233,.04)}
+.rc2 .rc-badge{background:rgba(14,165,233,.12);color:var(--master);border:1px solid rgba(14,165,233,.2)}
+/* 3 replicas */
+.rc3 .rc-hdr{border-bottom:1px solid rgba(99,102,241,.15);background:rgba(99,102,241,.04)}
+.rc3 .rc-badge{background:rgba(99,102,241,.12);color:var(--replica);border:1px solid rgba(99,102,241,.2)}
+
+/* PLACEMENT VISUAL */
+.az-layout{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.az-zone{background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:13px 15px}
+.az-label{font-family:var(--fc);font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.az-zone.az1{border-top:3px solid var(--master);}.az-zone.az1 .az-label{color:var(--master)}
+.az-zone.az2{border-top:3px solid var(--replica);}.az-zone.az2 .az-label{color:var(--replica)}
+.az-node{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.az-node:last-child{margin-bottom:0}
+.az-node.master{border-left:3px solid var(--master)}
+.az-node.replica{border-left:3px solid var(--replica)}
+.az-node-label{font-family:var(--fc);font-size:.65rem;font-weight:700;margin-bottom:2px}
+.az-node.master .az-node-label{color:var(--master)}.az-node.replica .az-node-label{color:var(--replica)}
+.az-node p{font-size:.8rem;color:var(--muted)}
+
+/* FAILOVER TIMELINE */
+.failover-steps{display:flex;flex-direction:column;gap:4px;margin:14px 0}
+.fs-item{display:grid;grid-template-columns:90px 1fr;gap:10px;align-items:flex-start;padding:8px 12px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)}
+.fs-time{font-family:var(--fc);font-size:.73rem;font-weight:700;color:var(--rd2);padding-top:2px;flex-shrink:0}
+.fs-item p{font-size:.85rem;color:var(--muted);line-height:1.55}
+.fs-item strong{color:var(--text)}
+.fs-item.critical{border-color:rgba(255,107,107,.25);background:rgba(255,107,107,.04)}
+.fs-item.warn{border-color:rgba(255,215,0,.2);background:rgba(255,215,0,.04)}
+.fs-item.ok{border-color:rgba(16,185,129,.2);background:rgba(16,185,129,.04)}
+
+/* DECISION FRAMEWORK */
+.decision-box{background:var(--surface);border:1px solid rgba(220,56,45,.2);border-radius:10px;padding:20px 24px;margin:14px 0}
+.db-title{font-family:var(--fh);font-size:1.05rem;font-weight:700;color:var(--text);margin-bottom:14px}
+.db-q{font-size:.88rem;color:var(--muted);line-height:1.65;margin-bottom:8px;padding-left:4px}
+.db-q::before{content:'▸ ';color:var(--rd2);font-weight:700}
+.db-q strong{color:var(--text)}
+
+/* QUICK REFERENCE BOX */
+.qr-box{background:linear-gradient(135deg,rgba(220,56,45,.08),rgba(14,165,233,.04));border:1px solid rgba(220,56,45,.2);border-radius:12px;padding:20px 24px;margin:20px 0}
+.qr-label{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;color:var(--rd2);margin-bottom:14px;font-weight:600}
+.qr-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.qr-item{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(48,54,61,.25);font-size:.82rem}
+.qr-item:last-child{border-bottom:none}
+.qr-key{color:var(--muted);font-family:var(--fc);font-size:.76rem}
+.qr-val{font-family:var(--fc);font-size:.78rem;font-weight:700;color:var(--rd2)}
+.qr-val.fixed{color:var(--lean)}.qr-val.good{color:var(--cass4)}
+
+/* DIAGRAMS */
+.diag{background:#010409;border-radius:10px;margin:12px 0;overflow:hidden}
+.diag.rd{border:1px solid rgba(220,56,45,.2)}.diag.rd .diag-hdr{background:rgba(220,56,45,.06);border-bottom:1px solid rgba(220,56,45,.18)}.diag.rd .diag-title{color:var(--rd2)}
+.diag.good{border:1px solid rgba(16,185,129,.2)}.diag.good .diag-hdr{background:rgba(16,185,129,.06);border-bottom:1px solid rgba(16,185,129,.18)}.diag.good .diag-title{color:var(--cass4)}
+.diag.warn{border:1px solid rgba(249,115,22,.2)}.diag.warn .diag-hdr{background:rgba(249,115,22,.06);border-bottom:1px solid rgba(249,115,22,.18)}.diag.warn .diag-title{color:var(--obs)}
+.diag-hdr{padding:9px 16px;display:flex;align-items:center;justify-content:space-between}
+.diag-title{font-family:var(--fc);font-size:.65rem;text-transform:uppercase;letter-spacing:.14em;font-weight:600}
+.copy-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);font-family:var(--fc);font-size:.64rem;padding:3px 9px;border-radius:4px;cursor:pointer;transition:all .18s}
+.copy-btn:hover{background:var(--surface2);color:var(--rd2);border-color:var(--rd2)}
+.diag pre{padding:16px 20px;overflow-x:auto;font-family:var(--fc);font-size:.76rem;line-height:1.75;color:#c9d1d9;white-space:pre}
+
+/* CODE */
+.code{background:#010409;border:1px solid var(--border);border-radius:8px;margin:12px 0;overflow:hidden}
+.code-hdr{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 14px;display:flex;align-items:center;justify-content:space-between}
+.code-lang{font-family:var(--fc);font-size:.64rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim)}
+.code pre{padding:14px 16px;overflow-x:auto;font-family:var(--fc);font-size:.78rem;line-height:1.65;color:#c9d1d9;white-space:pre}
+
+/* CALLOUTS */
+.callout{border-radius:8px;padding:14px 16px;margin:12px 0;font-size:.87rem}
+.callout.good{background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2)}
+.callout.warn{background:rgba(255,215,0,.06);border:1px solid rgba(255,215,0,.18)}
+.callout.fail{background:rgba(255,107,107,.07);border:1px solid rgba(255,107,107,.2)}
+.callout.rd{background:rgba(220,56,45,.07);border:1px solid rgba(220,56,45,.2)}
+.callout-title{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;font-weight:600;margin-bottom:9px}
+.callout.good .callout-title{color:var(--cass4)}.callout.warn .callout-title{color:var(--lean)}
+.callout.fail .callout-title{color:var(--no)}.callout.rd .callout-title{color:var(--rd2)}
+.callout ul{padding-left:16px}.callout li{margin-bottom:4px;line-height:1.55;color:var(--muted)}.callout p{line-height:1.65;color:var(--muted)}
+
+/* INSIGHT */
+.insight{background:rgba(245,166,35,.06);border:1px solid rgba(245,166,35,.2);border-radius:8px;padding:14px 16px;margin:12px 0;position:relative}
+.insight::before{content:'💡';position:absolute;right:14px;top:12px;font-size:1.2rem;opacity:.5}
+.insight-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.12em;color:var(--strong);margin-bottom:8px;font-weight:600}
+.insight p{font-size:.88rem;color:var(--muted);line-height:1.65;padding-right:28px}
+.insight strong{color:var(--text)}
+
+/* INTERVIEW BOXES */
+.interview-q{background:linear-gradient(135deg,rgba(220,56,45,.08),rgba(14,165,233,.04));border:1px solid rgba(220,56,45,.22);border-radius:10px;padding:18px 20px;margin:14px 0;position:relative}
+.interview-q::before{content:'🎤';position:absolute;right:16px;top:14px;font-size:1.2rem;opacity:.35}
+.iq-label{font-family:var(--fc);font-size:.63rem;text-transform:uppercase;letter-spacing:.14em;color:var(--rd2);margin-bottom:9px;font-weight:600}
+.iq-q{font-family:var(--fh);font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:10px;font-style:italic}
+.iq-body p{font-size:.88rem;color:var(--muted);line-height:1.7;margin-bottom:8px;padding-right:24px}
+.iq-body strong{color:var(--text)}
+
+/* KL */
+.kl{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 26px;margin:28px 0;position:relative;overflow:hidden}
+.kl::after{content:'🎯';position:absolute;right:18px;top:16px;font-size:1.8rem;opacity:.12}
+.kl-label{font-family:var(--fc);font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--rd2);margin-bottom:10px}
+.kl p{font-size:.93rem;line-height:1.7;color:var(--muted)}
+.kl p+p{margin-top:10px}.kl strong{color:var(--text)}
+
+mark{background:rgba(220,56,45,.14);color:var(--rd2);border-radius:3px;padding:1px 4px}
+mark.g{background:rgba(245,166,35,.14);color:var(--strong)}
+mark.gr{background:rgba(16,185,129,.12);color:var(--cass4)}
+mark.b{background:rgba(14,165,233,.14);color:var(--master)}
+
+@media(max-width:768px){
+  #sidebar{transform:translateX(-100%)}#sidebar.open{transform:translateX(0)}
+  #hbtn{display:flex}#main{margin-left:0;padding:52px 18px 80px}
+  .hero h1{font-size:1.9rem}.distinction,.az-layout,.qr-grid{grid-template-columns:1fr}
+  .fs-item{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="hbtn">☰ Menu</button>
+
+<nav id="sidebar">
+  <div class="sb-head">
+    <div class="sb-series">Redis Internals · L6/L7 Series</div>
+    <div class="sb-title">Hash Slots, Shards, Replicas & Failover</div>
+    <div class="sb-part">Part 1 — Cluster Fundamentals</div>
+    <input type="text" id="search" placeholder="Search sections…">
+  </div>
+  <ul id="navlist">
+    <li class="ng"><div class="nl">Hash Slots vs Shards</div>
+      <li class="ni"><a href="#hero">Introduction</a></li>
+      <li class="ni sub"><a href="#distinction">The Core Distinction</a></li>
+      <li class="ni sub"><a href="#key-mapping">How Keys Get Mapped</a></li>
+      <li class="ni sub"><a href="#scale-visual">2 / 4 / 8 Shard Comparison</a></li>
+      <li class="ni sub"><a href="#why-16384">Why 16,384?</a></li>
+    </li>
+    <li class="ng"><div class="nl">Resharding</div>
+      <li class="ni sub"><a href="#resharding">Adding a Shard — Live Migration</a></li>
+      <li class="ni sub"><a href="#reshard-care">What to Watch During Resharding</a></li>
+    </li>
+    <li class="ng"><div class="nl">Replicas</div>
+      <li class="ni sub"><a href="#replica-configs">0 / 1 / 2 / 3 Replica Configs</a></li>
+      <li class="ni sub"><a href="#placement">AZ Placement Strategy</a></li>
+      <li class="ni sub"><a href="#replication-lag">Replication Lag & WAIT Command</a></li>
+    </li>
+    <li class="ng"><div class="nl">Failover</div>
+      <li class="ni sub"><a href="#failover">Failover Step by Step</a></li>
+      <li class="ni sub"><a href="#failover-tuning">Tuning cluster-node-timeout</a></li>
+    </li>
+    <li class="ng"><div class="nl">Reference</div>
+      <li class="ni sub"><a href="#otp-setup">OTP Service Final Setup</a></li>
+      <li class="ni sub"><a href="#interview-qa">Interview Talking Points</a></li>
+      <li class="ni sub"><a href="#quick-ref">Quick Reference Card</a></li>
+    </li>
+    <li class="ng"><div class="nl">Final</div>
+      <li class="ni"><a href="#key-lesson">Key Lesson</a></li>
+    </li>
+  </ul>
+</nav>
+
+<main id="main">
+
+<!-- HERO -->
+<section id="hero" class="hero">
+  <div class="hero-eye">Redis Internals · L6/L7 Series · Part 1</div>
+  <h1>Hash Slots, Shards,<br>Replicas &<br>Failover</h1>
+  <div class="hero-meta">
+    <span>🗄️ 16,384 hash slots — what they are and what they're not</span>
+    <span>⚡ CRC16 key routing — step by step</span>
+    <span>📈 2 / 4 / 8 shard comparison with capacity numbers</span>
+    <span>🔄 Live resharding — slot migration with no downtime</span>
+    <span>🔁 0 / 1 / 2 / 3 replica configs with trade-offs</span>
+    <span>💥 Failover timeline — second by second</span>
+  </div>
+  <div class="part-nav">
+    <span class="part-pill ap">Part 1: Cluster Fundamentals</span>
+    <span class="part-pill">Part 2: Data Structures & Persistence</span>
+  </div>
+  <p style="margin-top:14px">One of the most common Redis interview mistakes: confusing hash slots with shards. They are completely different concepts that serve different roles in the cluster. This guide builds the complete mental model — from why 16,384 was chosen to live resharding mechanics, from replica placement strategy to the second-by-second failover timeline, to the decision framework for how many replicas your service actually needs.</p>
+</section>
+
+<!-- CORE DISTINCTION -->
+<div class="sec-hdr" id="distinction"><h2>The Core Distinction: Hash Slots ≠ Shards</h2></div>
+
+<div class="distinction">
+  <div class="dist-card slots">
+    <div class="dist-label">Hash Slots</div>
+    <div class="dist-num">16,384</div>
+    <p><strong>Logical address buckets</strong> for distributing keys. Like postal codes — a fixed address system. The number never changes regardless of how many machines you have.</p>
+    <p style="margin-top:6px">Fixed forever. You never configure this.</p>
+  </div>
+  <div class="dist-card shards">
+    <div class="dist-label">Shards (Nodes)</div>
+    <div class="dist-num">2 – 1000+</div>
+    <p><strong>Physical Redis server instances</strong> that hold the slots. Like post offices — the actual buildings that handle the mail. You decide how many you need based on your capacity requirements.</p>
+    <p style="margin-top:6px">Flexible. You add more when traffic grows.</p>
+  </div>
+</div>
+
+<div class="callout rd">
+  <div class="callout-title">The Filing Cabinet Analogy</div>
+  <p>Imagine 16,384 folders (hash slots) distributed across 2 filing cabinets (shards). Cabinet 1 holds folders 0–8191. Cabinet 2 holds folders 8192–16383. When a key arrives, Redis computes which folder it belongs to, then routes to whichever cabinet currently holds that folder. <strong>The 16,384 folders never change. The number of cabinets is up to you.</strong></p>
+</div>
+
+<table class="ref-table">
+  <thead><tr><th>Concept</th><th>What It Is</th><th>Count</th><th>Can You Change It?</th></tr></thead>
+  <tbody>
+    <tr><td>Hash Slots</td><td>Logical address buckets</td><td class="fixed">Always 16,384</td><td>❌ Fixed forever</td></tr>
+    <tr><td>Shards (Masters)</td><td>Physical Redis instances</td><td class="flex">1 to 1,000+</td><td>✅ You decide</td></tr>
+    <tr><td>Replicas</td><td>Backup copies of each shard</td><td class="flex">0 to N per shard</td><td>✅ You decide</td></tr>
+  </tbody>
+</table>
+
+<!-- KEY MAPPING -->
+<div class="sec-hdr" id="key-mapping"><h2>How Keys Get Mapped to Shards</h2></div>
+
+<div class="diag rd">
+  <div class="diag-hdr"><span class="diag-title">The Exact 5-Step Routing Flow</span></div>
+  <pre>Step 1: Key arrives
+  Key = "otp:01HXR3K9V7"
+
+Step 2: Compute hash slot
+  slot = CRC16("otp:01HXR3K9V7") % 16384
+  slot = 11,205
+
+Step 3: Look up which shard owns slot 11,205
+  Slot mapping (configured when cluster is created):
+    Shard 1: slots  0     →  8,191   (first half)
+    Shard 2: slots  8,192 → 16,383   (second half)
+
+  11,205 falls in Shard 2's range
+
+Step 4: Client sends command DIRECTLY to Shard 2
+  No proxy, no central router
+  Smart client caches the slot-to-shard map locally
+  Direct TCP connection to the shard that owns the slot
+
+Step 5: Shard 2 stores/retrieves the key
+  Stores in slot 11,205
+  Returns OK in < 0.5ms total</pre>
+</div>
+
+<div class="insight">
+  <div class="insight-label">L6/L7 Insight — The Client Is Smart</div>
+  <p>"Redis Cluster has no central proxy or coordinator. <strong>The client library (Jedis, ioredis, redis-py) maintains a local copy of the slot-to-shard mapping.</strong> When a key arrives, the client computes CRC16(key) % 16384 itself, looks up the slot in its local map, and connects directly to the correct shard. If the slot has moved (during resharding), the server returns a MOVED or ASK redirection and the client updates its map. This smart-client design eliminates the proxy as a bottleneck and single point of failure."</p>
+</div>
+
+<!-- SHARD SCALE VISUAL -->
+<div class="sec-hdr" id="scale-visual"><h2>Same 16,384 Slots — Different Number of Machines</h2></div>
+
+<div class="shard-scale">
+  <div class="ss-row">
+    <div class="ss-hdr">
+      <span class="ss-label">2 Shards — OTP Service (Current)</span>
+      <span class="ss-cap">~100K cmd/sec · ~2.2 GB total</span>
+    </div>
+    <div class="ss-shards">
+      <div class="ss-shard s1">
+        <div class="ss-shard-name">Shard 1</div>
+        <p><strong>Slots:</strong> 0 – 8,191</p>
+        <p><strong>Keys:</strong> ~2.25M</p>
+        <p><strong>Memory:</strong> ~1.1 GB</p>
+        <p><strong>Throughput:</strong> ~50K cmd/sec</p>
+      </div>
+      <div class="ss-shard s2">
+        <div class="ss-shard-name">Shard 2</div>
+        <p><strong>Slots:</strong> 8,192 – 16,383</p>
+        <p><strong>Keys:</strong> ~2.25M</p>
+        <p><strong>Memory:</strong> ~1.1 GB</p>
+        <p><strong>Throughput:</strong> ~50K cmd/sec</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ss-row">
+    <div class="ss-hdr">
+      <span class="ss-label">4 Shards — Medium Scale (2× traffic)</span>
+      <span class="ss-cap">~200K cmd/sec · ~4.4 GB total</span>
+    </div>
+    <div class="ss-shards">
+      <div class="ss-shard s1"><div class="ss-shard-name">Shard 1</div><p>Slots 0 – 4,095</p><p>~1.1M keys · ~25K cmd/s</p></div>
+      <div class="ss-shard s2"><div class="ss-shard-name">Shard 2</div><p>Slots 4,096 – 8,191</p><p>~1.1M keys · ~25K cmd/s</p></div>
+      <div class="ss-shard s3"><div class="ss-shard-name">Shard 3</div><p>Slots 8,192 – 12,287</p><p>~1.1M keys · ~25K cmd/s</p></div>
+      <div class="ss-shard s4"><div class="ss-shard-name">Shard 4</div><p>Slots 12,288 – 16,383</p><p>~1.1M keys · ~25K cmd/s</p></div>
+    </div>
+  </div>
+
+  <div class="ss-row">
+    <div class="ss-hdr">
+      <span class="ss-label">8 Shards — Large Scale (4× traffic)</span>
+      <span class="ss-cap">~400K cmd/sec · linear scaling</span>
+    </div>
+    <div class="ss-shards">
+      <div class="ss-shard s1"><div class="ss-shard-name">Shards 1–4</div><p>Slots 0 – 8,191</p><p>2,048 slots each</p></div>
+      <div class="ss-shard s2"><div class="ss-shard-name">Shards 5–8</div><p>Slots 8,192 – 16,383</p><p>2,048 slots each</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="callout good">
+  <div class="callout-title">Linear Scaling — Double Shards = Double Capacity</div>
+  <p>Each Redis shard handles ~100K commands/sec. Adding shards gives you linear throughput scaling. Memory scales the same way — each new shard is a new RAM pool. There's no coordination overhead that degrades with shard count (the smart-client design ensures each request hits exactly one shard).</p>
+</div>
+
+<!-- WHY 16384 -->
+<div class="sec-hdr" id="why-16384"><h2>Why 16,384? The Engineering Reason</h2></div>
+
+<div class="callout rd">
+  <div class="callout-title">The Sweet Spot Between Granularity and Network Overhead</div>
+  <ul>
+    <li><strong>Too few slots (e.g. 100):</strong> With 50 shards, only 2 slots per shard → wildly uneven key distribution. Hot shards with 10× normal keys.</li>
+    <li><strong>Too many slots (e.g. 1,000,000):</strong> Every node stores the slot→node mapping. Cluster heartbeat messages include a slot bitmap. At 16,384 slots, the bitmap is <strong>2 KB</strong>. At 1M slots, it's <strong>125 KB</strong>. Multiply by heartbeats every second × every node = enormous network overhead.</li>
+    <li><strong>16,384 is the sweet spot:</strong> 2 KB bitmap fits easily in heartbeat messages. Enough granularity for up to 1,000 nodes (16 slots each minimum). Perfectly balanced for typical 3–100 node deployments.</li>
+  </ul>
+  <p style="margin-top:8px">Redis creator Salvatore Sanfilippo specifically chose 16,384 as the balance between granularity (enough slots to distribute evenly) and cluster protocol overhead (heartbeat bitmap stays small).</p>
+</div>
+
+<!-- RESHARDING -->
+<div class="sec-hdr" id="resharding"><h2>Live Resharding — Adding a Shard with No Downtime</h2></div>
+
+<div class="reshard-timeline">
+  <div class="rt-phase before">
+    <div class="rt-label">Before — 2 Shards</div>
+    <p><strong>Shard 1:</strong> Slots 0–8,191 (8,192 slots) &nbsp;|&nbsp; <strong>Shard 2:</strong> Slots 8,192–16,383 (8,192 slots) &nbsp;|&nbsp; <strong>Shard 3:</strong> (empty, just joined)</p>
+  </div>
+  <div class="rt-arr">▼</div>
+  <div class="rt-phase during">
+    <div class="rt-label">During — Slot Migration (Live)</div>
+    <p>Redis migrates slots from existing shards to the new shard — while the cluster continues serving traffic.</p>
+    <ul>
+      <li>Shard 1: Moving slots 5,462–8,191 → Shard 3</li>
+      <li>Shard 2: Moving slots 13,654–16,383 → Shard 3</li>
+      <li>Keys in migrating slots move one by one</li>
+      <li>Requests for migrating keys get <strong>MOVED</strong> or <strong>ASK</strong> redirections automatically</li>
+      <li>Smart clients handle redirections transparently</li>
+    </ul>
+  </div>
+  <div class="rt-arr">▼</div>
+  <div class="rt-phase after">
+    <div class="rt-label">After — 3 Shards, Balanced</div>
+    <p><strong>Shard 1:</strong> Slots 0–5,461 (5,462 slots) &nbsp;|&nbsp; <strong>Shard 2:</strong> Slots 8,192–13,653 (5,462 slots) &nbsp;|&nbsp; <strong>Shard 3:</strong> Slots 5,462–8,191 + 13,654–16,383 (5,460 slots)</p>
+    <p style="margin-top:6px">Each shard now holds roughly 1/3 of the key space. <strong>Cluster stayed online. No downtime.</strong></p>
+  </div>
+</div>
+
+<div class="sec-hdr" id="reshard-care"><h2>What to Watch During Resharding</h2></div>
+
+<div class="callout good">
+  <div class="callout-title">The Beautiful Part — What Works Seamlessly</div>
+  <ul>
+    <li>Cluster stays online throughout the migration</li>
+    <li>Zero downtime — no maintenance window required</li>
+    <li>Clients receive MOVED/ASK redirections for migrating keys and follow them automatically</li>
+    <li>From the application's perspective, nothing changed</li>
+  </ul>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">The Careful Part — Watch These During Migration</div>
+  <ul>
+    <li><strong>Slightly higher latency for migrating keys:</strong> MOVED redirection adds one extra network hop</li>
+    <li><strong>Avoid resharding during peak traffic:</strong> Migration is CPU and network intensive on both source and destination shards</li>
+    <li><strong>Lua scripts across migrating keys:</strong> Scripts touching keys in migrating slots may receive MOVED errors — scripts must be atomic per slot</li>
+    <li><strong>Migration time scales with data size:</strong> A 10 GB shard migration can take hours — plan accordingly</li>
+  </ul>
+</div>
+
+<!-- REPLICAS -->
+<div class="sec-hdr" id="replica-configs"><h2>Replicas Per Shard — 0 / 1 / 2 / 3 Compared</h2></div>
+
+<div class="replica-configs">
+  <div class="rc-card rc0" id="rc0-card">
+    <div class="rc-hdr" onclick="toggleRC(this)">
+      <span class="rc-badge">0 Replicas</span>
+      <span class="rc-title">No Redundancy — Never in Production</span>
+      <span class="rc-toggle">▾</span>
+    </div>
+    <div class="rc-body"><div class="rc-inner">
+      <div class="callout fail">
+        <div class="callout-title">What Happens When a Shard Dies</div>
+        <p>Slots 0–8,191 are <strong>completely unavailable</strong>. All OTPs in those slots are lost forever. Half your users can't verify OTPs. No automatic recovery possible — manual intervention required.</p>
+        <p style="margin-top:6px">Total nodes: 2. Cost: 2 × $400/month = $800/month.</p>
+        <p style="margin-top:6px"><strong>Acceptable for:</strong> Local development, testing environments only.</p>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="rc-card rc1" id="rc1-card">
+    <div class="rc-hdr" onclick="toggleRC(this)">
+      <span class="rc-badge">1 Replica</span>
+      <span class="rc-title">Standard Production HA — The Right Choice for Most Services</span>
+      <span class="rc-toggle">▾</span>
+    </div>
+    <div class="rc-body"><div class="rc-inner">
+      <div class="diag good">
+        <div class="diag-hdr"><span class="diag-title">1 Replica Per Shard — Topology</span></div>
+        <pre>Shard 1 [MASTER] ──async replication──→ Shard 1 [REPLICA]
+Shard 2 [MASTER] ──async replication──→ Shard 2 [REPLICA]
+
+Total nodes: 4 (2 masters + 2 replicas)
+
+If Shard 1 Master dies:
+  → Replica promotes to Master in 5-6 seconds ✅
+  → Zero data loss if replication was caught up ✅
+  → Service continues uninterrupted ✅
+  → Now temporarily has NO replica (vulnerable until old master recovers)
+
+If Shard 1 Master AND Replica die simultaneously:
+  → Slots 0-8,191 unavailable 💀
+  → How likely? Very unlikely — they live in different AZs
+  → Requires two simultaneous failures in different data centers</pre>
+      </div>
+      <div class="callout good">
+        <div class="callout-title">Why 1 Replica Is Enough for OTP Service</div>
+        <p>OTPs are <em>ephemeral and replaceable</em>. TTL = 5 minutes. Even if we lost all data on a shard, users click "Resend OTP" and get a new one. The data is not precious — it's disposable by design. Worst case during a 5-second failover: a few users see a verification error, then click resend. Cost of extra replica: $800/month. Overkill for disposable data.</p>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="rc-card rc2" id="rc2-card">
+    <div class="rc-hdr" onclick="toggleRC(this)">
+      <span class="rc-badge">2 Replicas</span>
+      <span class="rc-title">High Availability — Financial & Healthcare Systems</span>
+      <span class="rc-toggle">▾</span>
+    </div>
+    <div class="rc-body"><div class="rc-inner">
+      <div class="diag good">
+        <div class="diag-hdr"><span class="diag-title">2 Replicas Per Shard — Topology</span></div>
+        <pre>Shard 1 [MASTER] ──→ Shard 1 [Replica A]  (AZ-1)
+                 ──→ Shard 1 [Replica B]  (AZ-2)
+
+Total nodes: 6 (2 masters + 4 replicas)
+
+If Shard 1 Master dies:
+  → Replica A promotes to Master ✅
+  → Replica B still exists as backup ✅
+  → You STILL have redundancy after the failure ✅
+
+If Shard 1 Master AND Replica A both die:
+  → Replica B promotes to Master ✅
+  → Three simultaneous failures needed for data loss
+
+When to use:
+  → Financial systems (every transaction is irreplaceable)
+  → Healthcare (patient data, lives depend on it)
+  → Systems where even 1-3 seconds slot unavailability is unacceptable</pre>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="rc-card rc3" id="rc3-card">
+    <div class="rc-hdr" onclick="toggleRC(this)">
+      <span class="rc-badge">3 Replicas</span>
+      <span class="rc-title">Extreme HA + Read Scaling — Almost Never Needed</span>
+      <span class="rc-toggle">▾</span>
+    </div>
+    <div class="rc-body"><div class="rc-inner">
+      <p style="font-size:.88rem;color:var(--muted);line-height:1.65;margin-top:10px">Three replicas spread across three AZs — any entire AZ can go down and you still have a master or promotable replica plus two additional backups. Also used for read scaling when you want to distribute reads across replicas (Redis 7+ supports read-from-replica configuration).</p>
+      <p style="font-size:.88rem;color:var(--muted);line-height:1.65;margin-top:8px">Total nodes: 8 (2 masters + 6 replicas). Cost: 8 × $400 = $3,200/month. Mission-critical systems requiring 99.999% availability. Almost never needed for an OTP service or typical web application.</p>
+    </div></div>
+  </div>
+</div>
+
+<!-- PLACEMENT -->
+<div class="sec-hdr" id="placement"><h2>Placement Strategy — Where Replicas Must Live</h2></div>
+
+<div class="callout fail">
+  <div class="callout-title">❌ Wrong: Master and Replica on the Same Machine or Rack</div>
+  <p>If the physical machine or rack loses power: Master is dead AND Replica is also dead (same hardware). Total loss. No failover possible. This eliminates all the protection the replica was supposed to provide.</p>
+</div>
+
+<div class="az-layout">
+  <div class="az-zone az1">
+    <div class="az-label">Availability Zone 1 (us-east-1a)</div>
+    <div class="az-node master">
+      <div class="az-node-label">Shard 1 [MASTER]</div>
+      <p>Slots 0–8,191 · IP 10.0.1.10</p>
+    </div>
+    <div class="az-node replica">
+      <div class="az-node-label">Shard 2 [REPLICA]</div>
+      <p>Backup of Shard 2 master in AZ-2</p>
+    </div>
+  </div>
+  <div class="az-zone az2">
+    <div class="az-label">Availability Zone 2 (us-east-1b)</div>
+    <div class="az-node master">
+      <div class="az-node-label">Shard 2 [MASTER]</div>
+      <p>Slots 8,192–16,383 · IP 10.0.1.20</p>
+    </div>
+    <div class="az-node replica">
+      <div class="az-node-label">Shard 1 [REPLICA]</div>
+      <p>Backup of Shard 1 master in AZ-1</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout good">
+  <div class="callout-title">AZ Failure Analysis — Either AZ Can Go Down Safely</div>
+  <ul>
+    <li><strong>AZ-1 goes down:</strong> Shard 1 replica in AZ-2 promotes to Master ✅ &nbsp; Shard 2 master is already in AZ-2, unaffected ✅</li>
+    <li><strong>AZ-2 goes down:</strong> Shard 2 replica in AZ-1 promotes to Master ✅ &nbsp; Shard 1 master is already in AZ-1, unaffected ✅</li>
+    <li><strong>Notice:</strong> Masters are spread across AZs. Each shard's replica is in a different AZ from its master. <strong>Cross-shard interleaving</strong> (Shard 2's replica in AZ-1) means each AZ's failure takes down one master but always has another master present.</li>
+  </ul>
+</div>
+
+<!-- REPLICATION LAG -->
+<div class="sec-hdr" id="replication-lag"><h2>Replication Lag & The WAIT Command</h2></div>
+
+<div class="diag warn">
+  <div class="diag-hdr"><span class="diag-title">Asynchronous Replication — The Hidden Gap</span></div>
+  <pre>Default replication is ASYNCHRONOUS:
+
+  T=0ms:    Client sends: SET otp:abc "data"
+  T=0.1ms:  Master stores it → returns OK to client immediately
+  T=0.5ms:  Master sends key to Replica (replication stream)
+  T=1.0ms:  Replica receives and stores it
+
+  The 0.5-1ms gap between "OK returned" and "replica has it" 
+  is called REPLICATION LAG.
+
+What if Master crashes in that gap?
+  T=0ms:    Client writes OTP to Master
+  T=0.1ms:  Master returns OK (client thinks it's saved)
+  T=0.3ms:  Master CRASHES (before sending to Replica!)
+  T=5s:     Replica promotes to new Master
+  
+  Result: That OTP is LOST.
+          It existed on the dead master but never made it to the replica.
+          User gets "OTP sent" but verification will fail.
+  
+  User impact: They click "Resend" → new OTP works fine.
+  For OTPs: This is ACCEPTABLE (1 in 100,000 OTPs lost is fine).
+  For banking: This is NOT ACCEPTABLE.</pre>
+</div>
+
+<div class="code"><div class="code-hdr"><span class="code-lang">Redis — Synchronous Replication (When You Need It)</span></div>
+<pre># For guaranteed durability (banking, critical data):
+SET user_balance 5000.00
+WAIT 1 0    # Wait until at least 1 replica confirms, no timeout
+
+# Master won't return OK until the replica has the data.
+# Trade-off:
+#   ✅ Zero data loss on failover
+#   ❌ Every write is ~1ms slower (waiting for replica network ACK)
+#   ❌ If replica is temporarily down, writes BLOCK until timeout
+
+# For OTP service: NOT worth it.
+# The extra latency hurts ALL requests to protect against
+# an extremely rare edge case (master crash in <1ms window).</pre></div>
+
+<!-- FAILOVER MECHANICS -->
+<div class="sec-hdr" id="failover"><h2>Failover — Second by Second</h2></div>
+
+<div class="failover-steps">
+  <div class="fs-item">
+    <span class="fs-time">Second 0</span>
+    <p>Master stops responding. Clients begin failing with connection errors.</p>
+  </div>
+  <div class="fs-item warn">
+    <span class="fs-time">Seconds 1–2</span>
+    <p><strong>Heartbeats missed.</strong> Replica and other nodes notice the master hasn't sent its heartbeat. Each node independently records missed heartbeats.</p>
+  </div>
+  <div class="fs-item warn">
+    <span class="fs-time">Seconds 3–4</span>
+    <p><strong>PFAIL declared.</strong> Replica has missed enough heartbeats to declare master as PFAIL (possibly failed). Other masters in the cluster are polled — do they also see the failure?</p>
+  </div>
+  <div class="fs-item critical">
+    <span class="fs-time">Second 4–5</span>
+    <p><strong>Majority agrees → FAIL.</strong> If the majority of masters agree the node is unreachable, it's marked FAIL. The replica begins the <strong>FAILOVER</strong> process.</p>
+  </div>
+  <div class="fs-item ok">
+    <span class="fs-time">Second 5–6</span>
+    <p><strong>Replica promotes.</strong> Replica announces to all nodes: "I am the new Master for Shard 1." All nodes update their slot maps. Clients receive MOVED redirections and reconnect to the new master.</p>
+  </div>
+  <div class="fs-item ok">
+    <span class="fs-time">Recovery</span>
+    <p><strong>Old master comes back.</strong> It detects a new master exists, demotes itself to replica, and begins syncing from the new master. The shard is fully redundant again.</p>
+  </div>
+</div>
+
+<div class="callout warn">
+  <div class="callout-title">During the 5-6 Second Window</div>
+  <p>Requests targeting slots on the failed shard will receive connection errors. Smart clients will retry with exponential backoff. Users may see 1–2 failed requests. For OTP service: verification attempts fail → user retries → succeeds once promotion is complete.</p>
+</div>
+
+<div class="sec-hdr" id="failover-tuning"><h2>Tuning cluster-node-timeout</h2></div>
+
+<div class="callout rd">
+  <div class="callout-title">The Timeout Trade-off</div>
+  <ul>
+    <li><strong>Default: 15,000ms (15 seconds)</strong> — too slow for production. Users experience 15 seconds of errors before failover completes.</li>
+    <li><strong>Recommended: 5,000ms (5 seconds)</strong> — good balance. Fast enough for user experience, tolerant enough for network jitter.</li>
+    <li><strong>Aggressive: 2,000ms (2 seconds)</strong> — faster failover but false positives. A 1-second network hiccup triggers unnecessary failover. Failover itself is expensive — all clients must reconnect to new master.</li>
+    <li><strong>Sweet spot for OTP service: 5,000ms</strong> — failover in ~5 seconds, won't false-trigger on normal network jitter.</li>
+  </ul>
+</div>
+
+<!-- OTP FINAL SETUP -->
+<div class="sec-hdr" id="otp-setup"><h2>OTP Service — Final Redis Cluster Configuration</h2></div>
+
+<div class="diag rd">
+  <div class="diag-hdr"><span class="diag-title">Complete Cluster Topology</span></div>
+  <pre>OTP Service — Redis Cluster Configuration
+
+  Shards: 2   |   Replicas per shard: 1   |   Total nodes: 4
+
+  ┌──────────────── AZ-1 (us-east-1a) ─────────────────┐
+  │                                                     │
+  │  Shard 1 [MASTER]            Shard 2 [REPLICA]     │
+  │  Slots: 0 – 8,191            (copy of Shard 2)     │
+  │  Instance: r6g.xlarge        Instance: r6g.xlarge  │
+  │  IP: 10.0.1.10               IP: 10.0.1.21         │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+
+  ┌──────────────── AZ-2 (us-east-1b) ─────────────────┐
+  │                                                     │
+  │  Shard 1 [REPLICA]           Shard 2 [MASTER]      │
+  │  (copy of Shard 1)           Slots: 8,192 – 16,383 │
+  │  Instance: r6g.xlarge        Instance: r6g.xlarge  │
+  │  IP: 10.0.1.11               IP: 10.0.1.20         │
+  │                                                     │
+  └─────────────────────────────────────────────────────┘
+
+  cluster-node-timeout:    5000ms
+  min-replicas-to-write:   0  (don't block writes if replica temporarily down)
+  
+  Failover time:           ~5 seconds
+  Replication lag:         < 1ms (typical)
+  Data loss on failover:   ~0-1ms of writes (acceptable for OTPs)
+  Monthly cost:            4 × $400 = $1,600/month
+
+  Why 2 shards is enough:
+    50K RPS → ~100K Redis cmd/sec → 2 shards × 50K each → 50% utilization ✅
+    4.5M active OTPs × 500 bytes = ~2.25 GB → 1.1 GB/shard on 26GB instance ✅</pre>
+</div>
+
+<!-- INTERVIEW QA -->
+<div class="sec-hdr" id="interview-qa"><h2>Interview Talking Points</h2></div>
+
+<div class="interview-q">
+  <div class="iq-label">🎤 "How Does Redis Cluster Work?"</div>
+  <div class="iq-body">
+    <p>"Redis Cluster divides the key space into <strong>16,384 hash slots</strong> — this number is fixed and never changes. These slots are distributed across the actual Redis nodes, which we call shards. With 2 shards, each holds ~8,192 slots. When a key arrives, the client computes <strong>CRC16(key) % 16384</strong> to get the slot number, then routes <em>directly</em> to the shard owning that slot. The client is smart — it caches the slot-to-shard mapping locally and connects directly, no central proxy needed."</p>
+  </div>
+</div>
+
+<div class="interview-q">
+  <div class="iq-label">🎤 "How Do You Scale Redis Cluster?"</div>
+  <div class="iq-body">
+    <p>"You add more shards and Redis migrates slots from existing shards to the new one — <strong>live, with no downtime</strong>. The cluster automatically redirects requests for migrating keys using MOVED and ASK responses. Smart clients handle these redirections transparently. It's linear scaling — double the shards, double the throughput and memory capacity. I avoid resharding during peak traffic since migration is CPU-intensive on both source and destination."</p>
+  </div>
+</div>
+
+<div class="interview-q">
+  <div class="iq-label">🎤 "Why Only 2 Shards for 50K RPS?"</div>
+  <div class="iq-body">
+    <p>"Each Redis shard handles about 100K commands per second. At 50K RPS, the OTP service generates ~100K Redis commands/sec. With 2 shards, each handles 50K — <strong>50% utilization, comfortable headroom</strong>. Memory is 1.1 GB/shard on a 26 GB instance. There's no reason to over-provision. When traffic doubles, we add 2 more shards — takes minutes, zero downtime. The scaling plan is: 2 shards → 50K RPS, 4 shards → 100K RPS, 8 shards → 200K RPS. Linear and predictable."</p>
+  </div>
+</div>
+
+<!-- QUICK REFERENCE -->
+<div class="sec-hdr" id="quick-ref"><h2>Quick Reference Card</h2></div>
+
+<div class="qr-box">
+  <div class="qr-label">Redis Cluster — Key Numbers</div>
+  <div class="qr-grid">
+    <div class="qr-item"><span class="qr-key">Hash slots</span><span class="qr-val fixed">16,384 (FIXED)</span></div>
+    <div class="qr-item"><span class="qr-key">Minimum shards</span><span class="qr-val">3 (Redis minimum)</span></div>
+    <div class="qr-item"><span class="qr-key">Throughput per shard</span><span class="qr-val good">~100K cmd/sec</span></div>
+    <div class="qr-item"><span class="qr-key">Slot computation</span><span class="qr-val">CRC16(key) % 16384</span></div>
+    <div class="qr-item"><span class="qr-key">Heartbeat bitmap size</span><span class="qr-val fixed">2 KB (why 16,384)</span></div>
+    <div class="qr-item"><span class="qr-key">Resharding downtime</span><span class="qr-val good">Zero (live migration)</span></div>
+    <div class="qr-item"><span class="qr-key">Client routing</span><span class="qr-val">Direct (smart client)</span></div>
+    <div class="qr-item"><span class="qr-key">Default failover time</span><span class="qr-val">~15 seconds</span></div>
+    <div class="qr-item"><span class="qr-key">Recommended timeout</span><span class="qr-val good">5,000ms</span></div>
+    <div class="qr-item"><span class="qr-key">Replication lag</span><span class="qr-val good">&lt; 1ms typical</span></div>
+  </div>
+</div>
+
+<div class="decision-box" id="decision-framework">
+  <div class="db-title">How Many Replicas Do I Need?</div>
+  <div class="db-q"><strong>Is the data replaceable?</strong> YES (OTPs, sessions, cache) → 1 replica is enough. NO (transactions, financial records) → 2+ replicas minimum.</div>
+  <div class="db-q"><strong>Can users tolerate a 5-second blip?</strong> YES (most apps) → 1 replica + 5s timeout. NO (real-time trading) → 2 replicas + 2s timeout.</div>
+  <div class="db-q"><strong>What's the cost of total data loss?</strong> Low (users can resend, cache can rebuild) → 1 replica. High (money lost, compliance violation) → 2 replicas + WAIT command.</div>
+  <div class="db-q"><strong>For OTP service:</strong> Data is replaceable (5-min TTL) + 5-second blip acceptable + no permanent data loss risk → <strong>1 replica per shard is the right choice.</strong></div>
+</div>
+
+<div class="kl" id="key-lesson">
+  <div class="kl-label">🎯 Key Lesson — Part 1</div>
+  <p>The single most important distinction in Redis Cluster: <strong>hash slots (16,384) are a fixed distribution mechanism; shards are the physical machines you add as traffic grows.</strong> The slot count is an engineering constant — chosen to keep heartbeat bitmaps at 2 KB while providing enough granularity for 1,000-node clusters. The shard count is an operational decision — double the shards, double the capacity, linearly.</p>
+  <p>For replicas: <strong>the question is always "is the data replaceable?"</strong> Ephemeral data (OTPs, sessions, cache) tolerates 1 replica and 5-second failover. Irreplaceable data (transactions, user records) demands 2 replicas and synchronous replication via WAIT. The right answer is determined by the cost of data loss, not by a desire for maximum redundancy. Over-replicating ephemeral data is wasted money; under-replicating irreplaceable data is a production disaster waiting to happen.</p>
+</div>
+
+</main>
+<button id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑ Top</button>
+
+<script>
+const prog=document.getElementById('progress');
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  prog.style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+  document.getElementById('btt').classList.toggle('vis',h.scrollTop>300);
+  updateNav();
+});
+function updateNav(){
+  const all=document.querySelectorAll('[id]'),links=document.querySelectorAll('.ni a');
+  let cur='';all.forEach(s=>{if(s.getBoundingClientRect().top<130)cur=s.id;});
+  links.forEach(a=>{a.parentElement.classList.toggle('active',a.getAttribute('href')==='#'+cur);});
+}
+function toggleRC(h){h.parentElement.classList.toggle('collapsed')}
+const hbtn=document.getElementById('hbtn'),sb=document.getElementById('sidebar');
+hbtn.addEventListener('click',()=>sb.classList.toggle('open'));
+document.addEventListener('click',e=>{if(!sb.contains(e.target)&&!hbtn.contains(e.target))sb.classList.remove('open');});
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim();
+  if(!q){document.querySelectorAll('.ni,.ng').forEach(el=>el.classList.remove('hidden'));return;}
+  document.querySelectorAll('.ni').forEach(i=>i.classList.toggle('hidden',!i.textContent.toLowerCase().includes(q)));
+  document.querySelectorAll('.ng').forEach(g=>{g.classList.toggle('hidden',[...g.querySelectorAll('.ni')].every(i=>i.classList.contains('hidden')));});
+});
+</script>
+</body>
+</html>
