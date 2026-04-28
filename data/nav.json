@@ -71,6 +71,10 @@
       {
         "title": "Internals",
         "file": "pages/redis/redis.html"
+      },
+        {
+        "title": "Deep Dive-1",
+        "file": "pages/redis/core-1.html"
       }
     ],
     "Flink": [
