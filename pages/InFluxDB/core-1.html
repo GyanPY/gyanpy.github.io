@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Time Series Database Internals · Part 1 · L6/L7 Series</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2230;
+    --border: #21262d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --accent: #58a6ff;
+    --amber: #F5A623;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --sidebar-w: 280px;
+    --header-h: 4px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 1.05rem;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.6s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ── PROGRESS BAR ── */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 4px; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--teal));
+    z-index: 9999; transition: width 0.1s linear;
+    box-shadow: 0 0 12px rgba(88,166,255,0.6);
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; overflow-x: hidden;
+    z-index: 100;
+    display: flex; flex-direction: column;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    transition: transform 0.3s ease;
+  }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-logo {
+    padding: 20px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-series {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .sidebar-part-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(88,166,255,0.25);
+  }
+
+  /* Search */
+  .sidebar-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #search-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: 'Source Serif 4', serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #search-input:focus { border-color: var(--accent); }
+  #search-input::placeholder { color: var(--text-dim); }
+
+  /* Nav */
+  .nav-section-label {
+    padding: 14px 16px 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .nav-item {
+    display: block;
+    padding: 5px 16px 5px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-family: 'Source Serif 4', serif;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(88,166,255,0.05); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(88,166,255,0.08); }
+  .nav-item.sub { padding-left: 30px; font-size: 0.77rem; }
+  .nav-item.sub2 { padding-left: 42px; font-size: 0.74rem; }
+
+  /* Hamburger */
+  #hamburger {
+    display: none;
+    position: fixed; top: 12px; left: 12px; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer;
+    flex-direction: column; gap: 4px;
+  }
+  #hamburger span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; }
+  #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 99; }
+
+  /* ── MAIN CONTENT ── */
+  #main {
+    margin-left: var(--sidebar-w);
+    min-height: 100vh;
+    padding: 0 0 80px;
+  }
+
+  /* Hero */
+  .hero {
+    padding: 56px 60px 48px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #0d1117 0%, #0f1620 50%, #0a1520 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 70% 30%, rgba(0,191,165,0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(88,166,255,0.05) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero-breadcrumb {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero-breadcrumb span { color: var(--accent); }
+
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.4rem, 5vw, 3.8rem);
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 28px;
+    max-width: 720px;
+  }
+  .hero-title .word-tsdb { color: var(--teal); }
+  .hero-title .word-internals { color: var(--amber); }
+
+  .hero-bullets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 32px;
+    max-width: 700px;
+    margin-bottom: 32px;
+  }
+  .hero-bullet {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 0.88rem; color: var(--text-muted); line-height: 1.4;
+  }
+  .hero-bullet .icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+
+  .hero-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .hero-pill {
+    padding: 7px 18px; border-radius: 24px;
+    font-size: 0.8rem; font-family: 'JetBrains Mono', monospace;
+    cursor: default; transition: all 0.2s;
+  }
+  .hero-pill.active {
+    background: var(--accent); color: #0d1117; font-weight: 600;
+  }
+  .hero-pill.inactive {
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  .hero-pill.inactive:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Content area */
+  .content { max-width: 820px; padding: 48px 60px; }
+
+  /* Sections */
+  .section { margin-bottom: 64px; }
+
+  .section-header {
+    margin-bottom: 32px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .section-number {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .section-title .accent-teal { color: var(--teal); }
+  .section-title .accent-amber { color: var(--amber); }
+  .section-separator {
+    position: absolute; bottom: -1px; left: 0;
+    height: 2px; width: 60px;
+    background: linear-gradient(90deg, var(--accent), transparent);
+  }
+
+  h3 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem; font-weight: 600;
+    color: var(--text);
+    margin: 32px 0 12px;
+    line-height: 1.3;
+  }
+  h4 {
+    font-family: 'Source Serif 4', serif;
+    font-size: 1rem; font-weight: 600;
+    color: var(--text-muted);
+    margin: 24px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.85rem;
+  }
+
+  p { margin-bottom: 16px; color: var(--text); }
+  p:last-child { margin-bottom: 0; }
+
+  strong { color: var(--text); font-weight: 600; }
+  em { font-style: italic; color: var(--text-muted); }
+
+  /* Callout boxes */
+  .callout {
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 24px 0;
+    position: relative;
+  }
+  .callout-aha {
+    background: rgba(245,166,35,0.08);
+    border-left: 3px solid var(--amber);
+  }
+  .callout-insight {
+    background: rgba(0,191,165,0.07);
+    border-left: 3px solid var(--teal);
+  }
+  .callout-warning {
+    background: rgba(255,107,107,0.07);
+    border-left: 3px solid var(--coral);
+  }
+  .callout-soundbite {
+    background: var(--surface2);
+    border: 1px solid rgba(88,166,255,0.2);
+    border-left: 3px solid var(--accent);
+  }
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .callout-aha .callout-label { color: var(--amber); }
+  .callout-insight .callout-label { color: var(--teal); }
+  .callout-warning .callout-label { color: var(--coral); }
+  .callout-soundbite .callout-label { color: var(--accent); }
+  .callout p { margin-bottom: 0; font-size: 0.95rem; }
+
+  /* Quote / soundbite */
+  .soundbite-text {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-style: italic;
+    line-height: 1.65;
+    color: var(--text);
+  }
+  .soundbite-text .highlight {
+    background: rgba(88,166,255,0.15);
+    color: var(--accent);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  /* Lists */
+  ul, ol {
+    padding-left: 1.6em;
+    margin-bottom: 16px;
+  }
+  li { margin-bottom: 6px; color: var(--text); }
+  li::marker { color: var(--accent); }
+
+  /* Nested list */
+  ul ul { margin-top: 6px; margin-bottom: 0; }
+  ul ul li::marker { color: var(--text-dim); }
+
+  /* Checklist */
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+  .checklist li .check { color: var(--teal); font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+  .checklist li .cross { color: var(--coral); font-size: 1rem; flex-shrink: 0; margin-top: 2px; }
+
+  /* Numbered feature cards (study priority) */
+  .feature-cards { display: flex; flex-direction: column; gap: 12px; margin: 20px 0; }
+  .feature-card {
+    display: flex; gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    transition: all 0.2s ease;
+  }
+  .feature-card:hover { border-color: rgba(88,166,255,0.3); transform: translateX(3px); }
+  .feature-card-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    opacity: 0.4;
+    flex-shrink: 0;
+    line-height: 1.1;
+    min-width: 28px;
+  }
+  .feature-card-body h5 {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .feature-card-body p { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0; }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 24px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  thead tr {
+    background: linear-gradient(135deg, #1c2a3a, #1a2535);
+    border-bottom: 1px solid rgba(88,166,255,0.2);
+  }
+  thead th {
+    padding: 12px 16px;
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  tbody tr:hover { background: rgba(88,166,255,0.04); }
+  tbody td { padding: 11px 16px; color: var(--text-muted); vertical-align: top; line-height: 1.5; }
+  tbody td:first-child { color: var(--text); font-weight: 500; }
+  .td-teal { color: var(--teal) !important; }
+  .td-coral { color: var(--coral) !important; }
+  .td-amber { color: var(--amber) !important; }
+
+  /* Diagram/pre blocks */
+  .diagram-wrap {
+    position: relative;
+    margin: 24px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .diagram-label {
+    position: absolute; top: 0; left: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    background: rgba(88,166,255,0.15);
+    color: var(--accent);
+    border-bottom-right-radius: 6px;
+  }
+  pre.diagram {
+    background: #010409;
+    padding: 36px 20px 20px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #79c0ff;
+    white-space: pre;
+  }
+
+  /* Code blocks */
+  .code-block {
+    position: relative;
+    margin: 20px 0;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .code-header {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #1c2230;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-lang {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+  }
+  .copy-btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    background: none; border: 1px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+    padding: 3px 10px; border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  pre.code {
+    background: #010409;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: #c9d1d9;
+    white-space: pre;
+  }
+
+  /* Scale threshold cards */
+  .scale-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .scale-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    transition: all 0.2s;
+  }
+  .scale-card:hover { border-color: rgba(88,166,255,0.3); }
+  .scale-range {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    margin-bottom: 6px;
+    letter-spacing: 0.04em;
+  }
+  .scale-verdict { font-size: 0.85rem; color: var(--text); line-height: 1.45; }
+
+  /* Analogy card */
+  .analogy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 28px;
+    margin: 24px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .analogy-card::before {
+    content: '"';
+    position: absolute; top: 8px; right: 20px;
+    font-family: 'Playfair Display', serif;
+    font-size: 8rem;
+    color: rgba(88,166,255,0.06);
+    line-height: 1;
+    pointer-events: none;
+  }
+  .analogy-card h3 { margin-top: 0; }
+
+  /* Failure scenario */
+  .failure-block {
+    background: rgba(255,107,107,0.04);
+    border: 1px solid rgba(255,107,107,0.15);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 20px 0;
+  }
+  .failure-block h4 { color: var(--coral); margin-top: 0; }
+  .failure-timeline { list-style: none; padding-left: 0; }
+  .failure-timeline li {
+    display: flex; gap: 12px;
+    margin-bottom: 10px;
+    font-size: 0.88rem;
+  }
+  .failure-timeline .ts {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--coral);
+    font-size: 0.78rem;
+    flex-shrink: 0;
+    min-width: 50px;
+  }
+
+  /* Variant section intro */
+  .variant-intro {
+    display: flex; gap: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+  }
+  .variant-badge {
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: rgba(0,191,165,0.12);
+    border: 1px solid rgba(0,191,165,0.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem;
+  }
+  .variant-intro h4 { color: var(--teal); margin: 0 0 4px; font-size: 0.85rem; }
+  .variant-intro p { font-size: 0.88rem; color: var(--text-muted); margin: 0; }
+
+  /* Deep insight */
+  .deep-insight {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 24px 0;
+    border-top: 2px solid var(--amber);
+  }
+  .deep-insight-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .deep-insight-header .icon { font-size: 1rem; }
+  .deep-insight-header span {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+  .deep-insight p { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px; }
+  .deep-insight p:last-child { margin-bottom: 0; }
+
+  /* Operational metrics */
+  .ops-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .ops-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .ops-card h5 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .ops-card ul { margin: 0; padding-left: 1.2em; }
+  .ops-card li { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; }
+
+  /* Collapsible */
+  .collapsible-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .collapsible-header:hover { border-color: rgba(88,166,255,0.3); }
+  .collapsible-header .ch-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .collapsible-header .ch-arrow {
+    font-size: 0.8rem; color: var(--text-dim);
+    transition: transform 0.2s;
+  }
+  .collapsible-header.open .ch-arrow { transform: rotate(90deg); }
+  .collapsible-body {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.25s ease;
+    max-height: 0; opacity: 0;
+  }
+  .collapsible-body.open { max-height: 4000px; opacity: 1; }
+  .collapsible-inner { padding: 16px 0; }
+
+  /* Back to top */
+  #back-to-top {
+    position: fixed; bottom: 28px; right: 28px; z-index: 500;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; cursor: pointer;
+    transition: all 0.2s;
+    opacity: 0; pointer-events: none;
+  }
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
+
+  /* inline mark highlight */
+  mark {
+    background: rgba(88,166,255,0.15);
+    color: var(--accent);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  mark.amber { background: rgba(245,166,35,0.15); color: var(--amber); }
+  mark.teal { background: rgba(0,191,165,0.12); color: var(--teal); }
+  mark.coral { background: rgba(255,107,107,0.12); color: var(--coral); }
+
+  /* step walkthrough */
+  .steps { list-style: none; padding-left: 0; margin: 16px 0; }
+  .steps li {
+    display: flex; gap: 14px; margin-bottom: 16px;
+    font-size: 0.9rem; color: var(--text);
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: rgba(88,166,255,0.15);
+    border: 1px solid rgba(88,166,255,0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    margin-top: 2px;
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    :root { --sidebar-w: 0px; }
+    #sidebar { transform: translateX(-280px); width: 280px; }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    #sidebar-overlay.open { display: block; }
+    #main { margin-left: 0; }
+    .hero { padding: 56px 24px 40px; }
+    .content { padding: 32px 24px; }
+    .hero-bullets { grid-template-columns: 1fr; }
+    .scale-grid { grid-template-columns: 1fr; }
+    .ops-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- Hamburger -->
+<button id="hamburger" aria-label="Toggle navigation">
+  <span></span><span></span><span></span>
+</button>
+<div id="sidebar-overlay"></div>
+
+<!-- Sidebar -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-logo">
+    <div class="sidebar-series">TSDB · L6/L7 Series</div>
+    <div class="sidebar-title">Time Series Database<br/>Internals</div>
+    <span class="sidebar-part-badge">Part 1 — Core Understanding</span>
+  </div>
+
+  <div class="sidebar-search">
+    <input type="search" id="search-input" placeholder="Search sections..." aria-label="Search sections"/>
+  </div>
+
+  <div class="nav-section-label">Part 1 — Core Understanding</div>
+  <a class="nav-item" href="#hero">Introduction</a>
+  <a class="nav-item" href="#s1-1">1.1 Elevator Pitch</a>
+  <a class="nav-item" href="#s1-2">1.2 The Perfect Analogy</a>
+  <a class="nav-item sub" href="#s1-2-extending">↳ Extending the Analogy</a>
+  <a class="nav-item sub" href="#s1-2-failures">↳ Failure Scenarios</a>
+  <a class="nav-item" href="#s1-3">1.3 The Mental Model</a>
+  <a class="nav-item sub" href="#s1-3-concepts">↳ 5 Core Concepts</a>
+  <a class="nav-item sub" href="#s1-3-guarantees">↳ Guarantees Matrix</a>
+  <a class="nav-item sub" href="#s1-3-tradeoffs">↳ Fundamental Trade-offs</a>
+  <a class="nav-item" href="#s1-4">1.4 When This Comes Up</a>
+  <a class="nav-item sub" href="#s1-4-keywords">↳ Trigger Keywords</a>
+  <a class="nav-item sub" href="#s1-4-scale">↳ Scale Thresholds</a>
+  <a class="nav-item sub" href="#s1-4-smell">↳ The Smell Test</a>
+  <a class="nav-item sub" href="#soundbite">↳ Interview Sound Bite</a>
+
+  <div class="nav-section-label">Part 2 — Variants</div>
+  <a class="nav-item" href="#s2-intro">Overview</a>
+  <a class="nav-item" href="#s2-1">2.1 LSM-Tree Based</a>
+  <a class="nav-item sub" href="#s2-1-what">↳ What It Is</a>
+  <a class="nav-item sub" href="#s2-1-how">↳ How It Works</a>
+  <a class="nav-item sub" href="#s2-1-strengths">↳ Strengths</a>
+  <a class="nav-item sub" href="#s2-1-limits">↳ Limitations</a>
+  <a class="nav-item sub" href="#s2-1-ops">↳ Operational Guide</a>
+  <a class="nav-item sub" href="#s2-1-nuances">↳ L6/L7 Nuances</a>
+</nav>
+
+<!-- Main -->
+<main id="main">
+
+  <!-- Hero -->
+  <section class="hero" id="hero">
+    <div class="hero-breadcrumb">TSDB · HTTP · L6/L7 Series · <span>Part 1</span></div>
+    <h1 class="hero-title">
+      <span class="word-tsdb">Time Series</span><br/>
+      <span class="word-internals">Database</span> Internals
+    </h1>
+    <div class="hero-bullets">
+      <div class="hero-bullet"><span class="icon">📡</span><span>Weather station analogy that makes every concept click</span></div>
+      <div class="hero-bullet"><span class="icon">⚙️</span><span>5 core concepts every backend engineer must internalize</span></div>
+      <div class="hero-bullet"><span class="icon">🗄️</span><span>LSM-Trees, memtables, SSTables, and compaction in depth</span></div>
+      <div class="hero-bullet"><span class="icon">⚡</span><span>L6/L7 nuances that separate Senior from Staff candidates</span></div>
+      <div class="hero-bullet"><span class="icon">🔥</span><span>Cardinality bombs, compaction storms &amp; failure playbooks</span></div>
+      <div class="hero-bullet"><span class="icon">📐</span><span>Scale thresholds, smell test &amp; interview sound bites</span></div>
+    </div>
+    <div class="hero-pills">
+      <span class="hero-pill active">Part 1: Core + LSM Variant</span>
+      <span class="hero-pill inactive">Part 2: Gorilla · TimescaleDB · IOx</span>
+    </div>
+  </section>
+
+  <div class="content">
+
+    <!-- ═══════════════════════════════════════════════
+         PART 1 · CORE UNDERSTANDING
+    ═══════════════════════════════════════════════ -->
+
+    <!-- 1.1 ELEVATOR PITCH -->
+    <section class="section" id="s1-1">
+      <div class="section-header">
+        <div class="section-number">Part 1 · Section 1.1</div>
+        <h2 class="section-title">The <span class="accent-teal">Elevator</span> Pitch</h2>
+        <div class="section-separator"></div>
+      </div>
+
+      <h3>For a smart non-engineer</h3>
+      <p>A time series database is a system purpose-built to record and query measurements that happen over time—like a hospital's vital-signs monitor that records your heart rate every second and lets a doctor instantly see trends, anomalies, and comparisons across millions of patients simultaneously.</p>
+
+      <h3>For a fellow engineer</h3>
+      <p>A TSDB exploits the append-heavy, time-ordered, high-cardinality nature of timestamped data to achieve <mark>10–100× better write throughput and compression</mark> than general-purpose databases by using columnar storage, aggressive time-partitioning, and specialized indexing that trades random-write flexibility for sequential-write speed.</p>
+
+      <div class="callout callout-aha">
+        <div class="callout-label">💡 The "Aha" Moment</div>
+        <p>General-purpose databases treat every row as equally likely to be updated, queried, or deleted at any time. But time series data has a massive structural gift: <strong>new data always arrives at the "right edge" of time, old data is almost never modified, and queries almost always ask for contiguous time ranges.</strong></p>
+        <p style="margin-top:10px;">Once you realize this, you understand why every single design decision in a TSDB—from the storage engine to the compaction strategy to the index structure—is an optimization exploiting these three invariants. You're not building a general database; you're building a <mark amber>write-optimized, range-scan-optimized, compression-optimized append log</mark> with smart indexing.</p>
+      </div>
+    </section>
+
+    <!-- 1.2 ANALOGY -->
+    <section class="section" id="s1-2">
+      <div class="section-header">
+        <div class="section-number">Part 1 · Section 1.2</div>
+        <h2 class="section-title">The <span class="accent-amber">Perfect</span> Analogy</h2>
+        <div class="section-separator"></div>
+      </div>
+
+      <div class="analogy-card">
+        <h3>🌦️ The Weather Station Logbook</h3>
+        <p>Imagine you run 10,000 weather stations across the country. Each station records temperature, humidity, wind speed, and pressure every 10 seconds. You need to:</p>
+        <ul>
+          <li>Write new readings as fast as they arrive (you can't tell a weather station to "slow down")</li>
+          <li>Query things like "show me temperature for Station #4523 over the last 24 hours"</li>
+          <li>Aggregate things like "what was the average humidity across all California stations last month?"</li>
+          <li>Eventually discard old fine-grained data (you don't need per-second resolution from 5 years ago)</li>
+        </ul>
+        <p><strong>A general-purpose database</strong> is like writing each reading on its own index card, filing it alphabetically by station name, and stacking them in a giant filing cabinet. Finding "Station #4523's temperature for last Tuesday" means rifling through millions of cards.</p>
+        <p><strong>A time series database</strong> is like giving each station its own dedicated logbook, where new readings are always written on the next blank line. The pages are organized by time (one page per hour). Finding last Tuesday's temperature means pulling one logbook off the shelf, flipping to the right pages, and reading them in order. <mark teal>Massively faster.</mark></p>
+      </div>
+
+      <div id="s1-2-extending">
+        <h3>Extending the Analogy to Variants</h3>
+
+        <div class="feature-cards">
+          <div class="feature-card">
+            <div class="feature-card-num">01</div>
+            <div class="feature-card-body">
+              <h5>LSM-Tree based (InfluxDB, early Prometheus)</h5>
+              <p>Each station writes onto sticky notes that pile up on a desk (memtable). Periodically, a clerk sorts the sticky notes and pastes them into the logbook (flush to SSTable). Over time, another clerk merges smaller logbooks into bigger ones (compaction).</p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">02</div>
+            <div class="feature-card-body">
+              <h5>Compressed columnar blocks (Gorilla / Prometheus TSDB)</h5>
+              <p>Instead of writing each reading as "temp=72, humidity=55, wind=8," you have separate columns—one strip of paper just for temperatures, one for humidity. Since consecutive temperatures are close in value (72, 72, 73, 72...), you write just the differences (0, +1, -1), which compresses incredibly well.</p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">03</div>
+            <div class="feature-card-body">
+              <h5>Time-structured merge tree (InfluxDB TSI / TimescaleDB)</h5>
+              <p>You organize the logbooks not just by station but by time blocks. All readings from "January 2024" for all stations live in one box. When January is over, you <mark>seal that box and never open it again for writes</mark>. This is time partitioning.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s1-2-failures">
+        <h3>Failure Scenarios in the Analogy</h3>
+
+        <div class="failure-block">
+          <h4>⚡ Write Spike — The Hurricane Scenario</h4>
+          <p>Suddenly all 10,000 stations report at 1-second intervals instead of 10-second. The sticky notes pile up faster than the clerk can paste them. The desk overflows—this is <mark coral>memtable memory pressure</mark>. You either need more desks (more RAM) or the clerk needs to flush faster (more disk I/O).</p>
+        </div>
+
+        <div class="failure-block">
+          <h4>💥 Cardinality Explosion</h4>
+          <p>A new requirement says to tag each reading with the individual sensor's serial number. Suddenly you don't have 10,000 logbooks—you have 10,000 × 4 sensors = 40,000. The shelf index (inverted index) blows up. This is the <mark coral>high cardinality problem</mark> that has killed production TSDB clusters.</p>
+        </div>
+
+        <div class="failure-block">
+          <h4>🕒 Out-of-Order Data</h4>
+          <p>A station lost connectivity for 2 hours and now sends backfilled data. But you already sealed that time block's box. Now you need to unseal, merge, and reseal—expensive. This is the <mark coral>backfill/late-arrival problem</mark>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1.3 MENTAL MODEL -->
+    <section class="section" id="s1-3">
+      <div class="section-header">
+        <div class="section-number">Part 1 · Section 1.3</div>
+        <h2 class="section-title">The <span class="accent-teal">Mental</span> Model</h2>
+        <div class="section-separator"></div>
+      </div>
+
+      <div id="s1-3-concepts">
+        <h3>5 Core Concepts You MUST Internalize</h3>
+
+        <div class="feature-cards">
+          <div class="feature-card">
+            <div class="feature-card-num">1</div>
+            <div class="feature-card-body">
+              <h5>The Write Path Is King</h5>
+              <p>TSDBs are designed for massive write throughput (often 10M+ points/sec). The entire architecture—LSM trees, WAL, batching, columnar layout—<mark>serves the write path first</mark>. Reads are optimized second, but cleverly, because the time-ordered nature makes range scans inherently efficient.</p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">2</div>
+            <div class="feature-card-body">
+              <h5>Time Partitioning Is the Fundamental Organizing Principle</h5>
+              <p>Data is partitioned into discrete, non-overlapping time blocks (e.g., 2-hour chunks). This is the single most important design decision because: <strong>writes always hit the most recent block</strong> (hot write path is tiny), <strong>deleting old data = dropping entire blocks</strong> (no expensive per-row deletion), <strong>queries span only the relevant blocks</strong> (massive pruning).</p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">3</div>
+            <div class="feature-card-body">
+              <h5>Series Cardinality Is the Hidden Scaling Dimension</h5>
+              <p>"Series" = a unique combination of metric name + tag values (e.g., <code style="font-family:'JetBrains Mono';font-size:0.85em;color:var(--teal);">cpu.usage{host=web01, region=us-east}</code>). The number of unique series—cardinality—<mark>determines the size of your index, not the number of data points</mark>. A system with 10M unique series is far harder to manage than one with 100K series that each have 100× more data points.</p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">4</div>
+            <div class="feature-card-body">
+              <h5>Compression Is Not Optional; It's Architectural</h5>
+              <p>Time series data compresses <mark amber>10–20×</mark> because consecutive values are strongly correlated (delta-of-delta for timestamps, XOR encoding for floats). This compression isn't just a storage saver—it means more data fits in memory, which means faster queries. <strong>Compression ratio directly determines query performance.</strong></p>
+            </div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-card-num">5</div>
+            <div class="feature-card-body">
+              <h5>The Inverted Index Maps Tags to Series</h5>
+              <p>To answer "show me CPU usage for all hosts in us-east," you need an inverted index that maps <code style="font-family:'JetBrains Mono';font-size:0.85em;color:var(--teal);">region=us-east → list of series IDs</code>. This index is the most operationally fragile component and the one most likely to cause outages at scale.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s1-3-guarantees">
+        <h3>What It GUARANTEES vs. What It Does NOT</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>✅ Guarantees</th>
+                <th>❌ Does NOT Guarantee</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="td-teal">Extremely high write throughput for append-only workloads</td>
+                <td class="td-coral">Strong consistency for concurrent reads during writes</td>
+              </tr>
+              <tr>
+                <td class="td-teal">Efficient range scans over contiguous time windows</td>
+                <td class="td-coral">Fast random-access point lookups by arbitrary fields</td>
+              </tr>
+              <tr>
+                <td class="td-teal">Excellent compression for numerically correlated data</td>
+                <td class="td-coral">Efficient arbitrary JOINs across series</td>
+              </tr>
+              <tr>
+                <td class="td-teal">Cheap deletion of old data via partition drops</td>
+                <td class="td-coral">Fast updates/modifications of historical data points</td>
+              </tr>
+              <tr>
+                <td class="td-teal">Sub-second queries over recent data with proper indexing</td>
+                <td class="td-coral">Unbounded cardinality without performance degradation</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="s1-3-tradeoffs">
+        <h3>Fundamental Trade-offs</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Trade-off</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Write throughput vs. read consistency</td>
+                <td>Batching and async flushing make writes fast but reads of the most recent seconds may hit the memtable path.</td>
+              </tr>
+              <tr>
+                <td>Compression ratio vs. random access</td>
+                <td>Columnar, delta-encoded blocks compress beautifully but you can't seek to an arbitrary point without decompressing the block.</td>
+              </tr>
+              <tr>
+                <td>Index completeness vs. memory footprint</td>
+                <td>A full inverted index enables flexible queries but consumes enormous memory at high cardinality.</td>
+              </tr>
+              <tr>
+                <td>Time granularity vs. storage cost</td>
+                <td>Higher resolution data enables better analysis but grows storage linearly.</td>
+              </tr>
+              <tr>
+                <td>Query flexibility vs. write optimization</td>
+                <td>Supporting SQL-like queries adds overhead to the write path; more restricted query models (like PromQL) allow tighter optimization.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1.4 WHEN THIS COMES UP -->
+    <section class="section" id="s1-4">
+      <div class="section-header">
+        <div class="section-number">Part 1 · Section 1.4</div>
+        <h2 class="section-title">When Does <span class="accent-amber">This Come Up?</span></h2>
+        <div class="section-separator"></div>
+      </div>
+
+      <div id="s1-4-keywords">
+        <h3>Interview Trigger Keywords</h3>
+        <div class="callout callout-insight">
+          <div class="callout-label">🎯 Keyword Radar</div>
+          <p>Hear any of these in a system design prompt? Pivot immediately to TSDB thinking:</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin-top:12px;">
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Monitoring," "metrics," "observability"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Time series," "sensor data," "IoT"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Dashboard," "Grafana," "Prometheus-like"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "High write throughput, time-ordered"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Aggregation over time windows"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Retention policies," "downsampling"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Cardinality," "tag-based queries"</span>
+            <span style="font-family:'JetBrains Mono';font-size:0.8rem;color:var(--teal);">• "Stock prices," "event tracking," "telemetry"</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="s1-4-scale">
+        <h3>At What Scale It Becomes Essential</h3>
+        <div class="scale-grid">
+          <div class="scale-card">
+            <div class="scale-range">&lt; 10K series · &lt; 1K writes/sec</div>
+            <div class="scale-verdict">SQLite or PostgreSQL with a timestamp column works fine. <mark teal>Don't over-engineer.</mark></div>
+          </div>
+          <div class="scale-card">
+            <div class="scale-range">10K–1M series · 10K–100K writes/sec</div>
+            <div class="scale-verdict">You need a purpose-built TSDB. This is where InfluxDB, Prometheus, or TimescaleDB starts paying for itself.</div>
+          </div>
+          <div class="scale-card">
+            <div class="scale-range">1M–100M series · 100K–10M writes/sec</div>
+            <div class="scale-verdict">You need distributed TSDB architecture (sharding, replication). Think <mark>Thanos, Cortex, M3DB</mark>, or a custom solution.</div>
+          </div>
+          <div class="scale-card">
+            <div class="scale-range">100M+ series · 10M+ writes/sec</div>
+            <div class="scale-verdict"><mark coral>Google/Meta/Amazon scale.</mark> You need custom-built systems (Monarch at Google, Gorilla+ODS at Meta). Off-the-shelf won't cut it.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s1-4-smell">
+        <h3>The "Smell Test"</h3>
+        <p>If <strong>4 or more</strong> of these are true, you're in TSDB territory:</p>
+        <ul class="checklist">
+          <li><span class="check">✅</span><span>Data arrives continuously with timestamps?</span></li>
+          <li><span class="check">✅</span><span>Queries are overwhelmingly time-range based?</span></li>
+          <li><span class="check">✅</span><span>Data is almost never updated after writing?</span></li>
+          <li><span class="check">✅</span><span>You need to handle orders of magnitude more writes than reads?</span></li>
+          <li><span class="check">✅</span><span>You need retention/downsampling policies?</span></li>
+          <li><span class="check">✅</span><span>You need fast aggregations (avg, max, percentile) over time windows?</span></li>
+        </ul>
+      </div>
+
+      <div id="soundbite" style="margin-top:32px;">
+        <div class="callout callout-soundbite">
+          <div class="callout-label">🔑 Interview Sound Bite</div>
+          <p class="soundbite-text">"Time series databases exploit three structural invariants—<span class="highlight">data is append-only, time-ordered, and queried in contiguous ranges</span>—to achieve write throughput and compression ratios that are fundamentally impossible in general-purpose databases. The key architectural insight is <span class="highlight">time-partitioning</span>: by organizing data into sealed, immutable time blocks, you turn deletes into drops, writes into sequential appends, and queries into targeted block scans."</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════
+         PART 2 · VARIANTS
+    ═══════════════════════════════════════════════ -->
+
+    <section class="section" id="s2-intro">
+      <div class="section-header">
+        <div class="section-number">Part 2 · Overview</div>
+        <h2 class="section-title">The <span class="accent-teal">Variants</span> — In-Depth</h2>
+        <div class="section-separator"></div>
+      </div>
+      <p>Four major architectural variants of TSDB internals, each representing a distinct engineering philosophy and set of trade-offs:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Variant</th><th>Examples</th><th>Core Idea</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="font-family:'JetBrains Mono';color:var(--accent);">2.1</td>
+              <td><strong>LSM-Tree Based</strong></td>
+              <td class="td-teal">InfluxDB (early), OpenTSDB</td>
+              <td>Memtable → SSTable flush → compaction pipeline</td>
+            </tr>
+            <tr>
+              <td style="font-family:'JetBrains Mono';color:var(--accent);">2.2</td>
+              <td><strong>Compressed In-Memory Blocks</strong></td>
+              <td class="td-teal">Meta Gorilla, Prometheus TSDB</td>
+              <td>XOR float encoding, delta-of-delta timestamps</td>
+            </tr>
+            <tr>
+              <td style="font-family:'JetBrains Mono';color:var(--accent);">2.3</td>
+              <td><strong>Time-Structured Merge Tree</strong></td>
+              <td class="td-teal">InfluxDB IOx, Prometheus TSDB v2</td>
+              <td>Immutable time-partitioned Parquet/Arrow blocks</td>
+            </tr>
+            <tr>
+              <td style="font-family:'JetBrains Mono';color:var(--accent);">2.4</td>
+              <td><strong>Relational Extension</strong></td>
+              <td class="td-teal">TimescaleDB</td>
+              <td>Hypertable chunks on top of PostgreSQL</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="color:var(--text-muted);font-size:0.88rem;"><em>This document covers Variant 2.1 in full depth. Variants 2.2–2.4 are covered in Part 2.</em></p>
+    </section>
+
+    <!-- 2.1 LSM TREE -->
+    <section class="section" id="s2-1">
+      <div class="section-header">
+        <div class="section-number">Part 2 · Variant 2.1</div>
+        <h2 class="section-title"><span class="accent-amber">LSM-Tree</span> Based TSDB</h2>
+        <div class="section-separator"></div>
+      </div>
+
+      <!-- A) What It Is -->
+      <div id="s2-1-what">
+        <div class="variant-intro">
+          <div class="variant-badge">🗂️</div>
+          <div>
+            <h4>One-Sentence Definition</h4>
+            <p>An LSM-tree based TSDB buffers incoming time series points in an in-memory sorted structure (memtable), then flushes them as immutable sorted files (SSTables) to disk, periodically merging these files to maintain query efficiency.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-insight">
+          <div class="callout-label">⚡ Core Insight</div>
+          <p>By converting random writes into sequential writes (via the memtable → flush → compact pipeline), you can achieve <mark teal>write throughput limited only by sequential disk bandwidth</mark>, not random I/O.</p>
+        </div>
+
+        <div class="callout callout-aha">
+          <div class="callout-label">📜 The Inventor's Problem</div>
+          <p>OpenTSDB (built on HBase) needed to store billions of data points from thousands of servers, and traditional B-tree databases couldn't handle the write load because every insert required <mark amber>random disk seeks to update the B-tree in place</mark>.</p>
+        </div>
+      </div>
+
+      <!-- B) How It Works -->
+      <div id="s2-1-how">
+        <h3>B) How It Works — Step-by-Step</h3>
+        <p>Let's say we have a TSDB receiving metrics from <strong>5,000 hosts</strong>, each reporting <strong>100 metrics every 10 seconds</strong> = <mark>50,000 points/second</mark>.</p>
+
+        <ol class="steps">
+          <li>
+            <div class="step-num">1</div>
+            <div><strong>Write-Ahead Log (WAL):</strong> Every incoming point is first appended to a sequential WAL file on disk. This is purely for crash recovery—it's fast because it's sequential I/O.</div>
+          </li>
+          <li>
+            <div class="step-num">2</div>
+            <div><strong>Memtable buffering:</strong> The point is simultaneously inserted into an in-memory sorted structure (typically a skip list or red-black tree), sorted by <code style="font-family:'JetBrains Mono';font-size:0.85em;color:var(--teal);">{series_id, timestamp}</code>. At 50K points/sec with ~50 bytes/point, this accumulates ~2.5 MB/sec.</div>
+          </li>
+          <li>
+            <div class="step-num">3</div>
+            <div><strong>Memtable flush</strong> (every few minutes or at size threshold, say 64 MB): When the memtable reaches capacity (~26 seconds of data at our rate), it's frozen, a new empty memtable takes over, and the frozen one is serialized to disk as an immutable <strong>SSTable</strong> (Sorted String Table). Each SSTable contains:
+              <ul style="margin-top:8px;">
+                <li>A data block section (sorted key-value pairs, compressed)</li>
+                <li>An index block (sparse index pointing into data blocks)</li>
+                <li>A bloom filter (for quickly checking "is series X in this file?")</li>
+              </ul>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">4</div>
+            <div><strong>Compaction:</strong> Over time, you accumulate many SSTables. A read for "series X over last hour" might need to check 10+ files. Compaction merges multiple SSTables into fewer, larger ones, removing duplicates and tombstones. Two strategies:
+              <ul style="margin-top:8px;">
+                <li><mark>Size-tiered:</mark> Merge files of similar size. Simpler, better write amplification.</li>
+                <li><mark>Leveled:</mark> Organize files into levels with size limits. Better read amplification, more predictable.</li>
+              </ul>
+            </div>
+          </li>
+          <li>
+            <div class="step-num">5</div>
+            <div><strong>Read path:</strong> To query <code style="font-family:'JetBrains Mono';font-size:0.85em;color:var(--teal);">cpu.usage{host=web01}</code> from the last hour:
+              <ul style="margin-top:8px;">
+                <li>Check the active memtable (most recent data)</li>
+                <li>Check each SSTable that might contain data from the last hour</li>
+                <li>Use bloom filters to skip SSTables that don't contain this series</li>
+                <li>Merge results from all sources</li>
+              </ul>
+            </div>
+          </li>
+        </ol>
+
+        <h4>Concrete Example with Real Numbers</h4>
+        <p>Imagine a write load of <strong>100K points/sec</strong>, each point ~40 bytes.</p>
+
+        <div class="diagram-wrap">
+          <div class="diagram-label">DIAGRAM</div>
+          <pre class="diagram">
+  Write load: 100K pts/sec · ~40 bytes/pt = 4 MB/sec to WAL
+
+  t=0s    │ Memtable starts filling. WAL writes ~4 MB/sec.
+          │
+  t=16s   │ Memtable hits 64 MB → FREEZE → start new memtable.
+          │ Background flush → SSTable on disk (~0.5s SSD seq write).
+          │
+  t=100s  │ ~6 SSTables on disk (Level 0).
+          │
+  t=600s  │ ~37 SSTables in L0. Compaction kicks in:
+          │   ┌─────────────────────────────────────────────┐
+          │   │ Pick 4 × L0 SSTables (~256 MB)              │
+          │   │   ↓ merge + sort + compress                 │
+          │   │ → Level 1 files (~50–80 MB after 4–5× cmpr) │
+          │   └─────────────────────────────────────────────┘
+          │
+  Steady  │ Pyramid of SSTables:
+  State   │
+          │   L0: small, OVERLAPPING, recently flushed
+          │   L1: larger, NON-OVERLAPPING, sorted, compressed
+          │   L2: even larger, fully merged, best compression
+          │
+          │   Bloom filter → skip irrelevant files
+          │   Manifest   → tracks SSTable existence + level + time range
+</pre>
+        </div>
+
+        <h4>Data Structures Involved</h4>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Structure</th><th>Implementation</th><th>Purpose</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Memtable</td><td>Skip list or balanced BST</td><td>In-memory buffer, keyed by {series_id, timestamp}</td></tr>
+              <tr><td>WAL</td><td>Append-only sequential file</td><td>Crash recovery</td></tr>
+              <tr><td>SSTable</td><td>Immutable sorted file</td><td>Data blocks + index blocks + bloom filters</td></tr>
+              <tr><td>Bloom filters</td><td>Probabilistic set membership</td><td>Per-SSTable series ID skip check</td></tr>
+              <tr><td>Manifest</td><td>Metadata file</td><td>Tracks SSTables: level, time range, file path</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- C) Strengths -->
+      <div id="s2-1-strengths">
+        <h3>C) Strengths &amp; Ideal Use Cases</h3>
+
+        <ul>
+          <li><strong>Incredible write throughput:</strong> Sequential I/O only on the write path. <mark teal>100K–1M+ points/sec per node</mark> easily achievable on SSDs.</li>
+          <li><strong>Works with existing LSM infrastructure:</strong> Can leverage battle-tested engines like RocksDB, LevelDB.</li>
+          <li><strong>Flexible schema:</strong> Tag-based series identification works naturally with key-value LSM layout.</li>
+        </ul>
+
+        <div class="callout callout-insight">
+          <div class="callout-label">🎯 Sweet Spot</div>
+          <p><mark teal>10K–1M unique series</mark>, write-heavy workloads (&gt;10:1 write:read ratio), when you need durability guarantees.</p>
+          <p style="margin-top:8px;"><strong>Real-world users:</strong> OpenTSDB (HBase LSM), early InfluxDB (BoltDB → custom LSM), QuestDB (partially), Apache IoTDB.</p>
+        </div>
+      </div>
+
+      <!-- D) Limitations -->
+      <div id="s2-1-limits">
+        <h3>D) Limitations &amp; Failure Modes</h3>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Limitation</th><th>Root Cause</th><th>Severity</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Write amplification</td>
+                <td>Each point written 10–30× across WAL → L0 → L1 → L2...</td>
+                <td class="td-amber">Medium — burns SSD lifetime</td>
+              </tr>
+              <tr>
+                <td>Compaction storms</td>
+                <td>Write rate exceeds compaction rate; L0 files pile up</td>
+                <td class="td-coral">High — cascading failure</td>
+              </tr>
+              <tr>
+                <td>Read amplification (recent data)</td>
+                <td>Query must check memtable + overlapping L0 SSTables</td>
+                <td class="td-amber">Medium — worst at L0</td>
+              </tr>
+              <tr>
+                <td>Cardinality bomb</td>
+                <td>Bloom filters + inverted index blow out memory at 50M+ series</td>
+                <td class="td-coral">High — kills production clusters</td>
+              </tr>
+              <tr>
+                <td>Expensive deletes</td>
+                <td>Tombstones not removed until compaction; space wasted during window</td>
+                <td class="td-amber">Medium</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-label">⚠️ Gotcha Most Candidates Miss</div>
+          <p>When you drop data older than 30 days, an LSM doesn't actually delete—it <strong>writes tombstones</strong> that are only removed during compaction. During that window, the space is wasted and queries must skip tombstones. At scale, tombstones can be a significant fraction of your total data size.</p>
+        </div>
+
+        <h4>Failure Scenario Walkthrough — The Spike</h4>
+
+        <div class="failure-block">
+          <h4>⚡ Monitoring system: 100K → 500K points/sec spike</h4>
+          <ul class="failure-timeline">
+            <li><span class="ts">t=0s</span><span>Normal operation. 100K pts/sec. Memtable flushes every ~16s.</span></li>
+            <li><span class="ts">t=10s</span><span>Spike hits. Memtable fills in ~3s instead of 16s.</span></li>
+            <li><span class="ts">t=30s</span><span>6 L0 SSTables created in 20 seconds. Compaction kicks in but can only merge at ~200 MB/sec.</span></li>
+            <li><span class="ts">t=60s</span><span><mark coral>15 L0 files piled up</mark>. Read queries now must check all 15 overlapping files. P99 latency jumps from 10ms to 200ms.</span></li>
+            <li><span class="ts">t=120s</span><span>Compaction falling behind. L0 count hits 30. TSDB applies back-pressure: slows down writes. But UDP metric emitters don't slow down. <mark coral>Data is now being dropped.</mark></span></li>
+            <li><span class="ts">t=300s</span><span>Spike ends. Compaction clears the backlog over ~10 minutes. But <mark coral>40% of data from the spike window was lost.</mark></span></li>
+          </ul>
+
+          <div class="callout callout-warning" style="margin-top:12px;margin-bottom:0;">
+            <div class="callout-label">📐 Rule of Thumb</div>
+            <p>LSM-based TSDBs need significant I/O headroom for compaction. <mark amber>Reserve 50% of your disk I/O budget for compaction.</mark></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- E) Operational -->
+      <div id="s2-1-ops">
+        <h3>E) Operational Considerations</h3>
+
+        <div class="ops-grid">
+          <div class="ops-card">
+            <h5>📊 Key Metrics to Watch</h5>
+            <ul>
+              <li>L0 SSTable count (alert if &gt; 20)</li>
+              <li>Compaction pending bytes</li>
+              <li>Write amplification factor</li>
+              <li>Memtable size + flush frequency</li>
+              <li>Bloom filter false positive rate</li>
+            </ul>
+          </div>
+          <div class="ops-card">
+            <h5>🔧 Tuning Knobs</h5>
+            <ul>
+              <li>Memtable size (larger = fewer flushes)</li>
+              <li>Compaction strategy (size-tiered vs. leveled)</li>
+              <li>Bloom filter bits per key</li>
+              <li>Compression algorithm (Snappy vs. Zstd)</li>
+              <li>Max L0 file count before write slowdown</li>
+            </ul>
+          </div>
+          <div class="ops-card">
+            <h5>🐛 Debugging Symptoms</h5>
+            <ul>
+              <li>"Queries are slow" → Check L0 count. Compaction behind.</li>
+              <li>"Disk full faster than expected" → Write amplification + tombstones.</li>
+              <li>"Memory climbing" → Bloom filters or memtable not flushing.</li>
+            </ul>
+          </div>
+          <div class="ops-card">
+            <h5>🚚 Migration Story</h5>
+            <ul>
+              <li>Run both in parallel (dual-write)</li>
+              <li>Validate query parity</li>
+              <li>Cut over reads, then stop writing to old DB</li>
+              <li>Biggest risk: relational tag schema ≠ label model</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- F) L6/L7 Nuances -->
+      <div id="s2-1-nuances">
+        <h3>F) The L6/L7 Nuances</h3>
+
+        <div class="deep-insight">
+          <div class="deep-insight-header">
+            <span class="icon">🔬</span>
+            <span>Deep Understanding Question</span>
+          </div>
+          <p><em>"Why does an LSM-based TSDB typically separate the inverted index (tag → series mapping) from the main LSM data store, and what are the implications?"</em></p>
+          <p><strong>Answer:</strong> The inverted index needs fast point lookups and updates for tag queries, while the data store needs fast sequential writes and range scans for time-ordered values. Mixing them in the same LSM means compaction for data churn (which is massive) also churns the index (which is relatively stable). <mark amber>InfluxDB learned this the hard way</mark>—their TSI (Time Series Index) was eventually moved to its own separate storage to avoid coupling index I/O with data I/O.</p>
+        </div>
+
+        <div class="deep-insight">
+          <div class="deep-insight-header">
+            <span class="icon">💡</span>
+            <span>Non-Obvious Insight — Two-Level Skip</span>
+          </div>
+          <p>In a TSDB workload, the SSTable bloom filters are used differently than in a general KV store. In a KV store, you're checking "does key X exist in this file?" In a TSDB, you're checking "does series S have any points in this time range file?"</p>
+          <p>The time range is already pruned by the SSTable metadata, so the bloom filter is really only needed for the series dimension. This means you can use <mark>time-range metadata + series bloom filter as a two-level skip mechanism</mark>, which is much more selective than either alone.</p>
+        </div>
+
+        <div class="deep-insight">
+          <div class="deep-insight-header">
+            <span class="icon">🌐</span>
+            <span>Google-Scale vs. Startup-Scale</span>
+          </div>
+          <p>At startup scale, a single-node LSM-based TSDB is fine. At Google scale (billions of series), the LSM compaction becomes a distributed problem. You can't compact terabytes on a single node.</p>
+          <p>Google's Monarch uses a fundamentally different approach—it routes series to specific "leaves" (storage nodes) by <mark>consistent hashing on the series key</mark>, so each leaf's LSM only sees its shard. But cross-shard queries (like "avg CPU across all hosts") require a <mark>fan-out query layer</mark> that aggregates across all leaves, introducing the distributed aggregation problem.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final soundbite -->
+    <section class="section" style="margin-bottom:32px;">
+      <div class="callout callout-soundbite">
+        <div class="callout-label">🏆 Staff-Level Summary</div>
+        <p class="soundbite-text">The LSM-tree is fundamentally a <span class="highlight">write buffer abstraction</span>: it buys you sequential write speed by deferring the cost of organization to compaction. In a TSDB context, time-partitioning already handles the biggest organizational burden (blocks are never mixed across time ranges), so the LSM only needs to organize within a time window. This is why <span class="highlight">InfluxDB's TSI and Prometheus's TSDB both evolved toward hybrid models</span>—pure LSM carries compaction costs that time-partitioned workloads don't need to pay.</p>
+      </div>
+    </section>
+
+  </div><!-- /content -->
+</main><!-- /main -->
+
+<!-- Back to top -->
+<button id="back-to-top" aria-label="Back to top" title="Back to top">↑</button>
+
+<script>
+  // ── PROGRESS BAR ──
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const scrolled = window.scrollY;
+    const total = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (scrolled / total * 100) + '%';
+  }, { passive: true });
+
+  // ── BACK TO TOP ──
+  const btt = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => {
+    btt.classList.toggle('visible', window.scrollY > 300);
+  }, { passive: true });
+  btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // ── ACTIVE NAV ON SCROLL ──
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+  const sections = [];
+  navItems.forEach(a => {
+    const id = a.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ el, a });
+  });
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        sections.forEach(s => s.a.classList.remove('active'));
+        const found = sections.find(s => s.el === entry.target);
+        if (found) found.a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+  sections.forEach(s => observer.observe(s.el));
+
+  // ── HAMBURGER ──
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const ham = document.getElementById('hamburger');
+  ham.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('open');
+  });
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+  });
+
+  // ── SEARCH ──
+  const searchInput = document.getElementById('search-input');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.toLowerCase().trim();
+    navItems.forEach(a => {
+      const text = a.textContent.toLowerCase();
+      a.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-section-label').forEach(l => l.style.display = q ? 'none' : '');
+  });
+
+  // ── COPY BUTTONS ──
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pre = btn.closest('.code-block').querySelector('pre.code');
+      navigator.clipboard.writeText(pre.textContent).then(() => {
+        btn.textContent = 'Copied ✓';
+        btn.style.color = 'var(--teal)';
+        btn.style.borderColor = 'var(--teal)';
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.style.color = '';
+          btn.style.borderColor = '';
+        }, 2000);
+      });
+    });
+  });
+
+  // ── COLLAPSIBLE ──
+  document.querySelectorAll('.collapsible-header').forEach(header => {
+    const body = header.nextElementSibling;
+    if (body && body.classList.contains('collapsible-body')) {
+      header.classList.add('open');
+      body.classList.add('open');
+      header.addEventListener('click', () => {
+        header.classList.toggle('open');
+        body.classList.toggle('open');
+      });
+    }
+  });
+
+  // ── SMOOTH CLOSE sidebar on nav click (mobile) ──
+  navItems.forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 900) {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+      }
+    });
+  });
+</script>
+</body>
+</html>
