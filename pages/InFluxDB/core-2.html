@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Time Series Database Internals · Part 2 · Gorilla + Prometheus TSDB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2230;
+    --border: #21262d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --accent: #58a6ff;
+    --amber: #F5A623;
+    --teal: #00BFA5;
+    --gold: #FFD700;
+    --coral: #FF6B6B;
+    --violet: #a371f7;
+    --sidebar-w: 290px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 1.05rem;
+    line-height: 1.75;
+    overflow-x: hidden;
+    animation: fadeIn 0.6s ease forwards;
+  }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ── PROGRESS BAR ── */
+  #progress-bar {
+    position: fixed; top: 0; left: 0; height: 4px; width: 0%;
+    background: linear-gradient(90deg, var(--violet), var(--teal));
+    z-index: 9999; transition: width 0.1s linear;
+    box-shadow: 0 0 12px rgba(163,113,247,0.6);
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; overflow-x: hidden;
+    z-index: 100;
+    display: flex; flex-direction: column;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+    transition: transform 0.3s ease;
+  }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .sidebar-logo {
+    padding: 20px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-series {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sidebar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .sidebar-part-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(163,113,247,0.12);
+    color: var(--violet);
+    border: 1px solid rgba(163,113,247,0.25);
+  }
+
+  .sidebar-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #search-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: 'Source Serif 4', serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #search-input:focus { border-color: var(--violet); }
+  #search-input::placeholder { color: var(--text-dim); }
+
+  .nav-section-label {
+    padding: 14px 16px 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+  .nav-item {
+    display: block;
+    padding: 5px 16px 5px 20px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-family: 'Source Serif 4', serif;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+    line-height: 1.4;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(163,113,247,0.05); }
+  .nav-item.active { color: var(--violet); border-left-color: var(--violet); background: rgba(163,113,247,0.08); }
+  .nav-item.sub { padding-left: 30px; font-size: 0.77rem; }
+  .nav-item.sub2 { padding-left: 42px; font-size: 0.74rem; }
+
+  .nav-variant-gorilla { border-left: 2px solid transparent; }
+  .nav-variant-gorilla.active { color: var(--amber); border-left-color: var(--amber); background: rgba(245,166,35,0.07); }
+  .nav-variant-gorilla:hover { background: rgba(245,166,35,0.04); }
+
+  .nav-variant-prometheus { border-left: 2px solid transparent; }
+  .nav-variant-prometheus.active { color: var(--teal); border-left-color: var(--teal); background: rgba(0,191,165,0.07); }
+  .nav-variant-prometheus:hover { background: rgba(0,191,165,0.04); }
+
+  #hamburger {
+    display: none;
+    position: fixed; top: 12px; left: 12px; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer;
+    flex-direction: column; gap: 4px;
+  }
+  #hamburger span { display: block; width: 18px; height: 2px; background: var(--text); border-radius: 2px; }
+  #sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 99; }
+
+  /* ── MAIN ── */
+  #main { margin-left: var(--sidebar-w); min-height: 100vh; padding: 0 0 80px; }
+
+  /* Hero */
+  .hero {
+    padding: 56px 60px 48px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #0d1117 0%, #120f1e 50%, #0a1520 100%);
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 65% 25%, rgba(163,113,247,0.07) 0%, transparent 60%),
+                radial-gradient(ellipse at 25% 75%, rgba(0,191,165,0.05) 0%, transparent 55%);
+    pointer-events: none;
+  }
+  .hero-breadcrumb {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero-breadcrumb span { color: var(--violet); }
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.2rem, 4.5vw, 3.6rem);
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 28px;
+    max-width: 760px;
+  }
+  .hw-gorilla { color: var(--amber); }
+  .hw-prometheus { color: var(--teal); }
+
+  .hero-variants {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    max-width: 720px;
+    margin-bottom: 32px;
+  }
+  .hero-variant-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    transition: all 0.2s;
+  }
+  .hero-variant-card:hover { border-color: rgba(163,113,247,0.3); }
+  .hero-variant-card .vc-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .hero-variant-card .vc-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .vc-gorilla .vc-title { color: var(--amber); }
+  .vc-prometheus .vc-title { color: var(--teal); }
+  .hero-variant-card .vc-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; }
+
+  .hero-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .hero-pill {
+    padding: 7px 18px; border-radius: 24px;
+    font-size: 0.8rem; font-family: 'JetBrains Mono', monospace; cursor: default;
+    transition: all 0.2s;
+  }
+  .hero-pill.prev { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .hero-pill.prev:hover { border-color: var(--accent); color: var(--accent); }
+  .hero-pill.active-gorilla { background: var(--amber); color: #0d1117; font-weight: 600; }
+  .hero-pill.active-prometheus { background: var(--teal); color: #0d1117; font-weight: 600; }
+
+  /* Content */
+  .content { max-width: 840px; padding: 48px 60px; }
+
+  /* Variant divider */
+  .variant-divider {
+    display: flex; align-items: center; gap: 16px;
+    margin: 56px 0 40px;
+  }
+  .variant-divider-line { flex: 1; height: 1px; background: var(--border); }
+  .variant-divider-badge {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 18px;
+    border-radius: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .vd-gorilla { background: rgba(245,166,35,0.1); color: var(--amber); border: 1px solid rgba(245,166,35,0.25); }
+  .vd-prometheus { background: rgba(0,191,165,0.1); color: var(--teal); border: 1px solid rgba(0,191,165,0.25); }
+
+  /* Section headers */
+  .section { margin-bottom: 56px; }
+  .section-header {
+    margin-bottom: 28px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .section-number {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.85rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .section-title .acc-amber { color: var(--amber); }
+  .section-title .acc-teal { color: var(--teal); }
+  .section-title .acc-violet { color: var(--violet); }
+  .section-separator-amber { position: absolute; bottom: -1px; left: 0; height: 2px; width: 60px; background: linear-gradient(90deg, var(--amber), transparent); }
+  .section-separator-teal { position: absolute; bottom: -1px; left: 0; height: 2px; width: 60px; background: linear-gradient(90deg, var(--teal), transparent); }
+
+  h3 { font-family: 'Playfair Display', serif; font-size: 1.25rem; font-weight: 600; color: var(--text); margin: 32px 0 12px; line-height: 1.3; }
+  h4 { font-family: 'Source Serif 4', serif; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin: 24px 0 8px; text-transform: uppercase; letter-spacing: 0.07em; }
+
+  p { margin-bottom: 16px; color: var(--text); }
+  p:last-child { margin-bottom: 0; }
+  strong { color: var(--text); font-weight: 600; }
+  em { font-style: italic; color: var(--text-muted); }
+
+  /* Callouts */
+  .callout { border-radius: 8px; padding: 20px 24px; margin: 24px 0; position: relative; }
+  .callout-aha { background: rgba(245,166,35,0.07); border-left: 3px solid var(--amber); }
+  .callout-insight { background: rgba(0,191,165,0.06); border-left: 3px solid var(--teal); }
+  .callout-warning { background: rgba(255,107,107,0.06); border-left: 3px solid var(--coral); }
+  .callout-violet { background: rgba(163,113,247,0.07); border-left: 3px solid var(--violet); }
+  .callout-soundbite { background: var(--surface2); border: 1px solid rgba(163,113,247,0.2); border-left: 3px solid var(--violet); }
+  .callout-soundbite-teal { background: var(--surface2); border: 1px solid rgba(0,191,165,0.2); border-left: 3px solid var(--teal); }
+  .callout-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; font-weight: 600;
+  }
+  .callout-aha .callout-label { color: var(--amber); }
+  .callout-insight .callout-label { color: var(--teal); }
+  .callout-warning .callout-label { color: var(--coral); }
+  .callout-violet .callout-label { color: var(--violet); }
+  .callout-soundbite .callout-label { color: var(--violet); }
+  .callout-soundbite-teal .callout-label { color: var(--teal); }
+  .callout p { margin-bottom: 0; font-size: 0.93rem; }
+  .callout p + p { margin-top: 10px; }
+
+  .soundbite-text { font-family: 'Playfair Display', serif; font-size: 1rem; font-style: italic; line-height: 1.65; color: var(--text); }
+  .soundbite-text .hl { background: rgba(163,113,247,0.15); color: var(--violet); padding: 1px 4px; border-radius: 3px; }
+  .soundbite-text .hl-teal { background: rgba(0,191,165,0.12); color: var(--teal); padding: 1px 4px; border-radius: 3px; }
+  .soundbite-text .hl-amber { background: rgba(245,166,35,0.12); color: var(--amber); padding: 1px 4px; border-radius: 3px; }
+
+  mark { background: rgba(88,166,255,0.15); color: var(--accent); padding: 1px 4px; border-radius: 3px; }
+  mark.amber { background: rgba(245,166,35,0.15); color: var(--amber); }
+  mark.teal { background: rgba(0,191,165,0.12); color: var(--teal); }
+  mark.coral { background: rgba(255,107,107,0.12); color: var(--coral); }
+  mark.violet { background: rgba(163,113,247,0.14); color: var(--violet); }
+
+  /* Lists */
+  ul, ol { padding-left: 1.6em; margin-bottom: 16px; }
+  li { margin-bottom: 6px; color: var(--text); }
+  li::marker { color: var(--accent); }
+  ul ul { margin-top: 6px; margin-bottom: 0; }
+  ul ul li::marker { color: var(--text-dim); }
+
+  /* Checklist */
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+  .checklist .check { color: var(--teal); flex-shrink: 0; margin-top: 2px; }
+  .checklist .cross { color: var(--coral); flex-shrink: 0; margin-top: 2px; }
+  .checklist .warn { color: var(--amber); flex-shrink: 0; margin-top: 2px; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; margin: 24px 0; border-radius: 8px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  thead tr { background: linear-gradient(135deg, #1a1f2e, #1c2035); border-bottom: 1px solid rgba(163,113,247,0.18); }
+  thead th { padding: 12px 16px; text-align: left; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--violet); font-weight: 500; }
+  thead.teal-head tr { background: linear-gradient(135deg, #1a2a2a, #1a2535); border-bottom: 1px solid rgba(0,191,165,0.18); }
+  thead.teal-head th { color: var(--teal); }
+  thead.amber-head tr { background: linear-gradient(135deg, #2a1f10, #1c1a10); border-bottom: 1px solid rgba(245,166,35,0.18); }
+  thead.amber-head th { color: var(--amber); }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  tbody tr:hover { background: rgba(163,113,247,0.03); }
+  tbody td { padding: 11px 16px; color: var(--text-muted); vertical-align: top; line-height: 1.5; }
+  tbody td:first-child { color: var(--text); font-weight: 500; }
+  .td-teal { color: var(--teal) !important; }
+  .td-coral { color: var(--coral) !important; }
+  .td-amber { color: var(--amber) !important; }
+  .td-violet { color: var(--violet) !important; }
+  .td-dim { color: var(--text-dim) !important; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+
+  /* Diagram/pre */
+  .diagram-wrap { position: relative; margin: 24px 0; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+  .diagram-label { position: absolute; top: 0; left: 0; font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; padding: 4px 10px; background: rgba(163,113,247,0.15); color: var(--violet); border-bottom-right-radius: 6px; }
+  .diagram-label-teal { background: rgba(0,191,165,0.12); color: var(--teal); }
+  .diagram-label-amber { background: rgba(245,166,35,0.12); color: var(--amber); }
+  pre.diagram { background: #010409; padding: 36px 20px 20px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.77rem; line-height: 1.55; color: #79c0ff; white-space: pre; }
+
+  /* Code block */
+  .code-block { position: relative; margin: 20px 0; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+  .code-header { display: flex; align-items: center; justify-content: space-between; background: #1c2230; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+  .code-lang { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.06em; }
+  .copy-btn { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; padding: 3px 10px; border-radius: 4px; transition: all 0.15s; }
+  .copy-btn:hover { border-color: var(--violet); color: var(--violet); }
+  pre.code { background: #010409; padding: 16px 18px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.6; color: #c9d1d9; white-space: pre; }
+
+  /* Feature cards */
+  .feature-cards { display: flex; flex-direction: column; gap: 12px; margin: 20px 0; }
+  .feature-card { display: flex; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; transition: all 0.2s ease; }
+  .feature-card:hover { border-color: rgba(163,113,247,0.3); transform: translateX(3px); }
+  .feature-card.gorilla:hover { border-color: rgba(245,166,35,0.3); }
+  .feature-card.prometheus:hover { border-color: rgba(0,191,165,0.3); }
+  .feature-card-num { font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 700; color: var(--accent); opacity: 0.35; flex-shrink: 0; line-height: 1.1; min-width: 26px; }
+  .feature-card-num.amber { color: var(--amber); }
+  .feature-card-num.teal { color: var(--teal); }
+  .feature-card-body h5 { font-family: 'Playfair Display', serif; font-size: 0.95rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .feature-card-body p { font-size: 0.87rem; color: var(--text-muted); margin-bottom: 0; }
+
+  /* Step list */
+  .steps { list-style: none; padding-left: 0; margin: 16px 0; }
+  .steps li { display: flex; gap: 14px; margin-bottom: 18px; font-size: 0.9rem; color: var(--text); }
+  .step-num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(163,113,247,0.15); border: 1px solid rgba(163,113,247,0.3); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--violet); margin-top: 2px; }
+  .step-num.amber { background: rgba(245,166,35,0.12); border-color: rgba(245,166,35,0.3); color: var(--amber); }
+  .step-num.teal { background: rgba(0,191,165,0.1); border-color: rgba(0,191,165,0.3); color: var(--teal); }
+
+  /* Variant intro */
+  .variant-intro { display: flex; gap: 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 24px; }
+  .variant-badge { flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+  .vb-amber { background: rgba(245,166,35,0.12); border: 1px solid rgba(245,166,35,0.25); }
+  .vb-teal { background: rgba(0,191,165,0.1); border: 1px solid rgba(0,191,165,0.25); }
+  .variant-intro h4 { margin: 0 0 4px; font-size: 0.82rem; }
+  .variant-intro h4.amber { color: var(--amber); }
+  .variant-intro h4.teal { color: var(--teal); }
+  .variant-intro p { font-size: 0.87rem; color: var(--text-muted); margin: 0; }
+
+  /* Failure block */
+  .failure-block { background: rgba(255,107,107,0.04); border: 1px solid rgba(255,107,107,0.14); border-radius: 8px; padding: 20px 24px; margin: 20px 0; }
+  .failure-block h4 { color: var(--coral); margin-top: 0; }
+  .failure-timeline { list-style: none; padding-left: 0; }
+  .failure-timeline li { display: flex; gap: 12px; margin-bottom: 10px; font-size: 0.87rem; }
+  .failure-timeline .ts { font-family: 'JetBrains Mono', monospace; color: var(--coral); font-size: 0.78rem; flex-shrink: 0; min-width: 52px; }
+
+  /* Deep insight */
+  .deep-insight { background: var(--surface2); border-radius: 8px; padding: 20px 24px; margin: 24px 0; border-top: 2px solid var(--amber); }
+  .deep-insight.teal-top { border-top-color: var(--teal); }
+  .deep-insight.violet-top { border-top-color: var(--violet); }
+  .deep-insight-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .deep-insight-header .icon { font-size: 1rem; }
+  .deep-insight-header span { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .deep-insight-header span.amber { color: var(--amber); }
+  .deep-insight-header span.teal { color: var(--teal); }
+  .deep-insight-header span.violet { color: var(--violet); }
+  .deep-insight p { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px; }
+  .deep-insight p:last-child { margin-bottom: 0; }
+
+  /* Ops grid */
+  .ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .ops-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+  .ops-card h5 { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 10px; }
+  .ops-card ul { margin: 0; padding-left: 1.2em; }
+  .ops-card li { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px; }
+
+  /* Numbers stat row */
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; transition: all 0.2s; }
+  .stat-card:hover { border-color: rgba(245,166,35,0.3); }
+  .stat-card.teal:hover { border-color: rgba(0,191,165,0.3); }
+  .stat-num { font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }
+  .stat-num.amber { color: var(--amber); }
+  .stat-num.teal { color: var(--teal); }
+  .stat-label { font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.3; }
+
+  /* Compression explainer */
+  .compression-demo { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px 28px; margin: 24px 0; }
+  .compression-demo h4 { color: var(--amber); margin-top: 0; }
+  .comp-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; font-size: 0.88rem; }
+  .comp-row:last-child { margin-bottom: 0; }
+  .comp-label { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text-dim); min-width: 140px; flex-shrink: 0; padding-top: 1px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .comp-values { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--teal); }
+  .comp-values .result { color: var(--amber); font-weight: 600; }
+  .comp-values .saving { color: var(--teal); font-size: 0.72rem; }
+
+  /* Block structure viz */
+  .block-structure { background: #010409; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 24px 0; }
+  .block-structure-header { padding: 8px 16px; background: rgba(0,191,165,0.08); border-bottom: 1px solid rgba(0,191,165,0.15); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--teal); letter-spacing: 0.08em; text-transform: uppercase; }
+  .block-structure pre { padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.65; color: #c9d1d9; white-space: pre; overflow-x: auto; }
+  .block-structure pre .dir { color: var(--teal); }
+  .block-structure pre .file { color: #79c0ff; }
+  .block-structure pre .comment { color: var(--text-dim); }
+
+  /* Scale info */
+  .scale-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+  .scale-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; transition: all 0.2s; }
+  .scale-card:hover { border-color: rgba(163,113,247,0.3); }
+  .scale-range { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--violet); margin-bottom: 6px; letter-spacing: 0.04em; }
+  .scale-verdict { font-size: 0.85rem; color: var(--text); line-height: 1.45; }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: var(--teal); background: rgba(0,191,165,0.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* Collapsible */
+  .collapsible-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; transition: all 0.2s; user-select: none; }
+  .collapsible-header:hover { border-color: rgba(163,113,247,0.3); }
+  .collapsible-header .ch-title { font-family: 'Playfair Display', serif; font-size: 0.95rem; font-weight: 600; color: var(--text); }
+  .collapsible-header .ch-arrow { font-size: 0.8rem; color: var(--text-dim); transition: transform 0.2s; }
+  .collapsible-header.open .ch-arrow { transform: rotate(90deg); }
+  .collapsible-body { overflow: hidden; transition: max-height 0.35s ease, opacity 0.25s ease; max-height: 0; opacity: 0; }
+  .collapsible-body.open { max-height: 6000px; opacity: 1; }
+  .collapsible-inner { padding: 16px 0; }
+
+  /* Back to top */
+  #back-to-top { position: fixed; bottom: 28px; right: 28px; z-index: 500; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; cursor: pointer; transition: all 0.2s; opacity: 0; pointer-events: none; }
+  #back-to-top.visible { opacity: 1; pointer-events: all; }
+  #back-to-top:hover { border-color: var(--violet); color: var(--violet); background: rgba(163,113,247,0.1); }
+
+  /* part nav bar */
+  .part-nav { display: flex; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 32px; }
+  .part-nav-item { flex: 1; padding: 10px 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; text-align: center; cursor: pointer; transition: all 0.2s; color: var(--text-muted); border-right: 1px solid var(--border); }
+  .part-nav-item:last-child { border-right: none; }
+  .part-nav-item:hover { background: rgba(163,113,247,0.05); }
+  .part-nav-item.active-gorilla { background: rgba(245,166,35,0.1); color: var(--amber); }
+  .part-nav-item.active-prometheus { background: rgba(0,191,165,0.08); color: var(--teal); }
+
+  @media (max-width: 900px) {
+    :root { --sidebar-w: 0px; }
+    #sidebar { transform: translateX(-290px); width: 290px; }
+    #sidebar.open { transform: translateX(0); }
+    #hamburger { display: flex; }
+    #sidebar-overlay.open { display: block; }
+    #main { margin-left: 0; }
+    .hero { padding: 56px 24px 40px; }
+    .content { padding: 32px 24px; }
+    .hero-variants { grid-template-columns: 1fr; }
+    .stat-row { grid-template-columns: 1fr 1fr; }
+    .ops-grid { grid-template-columns: 1fr; }
+    .scale-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<button id="hamburger" aria-label="Toggle navigation">
+  <span></span><span></span><span></span>
+</button>
+<div id="sidebar-overlay"></div>
+
+<!-- SIDEBAR -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-logo">
+    <div class="sidebar-series">TSDB · L6/L7 Series</div>
+    <div class="sidebar-title">Time Series Database<br/>Internals</div>
+    <span class="sidebar-part-badge">Part 2 — Gorilla &amp; Prometheus</span>
+  </div>
+  <div class="sidebar-search">
+    <input type="search" id="search-input" placeholder="Search sections…" aria-label="Search sections"/>
+  </div>
+
+  <div class="nav-section-label">Part 1 — Recap</div>
+  <a class="nav-item" href="#hero">Introduction</a>
+
+  <div class="nav-section-label">Variant 2.2 — Gorilla</div>
+  <a class="nav-item nav-variant-gorilla" href="#s2-2">2.2 Gorilla-Style Overview</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-what">↳ What It Is</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-compression">↳ Compression Scheme</a>
+  <a class="nav-item nav-variant-gorilla sub2" href="#s2-2-ts">  · Timestamp (Delta-of-Delta)</a>
+  <a class="nav-item nav-variant-gorilla sub2" href="#s2-2-xor">  · Value (XOR Encoding)</a>
+  <a class="nav-item nav-variant-gorilla sub2" href="#s2-2-blocks">  · Block Structure</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-numbers">↳ Real-World Numbers</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-strengths">↳ Strengths</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-limits">↳ Limitations</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-ops">↳ Operational Guide</a>
+  <a class="nav-item nav-variant-gorilla sub" href="#s2-2-nuances">↳ L6/L7 Nuances</a>
+
+  <div class="nav-section-label">Variant 2.3 — Prometheus TSDB</div>
+  <a class="nav-item nav-variant-prometheus" href="#s2-3">2.3 Prometheus TSDB v2</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-what">↳ What It Is</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-arch">↳ Architecture</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-walkthrough">↳ Step-by-Step Walkthrough</a>
+  <a class="nav-item nav-variant-prometheus sub2" href="#s2-3-write">  · Write Path</a>
+  <a class="nav-item nav-variant-prometheus sub2" href="#s2-3-cut">  · Head Block Cut</a>
+  <a class="nav-item nav-variant-prometheus sub2" href="#s2-3-compact">  · Compaction</a>
+  <a class="nav-item nav-variant-prometheus sub2" href="#s2-3-query">  · Query Path</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-numbers">↳ Concrete Numbers</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-strengths">↳ Strengths</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-limits">↳ Limitations</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-ops">↳ Operational Guide</a>
+  <a class="nav-item nav-variant-prometheus sub" href="#s2-3-nuances">↳ L6/L7 Nuances</a>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-breadcrumb">TSDB · L6/L7 Series · <span>Part 2</span></div>
+    <h1 class="hero-title">
+      <span class="hw-gorilla">Gorilla</span> &amp; the<br/>
+      <span class="hw-prometheus">Prometheus</span> TSDB
+    </h1>
+    <div class="hero-variants">
+      <div class="hero-variant-card vc-gorilla">
+        <div class="vc-num">VARIANT 2.2</div>
+        <div class="vc-title">Compressed In-Memory Blocks</div>
+        <div class="vc-desc">Facebook's Gorilla — delta-of-delta timestamps, XOR float encoding, 12× compression, sub-ms reads from pure RAM.</div>
+      </div>
+      <div class="hero-variant-card vc-prometheus">
+        <div class="vc-num">VARIANT 2.3</div>
+        <div class="vc-title">Time-Structured Merge Tree</div>
+        <div class="vc-desc">Prometheus TSDB v2 — immutable time-bounded blocks on disk, block-level pruning, elegant retention via directory deletion.</div>
+      </div>
+    </div>
+    <div class="hero-pills">
+      <span class="hero-pill prev">← Part 1: Core + LSM</span>
+      <span class="hero-pill active-gorilla">2.2 Gorilla</span>
+      <span class="hero-pill active-prometheus">2.3 Prometheus TSDB</span>
+    </div>
+  </section>
+
+  <div class="content">
+
+    <!-- ═══════════ VARIANT 2.2 GORILLA ═══════════ -->
+
+    <div class="variant-divider" id="s2-2">
+      <div class="variant-divider-line"></div>
+      <div class="variant-divider-badge vd-gorilla">🧠 Variant 2.2 · Gorilla-Style In-Memory Blocks</div>
+      <div class="variant-divider-line"></div>
+    </div>
+
+    <!-- A) What It Is -->
+    <section class="section" id="s2-2-what">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section A</div>
+        <h2 class="section-title"><span class="acc-amber">What It Is</span></h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="variant-intro">
+        <div class="variant-badge vb-amber">🧠</div>
+        <div>
+          <h4 class="amber">One-Sentence Definition</h4>
+          <p>The Gorilla approach stores the most recent time series data entirely in memory using a custom compression scheme (<mark amber>delta-of-delta for timestamps, XOR encoding for float values</mark>) that achieves ~12× compression, enabling a single server to hold ~26 hours of data for millions of series in RAM.</p>
+        </div>
+      </div>
+
+      <div class="callout callout-aha">
+        <div class="callout-label">💡 Core Insight</div>
+        <p>For monitoring and alerting, you almost always query recent data (last 1 hour, last 24 hours). If you can keep that recent window entirely in <mark amber>compressed memory, you never touch disk for the hot path</mark>, and you can achieve sub-millisecond query latency.</p>
+      </div>
+
+      <div class="callout callout-violet">
+        <div class="callout-label">📜 The Inventor's Problem</div>
+        <p>Facebook's existing TSDB (ODS, built on HBase) had a read latency problem: <strong>73% of queries were for data less than 26 hours old</strong>, but every query required disk I/O. Gorilla was built as an <mark violet>in-memory write-through cache</mark> specifically for this recent-data read path.</p>
+      </div>
+    </section>
+
+    <!-- B) Compression Scheme -->
+    <section class="section" id="s2-2-compression">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section B</div>
+        <h2 class="section-title">The <span class="acc-amber">Compression</span> Scheme</h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <!-- Timestamp -->
+      <div id="s2-2-ts">
+        <h3>Timestamp Compression — Delta-of-Delta</h3>
+        <p>Consider a series reporting every 60 seconds:</p>
+
+        <div class="compression-demo">
+          <h4>Delta-of-Delta Walkthrough</h4>
+          <div class="comp-row">
+            <div class="comp-label">Timestamps</div>
+            <div class="comp-values">1609459200 &nbsp; 1609459260 &nbsp; 1609459320 &nbsp; 1609459380 &nbsp; 1609459440</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">Deltas</div>
+            <div class="comp-values">— &nbsp; 60 &nbsp; 60 &nbsp; 60 &nbsp; 60</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">Delta-of-Delta</div>
+            <div class="comp-values result">— &nbsp; — &nbsp; 0 &nbsp; 0 &nbsp; 0</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">Bits used</div>
+            <div class="comp-values"><span class="saving">64 bits → 1 bit per timestamp (when DoD = 0)</span> <span class="result">→ 64× compression on regular intervals</span></div>
+          </div>
+        </div>
+
+        <p>For irregular intervals, the delta-of-delta is a small integer, encoded with variable-length headers:</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead class="amber-head">
+              <tr><th>Delta-of-Delta Value</th><th>Encoding</th><th>Total Bits</th><th>vs. Raw 64-bit</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>0 (regular interval)</td><td>Single <code>0</code> bit</td><td class="td-teal">1 bit</td><td class="td-teal">64× smaller</td></tr>
+              <tr><td>−63 to +64</td><td><code>10</code> header + 7-bit value</td><td class="td-teal">9 bits</td><td class="td-teal">7× smaller</td></tr>
+              <tr><td>−255 to +256</td><td><code>110</code> header + 9-bit value</td><td class="td-amber">12 bits</td><td class="td-amber">5× smaller</td></tr>
+              <tr><td>−2047 to +2048</td><td><code>1110</code> header + 12-bit value</td><td class="td-amber">16 bits</td><td class="td-amber">4× smaller</td></tr>
+              <tr><td>Larger</td><td><code>1111</code> header + 32-bit value</td><td class="td-coral">36 bits</td><td class="td-coral">1.8× smaller</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- XOR -->
+      <div id="s2-2-xor">
+        <h3>Value Compression — XOR Encoding</h3>
+        <p>Gorilla exploits the structure of <strong>IEEE 754 floating-point representation</strong>. When two consecutive floats are close in value, their bit representations share the same sign, exponent, and most significant mantissa bits. XOR zeros out all shared bits, leaving a tiny non-zero region.</p>
+
+        <div class="compression-demo">
+          <h4>XOR Encoding Walkthrough — CPU Usage (72.x%)</h4>
+          <div class="comp-row">
+            <div class="comp-label">Values</div>
+            <div class="comp-values">72.5 &nbsp;&nbsp; 72.6 &nbsp;&nbsp; 72.4 &nbsp;&nbsp; 72.5 &nbsp;&nbsp; 72.5</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">XOR with prev</div>
+            <div class="comp-values">— &nbsp;&nbsp; 72.5⊕72.6 &nbsp;&nbsp; 72.6⊕72.4 &nbsp;&nbsp; 72.4⊕72.5 &nbsp;&nbsp; <span class="result">72.5⊕72.5 = 0</span></div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">XOR = 0?</div>
+            <div class="comp-values result">No &nbsp;&nbsp; No &nbsp;&nbsp; No &nbsp;&nbsp; No &nbsp;&nbsp; YES → encode as 1 bit "0"</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">Non-zero XOR</div>
+            <div class="comp-values saving">Encode: {# leading zeros, # meaningful bits, meaningful bits} → ~13 bits total</div>
+          </div>
+          <div class="comp-row">
+            <div class="comp-label">vs. Raw</div>
+            <div class="comp-values result">64 bits → ~13 bits → ~5× value compression per changed point</div>
+          </div>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-label">⚠️ When XOR Fails</div>
+          <p>Gorilla compression <mark coral>degrades dramatically for highly volatile data</mark> (like random IDs stored as floats, or sensor data with high noise). When consecutive values differ significantly, the XOR output becomes random too—there are no shared leading bits. In this case, compression ratio falls toward ~1× or even negative (overhead from headers). <strong>Always validate compression ratio against your actual data distribution.</strong></p>
+        </div>
+      </div>
+
+      <!-- Block structure -->
+      <div id="s2-2-blocks">
+        <h3>The Block Structure</h3>
+
+        <div class="diagram-wrap">
+          <div class="diagram-label diagram-label-amber">DIAGRAM</div>
+          <pre class="diagram">
+┌─────────────────────────────────────────────────────────────┐
+│                    TIME SERIES BLOCK                        │
+│  Block start: t=1609459200 (2-hour aligned window)          │
+│  Block end:   t=1609466400                                  │
+│                                                             │
+│  In-memory: hash_map[series_key] → bit_stream_ptr           │
+│                                                             │
+│  Series A:  metric="cpu_usage" tags={host="web01"}          │
+│    ├── [Timestamp stream: 1-bit DoD, 0,0,0,+5,-5...]        │
+│    └── [Value stream: XOR-encoded float bits]               │
+│                                                             │
+│  Series B:  metric="mem_used" tags={host="web01"}           │
+│    ├── [Timestamp stream: ...]                              │
+│    └── [Value stream: ...]                                  │
+│                                                             │
+│  ... (thousands of series per block)                        │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ LIFECYCLE                                            │   │
+│  │  Active block → accumulates writes (2h window)       │   │
+│  │  Block close  → marked immutable                     │   │
+│  │  Background   → flush to disk / object storage       │   │
+│  │  At 26h       → evict oldest block from memory       │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+</pre>
+        </div>
+
+        <p>Blocks are typically <mark amber>2 hours long</mark>. When a block's time window closes, it's marked immutable and can be flushed to disk or object storage as a backup. The in-memory store keeps approximately <strong>13 × 2-hour blocks = 26 hours</strong> of recent data.</p>
+      </div>
+    </section>
+
+    <!-- Real numbers -->
+    <section class="section" id="s2-2-numbers">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section B (continued)</div>
+        <h2 class="section-title"><span class="acc-amber">Real-World</span> Numbers</h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <p>From the <strong>Facebook Gorilla paper (2015)</strong> and a traced scenario of 10M series, 100K pts/sec:</p>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-num amber">700M</div>
+          <div class="stat-label">unique time series in production</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num amber">~12×</div>
+          <div class="stat-label">compression ratio (1.37 bytes/point)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num amber">18M</div>
+          <div class="stat-label">writes/sec across the cluster</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num amber">&lt;1ms</div>
+          <div class="stat-label">read latency for recent data</div>
+        </div>
+      </div>
+
+      <div class="callout callout-insight">
+        <div class="callout-label">📐 Memory Math at Scale</div>
+        <p>700M series × 10-second intervals × 26 hours = <strong>~76 TB uncompressed</strong> → <strong>~6.3 TB in RAM</strong> across the fleet. That's the power of 12× compression: you're hosting 76 terabytes of monitoring data in memory.</p>
+      </div>
+
+      <h3>Step-by-Step Scenario: 10M series, 100K pts/sec</h3>
+      <ol class="steps">
+        <li><div class="step-num amber">1</div><div><strong>t=0s:</strong> New 2-hour block starts. Each series gets a fresh stream buffer in memory.</div></li>
+        <li><div class="step-num amber">2</div><div><strong>t=0.01s:</strong> First point for series X arrives: <code>{t=1609459200, v=72.5}</code>. Store timestamp and value as full 64-bit each (stream header).</div></li>
+        <li><div class="step-num amber">3</div><div><strong>t=60s:</strong> Second point: <code>{t=1609459260, v=72.6}</code>. Store delta=60 (first delta, full encoding) and XOR of 72.5⊕72.6.</div></li>
+        <li><div class="step-num amber">4</div><div><strong>t=120s:</strong> Third point: <code>{t=1609459320, v=72.4}</code>. Delta-of-delta = 0 → <mark amber>1 bit</mark>. XOR has similar pattern → ~13 bits total.</div></li>
+        <li><div class="step-num amber">5</div><div><strong>t=7200s (2h):</strong> Block closes. 720 points/series. Uncompressed: 720 × 16 bytes = <strong>11,520 bytes</strong>. Compressed: 720 × 1.37 = <mark teal>~986 bytes</mark>. ~12× compression. Background thread persists to disk.</div></li>
+        <li><div class="step-num amber">6</div><div><strong>t=93,600s (26h):</strong> Oldest block evicted from memory.</div></li>
+      </ol>
+    </section>
+
+    <!-- C) Strengths -->
+    <section class="section" id="s2-2-strengths">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section C</div>
+        <h2 class="section-title">Strengths &amp; <span class="acc-amber">Ideal Use Cases</span></h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="feature-cards">
+        <div class="feature-card gorilla">
+          <div class="feature-card-num amber">✦</div>
+          <div class="feature-card-body">
+            <h5>Blazing Read Performance</h5>
+            <p>Sub-millisecond for any recent query—never touches disk. Every query for data within the 26-hour window is served entirely from compressed RAM.</p>
+          </div>
+        </div>
+        <div class="feature-card gorilla">
+          <div class="feature-card-num amber">✦</div>
+          <div class="feature-card-body">
+            <h5>Incredible Compression Density</h5>
+            <p>12× means you can fit 12× more data in memory, which means your "recent window" is 12× larger. The compression ratio directly determines your in-memory retention horizon.</p>
+          </div>
+        </div>
+        <div class="feature-card gorilla">
+          <div class="feature-card-num amber">✦</div>
+          <div class="feature-card-body">
+            <h5>Perfect for Monitoring &amp; Alerting</h5>
+            <p>Alert rules typically evaluate over the last 5–30 minutes of data, which is always in memory. No disk I/O in the critical alert evaluation path.</p>
+          </div>
+        </div>
+        <div class="feature-card gorilla">
+          <div class="feature-card-num amber">✦</div>
+          <div class="feature-card-body">
+            <h5>Simple Write Path</h5>
+            <p>No WAL, no compaction, no LSM levels. Just append bits to a stream. The write path is a hash lookup + bit append — extremely low CPU overhead.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-aha">
+        <div class="callout-label">🎯 Sweet Spot</div>
+        <p>Millions of series, high write volume, queries dominated by recent time ranges (&lt;26h), can tolerate loss of very recent data (seconds) on node crash without Paxos replication.</p>
+        <p><strong>Real-world users:</strong> Facebook Gorilla (original paper), Prometheus 2.x local storage (adapted Gorilla compression), Uber's M3DB (Gorilla-compressed blocks + LSM for older data).</p>
+      </div>
+    </section>
+
+    <!-- D) Limitations -->
+    <section class="section" id="s2-2-limits">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section D</div>
+        <h2 class="section-title">Limitations &amp; <span class="acc-amber">Failure Modes</span></h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead class="amber-head">
+            <tr><th>Limitation</th><th>Root Cause</th><th>Severity</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Limited retention window</td>
+              <td>RAM is expensive; can only keep 24–48h typically</td>
+              <td class="td-amber">Medium — requires separate cold storage</td>
+            </tr>
+            <tr>
+              <td>Node crash = data loss</td>
+              <td>Active block lives in RAM; not persisted until sealed</td>
+              <td class="td-coral">High — mitigated by Paxos write-replication</td>
+            </tr>
+            <tr>
+              <td>No random-time seek within block</td>
+              <td>Sequential bit-stream compression; must decompress from start</td>
+              <td class="td-amber">Medium — only affects specific point lookups</td>
+            </tr>
+            <tr>
+              <td>High cardinality index memory</td>
+              <td>HashMap: 1B series × ~200 bytes/entry = 200 GB for the index alone</td>
+              <td class="td-coral">High — index blows out before data does</td>
+            </tr>
+            <tr>
+              <td>Late-arriving data</td>
+              <td>Past time blocks may already be sealed; no in-band backfill</td>
+              <td class="td-amber">Medium — needs separate mechanism</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-label">⚠️ Gotcha Most Candidates Miss</div>
+        <p><strong>Burst of new series creation.</strong> Imagine a Kubernetes cluster where a deployment creates 50,000 new pods, each with 100 metrics. Suddenly <mark coral>5 million new series appear simultaneously</mark>. Each needs a new hash map entry and stream buffer. The memory allocation spike can cause <strong>GC pauses</strong> (in Java/Go implementations) that stall writes for seconds, causing data loss from upstream buffering overflow.</p>
+      </div>
+
+      <h3>Failure Scenario — Cardinality Explosion + OOM</h3>
+      <div class="failure-block">
+        <h4>💥 Node: 2M series, memory at 85% → new deployment triggers OOM</h4>
+        <ul class="failure-timeline">
+          <li><span class="ts">t=0s</span><span>Normal. Node holds 2M series. Memory at 85% utilization.</span></li>
+          <li><span class="ts">t=3601s</span><span>New microservices deployment adds 500K new series. Memory allocation spikes.</span></li>
+          <li><span class="ts">t=3605s</span><span>Memory hits 95%. <mark coral>GC becomes aggressive</mark> in the Go runtime.</span></li>
+          <li><span class="ts">t=3610s</span><span><mark coral>GC pause of 3 seconds.</mark> Incoming data queues in kernel buffers.</span></li>
+          <li><span class="ts">t=3613s</span><span>GC completes. Ingestion buffer overflowed. <strong>~150K data points dropped.</strong></span></li>
+          <li><span class="ts">t=3620s</span><span>Memory hits 98%. <mark coral>OOM killer activates. Node process dies.</mark></span></li>
+          <li><span class="ts">t=3620s</span><span>All 2.5M series data lost for current block (last ~20 min of 2h window).</span></li>
+          <li><span class="ts">t=3625s</span><span>Replica nodes (if configured) still have the data. Recovery via replicated stream.</span></li>
+        </ul>
+        <div class="callout callout-warning" style="margin-top:12px;margin-bottom:0;">
+          <div class="callout-label">📐 Lesson</div>
+          <p>Memory is the <strong>only critical resource</strong> in Gorilla. You MUST have <mark amber>hard limits on series count</mark> and pre-provision for 40–50% headroom above steady-state to absorb cardinality spikes.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- E) Ops -->
+    <section class="section" id="s2-2-ops">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section E</div>
+        <h2 class="section-title"><span class="acc-amber">Operational</span> Considerations</h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="ops-grid">
+        <div class="ops-card">
+          <h5>📊 Key Metrics to Watch</h5>
+          <ul>
+            <li>Memory utilization (alert at 80%)</li>
+            <li>Active series count (alert on rate of change)</li>
+            <li>Compression ratio per block</li>
+            <li>Block flush latency</li>
+            <li>Replication lag (if using write-replication)</li>
+          </ul>
+        </div>
+        <div class="ops-card">
+          <h5>🔧 Tuning Knobs</h5>
+          <ul>
+            <li>Block duration (2h typical; shorter = more flushes, worse compression)</li>
+            <li>Memory limits and series count hard limits</li>
+            <li>Replication factor (1=fast risky, 3=safe, 3× memory)</li>
+            <li>WAL-to-disk option (adds write latency, prevents block loss)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- F) L6/L7 Nuances -->
+    <section class="section" id="s2-2-nuances">
+      <div class="section-header">
+        <div class="section-number">Variant 2.2 · Section F</div>
+        <h2 class="section-title">The <span class="acc-amber">L6/L7</span> Nuances</h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="deep-insight">
+        <div class="deep-insight-header">
+          <span class="icon">🔬</span>
+          <span class="amber">Deep Question: Why 2-Hour Blocks?</span>
+        </div>
+        <p><em>"Why did the Gorilla paper choose 2-hour blocks specifically?"</em></p>
+        <p><strong>Answer:</strong> It's a trade-off between compression efficiency, memory management, and recovery granularity. Longer blocks compress better (more data points → more opportunities for delta encoding to save bits). But longer blocks mean: (1) <mark coral>more data lost</mark> if a block is unfinished when a node dies, (2) <mark coral>higher memory fragmentation</mark> as block buffers grow, and (3) <mark coral>longer decompression</mark> for queries needing only a few minutes. <mark amber>2 hours was the empirical sweet spot</mark> at Facebook's scale where the compression plateau had been reached (diminishing returns beyond ~2h) and the loss window was acceptable with 3-way replication.</p>
+      </div>
+
+      <div class="deep-insight">
+        <div class="deep-insight-header">
+          <span class="icon">💡</span>
+          <span class="amber">IEEE 754 — Why XOR Actually Works</span>
+        </div>
+        <p>The XOR encoding in Gorilla isn't just "clever compression"—it's exploiting the structure of IEEE 754 floating-point representation. When two consecutive floats are close in value, their bit representations share the same <strong>sign bit, exponent bits, and most significant mantissa bits</strong>. XOR zeros out all shared bits, leaving a small non-zero region that can be encoded with just <code>{leading zeros count, meaningful bits length, meaningful bits}</code>.</p>
+        <p>This is why Gorilla compression <mark coral>degrades dramatically for highly volatile data</mark>—the XOR output becomes random too, with no shared prefix bits to exploit.</p>
+      </div>
+
+      <div class="deep-insight">
+        <div class="deep-insight-header">
+          <span class="icon">🌐</span>
+          <span class="amber">Google-Scale: Gorilla + Mixers</span>
+        </div>
+        <p>Google's Monarch system uses a Gorilla-like approach for its "leaves" (in-memory storage tier) but adds a distributed fan-out layer called <strong>"mixers"</strong> that can push down partial aggregation to leaves. At Google scale, you can't query all leaves—you'd have hundreds of thousands. The trick is <mark amber>routing queries to only the leaves that store the relevant series</mark>, which requires a global directory service that maps series to leaves. This directory service itself becomes a critical scaling challenge, introducing a new class of failure modes beyond what single-node Gorilla faces.</p>
+      </div>
+
+      <div class="callout callout-soundbite">
+        <div class="callout-label">🏆 Staff-Level Sound Bite</div>
+        <p class="soundbite-text">Gorilla is not just a cache—it's a <span class="hl">structural bet on workload access patterns</span>. By accepting bounded retention and sequential-only access within a block, it eliminates the entire compaction problem that plagues LSM trees. The compression scheme works because monitoring data has a <span class="hl-amber">predictable regularity property</span>: metrics arrive at known intervals and change slowly. When that regularity breaks (high cardinality, volatile values), Gorilla's advantages evaporate.</p>
+      </div>
+    </section>
+
+    <!-- ═══════════ VARIANT 2.3 PROMETHEUS ═══════════ -->
+
+    <div class="variant-divider" id="s2-3">
+      <div class="variant-divider-line"></div>
+      <div class="variant-divider-badge vd-prometheus">📦 Variant 2.3 · Prometheus TSDB v2</div>
+      <div class="variant-divider-line"></div>
+    </div>
+
+    <!-- A) What It Is -->
+    <section class="section" id="s2-3-what">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section A</div>
+        <h2 class="section-title"><span class="acc-teal">What It Is</span></h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="variant-intro">
+        <div class="variant-badge vb-teal">📦</div>
+        <div>
+          <h4 class="teal">One-Sentence Definition</h4>
+          <p>A time-structured merge tree organizes time series data into <mark teal>immutable, time-bounded blocks on disk</mark>, each containing its own index, chunk files, and tombstone file, enabling efficient time-range queries, simple deletion (drop entire blocks), and compaction by merging adjacent time blocks rather than by LSM levels.</p>
+        </div>
+      </div>
+
+      <div class="callout callout-insight">
+        <div class="callout-label">💡 Core Insight</div>
+        <p>Instead of organizing data by size levels (like a traditional LSM), organize by <mark teal>time windows</mark>. The fundamental unit of compaction is merging adjacent time blocks (e.g., three 2-hour blocks become one 6-hour block), which <strong>perfectly aligns with how time series data is queried and aged</strong>.</p>
+      </div>
+
+      <div class="callout callout-violet">
+        <div class="callout-label">📜 The Inventor's Problem</div>
+        <p>Prometheus v1 used <mark coral>one file per time series</mark>, which created millions of tiny files and killed filesystem performance. Prometheus v2 (designed by Fabian Reinartz, inspired by Gorilla and LSM ideas) needed a storage engine that worked well on a single node, supported efficient time-range queries, allowed simple data deletion by time, and was easy to reason about operationally.</p>
+      </div>
+    </section>
+
+    <!-- B) Architecture -->
+    <section class="section" id="s2-3-arch">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section B</div>
+        <h2 class="section-title"><span class="acc-teal">Architecture</span></h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="diagram-wrap">
+        <div class="diagram-label diagram-label-teal">ARCHITECTURE DIAGRAM</div>
+        <pre class="diagram">
+     ┌──────────────────────────────────────────────────────┐
+     │                   HEAD BLOCK                         │
+     │  (in-memory, active writes, Gorilla-compressed)      │
+     │  Time range: [now - 2h, now]                         │
+     │  WAL on disk for crash recovery                      │
+     └──────────────────────────────────────────────────────┘
+               │ (every 2h, cut and flush to disk)
+               ▼
+ ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+ │  Block 1  │  │  Block 2  │  │  Block 3  │  │  Block 4  │
+ │  0h - 2h  │  │  2h - 4h  │  │  4h - 6h  │  │  6h - 8h  │
+ │(immutable)│  │(immutable)│  │(immutable)│  │(immutable)│
+ └──────────┘  └──────────┘  └──────────┘  └──────────┘
+       │              │              │
+       └──────┬────────┘              │
+              ▼                       │
+       ┌────────────┐                 │
+       │  Block 1-2  │                │
+       │  0h - 4h    │                │
+       │ (compacted) │                │
+       └────────────┘                 │
+              │                       │
+              └──────────┬────────────┘
+                         ▼
+                  ┌─────────────┐
+                  │ Block 1-2-3 │
+                  │  0h - 6h    │
+                  │ (compacted) │
+                  └─────────────┘
+</pre>
+      </div>
+
+      <h3>Inside Each Immutable Block</h3>
+
+      <div class="block-structure">
+        <div class="block-structure-header">Block Directory Structure</div>
+        <pre><span class="dir">block-ulid-001/</span>
+<span class="file">├── meta.json</span>      <span class="comment">(time range, series count, compaction level, ULID)</span>
+<span class="file">├── index</span>          <span class="comment">(inverted index: label → series ID → chunk refs)</span>
+<span class="dir">├── chunks/</span>
+<span class="file">│   ├── 000001</span>     <span class="comment">(compressed Gorilla-encoded data chunks, 512 KB each)</span>
+<span class="file">│   └── 000002</span>
+<span class="file">└── tombstones</span>     <span class="comment">(marks for deleted time ranges within this block)</span></pre>
+      </div>
+    </section>
+
+    <!-- B continued: Walkthrough -->
+    <section class="section" id="s2-3-walkthrough">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section B (continued)</div>
+        <h2 class="section-title"><span class="acc-teal">Step-by-Step</span> Walkthrough</h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <p>Tracing <strong>50K series, 500K points/sec</strong> through the full lifecycle:</p>
+
+      <!-- Write Path -->
+      <h3 id="s2-3-write">Write Path (Head Block)</h3>
+      <ol class="steps">
+        <li><div class="step-num teal">1</div><div>Point arrives: <code>cpu_usage{host="web01"} 72.5 @1609459200</code></div></li>
+        <li><div class="step-num teal">2</div><div><strong>WAL write:</strong> Sequential append to disk WAL file. ~20 bytes per point. Fast sequential I/O only.</div></li>
+        <li><div class="step-num teal">3</div><div><strong>Head block memory:</strong> Series map lookup: <code>hash("cpu_usage{host=web01}") → series struct</code>. Point appended to the active <mark teal>Gorilla-compressed chunk</mark> for this series.</div></li>
+        <li><div class="step-num teal">4</div><div>Active chunk holds ~120 samples (120 × 15s = 30 min of data). When chunk fills, it's closed and a new chunk starts.</div></li>
+      </ol>
+
+      <!-- Head block cut -->
+      <h3 id="s2-3-cut">Head Block Cut (Every 2 Hours)</h3>
+      <ol class="steps">
+        <li><div class="step-num teal">1</div><div>Current head block's in-memory data serialized to disk: all closed chunks written to <code>chunks/</code> files.</div></li>
+        <li><div class="step-num teal">2</div><div><strong>Build inverted index</strong> — write <code>index</code> file with label→series mappings.</div></li>
+        <li><div class="step-num teal">3</div><div>Write <code>meta.json</code> with block metadata (time range, series count, ULID).</div></li>
+        <li><div class="step-num teal">4</div><div>New head block starts with fresh WAL. Old WAL segments for the flushed block are <mark teal>deleted</mark>.</div></li>
+      </ol>
+
+      <!-- Compaction -->
+      <h3 id="s2-3-compact">Compaction — Merging Adjacent Blocks</h3>
+      <div class="diagram-wrap">
+        <div class="diagram-label diagram-label-teal">COMPACTION FLOW</div>
+        <pre class="diagram">
+Compaction Plan: [Block 0h-2h] + [Block 2h-4h] → [Block 0h-4h]
+
+For each series in either block:
+  1. Read chunks from both source blocks
+  2. Re-encode into new chunks
+     (can improve compression: longer runs → better delta encoding)
+  3. Write to new block's chunk/ files
+  4. Build new inverted index for merged block
+  5. Apply tombstones → physically remove deleted data
+
+Atomic swap:
+  new_block_ref = [0h-4h]
+  delete old blocks: [0h-2h] + [2h-4h]
+
+Result: 2 blocks → 1 larger block (same data, better compressed, tombstones applied)
+</pre>
+      </div>
+
+      <!-- Query Path -->
+      <h3 id="s2-3-query">Query Path</h3>
+      <p>Query: <code>cpu_usage{host="web01"}</code> from <code>t_start</code> to <code>t_end</code></p>
+      <ol class="steps">
+        <li><div class="step-num teal">1</div><div><strong>Block selection:</strong> Check each block's <code>meta.json</code> time range. <mark teal>Skip blocks entirely outside [t_start, t_end].</mark> Massive I/O pruning.</div></li>
+        <li><div class="step-num teal">2</div><div><strong>Index lookup</strong> in each relevant block: Look up label matcher <code>host="web01"</code> → posting list. Intersect with <code>__name__="cpu_usage"</code> → final series IDs.</div></li>
+        <li><div class="step-num teal">3</div><div><strong>Chunk retrieval:</strong> For each matching series, look up chunk references that overlap <code>[t_start, t_end]</code>. Read and decompress those chunks only.</div></li>
+        <li><div class="step-num teal">4</div><div><strong>Merge:</strong> If query spans head block + persisted blocks, merge results from memory and disk into a unified iterator.</div></li>
+      </ol>
+    </section>
+
+    <!-- Numbers -->
+    <section class="section" id="s2-3-numbers">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section B (continued)</div>
+        <h2 class="section-title"><span class="acc-teal">Concrete Numbers</span></h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <p>Prometheus-like system monitoring <strong>100K containers</strong>:</p>
+
+      <div class="stat-row">
+        <div class="stat-card teal">
+          <div class="stat-num teal">50M</div>
+          <div class="stat-label">active series (100K containers × 500 metrics)</div>
+        </div>
+        <div class="stat-card teal">
+          <div class="stat-num teal">3.3M</div>
+          <div class="stat-label">points/sec (15s scrape interval)</div>
+        </div>
+        <div class="stat-card teal">
+          <div class="stat-num teal">~36 GB</div>
+          <div class="stat-label">head block memory (2h window)</div>
+        </div>
+        <div class="stat-card teal">
+          <div class="stat-num teal">~13 TB</div>
+          <div class="stat-label">30-day on-disk storage</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead class="teal-head">
+            <tr><th>Metric</th><th>Calculation</th><th>Result</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>2-hour head block in memory</td><td>3.3M pts/sec × 7200s × 1.5 bytes/pt</td><td class="td-teal">~36 GB</td></tr>
+            <tr><td>Daily on-disk storage</td><td>3.3M pts/sec × 86,400s × 1.5 bytes/pt</td><td class="td-teal">~430 GB/day</td></tr>
+            <tr><td>30-day retention</td><td>430 GB × 30 days</td><td class="td-teal">~13 TB</td></tr>
+            <tr><td>Index size per block</td><td>50M series × ~200 bytes per posting</td><td class="td-amber">~10 GB per block</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- C) Strengths -->
+    <section class="section" id="s2-3-strengths">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section C</div>
+        <h2 class="section-title">Strengths &amp; <span class="acc-teal">Ideal Use Cases</span></h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="feature-cards">
+        <div class="feature-card prometheus">
+          <div class="feature-card-num teal">✦</div>
+          <div class="feature-card-body">
+            <h5>Elegant Deletion — Just <code>rm -rf</code></h5>
+            <p>Dropping data older than 30 days = deleting block directories. No tombstone accumulation, no compaction cycle needed. The retention policy is literally a directory deletion. <mark teal>Operationally, this is a superpower.</mark></p>
+          </div>
+        </div>
+        <div class="feature-card prometheus">
+          <div class="feature-card-num teal">✦</div>
+          <div class="feature-card-body">
+            <h5>Excellent Time-Range Read Performance</h5>
+            <p>Block-level time pruning eliminates most I/O before even opening a file. A 30-day retention with 2-hour blocks = 360 blocks; a 1-hour query touches at most 1 block.</p>
+          </div>
+        </div>
+        <div class="feature-card prometheus">
+          <div class="feature-card-num teal">✦</div>
+          <div class="feature-card-body">
+            <h5>Self-Contained, Portable Blocks</h5>
+            <p>Each block is a complete, independent unit. You can back it up, move it to S3, or restore it independently. This enables easy long-term storage integration — <mark teal>Thanos sidecar</mark> uploads sealed blocks directly to object storage.</p>
+          </div>
+        </div>
+        <div class="feature-card prometheus">
+          <div class="feature-card-num teal">✦</div>
+          <div class="feature-card-body">
+            <h5>Simple Operational Model</h5>
+            <p>No complex LSM level management. Compaction is entirely predictable — merge 2-hour blocks into 4-hour, 4-hour into 8-hour, and so on. The compaction schedule is a simple exponential growth pattern.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-insight">
+        <div class="callout-label">🎯 Sweet Spot</div>
+        <p>Single-node or federated monitoring, 1M–100M series, Prometheus/Thanos/Cortex ecosystem, when retention is bounded (days to months).</p>
+        <p><strong>Real-world users:</strong> Prometheus, Thanos, Cortex, Grafana Mimir — all use the Prometheus TSDB block format.</p>
+      </div>
+    </section>
+
+    <!-- D) Limitations -->
+    <section class="section" id="s2-3-limits">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section D</div>
+        <h2 class="section-title">Limitations &amp; <span class="acc-teal">Failure Modes</span></h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead class="teal-head">
+            <tr><th>Limitation</th><th>Root Cause</th><th>Severity</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Head block memory at scale</td>
+              <td>50M series head block requires 30–50+ GB RAM; series churn worsens this</td>
+              <td class="td-coral">High — the primary scaling constraint</td>
+            </tr>
+            <tr>
+              <td>Slow WAL replay on crash recovery</td>
+              <td>2h WAL at 3.3M pts/sec = ~24B points; replay can take 10+ min</td>
+              <td class="td-coral">High — node unavailable during recovery</td>
+            </tr>
+            <tr>
+              <td>Not horizontally scalable natively</td>
+              <td>Single-node storage; Thanos/Cortex add complexity for distributed operation</td>
+              <td class="td-amber">Medium — well-understood federation patterns exist</td>
+            </tr>
+            <tr>
+              <td>Out-of-order writes</td>
+              <td>Historically rejected entirely; new WBL + OOO chunk support is complex</td>
+              <td class="td-amber">Medium — affects backfill scenarios</td>
+            </tr>
+            <tr>
+              <td>Uneven block sizes</td>
+              <td>Write spike in one 2h window → that block is 10× larger → slow compaction</td>
+              <td class="td-amber">Medium — compaction may temporarily block</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-warning">
+        <div class="callout-label">⚠️ Gotcha — Series Churn in Kubernetes</div>
+        <p>In Kubernetes, pods come and go. Each pod creates new series, and departed pods' series become stale. Over a day, you might see <strong>50M unique series total</strong> but only 5M active at any moment. The head block must maintain index entries for all 50M (because it doesn't know which are "dead" until the block is cut). <mark coral>High series churn is the #1 operational problem in Prometheus</mark> at scale — it drives head block memory up without a corresponding increase in active data.</p>
+      </div>
+    </section>
+
+    <!-- E) Ops -->
+    <section class="section" id="s2-3-ops">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section E</div>
+        <h2 class="section-title"><span class="acc-teal">Operational</span> Considerations</h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="ops-grid">
+        <div class="ops-card">
+          <h5>📊 Key Metrics to Watch</h5>
+          <ul>
+            <li>Head series count (total unique series)</li>
+            <li>Head chunks count and memory usage</li>
+            <li>WAL size and corruption events</li>
+            <li>Compaction duration and failures</li>
+            <li>Block count per time range</li>
+            <li>Query latency (head vs. persisted blocks)</li>
+          </ul>
+        </div>
+        <div class="ops-card">
+          <h5>🔧 Tuning Knobs</h5>
+          <ul>
+            <li>Block duration (min/max range, default 2h min)</li>
+            <li>WAL segment size and compression</li>
+            <li>Max block size for compaction</li>
+            <li>Retention time or retention size limit</li>
+            <li>Out-of-order tolerance window</li>
+          </ul>
+        </div>
+        <div class="ops-card">
+          <h5>🐛 Common Symptoms</h5>
+          <ul>
+            <li>"Memory climbing" → Series churn. Check head series count rate.</li>
+            <li>"Recovery taking forever" → WAL too large. Tune segment size.</li>
+            <li>"Query slow for old data" → Block compaction behind. Check block count.</li>
+          </ul>
+        </div>
+        <div class="ops-card">
+          <h5>🏗️ Scale-out Pattern</h5>
+          <ul>
+            <li>Thanos sidecar → uploads blocks to S3</li>
+            <li>Thanos query → fan-out query across nodes</li>
+            <li>Thanos compactor → merges blocks in object storage</li>
+            <li>Grafana Mimir → horizontally sharded Prometheus TSDB</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- F) L6/L7 Nuances -->
+    <section class="section" id="s2-3-nuances">
+      <div class="section-header">
+        <div class="section-number">Variant 2.3 · Section F</div>
+        <h2 class="section-title">The <span class="acc-teal">L6/L7</span> Nuances</h2>
+        <div class="section-separator-teal"></div>
+      </div>
+
+      <div class="deep-insight teal-top">
+        <div class="deep-insight-header">
+          <span class="icon">🔬</span>
+          <span class="teal">Deep Question: Posting Lists vs. B-Trees</span>
+        </div>
+        <p><em>"Why does Prometheus TSDB use posting lists with bitmap intersection for its inverted index rather than a B-tree?"</em></p>
+        <p><strong>Answer:</strong> Time series queries involve <mark teal>set operations on labels</mark>. A query like <code>cpu{host=~"web.*", region="us-east"}</code> requires: (1) find all series with <code>region="us-east"</code> → posting list A, (2) find all series matching <code>host=~"web.*"</code> → posting list B, (3) intersect A ∩ B. Sorted posting lists allow this intersection in <strong>O(n)</strong> with merge-join, and they compress beautifully using <mark teal>Roaring Bitmaps</mark> (run-length encoding for dense ranges, raw lists for sparse). A B-tree would make individual lookups fast but set intersection slow.</p>
+      </div>
+
+      <div class="deep-insight teal-top">
+        <div class="deep-insight-header">
+          <span class="icon">💡</span>
+          <span class="teal">Non-Obvious Insight That Impresses Interviewers</span>
+        </div>
+        <p>The Prometheus TSDB compaction strategy is deliberately <strong>vertical within a time range</strong> (merging series data across blocks of the same time window) rather than horizontal (merging series across time). This means each block's index is a <mark teal>self-contained snapshot of the label→series mapping for that time range</mark>.</p>
+        <p>When series churn is high, old blocks naturally contain only old series, and new blocks contain new series, without needing explicit series garbage collection. The "garbage collection" happens <strong>implicitly when old blocks are deleted by the retention policy</strong>. This is why time-structured compaction is fundamentally superior to LSM-structured compaction for <mark teal>high-churn workloads</mark>: churn is a feature, not a bug, in this model.</p>
+      </div>
+
+      <div class="deep-insight teal-top">
+        <div class="deep-insight-header">
+          <span class="icon">🌐</span>
+          <span class="teal">Thanos/Cortex: Distributed Prometheus TSDB</span>
+        </div>
+        <p>Prometheus TSDB is single-node by design, but its block format is <mark teal>extremely well-suited for object storage federation</mark>. Thanos uploads sealed blocks to S3/GCS as-is (no format conversion). The block's self-contained structure with its own index means Thanos store can serve queries directly from object storage by downloading only the relevant index and chunk files — never the entire block.</p>
+        <p>This is only possible because of the time-partitioned, self-contained block design. An LSM-based TSDB with cross-file index references would not have this property.</p>
+      </div>
+
+      <div class="callout callout-soundbite-teal">
+        <div class="callout-label">🏆 Staff-Level Sound Bite</div>
+        <p class="soundbite-text">Prometheus TSDB is the recognition that <span class="hl-teal">time is the natural partitioning key for monitoring data, full stop</span>. By making time the first-class organizing dimension, you get retention-by-deletion, query-pruning, and object-storage compatibility for free. The cost is head block memory pressure at high cardinality — which is why every large-scale Prometheus deployment ultimately lands on the same solution: <span class="hl-teal">shard series across nodes by label hash</span>, so each node's head block is bounded.</p>
+      </div>
+    </section>
+
+    <!-- Comparison table -->
+    <section class="section">
+      <div class="section-header">
+        <div class="section-number">Comparative Summary</div>
+        <h2 class="section-title">Gorilla vs. Prometheus TSDB — <span class="acc-violet">Side by Side</span></h2>
+        <div class="section-separator-amber"></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dimension</th>
+              <th>Gorilla (2.2)</th>
+              <th>Prometheus TSDB (2.3)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Primary storage</td>
+              <td class="td-amber">RAM (in-memory blocks)</td>
+              <td class="td-teal">Disk (immutable block dirs)</td>
+            </tr>
+            <tr>
+              <td>Retention window</td>
+              <td class="td-amber">~24–48h (RAM-bounded)</td>
+              <td class="td-teal">Days–months (disk-bounded)</td>
+            </tr>
+            <tr>
+              <td>Write path</td>
+              <td class="td-amber">Hash lookup + bit append</td>
+              <td class="td-teal">WAL + in-memory head block</td>
+            </tr>
+            <tr>
+              <td>Read latency (hot data)</td>
+              <td class="td-teal">&lt;1ms (all in RAM)</td>
+              <td class="td-amber">1–10ms (head in RAM, older on disk)</td>
+            </tr>
+            <tr>
+              <td>Deletion</td>
+              <td class="td-amber">Evict oldest block from memory</td>
+              <td class="td-teal"><code>rm -rf</code> old block directories</td>
+            </tr>
+            <tr>
+              <td>Critical resource</td>
+              <td class="td-coral">RAM (hard ceiling)</td>
+              <td class="td-amber">RAM (head block) + Disk</td>
+            </tr>
+            <tr>
+              <td>Compaction</td>
+              <td class="td-teal">None (sealed blocks only)</td>
+              <td class="td-amber">Merge adjacent time blocks</td>
+            </tr>
+            <tr>
+              <td>WAL</td>
+              <td class="td-amber">Optional (Paxos replication preferred)</td>
+              <td class="td-teal">Required for crash recovery</td>
+            </tr>
+            <tr>
+              <td>Out-of-order writes</td>
+              <td class="td-coral">Not supported natively</td>
+              <td class="td-amber">Limited (OOO chunks in recent versions)</td>
+            </tr>
+            <tr>
+              <td>Object storage integration</td>
+              <td class="td-coral">Not natural</td>
+              <td class="td-teal">Native (Thanos, Mimir)</td>
+            </tr>
+            <tr>
+              <td>Ideal scale</td>
+              <td class="td-amber">Millions of series, hot data</td>
+              <td class="td-teal">1M–100M series, weeks of retention</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div><!-- /content -->
+</main>
+
+<button id="back-to-top" aria-label="Back to top" title="Back to top">↑</button>
+
+<script>
+  // Progress bar
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    const s = window.scrollY, t = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (s / t * 100) + '%';
+  }, { passive: true });
+
+  // Back to top
+  const btt = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => btt.classList.toggle('visible', window.scrollY > 300), { passive: true });
+  btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // Active nav
+  const navItems = document.querySelectorAll('#sidebar .nav-item[href^="#"]');
+  const sections = [];
+  navItems.forEach(a => {
+    const id = a.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ el, a });
+  });
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        sections.forEach(s => s.a.classList.remove('active'));
+        const found = sections.find(s => s.el === e.target);
+        if (found) found.a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+  sections.forEach(s => obs.observe(s.el));
+
+  // Hamburger
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  document.getElementById('hamburger').addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('open');
+  });
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+  });
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    navItems.forEach(a => {
+      a.style.display = (!q || a.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-section-label').forEach(l => l.style.display = q ? 'none' : '');
+  });
+
+  // Copy buttons
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pre = btn.closest('.code-block').querySelector('pre.code');
+      navigator.clipboard.writeText(pre.textContent).then(() => {
+        btn.textContent = 'Copied ✓';
+        btn.style.color = 'var(--teal)';
+        btn.style.borderColor = 'var(--teal)';
+        setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; btn.style.borderColor = ''; }, 2000);
+      });
+    });
+  });
+
+  // Mobile nav close
+  navItems.forEach(a => a.addEventListener('click', () => {
+    if (window.innerWidth <= 900) {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('open');
+    }
+  }));
+</script>
+</body>
+</html>
