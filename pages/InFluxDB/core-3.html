@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Time Series Database Internals · Part 3 · TimescaleDB, Trade-offs & Decision Framework</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2230;--border:#21262d;--text:#e6edf3;--text-muted:#8b949e;--text-dim:#6e7681;--accent:#58a6ff;--amber:#F5A623;--teal:#00BFA5;--coral:#FF6B6B;--purple:#bc8cff;--green:#3fb950;--sidebar-w:290px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--text);font-family:'Source Serif 4',Georgia,serif;font-size:1.05rem;line-height:1.78;overflow-x:hidden;animation:fadeIn .55s ease forwards}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+#progress-bar{position:fixed;top:0;left:0;height:4px;width:0%;background:linear-gradient(90deg,var(--teal),var(--green));z-index:9999;transition:width .1s linear;box-shadow:0 0 14px rgba(63,185,80,.5)}
+#sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;overflow-x:hidden;z-index:100;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:var(--border) transparent;transition:transform .3s ease}
+#sidebar::-webkit-scrollbar{width:4px}
+#sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-logo{padding:20px 20px 14px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,var(--surface) 0%,#0f1a15 100%)}
+.sidebar-series{font-family:'JetBrains Mono',monospace;font-size:.63rem;letter-spacing:.13em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+.sidebar-title{font-family:'Playfair Display',serif;font-size:.98rem;font-weight:700;color:var(--text);line-height:1.3}
+.sidebar-part-badge{display:inline-block;margin-top:8px;padding:3px 10px;border-radius:20px;font-size:.67rem;font-family:'JetBrains Mono',monospace;background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.25)}
+.sidebar-search{padding:12px 16px;border-bottom:1px solid var(--border)}
+#search-input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:.8rem;font-family:'Source Serif 4',serif;outline:none;transition:border-color .2s}
+#search-input:focus{border-color:var(--teal)}
+#search-input::placeholder{color:var(--text-dim)}
+.nav-section-label{padding:14px 16px 4px;font-family:'JetBrains Mono',monospace;font-size:.59rem;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase}
+.nav-item{display:block;padding:5px 16px 5px 20px;color:var(--text-muted);text-decoration:none;font-size:.81rem;font-family:'Source Serif 4',serif;border-left:2px solid transparent;transition:all .15s ease;line-height:1.4}
+.nav-item:hover{color:var(--text);background:rgba(0,191,165,.05)}
+.nav-item.active{color:var(--teal);border-left-color:var(--teal);background:rgba(0,191,165,.08)}
+.nav-item.sub{padding-left:30px;font-size:.76rem}
+.nav-item.sub2{padding-left:42px;font-size:.73rem}
+#hamburger{display:none;position:fixed;top:12px;left:12px;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;flex-direction:column;gap:4px}
+#hamburger span{display:block;width:18px;height:2px;background:var(--text);border-radius:2px}
+#sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99}
+#main{margin-left:var(--sidebar-w);min-height:100vh;padding:0 0 100px}
+.hero{padding:56px 60px 50px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,#0d1117 0%,#0a1a11 50%,#0d1420 100%);position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 60% 20%,rgba(0,191,165,.07) 0%,transparent 55%),radial-gradient(ellipse at 10% 80%,rgba(63,185,80,.04) 0%,transparent 50%);pointer-events:none}
+.hero-breadcrumb{font-family:'JetBrains Mono',monospace;font-size:.67rem;letter-spacing:.14em;color:var(--text-dim);text-transform:uppercase;margin-bottom:22px}
+.hero-breadcrumb span{color:var(--teal)}
+.hero-title{font-family:'Playfair Display',serif;font-size:clamp(2.1rem,5vw,3.5rem);font-weight:900;line-height:1.1;margin-bottom:28px;max-width:760px}
+.word-ts{color:var(--teal)}.word-pg{color:var(--amber)}.word-decision{color:var(--green)}
+.hero-desc{font-size:.95rem;color:var(--text-muted);max-width:640px;margin-bottom:30px;line-height:1.65}
+.hero-bullets{display:grid;grid-template-columns:1fr 1fr;gap:10px 32px;max-width:700px;margin-bottom:32px}
+.hero-bullet{display:flex;align-items:flex-start;gap:10px;font-size:.875rem;color:var(--text-muted);line-height:1.4}
+.hero-bullet .icon{font-size:1rem;flex-shrink:0;margin-top:1px}
+.hero-pills{display:flex;gap:10px;flex-wrap:wrap}
+.hero-pill{padding:7px 18px;border-radius:24px;font-size:.79rem;font-family:'JetBrains Mono',monospace;cursor:default}
+.hero-pill.active{background:var(--teal);color:#0d1117;font-weight:600}
+.hero-pill.inactive{background:transparent;color:var(--text-muted);border:1px solid var(--border);transition:all .2s}
+.hero-pill.inactive:hover{border-color:var(--teal);color:var(--teal)}
+.content{max-width:860px;padding:48px 60px}
+.section{margin-bottom:72px}
+.section-header{margin-bottom:30px;padding-bottom:16px;border-bottom:1px solid var(--border);position:relative}
+.section-number{font-family:'JetBrains Mono',monospace;font-size:.65rem;letter-spacing:.11em;color:var(--text-dim);text-transform:uppercase;margin-bottom:5px}
+.section-title{font-family:'Playfair Display',serif;font-size:1.85rem;font-weight:700;color:var(--text);line-height:1.2}
+.sep-teal{position:absolute;bottom:-1px;left:0;height:2px;width:60px;background:linear-gradient(90deg,var(--teal),transparent)}
+.sep-amber{position:absolute;bottom:-1px;left:0;height:2px;width:60px;background:linear-gradient(90deg,var(--amber),transparent)}
+.sep-green{position:absolute;bottom:-1px;left:0;height:2px;width:60px;background:linear-gradient(90deg,var(--green),transparent)}
+.sep-coral{position:absolute;bottom:-1px;left:0;height:2px;width:60px;background:linear-gradient(90deg,var(--coral),transparent)}
+h3{font-family:'Playfair Display',serif;font-size:1.28rem;font-weight:600;color:var(--text);margin:32px 0 12px;line-height:1.3}
+h4{font-family:'Source Serif 4',serif;font-size:.83rem;font-weight:600;color:var(--text-dim);margin:26px 0 8px;text-transform:uppercase;letter-spacing:.07em}
+p{margin-bottom:16px;color:var(--text)}
+p:last-child{margin-bottom:0}
+strong{color:var(--text);font-weight:600}
+em{font-style:italic;color:var(--text-muted)}
+code.inline{font-family:'JetBrains Mono',monospace;font-size:.82em;background:rgba(0,191,165,.09);color:var(--teal);padding:1px 5px;border-radius:4px}
+.callout{border-radius:8px;padding:20px 24px;margin:22px 0}
+.callout-aha{background:rgba(245,166,35,.07);border-left:3px solid var(--amber)}
+.callout-insight{background:rgba(0,191,165,.06);border-left:3px solid var(--teal)}
+.callout-warning{background:rgba(255,107,107,.06);border-left:3px solid var(--coral)}
+.callout-green{background:rgba(63,185,80,.06);border-left:3px solid var(--green)}
+.callout-soundbite{background:var(--surface2);border:1px solid rgba(0,191,165,.2);border-left:3px solid var(--teal)}
+.callout-label{font-family:'JetBrains Mono',monospace;font-size:.64rem;letter-spacing:.13em;text-transform:uppercase;margin-bottom:8px;font-weight:600}
+.callout-aha .callout-label{color:var(--amber)}
+.callout-insight .callout-label,.callout-soundbite .callout-label{color:var(--teal)}
+.callout-warning .callout-label{color:var(--coral)}
+.callout-green .callout-label{color:var(--green)}
+.callout p{margin-bottom:0;font-size:.93rem}
+.soundbite-text{font-family:'Playfair Display',serif;font-size:1rem;font-style:italic;line-height:1.68;color:var(--text)}
+.soundbite-text .hi{background:rgba(0,191,165,.14);color:var(--teal);padding:1px 4px;border-radius:3px}
+.soundbite-text .hi-amber{background:rgba(245,166,35,.13);color:var(--amber);padding:1px 4px;border-radius:3px}
+.soundbite-text .hi-purple{background:rgba(188,140,255,.12);color:var(--purple);padding:1px 4px;border-radius:3px}
+.soundbite-text .hi-green{background:rgba(63,185,80,.12);color:var(--green);padding:1px 4px;border-radius:3px}
+mark{background:rgba(88,166,255,.14);color:var(--accent);padding:1px 4px;border-radius:3px}
+mark.amber{background:rgba(245,166,35,.14);color:var(--amber);padding:1px 4px;border-radius:3px}
+mark.teal{background:rgba(0,191,165,.11);color:var(--teal);padding:1px 4px;border-radius:3px}
+mark.coral{background:rgba(255,107,107,.11);color:var(--coral);padding:1px 4px;border-radius:3px}
+mark.purple{background:rgba(188,140,255,.12);color:var(--purple);padding:1px 4px;border-radius:3px}
+mark.green{background:rgba(63,185,80,.11);color:var(--green);padding:1px 4px;border-radius:3px}
+ul,ol{padding-left:1.6em;margin-bottom:16px}
+li{margin-bottom:6px;color:var(--text)}
+li::marker{color:var(--teal)}
+ul ul{margin-top:6px;margin-bottom:0}
+ul ul li::marker{color:var(--text-dim)}
+.steps{list-style:none;padding-left:0;margin:16px 0}
+.steps li{display:flex;gap:14px;margin-bottom:18px;font-size:.9rem;color:var(--text)}
+.step-num{flex-shrink:0;width:27px;height:27px;border-radius:50%;background:rgba(0,191,165,.12);border:1px solid rgba(0,191,165,.28);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.69rem;color:var(--teal);margin-top:2px}
+.feature-cards{display:flex;flex-direction:column;gap:11px;margin:20px 0}
+.feature-card{display:flex;gap:15px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:15px 20px;transition:all .2s ease}
+.feature-card:hover{border-color:rgba(0,191,165,.28);transform:translateX(3px)}
+.feature-card-num{font-family:'Playfair Display',serif;font-size:1.55rem;font-weight:700;color:var(--teal);opacity:.38;flex-shrink:0;line-height:1.1;min-width:28px}
+.feature-card-body h5{font-family:'Playfair Display',serif;font-size:.93rem;font-weight:600;color:var(--text);margin-bottom:4px}
+.feature-card-body p{font-size:.87rem;color:var(--text-muted);margin-bottom:0}
+.table-wrap{overflow-x:auto;margin:22px 0;border-radius:8px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.855rem}
+thead tr{background:linear-gradient(135deg,#0f201a,#0d1c18);border-bottom:1px solid rgba(0,191,165,.18)}
+thead th{padding:11px 14px;text-align:left;font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);font-weight:500}
+tbody tr{border-bottom:1px solid var(--border)}
+tbody tr:last-child{border-bottom:none}
+tbody tr:nth-child(even){background:rgba(255,255,255,.015)}
+tbody tr:hover{background:rgba(0,191,165,.04)}
+tbody td{padding:10px 14px;color:var(--text-muted);vertical-align:top;line-height:1.5}
+tbody td:first-child{color:var(--text);font-weight:500}
+.td-teal{color:var(--teal)!important}.td-coral{color:var(--coral)!important}.td-amber{color:var(--amber)!important}.td-purple{color:var(--purple)!important}.td-green{color:var(--green)!important}
+.diagram-wrap{position:relative;margin:22px 0;border-radius:8px;border:1px solid var(--border);overflow:hidden}
+.diagram-label{position:absolute;top:0;left:0;font-family:'JetBrains Mono',monospace;font-size:.59rem;letter-spacing:.13em;text-transform:uppercase;padding:4px 10px;background:rgba(0,191,165,.13);color:var(--teal);border-bottom-right-radius:6px}
+pre.diagram{background:#010409;padding:36px 20px 20px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:.755rem;line-height:1.58;color:#79c0ff;white-space:pre}
+.variant-banner{display:flex;gap:16px;align-items:flex-start;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin-bottom:26px}
+.variant-icon{width:42px;height:42px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.3rem}
+.v-teal{background:rgba(0,191,165,.1);border:1px solid rgba(0,191,165,.22)}
+.v-amber{background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.25)}
+.variant-banner h4{margin:0 0 4px;font-size:.78rem;letter-spacing:.07em}
+.v-teal-text{color:var(--teal)}.v-amber-text{color:var(--amber)}
+.variant-banner p{font-size:.875rem;color:var(--text-muted);margin:0}
+.failure-block{background:rgba(255,107,107,.04);border:1px solid rgba(255,107,107,.14);border-radius:8px;padding:20px 24px;margin:20px 0}
+.failure-block h4{color:var(--coral);margin-top:0}
+.failure-timeline{list-style:none;padding-left:0}
+.failure-timeline li{display:flex;gap:12px;margin-bottom:10px;font-size:.875rem}
+.failure-timeline .ts{font-family:'JetBrains Mono',monospace;color:var(--coral);font-size:.75rem;flex-shrink:0;min-width:60px}
+.ops-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}
+.ops-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:15px 17px}
+.ops-card h5{font-family:'JetBrains Mono',monospace;font-size:.67rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:9px}
+.ops-card ul{margin:0;padding-left:1.2em}
+.ops-card li{font-size:.81rem;color:var(--text-muted);margin-bottom:4px}
+.ops-card li::marker{color:var(--teal)}
+.deep-insight{background:var(--surface2);border-radius:8px;padding:20px 24px;margin:22px 0;border-top:2px solid var(--teal)}
+.deep-insight-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.deep-insight-header .icon{font-size:1rem}
+.deep-insight-header span{font-family:'JetBrains Mono',monospace;font-size:.67rem;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)}
+.deep-insight p{font-size:.895rem;color:var(--text-muted);margin-bottom:10px}
+.deep-insight p:last-child{margin-bottom:0}
+/* Scenario walkthrough tabs */
+.scenario-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.stab{font-family:'JetBrains Mono',monospace;font-size:.72rem;padding:5px 14px;border-radius:20px;cursor:pointer;border:1px solid var(--border);color:var(--text-muted);background:transparent;transition:all .2s}
+.stab:hover{border-color:var(--teal);color:var(--teal)}
+.stab.active{background:var(--teal);color:#0d1117;border-color:var(--teal);font-weight:600}
+.scenario-panel{display:none}
+.scenario-panel.active{display:block}
+/* Crash comparison cards */
+.crash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:20px 0}
+.crash-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;transition:all .2s}
+.crash-card:hover{border-color:rgba(0,191,165,.28)}
+.crash-card h5{font-family:'JetBrains Mono',monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.crash-card-lsm h5{color:var(--accent)}.crash-card-gorilla h5{color:var(--amber)}.crash-card-prometheus h5{color:var(--purple)}.crash-card-tsdb h5{color:var(--teal)}
+.crash-stat{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem}
+.crash-stat:last-child{border-bottom:none}
+.crash-stat .label{color:var(--text-dim)}
+.crash-stat .val{font-family:'JetBrains Mono',monospace;font-size:.75rem}
+/* Decision tree */
+.dtree{margin:20px 0}
+.dtree-node{padding:14px 18px;border-radius:8px;margin-bottom:8px;border:1px solid var(--border);position:relative}
+.dtree-q{background:var(--surface2);border-color:rgba(0,191,165,.2)}
+.dtree-a-yes{background:rgba(63,185,80,.05);border-color:rgba(63,185,80,.2);margin-left:20px}
+.dtree-a-no{background:rgba(245,166,35,.05);border-color:rgba(245,166,35,.15);margin-left:20px}
+.dtree-leaf{background:rgba(0,191,165,.06);border-color:rgba(0,191,165,.25);margin-left:40px}
+.dtree-label{font-family:'JetBrains Mono',monospace;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px}
+.dtree-q .dtree-label{color:var(--text-dim)}
+.dtree-a-yes .dtree-label{color:var(--green)}
+.dtree-a-no .dtree-label{color:var(--amber)}
+.dtree-leaf .dtree-label{color:var(--teal)}
+.dtree-text{font-size:.88rem;color:var(--text)}
+.dtree-text strong{color:var(--text)}
+/* Tier architecture */
+.tier-flow{display:flex;align-items:stretch;gap:0;margin:24px 0;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
+.tier{flex:1;padding:20px 16px;position:relative}
+.tier-hot{background:linear-gradient(135deg,rgba(245,166,35,.1),rgba(245,166,35,.04))}
+.tier-warm{background:linear-gradient(135deg,rgba(0,191,165,.08),rgba(0,191,165,.03))}
+.tier-cold{background:linear-gradient(135deg,rgba(88,166,255,.07),rgba(88,166,255,.02))}
+.tier + .tier{border-left:1px solid var(--border)}
+.tier-label{font-family:'JetBrains Mono',monospace;font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.tier-hot .tier-label{color:var(--amber)}.tier-warm .tier-label{color:var(--teal)}.tier-cold .tier-label{color:var(--accent)}
+.tier-engine{font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--text);margin-bottom:6px}
+.tier-detail{font-size:.78rem;color:var(--text-muted);line-height:1.5}
+.tier-arrow{display:flex;align-items:center;padding:0 10px;color:var(--text-dim);font-size:1.2rem;background:var(--surface);border-left:1px solid var(--border);border-right:1px solid var(--border);flex-shrink:0}
+/* Trade-off matrix */
+.tradeoff-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 22px;margin:14px 0;border-left:3px solid var(--teal);transition:all .2s}
+.tradeoff-card:hover{border-left-color:var(--amber);transform:translateX(2px)}
+.tradeoff-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}
+.tradeoff-title{font-family:'Playfair Display',serif;font-size:.98rem;font-weight:600;color:var(--text);line-height:1.3}
+.tradeoff-badge{font-family:'JetBrains Mono',monospace;font-size:.6rem;padding:3px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0}
+.tb-lsm{background:rgba(88,166,255,.12);color:var(--accent)}
+.tb-gorilla{background:rgba(245,166,35,.12);color:var(--amber)}
+.tb-prometheus{background:rgba(188,140,255,.12);color:var(--purple)}
+.tb-tsdb{background:rgba(0,191,165,.1);color:var(--teal)}
+.tb-all{background:rgba(255,255,255,.06);color:var(--text-muted)}
+.tradeoff-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px}
+.tc-col h6{font-family:'JetBrains Mono',monospace;font-size:.6rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.tc-optimizes h6{color:var(--teal)}
+.tc-sacrifices h6{color:var(--coral)}
+.tc-when-not h6{color:var(--amber)}
+.tc-col p{font-size:.82rem;color:var(--text-muted);margin:0}
+/* Migration steps */
+.migration-phase{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:10px 0;display:flex;gap:16px}
+.phase-num{font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;color:var(--teal);opacity:.35;flex-shrink:0;line-height:1;min-width:32px}
+.phase-body h5{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:600;color:var(--text);margin-bottom:4px}
+.phase-body p{font-size:.87rem;color:var(--text-muted);margin-bottom:0}
+/* file tree */
+.file-tree{background:#010409;border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin:16px 0;font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;color:#c9d1d9;overflow-x:auto}
+.ft-dir{color:#79c0ff}.ft-comment{color:#6e7681;font-style:italic}
+#back-to-top{position:fixed;bottom:28px;right:28px;z-index:500;background:var(--surface);border:1px solid var(--border);color:var(--text-muted);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;cursor:pointer;transition:all .2s;opacity:0;pointer-events:none}
+#back-to-top.visible{opacity:1;pointer-events:all}
+#back-to-top:hover{border-color:var(--teal);color:var(--teal);background:rgba(0,191,165,.1)}
+@media(max-width:900px){
+  :root{--sidebar-w:0px}
+  #sidebar{transform:translateX(-290px);width:290px}
+  #sidebar.open{transform:translateX(0)}
+  #hamburger{display:flex}
+  #sidebar-overlay.open{display:block}
+  #main{margin-left:0}
+  .hero{padding:56px 22px 40px}
+  .content{padding:30px 22px}
+  .hero-bullets,.crash-grid,.ops-grid,.tradeoff-cols,.tier-flow{grid-template-columns:1fr;flex-direction:column}
+  .tier-flow{border-radius:8px}
+  .tier-arrow{display:none}
+}
+</style>
+</head>
+<body>
+<div id="progress-bar"></div>
+<button id="hamburger" aria-label="Toggle navigation"><span></span><span></span><span></span></button>
+<div id="sidebar-overlay"></div>
+
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-logo">
+    <div class="sidebar-series">TSDB · L6/L7 Series</div>
+    <div class="sidebar-title">Time Series Database<br/>Internals</div>
+    <span class="sidebar-part-badge">Part 3 — Trade-offs &amp; Decision Framework</span>
+  </div>
+  <div class="sidebar-search">
+    <input type="search" id="search-input" placeholder="Search sections..." aria-label="Search sections"/>
+  </div>
+  <div class="nav-section-label">Overview</div>
+  <a class="nav-item" href="#hero">Introduction</a>
+  <div class="nav-section-label">Variant 2.4 · TimescaleDB</div>
+  <a class="nav-item" href="#s2-4">2.4 Relational Extension</a>
+  <a class="nav-item sub" href="#s2-4-what">↳ What It Is</a>
+  <a class="nav-item sub" href="#s2-4-arch">↳ Architecture</a>
+  <a class="nav-item sub" href="#s2-4-how">↳ How It Works</a>
+  <a class="nav-item sub" href="#s2-4-compression">↳ Chunk Compression</a>
+  <a class="nav-item sub" href="#s2-4-numbers">↳ Concrete Numbers</a>
+  <a class="nav-item sub" href="#s2-4-strengths">↳ Strengths</a>
+  <a class="nav-item sub" href="#s2-4-limits">↳ Limitations</a>
+  <a class="nav-item sub" href="#s2-4-ops">↳ Operational Guide</a>
+  <a class="nav-item sub" href="#s2-4-nuances">↳ L6/L7 Nuances</a>
+  <div class="nav-section-label">Section 2.2 · Full Comparison</div>
+  <a class="nav-item" href="#variant-compare">Variant Comparison Table</a>
+  <div class="nav-section-label">Section 2.3 · Crash Walkthrough</div>
+  <a class="nav-item" href="#crash-scenario">Node Crash — All 4 Variants</a>
+  <a class="nav-item sub" href="#crash-lsm">↳ LSM-Tree</a>
+  <a class="nav-item sub" href="#crash-gorilla">↳ Gorilla</a>
+  <a class="nav-item sub" href="#crash-prometheus">↳ Prometheus TSDB</a>
+  <a class="nav-item sub" href="#crash-timescale">↳ TimescaleDB</a>
+  <a class="nav-item sub" href="#crash-compare">↳ Side-by-Side Summary</a>
+  <div class="nav-section-label">Section 2.4 · Visual Mental Models</div>
+  <a class="nav-item" href="#mental-models">Write &amp; Read Path Diagrams</a>
+  <a class="nav-item sub" href="#mm-lsm">↳ LSM-Tree Paths</a>
+  <a class="nav-item sub" href="#mm-gorilla">↳ Gorilla Paths</a>
+  <a class="nav-item sub" href="#mm-prometheus">↳ Prometheus TSDB Paths</a>
+  <a class="nav-item sub" href="#mm-timescale">↳ TimescaleDB Paths</a>
+  <div class="nav-section-label">Section 2.5 · Decision Framework</div>
+  <a class="nav-item" href="#decision-framework">The Decision Tree</a>
+  <a class="nav-item sub" href="#decision-questions">↳ Questions to Ask</a>
+  <div class="nav-section-label">Section 2.6 · Migration & Tiers</div>
+  <a class="nav-item" href="#migration">Migration &amp; Hybrid Approaches</a>
+  <a class="nav-item sub" href="#tiered-arch">↳ Tiered Architecture</a>
+  <a class="nav-item sub" href="#migration-path">↳ PG → TSDB Migration Path</a>
+  <a class="nav-item sub" href="#hybrid">↳ Hybrid Approaches</a>
+  <div class="nav-section-label">Part 3 · Trade-offs</div>
+  <a class="nav-item" href="#tradeoffs">Fundamental Trade-offs Matrix</a>
+</nav>
+
+<main id="main">
+<!-- HERO -->
+<section class="hero" id="hero">
+  <div class="hero-breadcrumb">TSDB · L6/L7 Series · <span>Part 3 — TimescaleDB, Decision Framework &amp; Trade-offs</span></div>
+  <h1 class="hero-title">
+    <span class="word-ts">TimescaleDB</span>,<br/>
+    <span class="word-pg">Crash Walkthroughs</span> &amp;<br/>
+    <span class="word-decision">The Decision Matrix</span>
+  </h1>
+  <p class="hero-desc">The final chapter: PostgreSQL as a TSDB, how all four variants handle a node crash, visual mental models for every write/read path, and the complete decision framework for choosing the right engine at the right scale.</p>
+  <div class="hero-bullets">
+    <div class="hero-bullet"><span class="icon">🐘</span><span>TimescaleDB: hypertables, chunk compression, TXID gotcha</span></div>
+    <div class="hero-bullet"><span class="icon">💥</span><span>Node crash walkthrough — same scenario, all 4 variants</span></div>
+    <div class="hero-bullet"><span class="icon">🗺️</span><span>Visual write &amp; read path diagrams for every architecture</span></div>
+    <div class="hero-bullet"><span class="icon">🌡️</span><span>Tiered hot/warm/cold architecture pattern with real examples</span></div>
+    <div class="hero-bullet"><span class="icon">🌳</span><span>Decision tree: 5 questions to pick the right TSDB engine</span></div>
+    <div class="hero-bullet"><span class="icon">⚖️</span><span>7 fundamental trade-offs matrix — the L6/L7 differentiator</span></div>
+  </div>
+  <div class="hero-pills">
+    <span class="hero-pill inactive">Part 1: Core + LSM</span>
+    <span class="hero-pill inactive">Part 2: Gorilla · Prometheus TSDB</span>
+    <span class="hero-pill active">Part 3: TimescaleDB · Decision · Trade-offs</span>
+  </div>
+</section>
+
+<div class="content">
+
+<!-- ═══════════ VARIANT 2.4 ═══════════ -->
+<section class="section" id="s2-4">
+  <div class="section-header">
+    <div class="section-number">Variant 2.4 · TimescaleDB</div>
+    <h2 class="section-title">Relational <span style="color:var(--teal);">Extension</span> / Chunk-Based</h2>
+    <div class="sep-teal"></div>
+  </div>
+
+  <div id="s2-4-what">
+    <div class="variant-banner">
+      <div class="variant-icon v-teal">🐘</div>
+      <div>
+        <h4 class="v-teal-text">One-Sentence Definition</h4>
+        <p>TimescaleDB extends PostgreSQL with automatic time-based partitioning ("hypertables") and additional optimizations, allowing you to store and query time series data using <strong>standard SQL</strong> while benefiting from partition pruning and chunk-level operations.</p>
+      </div>
+    </div>
+    <div class="callout callout-insight">
+      <div class="callout-label">💡 Core Insight</div>
+      <p>Instead of building a new storage engine, take the world's most mature relational database and add <strong>the one optimization that matters most</strong>: transparent time-range partitioning. This gives you TSDB-level time-range query performance while retaining <mark teal>full SQL, JOINs, transactions, and the entire PostgreSQL ecosystem</mark>.</p>
+    </div>
+    <div class="callout callout-aha">
+      <div class="callout-label">📜 The Inventor's Problem</div>
+      <p>Many organizations already have time series data in PostgreSQL but are hitting performance walls. They don't want to learn a new query language (PromQL, InfluxQL) or manage a separate system. TimescaleDB lets them <mark amber>keep their existing SQL workflows</mark> and just "turn on" time series optimizations.</p>
+    </div>
+  </div>
+
+  <div id="s2-4-arch">
+    <h3>Architecture Overview</h3>
+    <div class="diagram-wrap">
+      <div class="diagram-label">DIAGRAM</div>
+      <pre class="diagram">
+         ┌─────────────────────────────────────────────────────┐
+         │               PostgreSQL Instance                    │
+         │                                                     │
+         │   ┌──────────────────────────────────────────┐      │
+         │   │         Hypertable: "metrics"             │      │
+         │   │   (virtual table — user interacts with)   │      │
+         │   └──────────────────────────────────────────┘      │
+         │        │          │          │          │            │
+         │   ┌────┴───┐ ┌───┴──┐ ┌────┴──┐ ┌────┴──┐         │
+         │   │Chunk-1  │ │Chunk-2│ │Chunk-3 │ │Chunk-4 │        │
+         │   │Jan 1–7  │ │Jan8–14│ │Jan15–21│ │Jan22–28│       │
+         │   │ heap ✓  │ │heap ✓ │ │columnar│ │columnar│       │
+         │   │uncompressed   uncompressed  compressed  compressed
+         │   └────────┘ └──────┘ └───────┘ └────────┘         │
+         │                                                     │
+         │   Recent chunks: row-oriented heap (fast writes)    │
+         │   Older chunks:  columnar compressed (10× smaller)  │
+         │                                                     │
+         │   Each chunk = regular PG table with own indexes,   │
+         │   statistics, storage, and vacuum state             │
+         └─────────────────────────────────────────────────────┘
+</pre>
+    </div>
+  </div>
+
+  <div id="s2-4-how">
+    <h3>B) How It Works — Step by Step</h3>
+    <h4>Table Creation &amp; Hypertable Setup</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div>User creates a regular table with a timestamp column: <code class="inline">CREATE TABLE metrics (time TIMESTAMPTZ, name TEXT, host TEXT, value FLOAT8)</code></div></li>
+      <li><div class="step-num">2</div><div>Calls <code class="inline">SELECT create_hypertable('metrics', 'time')</code>. TimescaleDB transparently converts it. No data migration, no schema change visible to the user.</div></li>
+      <li><div class="step-num">3</div><div>TimescaleDB automatically creates child chunk tables for each time interval (default 7 days). Chunk creation is lazy — a new chunk is only created when data for its time range arrives.</div></li>
+    </ol>
+
+    <h4>Write Path</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div><code class="inline">INSERT INTO metrics VALUES (now(), 'cpu_usage', 'web01', 72.5)</code></div></li>
+      <li><div class="step-num">2</div><div>TimescaleDB's custom planner hook intercepts the INSERT. Routes it to the correct chunk based on timestamp — a <mark teal>constant-time lookup</mark>, not a full table scan.</div></li>
+      <li><div class="step-num">3</div><div>The chunk is a regular PostgreSQL heap table. The INSERT uses PostgreSQL's standard B-tree + WAL machinery. Recent chunks are "hot" — their index pages and data pages are cached in <code class="inline">shared_buffers</code>.</div></li>
+    </ol>
+
+    <h4>Query Path</h4>
+    <ol class="steps">
+      <li><div class="step-num">1</div><div><code class="inline">SELECT avg(value) FROM metrics WHERE time > now() - '1 hour' AND name = 'cpu_usage'</code></div></li>
+      <li><div class="step-num">2</div><div><strong>Constraint exclusion / chunk pruning:</strong> TimescaleDB's planner examines the WHERE clause time range. Only chunks whose time range overlaps <code class="inline">[now-1h, now]</code> are included in the query plan. All others are skipped entirely — <mark teal>this is the core performance win</mark>.</div></li>
+      <li><div class="step-num">3</div><div>Within the active chunk: standard B-tree index on <code class="inline">(name, time)</code> provides efficient lookup. Aggregation uses standard PostgreSQL aggregate execution — fully parallelizable via <code class="inline">max_parallel_workers_per_gather</code>.</div></li>
+    </ol>
+
+    <div id="s2-4-compression">
+      <h4>Chunk Compression — The Key TSDB Optimization</h4>
+      <div class="diagram-wrap">
+        <div class="diagram-label">DIAGRAM</div>
+        <pre class="diagram">
+UNCOMPRESSED CHUNK (standard PostgreSQL heap)
+Row-oriented storage:
+  [txid:23b][name:text][host:text][time:8b][value:8b] ← ~100 bytes/row (with overhead)
+  [txid:23b][name:text][host:text][time:8b][value:8b]
+  [txid:23b][name:text][host:text][time:8b][value:8b]
+  ...
+
+COMPRESSED CHUNK (TimescaleDB columnar format)
+Each "segment" = all rows for one series, stored as a single row with ARRAY columns:
+
+  series_key: {name='cpu_usage', host='web01'}
+  time_col:   [1609459200, 1609459215, 1609459230, ...] ← delta encoded
+  value_col:  [72.5, 72.6, 72.4, ...]                  ← gorilla-like XOR encoded
+  
+  One segment row replaces ~120 original rows
+  
+Result:
+  Uncompressed: ~100 bytes/row  × 120 rows = 12,000 bytes
+  Compressed:   ~120 bytes per segment      = 120 bytes   (100× reduction per segment)
+  
+  Typical real-world ratio: 10× compression across the whole chunk
+  
+  ⚠️  Compressed chunks are READ-ONLY — must decompress to modify.
+      Backfilling into compressed chunks is expensive.
+</pre>
+      </div>
+    </div>
+
+    <div id="s2-4-numbers">
+      <h4>Concrete Numbers</h4>
+      <p>50M metrics records per day, each 100 bytes uncompressed:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Scenario</th><th>Daily Volume</th><th>Per Chunk (weekly)</th><th>90-Day Total</th></tr></thead>
+          <tbody>
+            <tr><td>Uncompressed</td><td class="td-coral">5 GB/day</td><td class="td-coral">~35 GB</td><td class="td-coral">~450 GB</td></tr>
+            <tr><td>Compressed (older chunks)</td><td class="td-teal">~500 MB/day</td><td class="td-teal">~3.5 GB</td><td class="td-teal">~77 GB</td></tr>
+            <tr><td>Query "last 1 hour"</td><td colspan="3">Touches only the latest chunk (~5 GB). Index scan within it is O(log n).</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="s2-4-strengths">
+    <h3>C) Strengths &amp; Ideal Use Cases</h3>
+    <div class="feature-cards">
+      <div class="feature-card"><div class="feature-card-num">01</div><div class="feature-card-body"><h5>Full SQL: No Limits</h5><p>JOINs, subqueries, window functions, CTEs. No restrictions of a custom query language like PromQL or InfluxQL. Every SQL construct you've ever used works unchanged.</p></div></div>
+      <div class="feature-card"><div class="feature-card-num">02</div><div class="feature-card-body"><h5>The Entire PostgreSQL Ecosystem</h5><p>pgAdmin, pg_dump, logical replication, PostGIS (geo-tagged time series!), every ORM and driver in every language. If it works with PG, it works with TimescaleDB.</p></div></div>
+      <div class="feature-card"><div class="feature-card-num">03</div><div class="feature-card-body"><h5>Hybrid Relational + Time Series Workloads</h5><p>When your time series data needs to <mark teal>JOIN with relational data</mark> — user tables, device registries, config tables. No application-level join logic needed.</p></div></div>
+      <div class="feature-card"><div class="feature-card-num">04</div><div class="feature-card-body"><h5>Full ACID Guarantees</h5><p>True transactions. You can insert a time series point and update a relational table atomically — something impossible with purpose-built TSDBs that lack multi-table transactions.</p></div></div>
+    </div>
+    <div class="callout callout-insight">
+      <div class="callout-label">🎯 Sweet Spot</div>
+      <p>Up to <mark teal>~10M rows/sec ingestion</mark> (with proper tuning), moderate series cardinality (&lt;10M), workloads that need SQL and/or relational JOINs. <strong>Real-world users:</strong> TimescaleDB, any team that has outgrown basic PostgreSQL for time series but doesn't want to adopt a new database system.</p>
+    </div>
+  </div>
+
+  <div id="s2-4-limits">
+    <h3>D) Limitations &amp; Failure Modes</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Limitation</th><th>Root Cause</th><th>Severity</th></tr></thead>
+        <tbody>
+          <tr><td>Not as fast as purpose-built at extreme rates</td><td>PG row-at-a-time executor + B-tree maintenance overhead per INSERT</td><td class="td-amber">Medium — &gt;1M pts/sec will struggle</td></tr>
+          <tr><td>B-tree random I/O on every write</td><td>Every INSERT updates B-tree index; no LSM-style write batching</td><td class="td-amber">Medium — fundamental architecture limit</td></tr>
+          <tr><td>Compression is batch, not streaming</td><td>Compressed chunks are read-only; backfill requires decompress → modify → recompress</td><td class="td-amber">Medium — makes late-arriving data expensive</td></tr>
+          <tr><td>MVCC row header overhead</td><td>Each row has 23-byte header. For 12-byte data points, overhead is ~2× before compression</td><td class="td-amber">Medium — wasted storage pre-compression</td></tr>
+          <tr><td>TXID wraparound</td><td>32-bit transaction IDs; at 1M rows/sec, exhaust 4B IDs in ~1 hour</td><td class="td-coral">Critical — can halt all writes if autovacuum lags</td></tr>
+          <tr><td>Chunk count explosion</td><td>1M series × 1-week chunks × 1 year = 52+ chunk tables; PG catalog slows</td><td class="td-amber">Medium at large scale</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="failure-block">
+      <h4>💥 The TXID Wraparound Production Outage</h4>
+      <p>PostgreSQL uses <strong>32-bit transaction IDs</strong>. At <mark coral>1M rows/sec sustained write throughput</mark>, you burn through all 4 billion TXIDs in roughly 1 hour. Autovacuum must run aggressively to "freeze" old transaction IDs before they wrap around. If autovacuum falls behind — due to a write spike, vacuum configuration, or disk I/O saturation — PostgreSQL will <strong>shut down all writes entirely</strong> to prevent silent data corruption.</p>
+      <ul class="failure-timeline" style="margin-top:12px">
+        <li><span class="ts">Root cause</span><span>Autovacuum can't keep up with write rate; unfrozen rows accumulate</span></li>
+        <li><span class="ts">Warning sign</span><span><code class="inline">age(datfrozenxid)</code> approaching 200M — less than an hour at 1M writes/sec</span></li>
+        <li><span class="ts">Outcome</span><span>PG issues: "ERROR: database is not accepting commands to avoid wraparound data loss"</span></li>
+        <li><span class="ts">Recovery</span><span>Manual VACUUM FREEZE on all tables — can take hours on large databases</span></li>
+        <li><span class="ts">Prevention</span><span>Monitor <code class="inline">pg_database.datfrozenxid</code>, tune autovacuum aggressively for high-write workloads</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="s2-4-ops">
+    <h3>E) Operational Considerations</h3>
+    <div class="ops-grid">
+      <div class="ops-card">
+        <h5>📊 Key Metrics to Watch</h5>
+        <ul>
+          <li>Chunk count (total + per time range)</li>
+          <li>Autovacuum lag (critical: <code style="font-family:'JetBrains Mono';font-size:.8em">age(datfrozenxid)</code>)</li>
+          <li>Shared buffer hit ratio (&gt;99% for hot data)</li>
+          <li>B-tree index bloat percentage</li>
+          <li>Compression ratio and compressed chunk count</li>
+          <li>Transaction ID consumption rate</li>
+        </ul>
+      </div>
+      <div class="ops-card">
+        <h5>🔧 Tuning Knobs</h5>
+        <ul>
+          <li>Chunk interval (shorter = better pruning, more chunks)</li>
+          <li>Compression policy age (when to compress chunks)</li>
+          <li>Autovacuum: <code style="font-family:'JetBrains Mono';font-size:.8em">cost_delay</code>, <code style="font-family:'JetBrains Mono';font-size:.8em">scale_factor</code></li>
+          <li><code style="font-family:'JetBrains Mono';font-size:.8em">shared_buffers</code>, <code style="font-family:'JetBrains Mono';font-size:.8em">effective_cache_size</code></li>
+          <li><code style="font-family:'JetBrains Mono';font-size:.8em">max_parallel_workers_per_gather</code></li>
+          <li>Continuous aggregate materialization intervals</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="s2-4-nuances">
+    <h3>F) The L6/L7 Nuances</h3>
+    <div class="deep-insight">
+      <div class="deep-insight-header"><span class="icon">🔬</span><span>The Real Innovation Is Not Just Partitioning</span></div>
+      <p>TimescaleDB's real innovation isn't just "partition by time" — native PostgreSQL declarative partitioning can already do that. The actual innovations are:</p>
+      <ol style="margin-top:8px;padding-left:1.4em">
+        <li style="margin-bottom:6px;font-size:.88rem;color:var(--text-muted)"><strong style="color:var(--text)">(1) Automatic chunk creation without DDL</strong> — native PG partitioning requires you to create partitions manually or with a cron job.</li>
+        <li style="margin-bottom:6px;font-size:.88rem;color:var(--text-muted)"><strong style="color:var(--text)">(2) A custom planner that's much faster at constraint exclusion</strong> — native PG partitioning degrades badly with thousands of partitions; TimescaleDB's planner has O(1) chunk identification via its metadata catalog.</li>
+        <li style="margin-bottom:6px;font-size:.88rem;color:var(--text-muted)"><strong style="color:var(--text)">(3) The compressed hypertable format</strong> — converting row-oriented chunks to columnar <em>within</em> the same PG instance, without a separate storage engine.</li>
+        <li style="margin-bottom:6px;font-size:.88rem;color:var(--text-muted)"><strong style="color:var(--text)">(4) Continuous aggregate materializations</strong> — pre-computing common aggregations incrementally in the background, so dashboards querying "last 7 days avg CPU" don't re-scan all data on every request.</li>
+      </ol>
+      <p style="margin-top:10px">Understanding this distinction shows you've thought about <mark teal>what's actually hard about doing TSDB on top of a relational engine</mark>, rather than just saying "PostgreSQL with partitioning."</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ VARIANT COMPARISON TABLE ═══════════ -->
+<section class="section" id="variant-compare">
+  <div class="section-header">
+    <div class="section-number">Section 2.2 · All Four Variants</div>
+    <h2 class="section-title">Comprehensive <span style="color:var(--amber);">Variant Comparison</span></h2>
+    <div class="sep-amber"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Variant</th><th>Core Mechanism</th><th>Best For</th><th>Worst For</th><th>Key Trade-off</th><th>Failure Mode</th><th>Real-World User</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span style="color:var(--accent);font-family:'JetBrains Mono';font-size:.8em">LSM-Tree</span></td>
+          <td>Buffer in memtable, flush to immutable SSTables, compact in background</td>
+          <td class="td-teal">Very high write throughput, flexible schemas, durable writes</td>
+          <td class="td-coral">Low-latency reads during compaction storms; high-cardinality index</td>
+          <td>Write amplification vs. read amplification (compaction strategy determines ratio)</td>
+          <td class="td-coral">Compaction behind → L0 pile-up → read degradation → cascade</td>
+          <td>OpenTSDB, early InfluxDB, Apache IoTDB</td>
+        </tr>
+        <tr>
+          <td><span style="color:var(--amber);font-family:'JetBrains Mono';font-size:.8em">Gorilla</span></td>
+          <td>Delta-of-delta timestamps + XOR float encoding; 2h in-memory blocks</td>
+          <td class="td-teal">Sub-ms reads of recent data, monitoring/alerting, ultra-high write throughput</td>
+          <td class="td-coral">Long-term retention, arbitrary time ranges, durability without replication</td>
+          <td>Memory cost vs. query latency (more RAM = faster, but expensive)</td>
+          <td class="td-coral">Node crash loses current block; cardinality spike → OOM</td>
+          <td>Facebook Gorilla, Prometheus (encoding), Uber M3DB</td>
+        </tr>
+        <tr>
+          <td><span style="color:var(--purple);font-family:'JetBrains Mono';font-size:.8em">Prometheus TSDB</span></td>
+          <td>Immutable time-bounded blocks with embedded index; compaction merges adjacent time blocks</td>
+          <td class="td-teal">Single-node monitoring, bounded retention, Prometheus ecosystem, time-range deletion</td>
+          <td class="td-coral">Horizontal scaling, out-of-order writes, multi-tenant isolation</td>
+          <td>Simplicity vs. scalability (single-node elegance but hard to shard natively)</td>
+          <td class="td-amber">WAL replay time on crash (10+ min); series churn bloating head block</td>
+          <td>Prometheus, Thanos, Grafana Mimir</td>
+        </tr>
+        <tr>
+          <td><span style="color:var(--teal);font-family:'JetBrains Mono';font-size:.8em">TimescaleDB</span></td>
+          <td>PostgreSQL + automatic time-range partitioning + columnar compression for old chunks</td>
+          <td class="td-teal">SQL-heavy workloads, JOINs with relational data, teams already on PostgreSQL</td>
+          <td class="td-coral">Ultra-high cardinality, &gt;1M pts/sec sustained, minimal-latency monitoring</td>
+          <td>Query flexibility (full SQL) vs. raw write performance (B-tree overhead)</td>
+          <td class="td-coral">TXID wraparound; autovacuum lag; chunk count explosion</td>
+          <td>TimescaleDB, Crunchy Data</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout callout-soundbite" style="margin-top:28px">
+    <div class="callout-label">🔑 Sound Bite — Comparing All Variants</div>
+    <p class="soundbite-text">"The choice between TSDB engines isn't about which one is 'best' — it's about understanding <span class="hi">which invariant you're optimizing for</span>. <span class="hi-amber">Gorilla optimizes for read latency of recent data</span> by keeping everything in memory. <span class="hi-amber">LSM optimizes for write throughput</span> by converting random writes to sequential I/O. <span class="hi-purple">Prometheus TSDB optimizes for operational simplicity</span> by making time blocks the unit of everything. <span class="hi">TimescaleDB optimizes for query flexibility</span> by building on PostgreSQL's SQL engine. At L7, the real answer is almost always a <span class="hi-green">tiered architecture that uses the right engine for each temperature of data</span>."</p>
+  </div>
+</section>
+
+<!-- ═══════════ CRASH SCENARIO ═══════════ -->
+<section class="section" id="crash-scenario">
+  <div class="section-header">
+    <div class="section-number">Section 2.3 · Same Scenario, All 4 Variants</div>
+    <h2 class="section-title">Node Crash <span style="color:var(--coral);">Walkthrough</span></h2>
+    <div class="sep-coral"></div>
+  </div>
+
+  <div class="callout callout-warning">
+    <div class="callout-label">📋 The Scenario</div>
+    <p><strong>5 TSDB nodes</strong> storing metrics for 10,000 hosts, each reporting 200 metrics every 15 seconds = <mark coral>133K points/sec total</mark>. At <strong>t=600s</strong>, Node 3 crashes (power failure, unclean shutdown). How does each variant handle it?</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="scenario-tabs">
+    <button class="stab active" data-target="panel-lsm">LSM-Tree</button>
+    <button class="stab" data-target="panel-gorilla">Gorilla</button>
+    <button class="stab" data-target="panel-prometheus">Prometheus TSDB</button>
+    <button class="stab" data-target="panel-timescale">TimescaleDB</button>
+  </div>
+
+  <div id="panel-lsm" class="scenario-panel active" id="crash-lsm">
+    <div class="failure-block">
+      <h4>🗂️ LSM-Tree — Crash at t=600s</h4>
+      <ul class="failure-timeline">
+        <li><span class="ts">t=0s</span><span>Each of 5 nodes handles ~27K pts/sec (sharded by consistent hash). Memtables filling. WAL writing at ~1 MB/sec per node.</span></li>
+        <li><span class="ts">t=300s</span><span>Each node has flushed ~5 SSTables (64 MB each). Compaction running smoothly in background.</span></li>
+        <li><span class="ts">t=600s</span><span><mark coral>Node 3 crashes.</mark> Active memtable (64 MB of recent data, ~5s of writes) is lost from memory. WAL on disk contains all data since last flush.</span></li>
+        <li><span class="ts">t=601s</span><span>Remaining 4 nodes detect Node 3 down (heartbeat timeout). Hash ring rebalances — Node 3's series redistributed to other nodes. New writes for those series go to surviving nodes.</span></li>
+        <li><span class="ts">t=610s</span><span>Node 3 restarts. Reads WAL from disk. Replays ~60 seconds of WAL to rebuild memtable. <mark teal>Data loss: zero.</mark> But there's a ~10s write gap where the rebalance hadn't fully propagated.</span></li>
+        <li><span class="ts">t=620s</span><span>Node 3 back to normal. Must also absorb the "orphan" writes that went to other nodes during the gap. These may need to be re-routed or merged.</span></li>
+        <li><span class="ts">t=900s</span><span>Fully recovered. Possible duplicate points (written to both Node 3 and its temporary replacement). Compaction deduplicates.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="panel-gorilla" class="scenario-panel" id="crash-gorilla">
+    <div class="failure-block">
+      <h4>🦍 Gorilla (In-Memory) — Crash at t=600s</h4>
+      <ul class="failure-timeline">
+        <li><span class="ts">t=0s</span><span>Each node holds ~27K pts/sec in memory. Current 2-hour block started at t=0.</span></li>
+        <li><span class="ts">t=300s</span><span>5 minutes of data in the current block. Compressed in memory. Each node using ~2 GB for the active block.</span></li>
+        <li><span class="ts">t=600s</span><span><mark coral>Node 3 crashes.</mark> In-memory block lost — 10 minutes of data for ~2M series.</span></li>
+        <li><span class="ts">t=600s<br/>(WITH replication)</span><span>Data exists on 2 replica nodes. Read path seamlessly redirects. <mark teal>Data loss: zero.</mark></span></li>
+        <li><span class="ts">t=600s<br/>(WITHOUT replication)</span><span>10 minutes of data for 1/5 of all series is <mark coral>permanently lost.</mark> Dashboards show a gap. Alerts may have misfired.</span></li>
+        <li><span class="ts">t=610s</span><span>Node 3 restarts. Cold start — no data in memory. Begins accepting new writes into a fresh block. Previous block's data only on replicas or disk backup.</span></li>
+        <li><span class="ts">t=7200s</span><span>First complete block finishes on Node 3. Full recovery for new writes. Historical gap remains unless replicated.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="panel-prometheus" class="scenario-panel" id="crash-prometheus">
+    <div class="failure-block">
+      <h4>📦 Prometheus TSDB — Crash at t=600s</h4>
+      <p style="font-size:.87rem;color:var(--text-muted);margin-bottom:12px">Note: Prometheus is typically single-node per instance. In this scenario: 5 Prometheus instances, each scraping 2,000 hosts.</p>
+      <ul class="failure-timeline">
+        <li><span class="ts">t=0s</span><span>Each instance has a head block building in memory. WAL on local disk receiving all samples.</span></li>
+        <li><span class="ts">t=300s</span><span>5 minutes of data in head block. WAL has durably captured all samples so far.</span></li>
+        <li><span class="ts">t=600s</span><span><mark coral>Instance 3 crashes.</mark> Head block (in-memory) lost. WAL on disk is intact.</span></li>
+        <li><span class="ts">t=601s</span><span>Instance 3 restarts. Begins WAL replay to reconstruct head block's in-memory index and chunk structures.</span></li>
+        <li><span class="ts">t=601s–780s</span><span>WAL replay of ~10 minutes of samples for ~400K series. At ~2M samples/sec replay rate, this takes <mark amber>roughly 3 minutes</mark>.</span></li>
+        <li><span class="ts">t=780s</span><span>Instance 3 back online. <mark teal>No data loss</mark> — WAL recovered everything. But during the 3-minute replay, instance 3 missed scrape intervals.</span></li>
+        <li><span class="ts">Gap</span><span><mark amber>~3-minute data gap</mark> for all 2,000 hosts that this instance monitors. Alerts may fire incorrectly during this window.</span></li>
+        <li><span class="ts">Thanos note</span><span>If Thanos sidecar was running, all completed 2h blocks were already uploaded to S3. Only head block data was at risk, and it's recovered from WAL.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="panel-timescale" class="scenario-panel" id="crash-timescale">
+    <div class="failure-block">
+      <h4>🐘 TimescaleDB — Crash at t=600s</h4>
+      <ul class="failure-timeline">
+        <li><span class="ts">t=0s</span><span>TimescaleDB cluster with 5 PostgreSQL nodes. All writes going through WAL → heap → B-tree update pipeline.</span></li>
+        <li><span class="ts">t=300s</span><span>Current chunk is a regular PG table. Last checkpoint was ~5 minutes ago (default <code class="inline">checkpoint_completion_target</code>).</span></li>
+        <li><span class="ts">t=600s</span><span><mark coral>Node 3 crashes.</mark> PostgreSQL's WAL is durable (fsync'd to disk). PostgreSQL begins standard crash recovery on restart.</span></li>
+        <li><span class="ts">t=601s</span><span>PostgreSQL crash recovery: replays WAL from last checkpoint (~5 minutes of WAL).</span></li>
+        <li><span class="ts">t=605s</span><span>Recovery complete. PostgreSQL ready to accept connections. <mark teal>No data loss</mark> (assuming sync replication to at least one standby). Total downtime: ~5 seconds.</span></li>
+        <li><span class="ts">t=610s</span><span>Back to normal operation. However, <mark amber>shared buffer cache is cold</mark>. Query latency elevated for ~5 minutes until hot data is re-cached from disk.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="crash-compare" style="margin-top:28px">
+    <h3>Side-by-Side Recovery Comparison</h3>
+    <div class="crash-grid">
+      <div class="crash-card crash-card-lsm">
+        <h5>🗂️ LSM-Tree</h5>
+        <div class="crash-stat"><span class="label">Data loss</span><span class="val" style="color:var(--teal)">None (WAL)</span></div>
+        <div class="crash-stat"><span class="label">Recovery time</span><span class="val" style="color:var(--amber)">~10–20s</span></div>
+        <div class="crash-stat"><span class="label">Gap in data</span><span class="val" style="color:var(--amber)">~10–20s</span></div>
+        <div class="crash-stat"><span class="label">Operational complexity</span><span class="val" style="color:var(--amber)">Medium (resharding)</span></div>
+        <div class="crash-stat"><span class="label">Post-recovery perf</span><span class="val" style="color:var(--teal)">Normal (warm memtable)</span></div>
+      </div>
+      <div class="crash-card crash-card-gorilla">
+        <h5>🦍 Gorilla</h5>
+        <div class="crash-stat"><span class="label">Data loss</span><span class="val" style="color:var(--teal)">None if replicated</span></div>
+        <div class="crash-stat"><span class="label">Recovery time</span><span class="val" style="color:var(--teal)">Instant (start fresh)</span></div>
+        <div class="crash-stat"><span class="label">Gap in data</span><span class="val" style="color:var(--coral)">0 if replicated; else min</span></div>
+        <div class="crash-stat"><span class="label">Operational complexity</span><span class="val" style="color:var(--coral)">High (replication mgmt)</span></div>
+        <div class="crash-stat"><span class="label">Post-recovery perf</span><span class="val" style="color:var(--coral)">Degraded (cold RAM)</span></div>
+      </div>
+      <div class="crash-card crash-card-prometheus">
+        <h5>📦 Prometheus TSDB</h5>
+        <div class="crash-stat"><span class="label">Data loss</span><span class="val" style="color:var(--teal)">None (WAL)</span></div>
+        <div class="crash-stat"><span class="label">Recovery time</span><span class="val" style="color:var(--coral)">~3 min (WAL replay)</span></div>
+        <div class="crash-stat"><span class="label">Gap in data</span><span class="val" style="color:var(--coral)">~3 min (missed scrapes)</span></div>
+        <div class="crash-stat"><span class="label">Operational complexity</span><span class="val" style="color:var(--teal)">Low (standalone)</span></div>
+        <div class="crash-stat"><span class="label">Post-recovery perf</span><span class="val" style="color:var(--teal)">Normal after replay</span></div>
+      </div>
+      <div class="crash-card crash-card-timescale">
+        <h5>🐘 TimescaleDB</h5>
+        <div class="crash-stat"><span class="label">Data loss</span><span class="val" style="color:var(--teal)">None (WAL)</span></div>
+        <div class="crash-stat"><span class="label">Recovery time</span><span class="val" style="color:var(--teal)">~5–10s (PG crash recovery)</span></div>
+        <div class="crash-stat"><span class="label">Gap in data</span><span class="val" style="color:var(--teal)">~5–10s</span></div>
+        <div class="crash-stat"><span class="label">Operational complexity</span><span class="val" style="color:var(--teal)">Low (PG standard)</span></div>
+        <div class="crash-stat"><span class="label">Post-recovery perf</span><span class="val" style="color:var(--amber)">Degraded (cold cache)</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ VISUAL MENTAL MODELS ═══════════ -->
+<section class="section" id="mental-models">
+  <div class="section-header">
+    <div class="section-number">Section 2.4 · All Four Architectures</div>
+    <h2 class="section-title">Visual <span style="color:var(--teal);">Mental Models</span></h2>
+    <div class="sep-teal"></div>
+  </div>
+
+  <div id="mm-lsm">
+    <h3>LSM-Tree Based — Normal Operation</h3>
+    <div class="diagram-wrap">
+      <div class="diagram-label">DIAGRAM</div>
+      <pre class="diagram">
+WRITE PATH:
+Writes ──► [WAL (sequential, durable)] ──► [Memtable (in-memory skip list)]
+                                                     │ at capacity (64MB)
+                                                     ▼
+                                           [SSTable L0 (unsorted, overlapping)]
+                                                     │ compaction
+                                                     ▼
+                                           [SSTable L1 (sorted, non-overlapping)]
+                                                     │ compaction
+                                                     ▼
+                                           [SSTable L2 (larger, better compressed)]
+                                                     ...
+
+READ PATH:
+Reads ──► [Memtable]   (most recent, always check)
+       ── [Bloom filter → L0 SSTables]   (may overlap, worst case)
+       ── [Bloom filter → L1 SSTables]   (non-overlapping, efficient)
+       ── [Bloom filter → L2 SSTables]
+       ── Merge-sort results from all levels
+
+DURING CRASH:
+Before:  [WAL ✓] [Memtable ✓] [SSTables ✓]
+Crash ──►         [Memtable ✗ LOST]
+Recover: [Replay WAL] ──► [Rebuild Memtable ✓]  Duration: ~10s
+</pre>
+    </div>
+  </div>
+
+  <div id="mm-gorilla">
+    <h3>Gorilla (In-Memory) — Normal Operation</h3>
+    <div class="diagram-wrap">
+      <div class="diagram-label">DIAGRAM</div>
+      <pre class="diagram">
+WRITE PATH:
+Writes ──► [Hash(series_key) → In-memory bit-stream]
+           [Replicate to N peers via Paxos/Raft]
+           
+           ┌─────────────── 2h Block (Active) ───────────────┐
+           │ Series A: [64b t0][64b v0][1b δδ][13b xor]...   │
+           │ Series B: [64b t0][64b v0][1b δδ][13b xor]...   │
+           │ ...up to millions of series                      │
+           │ Compression ratio: ~12×                          │
+           └──────────────────────────────────────────────────┘
+                      │ every 2h: seal and flush to disk/S3
+                      ▼
+           [Persisted block (backup, not hot path)]
+
+READ PATH:
+Reads ──► [In-memory active block] ──► Decompress from block start ──► Return
+          Sub-millisecond — no disk I/O at all
+
+DURING CRASH (no replication):
+Before:  [Active Block in RAM ✓]
+Crash ──► [Active Block ✗ LOST]
+Recover: [Start fresh block] ──► [DATA GAP = up to 2h of data lost]
+                                  ════════════════════════════════
+</pre>
+    </div>
+  </div>
+
+  <div id="mm-prometheus">
+    <h3>Prometheus TSDB — Normal Operation</h3>
+    <div class="diagram-wrap">
+      <div class="diagram-label">DIAGRAM</div>
+      <pre class="diagram">
+WRITE PATH:
+           ┌──────────── HEAD BLOCK (in-memory) ────────────────┐
+Writes ──► │ WAL (disk) ──► Series Map ──► Active Chunks        │
+           │ [now-2h, now]     hash map      Gorilla-compressed  │
+           └────────────────────────┬───────────────────────────┘
+                                    │ every 2h: cut and flush
+            ┌───────────────────────▼──────────────────────────┐
+            │   Block 01HXY [8h–10h] (immutable)               │
+            │     ├── index      (label → series → chunk refs)  │
+            │     ├── chunks/    (Gorilla-compressed data)      │
+            │     └── meta.json  (time range, series count)     │
+            │   Block 01HXZ [4h–8h]  (compacted, immutable)    │
+            │   Block 01HXW [0h–4h]  (compacted, immutable)    │
+            └──────────────────────────────────────────────────┘
+
+READ PATH:
+Query: cpu_usage{host="web01"} [t_start, t_end]
+  1. Prune blocks: skip any block where meta.json time range ∉ [t_start, t_end]
+  2. Index lookup: label matcher → Roaring Bitmap posting list → series IDs
+  3. Chunk refs: series ID → chunk file offsets → pread()
+  4. Decompress: Gorilla decode → sample iterator
+  5. Merge: k-way merge across head block + persisted blocks
+</pre>
+    </div>
+  </div>
+
+  <div id="mm-timescale">
+    <h3>TimescaleDB — Normal Operation</h3>
+    <div class="diagram-wrap">
+      <div class="diagram-label">DIAGRAM</div>
+      <pre class="diagram">
+WRITE PATH:
+Writes ──► [PostgreSQL Executor + TimescaleDB Planner Hook]
+           │
+           ├──► [Chunk_2024_Week4] ← current, UNCOMPRESSED (heap + B-tree)
+           │    └── B-tree index updated on every INSERT (random I/O)
+           │
+           ├──► [Chunk_2024_Week3] ← compressed (columnar, read-only)
+           ├──► [Chunk_2024_Week2] ← compressed
+           └──► [Chunk_2024_Week1] ← compressed
+
+READ PATH:
+Query: SELECT avg(value) WHERE time > now()-'1h' AND name='cpu_usage'
+  1. Constraint exclusion: TimescaleDB planner prunes chunks by time range metadata
+     → O(1) chunk identification (not O(n) scan of all chunk constraints)
+  2. Active chunk: B-tree index scan on (name, time) → O(log n) row lookup
+  3. Aggregation: Standard PG aggregate with parallel execution
+  4. Compressed chunks: columnar segment scan if needed (much faster than heap scan)
+
+DURING CRASH:
+Before:  [WAL ✓] [Heap ✓] [B-tree ✓]
+Crash ──► PostgreSQL WAL recovery (replay from last checkpoint, ~5min of WAL)
+Recover:  ~5-10 seconds. No data loss. Cold cache causes temporary latency spike.
+</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ DECISION FRAMEWORK ═══════════ -->
+<section class="section" id="decision-framework">
+  <div class="section-header">
+    <div class="section-number">Section 2.5 · Engine Selection</div>
+    <h2 class="section-title">The <span style="color:var(--green);">Decision Framework</span></h2>
+    <div class="sep-green"></div>
+  </div>
+
+  <div class="dtree">
+    <div class="dtree-node dtree-q">
+      <div class="dtree-label">Q1 · First Question</div>
+      <div class="dtree-text"><strong>Does the workload need full SQL and JOINs with relational data?</strong></div>
+    </div>
+
+    <div class="dtree-node dtree-a-yes">
+      <div class="dtree-label">YES →</div>
+      <div class="dtree-text"><strong>TimescaleDB</strong> — Keep the SQL ecosystem</div>
+    </div>
+    <div class="dtree-node dtree-leaf">
+      <div class="dtree-label">Q1a · Sub-question</div>
+      <div class="dtree-text">Write rate &gt; 500K pts/sec sustained?<br/><strong>YES</strong> → TimescaleDB will struggle. Consider dual-write: TSDB for metrics + PG for relational. Or InfluxDB IOx (SQL + columnar).<br/><strong>NO</strong> → TimescaleDB is perfect. Leverage continuous aggregates + compression policies.</div>
+    </div>
+
+    <div class="dtree-node dtree-a-no" style="margin-top:16px">
+      <div class="dtree-label">NO → Purpose-built TSDB</div>
+      <div class="dtree-text">Proceed to Q2</div>
+    </div>
+
+    <div class="dtree-node dtree-q" style="margin-top:16px">
+      <div class="dtree-label">Q2 · Primary Use Case</div>
+      <div class="dtree-text"><strong>Is the primary use case monitoring/alerting (recent data, &lt; 24h queries)?</strong></div>
+    </div>
+
+    <div class="dtree-node dtree-a-yes">
+      <div class="dtree-label">YES →</div>
+      <div class="dtree-text">Gorilla-style is optimal for the hot path</div>
+    </div>
+    <div class="dtree-node dtree-leaf">
+      <div class="dtree-label">Q2a · Deployment</div>
+      <div class="dtree-text">Must be open-source / self-hosted?<br/><strong>YES</strong> → <strong>Prometheus TSDB</strong> + Thanos for long-term storage.<br/><strong>NO</strong> → Gorilla-style in-memory tier (M3DB, or hosted Gorilla) + cold storage backend (S3 + Thanos Compactor).</div>
+    </div>
+
+    <div class="dtree-node dtree-a-no" style="margin-top:12px">
+      <div class="dtree-label">NO → Long-term analytics, large time ranges</div>
+      <div class="dtree-text">Proceed to Q3</div>
+    </div>
+
+    <div class="dtree-node dtree-q" style="margin-top:16px">
+      <div class="dtree-label">Q3 · Write Scale</div>
+      <div class="dtree-text"><strong>Write rate &gt; 1M pts/sec?</strong></div>
+    </div>
+
+    <div class="dtree-node dtree-a-yes">
+      <div class="dtree-label">YES →</div>
+      <div class="dtree-text"><strong>LSM-based distributed TSDB</strong> (InfluxDB Clustered, QuestDB, Apache IoTDB)</div>
+    </div>
+    <div class="dtree-node dtree-leaf">
+      <div class="dtree-label">Q3a · Query requirements</div>
+      <div class="dtree-text">Need sub-second query on historical data?<br/><strong>YES</strong> → Invest in aggressive compaction + warm caching tier (Redis / columnar cache).<br/><strong>NO</strong> → Size-tiered compaction, optimize purely for write throughput.</div>
+    </div>
+
+    <div class="dtree-node dtree-a-no" style="margin-top:12px">
+      <div class="dtree-label">NO (&lt; 1M pts/sec) →</div>
+      <div class="dtree-text"><strong>Prometheus TSDB</strong> with extended retention, or InfluxDB single-node.</div>
+    </div>
+  </div>
+
+  <div id="decision-questions">
+    <h3>The Questions to Ask Yourself (or the Interviewer)</h3>
+    <div class="feature-cards">
+      <div class="feature-card">
+        <div class="feature-card-num">Q1</div>
+        <div class="feature-card-body">
+          <h5>"What's the query recency distribution?"</h5>
+          <p>80% last-hour queries → Gorilla-style. 80% last-year queries → LSM with heavy indexing. Mixed → tiered architecture with different engines per temperature.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-num">Q2</div>
+        <div class="feature-card-body">
+          <h5>"What's the series cardinality and churn rate?"</h5>
+          <p>Determines index architecture. &lt;1M series: any engine works. 1M–100M: careful design required. &gt;100M: must use approximate or hierarchical indexing. High churn (Kubernetes): Prometheus TSDB handles it naturally via time partitioning.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-num">Q3</div>
+        <div class="feature-card-body">
+          <h5>"Do we need SQL or relational JOINs?"</h5>
+          <p>Eliminates purpose-built TSDBs or mandates TimescaleDB/ClickHouse. If the answer is "sometimes," consider dual-write and application-layer joins.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-num">Q4</div>
+        <div class="feature-card-body">
+          <h5>"What's the retention policy?"</h5>
+          <p>&lt;48h retention: Gorilla is viable. Days to months: Prometheus TSDB. Years: tiered with cold object storage. Determines whether pure in-memory storage is economically feasible.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-num">Q5</div>
+        <div class="feature-card-body">
+          <h5>"What's the acceptable data loss window on node failure?"</h5>
+          <p>Zero tolerance: WAL + synchronous replication required (all four variants can achieve this). Seconds acceptable: simpler configurations work. Minutes acceptable: Gorilla without replication, or Prometheus TSDB accepting the replay gap.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ MIGRATION & HYBRID ═══════════ -->
+<section class="section" id="migration">
+  <div class="section-header">
+    <div class="section-number">Section 2.6 · Production Patterns</div>
+    <h2 class="section-title">Migration &amp; <span style="color:var(--amber);">Hybrid Approaches</span></h2>
+    <div class="sep-amber"></div>
+  </div>
+
+  <div id="tiered-arch">
+    <h3>The Canonical Tiered Architecture</h3>
+    <p>Most production systems at scale combine variants. The canonical pattern:</p>
+
+    <div class="tier-flow">
+      <div class="tier tier-hot">
+        <div class="tier-label">🔥 Hot Tier</div>
+        <div class="tier-engine">Gorilla-style</div>
+        <div class="tier-detail">In-memory compressed blocks<br/>Last 2–26 hours<br/>Sub-ms read latency<br/>Serves alerting + dashboards</div>
+      </div>
+      <div class="tier-arrow">→</div>
+      <div class="tier tier-warm">
+        <div class="tier-label">🌡️ Warm Tier</div>
+        <div class="tier-engine">Prometheus TSDB</div>
+        <div class="tier-detail">Immutable block files on SSD<br/>Last 30 days<br/>Seconds read latency<br/>Serves historical queries</div>
+      </div>
+      <div class="tier-arrow">→</div>
+      <div class="tier tier-cold">
+        <div class="tier-label">❄️ Cold Tier</div>
+        <div class="tier-engine">Object Storage</div>
+        <div class="tier-detail">Columnar format on S3/GCS<br/>Last 3+ years<br/>Seconds to minutes latency<br/>Serves compliance &amp; audits</div>
+      </div>
+    </div>
+
+    <div class="table-wrap" style="margin-top:20px">
+      <table>
+        <thead><tr><th>Company</th><th>Hot Tier</th><th>Warm Tier</th><th>Cold Tier</th></tr></thead>
+        <tbody>
+          <tr><td class="td-amber">Meta (Facebook)</td><td>Gorilla (26h)</td><td colspan="2">ODS/Scuba (months)</td></tr>
+          <tr><td class="td-amber">Uber</td><td>M3DB (Gorilla-encoded blocks)</td><td>etcd-backed distributed index</td><td>Long-term storage</td></tr>
+          <tr><td class="td-purple">Prometheus Ecosystem</td><td>Head block (Gorilla-compressed)</td><td>Persisted blocks (local SSD)</td><td>Thanos/Mimir → S3</td></tr>
+          <tr><td class="td-teal">Google Monarch</td><td>In-memory leaves</td><td>Column-oriented storage</td><td>Colossus (Google FS)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="migration-path" style="margin-top:36px">
+    <h3>Migration Path: PostgreSQL → Purpose-Built TSDB</h3>
+    <div class="migration-phase"><div class="phase-num">1</div><div class="phase-body"><h5>Add TimescaleDB Extension</h5><p>Minimal risk. Convert existing tables to hypertables. Adds chunk pruning and compression policies. Zero application code changes.</p></div></div>
+    <div class="migration-phase"><div class="phase-num">2</div><div class="phase-body"><h5>If TimescaleDB Hits Limits, Deploy Prometheus/InfluxDB Alongside</h5><p>Dual-write to both systems. Validate that query results match. Monitor write latency on both paths to detect divergence.</p></div></div>
+    <div class="migration-phase"><div class="phase-num">3</div><div class="phase-body"><h5>Validate Query Parity &amp; Migrate Dashboards</h5><p>Migrate dashboards and alert rules from PostgreSQL/TimescaleDB to the new TSDB. Run both in shadow mode for at least 2 weeks to catch edge cases in query semantics.</p></div></div>
+    <div class="migration-phase"><div class="phase-num">4</div><div class="phase-body"><h5>Cut Over Reads, Then Stop Writing Time Series to PostgreSQL</h5><p>Keep relational data (users, devices, configs) in PostgreSQL. Connect via JOINs at the application layer rather than database-level JOINs. This is the final steady-state architecture.</p></div></div>
+  </div>
+
+  <div id="hybrid" style="margin-top:36px">
+    <h3>Hybrid Approaches in Sophisticated Systems</h3>
+    <div class="feature-cards">
+      <div class="feature-card">
+        <div class="feature-card-num" style="color:var(--amber)">InfluxDB IOx</div>
+        <div class="feature-card-body">
+          <h5>Latest Generation — Cloud-Native Columnar</h5>
+          <p>Uses Apache Arrow + Parquet on object storage with an in-memory catalog. Not LSM, not Gorilla, not relational — it's a <mark amber>cloud-native columnar analytics engine</mark> purpose-built for time series. Represents the convergence of TSDB and OLAP.</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-num" style="color:var(--green)">ClickHouse</div>
+        <div class="feature-card-body">
+          <h5>The "If You Squint, It's a TSDB" Approach</h5>
+          <p>Uses MergeTree (a variant of LSM) with <mark green>columnar storage</mark> and aggressive compression. Offers full SQL. Increasingly popular for time series because time series is a specific case of time-ordered analytics — and ClickHouse is exceptional at time-ordered analytics.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ TRADE-OFFS MATRIX ═══════════ -->
+<section class="section" id="tradeoffs">
+  <div class="section-header">
+    <div class="section-number">Part 3 · The L6/L7 Differentiator</div>
+    <h2 class="section-title">Fundamental <span style="color:var(--teal);">Trade-offs Matrix</span></h2>
+    <div class="sep-teal"></div>
+  </div>
+
+  <p>These are the seven trade-offs you must be able to articulate fluently. Knowing <em>what</em> a TSDB does is L4. Knowing <em>why</em> each design decision was made — and what it sacrifices — is L6/L7.</p>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Write Throughput vs. Read Latency</div>
+      <span class="tradeoff-badge tb-lsm">LSM-Tree</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>10× write throughput via sequential I/O — memtable batching converts random inserts to sequential flushes.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>Reads may check multiple levels (read amplification). During compaction, P99 latency spikes significantly.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>Real-time alerting where every millisecond matters — use Gorilla-style in-memory instead.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Memory vs. Disk — Hot Data in RAM</div>
+      <span class="tradeoff-badge tb-gorilla">Gorilla</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>Sub-millisecond read latency for recent data. 12× compression means more effective data per dollar of RAM.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>High memory cost. Limited retention window (26–48h). Node crash loses current block without replication.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>When you need months or years of online queryable data — must tier to disk. RAM prices don't make years of data economically viable in-memory.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Compression Ratio vs. Random Access</div>
+      <span class="tradeoff-badge tb-all">All Variants</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>Delta-of-delta + XOR encoding achieves 12× compression, fitting 12× more data into cache/memory for free query speedup.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>Must decompress sequentially from block start. No O(1) seek to an arbitrary timestamp within a compressed block.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>Workloads needing random point lookups by arbitrary timestamp — e.g., "what was the exact value at t=12:34:56.789?" Must keep uncompressed index alongside.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Index Completeness vs. Memory Footprint</div>
+      <span class="tradeoff-badge tb-prometheus">Prometheus TSDB</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>Full inverted index enables flexible tag-based queries like "all hosts in us-east" in sub-millisecond — O(n) bitmap intersection.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>Posting lists consume O(series_count × labels) memory. At 100M series, the index alone can require 20+ GB of RAM.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>Unbounded cardinality (10B+ unique series) — must use approximate or hierarchical indexing. Full inverted index is economically impossible at that scale.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Operational Simplicity vs. Horizontal Scalability</div>
+      <span class="tradeoff-badge tb-prometheus">Prometheus TSDB</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>Single-node design is trivial to operate. No distributed coordination, no sharding headaches. WAL + immutable blocks = predictable behavior.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>Hard vertical scale limit (~50M series per node at ~64 GB RAM). No native sharding. Federation via Thanos/Cortex adds significant complexity.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>Monitoring &gt;100K hosts across multiple regions — need Thanos, Cortex, or Grafana Mimir for horizontal federation.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Query Flexibility vs. Write Performance</div>
+      <span class="tradeoff-badge tb-tsdb">TimescaleDB</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>Full SQL, JOINs, window functions, CTEs. Works with every existing PostgreSQL tool, ORM, and driver. Zero query language re-learning.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>B-tree update overhead on every INSERT (random I/O). MVCC 23-byte row header doubles storage overhead before compression. TXID wraparound risk at high write rates.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>When write throughput &gt;500K pts/sec sustained — B-tree random I/O becomes the bottleneck and LSM-based alternatives win decisively.</p></div>
+    </div>
+  </div>
+
+  <div class="tradeoff-card">
+    <div class="tradeoff-header">
+      <div class="tradeoff-title">Durability Guarantee vs. Write Latency</div>
+      <span class="tradeoff-badge tb-all">All Variants</span>
+    </div>
+    <div class="tradeoff-cols">
+      <div class="tc-col tc-optimizes"><h6>✅ Optimizes</h6><p>fsync-on-WAL-write guarantees zero data loss on crash. Every ack'd write is durable to disk before returning success to the client.</p></div>
+      <div class="tc-col tc-sacrifices"><h6>❌ Sacrifices</h6><p>Each fsync adds 1–5ms of latency depending on storage hardware. At 1M writes/sec, synchronous fsync becomes an impossible bottleneck.</p></div>
+      <div class="tc-col tc-when-not"><h6>⚠️ When NOT acceptable</h6><p>When 0.01% data loss is acceptable (typical monitoring metrics) — batch WAL syncs (group commit) dramatically improve throughput while accepting a tiny loss window (last 100ms of data on crash).</p></div>
+    </div>
+  </div>
+
+  <div class="callout callout-soundbite" style="margin-top:36px">
+    <div class="callout-label">🏆 The Complete L6/L7 Summary</div>
+    <p class="soundbite-text">"At L6, you know which engine to choose for a given scale. At L7, you understand <span class="hi">why every design decision is a trade-off</span>, and you can reason about <span class="hi-amber">what the current system will fail at</span> as requirements change. The real interview signal is: can you articulate not just 'use Prometheus TSDB' but 'Prometheus TSDB gives you operational simplicity and implicit series-churn handling via time partitioning, but you will hit its scalability ceiling at 50M series on a single node, at which point you're adopting Thanos and accepting the operational complexity that comes with distributed federation — and that trade-off is worth it until you're at Google-scale, at which point you build something like Monarch.'"</p>
+  </div>
+</section>
+
+</div><!-- /content -->
+</main>
+
+<button id="back-to-top" aria-label="Back to top">↑</button>
+
+<script>
+  // Progress bar
+  const bar = document.getElementById('progress-bar');
+  window.addEventListener('scroll', () => {
+    bar.style.width = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight) * 100) + '%';
+  }, { passive: true });
+
+  // Back to top
+  const btt = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => btt.classList.toggle('visible', window.scrollY > 300), { passive: true });
+  btt.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // Active nav
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+  const sectionMap = [];
+  navItems.forEach(a => {
+    const id = a.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sectionMap.push({ el, a });
+  });
+  sectionMap.forEach(s => {
+    new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          sectionMap.forEach(x => x.a.classList.remove('active'));
+          const f = sectionMap.find(x => x.el === e.target);
+          if (f) f.a.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' }).observe(s.el);
+  });
+
+  // Scenario tabs
+  document.querySelectorAll('.stab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.scenario-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const target = document.getElementById(btn.dataset.target);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // Hamburger
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  document.getElementById('hamburger').addEventListener('click', () => {
+    sidebar.classList.toggle('open'); overlay.classList.toggle('open');
+  });
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open'); overlay.classList.remove('open');
+  });
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase().trim();
+    navItems.forEach(a => a.style.display = (!q || a.textContent.toLowerCase().includes(q)) ? '' : 'none');
+    document.querySelectorAll('.nav-section-label').forEach(l => l.style.display = q ? 'none' : '');
+  });
+
+  // Close sidebar on nav click (mobile)
+  navItems.forEach(a => a.addEventListener('click', () => {
+    if (window.innerWidth <= 900) { sidebar.classList.remove('open'); overlay.classList.remove('open'); }
+  }));
+</script>
+</body>
+</html>
