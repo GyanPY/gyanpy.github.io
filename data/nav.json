@@ -141,12 +141,6 @@
         "file": "pages/InFluxDB/core-4.html"
       }
     ],
-    "InFluxDB": [
-      {
-        "title": "Internals",
-        "file": "pages/InFluxDB/InFluxDB.html"
-      }
-    ],
     "BigQuery": [
       {
         "title": "Deep Dive-1",
