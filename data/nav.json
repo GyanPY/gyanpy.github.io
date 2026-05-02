@@ -123,6 +123,22 @@
       {
         "title": "Internals",
         "file": "pages/InFluxDB/InFluxDB.html"
+      },
+         {
+        "title": "Deep Dive-1",
+        "file": "pages/InFluxDB/core-1.html"
+      },
+        {
+        "title": "Deep Dive-2",
+        "file": "pages/InFluxDB/core-2.html"
+      },
+        {
+        "title": "Deep Dive-3",
+        "file": "pages/InFluxDB/core-3.html"
+      },
+        {
+        "title": "Deep Dive-4",
+        "file": "pages/InFluxDB/core-4.html"
       }
     ],
     "InFluxDB": [
