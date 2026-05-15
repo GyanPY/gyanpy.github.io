@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentry System Design — Part 2: Data Modeling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e10;
+    --bg2: #141416;
+    --bg3: #1a1a1d;
+    --bg4: #202024;
+    --border: #2a2a30;
+    --border2: #323238;
+    --text-primary: #f0ede8;
+    --text-secondary: #a8a4a0;
+    --text-muted: #6a6670;
+    --accent-blue: #4a9eff;
+    --accent-teal: #2dd4bf;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-green: #22c55e;
+    --accent-purple: #a78bfa;
+    --accent-orange: #f97316;
+    --no-hire: #ef4444;
+    --lean-hire: #f59e0b;
+    --hire: #22c55e;
+    --strong-hire: #f59e0b;
+    --sidebar-w: 280px;
+    --progress-h: 3px;
+    --font-display: 'Playfair Display', Georgia, serif;
+    --font-body: 'Source Serif 4', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-ui: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* Progress Bar */
+  #progress-bar {
+    position: fixed; top: 0; left: 0;
+    height: var(--progress-h);
+    background: linear-gradient(90deg, var(--accent-teal), var(--accent-purple));
+    width: 0%; z-index: 1000;
+    transition: width 0.1s linear;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    position: fixed; top: 0; left: 0;
+    width: var(--sidebar-w); height: 100vh;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100;
+    padding-top: var(--progress-h);
+    display: flex; flex-direction: column;
+  }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .sidebar-header { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-system-label {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-teal); margin-bottom: 4px;
+  }
+  .sidebar-title {
+    font-family: var(--font-display); font-size: 18px; font-weight: 700;
+    color: var(--text-primary); line-height: 1.2; margin-bottom: 4px;
+  }
+  .sidebar-subtitle { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); }
+
+  .sidebar-search { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-search input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 7px 12px; color: var(--text-primary);
+    font-family: var(--font-ui); font-size: 12px; outline: none;
+    transition: border-color 0.2s;
+  }
+  .sidebar-search input:focus { border-color: var(--accent-teal); }
+  .sidebar-search input::placeholder { color: var(--text-muted); }
+
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-section-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--text-muted); padding: 8px 20px 4px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 20px; font-family: var(--font-ui); font-size: 12px;
+    color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+    text-decoration: none; border-left: 2px solid transparent;
+  }
+  .nav-item:hover { color: var(--text-primary); background: var(--bg3); }
+  .nav-item.active { color: var(--accent-teal); border-left-color: var(--accent-teal); background: rgba(45,212,191,0.06); }
+
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-no { background: var(--no-hire); }
+  .dot-lean { background: var(--lean-hire); }
+  .dot-hire { background: var(--hire); }
+  .dot-strong { background: var(--strong-hire); box-shadow: 0 0 5px rgba(245,158,11,0.5); }
+
+  .nav-part-link {
+    display: block; margin: 8px 12px 4px;
+    padding: 8px 14px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 7px; font-family: var(--font-ui); font-size: 11px;
+    color: var(--text-muted); text-decoration: none; transition: all 0.2s;
+  }
+  .nav-part-link:hover { color: var(--accent-blue); border-color: rgba(74,158,255,0.3); }
+  .nav-part-link span { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 1px; }
+
+  /* Main Content */
+  #main { margin-left: var(--sidebar-w); min-height: 100vh; padding-top: var(--progress-h); }
+
+  /* Hero */
+  .hero {
+    padding: 64px 72px 56px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--bg2) 0%, var(--bg) 60%);
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; top: -80px; right: -80px;
+    width: 360px; height: 360px;
+    background: radial-gradient(circle, rgba(45,212,191,0.05) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero::after {
+    content: '';
+    position: absolute; bottom: -40px; left: 40%;
+    width: 240px; height: 240px;
+    background: radial-gradient(circle, rgba(167,139,250,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-eyebrow {
+    font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-teal); margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .hero-eyebrow::before {
+    content: ''; display: inline-block;
+    width: 20px; height: 1px; background: var(--accent-teal);
+  }
+
+  .hero-part-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(45,212,191,0.08); border: 1px solid rgba(45,212,191,0.2);
+    border-radius: 20px; padding: 4px 12px;
+    font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+    color: var(--accent-teal); margin-bottom: 14px;
+  }
+
+  .hero-title {
+    font-family: var(--font-display); font-size: 54px; font-weight: 900;
+    line-height: 1.05; color: var(--text-primary); margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .hero-title .phase-label { color: var(--accent-teal); }
+  .hero-title .sub-label {
+    display: block; font-size: 32px; font-weight: 700;
+    color: var(--text-secondary); margin-top: 4px; letter-spacing: -0.01em;
+  }
+
+  .hero-meta {
+    display: flex; gap: 24px; flex-wrap: wrap; margin: 20px 0 28px;
+  }
+  .hero-badge {
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary);
+  }
+  .hero-badge-icon { font-size: 15px; }
+
+  .hero-config-card {
+    display: inline-grid; grid-template-columns: repeat(3, 1fr);
+    gap: 0; border: 1px solid var(--border2); border-radius: 10px;
+    overflow: hidden; background: var(--bg3); max-width: 640px;
+  }
+  .hero-config-item { padding: 16px 20px; border-right: 1px solid var(--border); }
+  .hero-config-item:last-child { border-right: none; }
+  .config-label {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 5px;
+  }
+  .config-value { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+  .hero-description {
+    margin-top: 24px; font-size: 15px; color: var(--text-secondary);
+    max-width: 680px; line-height: 1.65;
+  }
+
+  /* Content */
+  .content-area { padding: 0 72px 120px; }
+
+  /* Phase Block */
+  .phase-block { padding-top: 64px; }
+  .phase-header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .phase-pill {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-teal); background: rgba(45,212,191,0.1);
+    padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(45,212,191,0.2);
+  }
+  .phase-time { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); }
+  .phase-title {
+    font-family: var(--font-display); font-size: 38px; font-weight: 800;
+    color: var(--text-primary); margin-bottom: 8px; letter-spacing: -0.015em;
+  }
+
+  .phase-question-card {
+    border: 1px solid var(--border2); border-left: 3px solid var(--accent-teal);
+    border-radius: 8px; padding: 20px 24px; background: var(--bg3);
+    margin: 24px 0 40px;
+  }
+  .phase-question-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-teal); margin-bottom: 8px;
+  }
+  .phase-question-text {
+    font-family: var(--font-body); font-size: 15px; font-style: italic;
+    color: var(--text-secondary); line-height: 1.6;
+  }
+
+  /* Tier Cards */
+  .tier-card {
+    border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; margin-bottom: 32px; background: var(--bg2);
+    transition: border-color 0.2s;
+  }
+  .tier-card:hover { border-color: var(--border2); }
+
+  .tier-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 20px 28px; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+  }
+  .tier-badge {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    padding: 6px 14px; border-radius: 20px; flex-shrink: 0;
+  }
+  .tier-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .tier-badge.no-hire  { background: rgba(239,68,68,0.1);  color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+  .tier-badge.lean-hire{ background: rgba(245,158,11,0.1);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+  .tier-badge.hire     { background: rgba(34,197,94,0.1);   color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+  .tier-badge.strong-hire { background: rgba(245,158,11,0.1); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+
+  .tier-dot.no     { background: #ef4444; }
+  .tier-dot.lean   { background: #f59e0b; }
+  .tier-dot.yes    { background: #22c55e; }
+  .tier-dot.strong { background: #f59e0b; box-shadow: 0 0 6px #f59e0b80; }
+
+  .tier-level-label { font-family: var(--font-ui); font-size: 12px; color: var(--text-muted); flex: 1; }
+  .tier-toggle { font-size: 12px; color: var(--text-muted); transition: transform 0.2s; }
+  .tier-toggle.open { transform: rotate(180deg); }
+
+  .tier-body { padding: 28px 28px 32px; }
+  .tier-body.collapsed { display: none; }
+
+  /* Script Block */
+  .script-block {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 24px 28px; margin-bottom: 24px;
+    position: relative;
+  }
+  .script-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 14px;
+  }
+  .script-text {
+    font-family: var(--font-body); font-size: 14px; font-style: italic;
+    color: var(--text-secondary); line-height: 1.75;
+    border-left: 2px solid var(--border2); padding-left: 16px;
+  }
+  .copy-btn {
+    position: absolute; top: 16px; right: 16px;
+    background: var(--bg4); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 5px 10px;
+    font-family: var(--font-ui); font-size: 10px; font-weight: 500;
+    color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .copy-btn:hover { color: var(--text-primary); border-color: var(--accent-teal); }
+  .copy-btn.copied { color: var(--accent-green); border-color: var(--accent-green); }
+
+  /* Analysis Grid */
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .analysis-card {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px;
+  }
+  .analysis-card-label {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px;
+  }
+  .analysis-card-label.fails     { color: var(--no-hire); }
+  .analysis-card-label.missing   { color: var(--lean-hire); }
+  .analysis-card-label.signals   { color: var(--hire); }
+  .analysis-card-label.exceptional { color: var(--strong-hire); }
+
+  .analysis-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .analysis-list li {
+    font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary);
+    line-height: 1.45; display: flex; align-items: flex-start; gap: 7px;
+  }
+  .analysis-list li::before { content: '—'; color: var(--text-muted); flex-shrink: 0; margin-top: 1px; }
+
+  /* Interviewer Note */
+  .interviewer-note {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent-purple);
+    border-radius: 8px; padding: 16px 20px;
+    background: rgba(167,139,250,0.04); margin-bottom: 20px;
+  }
+  .interviewer-note-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-purple); margin-bottom: 8px;
+  }
+  .interviewer-note p {
+    font-family: var(--font-body); font-size: 13px; font-style: italic;
+    color: var(--text-secondary); line-height: 1.65;
+  }
+
+  /* Fatal Block */
+  .fatal-block {
+    background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 20px;
+  }
+  .fatal-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--no-hire); margin-bottom: 8px;
+  }
+  .fatal-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .fatal-list li {
+    font-family: var(--font-ui); font-size: 12px; color: #fca5a5;
+    display: flex; align-items: flex-start; gap: 7px; line-height: 1.45;
+  }
+  .fatal-list li::before { content: '✗'; color: var(--no-hire); flex-shrink: 0; }
+
+  /* Upgrade Block */
+  .upgrade-block {
+    background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px; padding: 16px 20px; margin-bottom: 20px;
+  }
+  .upgrade-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-amber); margin-bottom: 8px;
+  }
+  .upgrade-block p { font-family: var(--font-body); font-size: 13px; color: #fcd34d; line-height: 1.65; }
+
+  /* Checklist */
+  .checklist { list-style: none; display: flex; flex-direction: column; gap: 5px; margin-bottom: 20px; }
+  .checklist li {
+    font-family: var(--font-ui); font-size: 12.5px; color: var(--text-secondary);
+    display: flex; align-items: flex-start; gap: 8px; line-height: 1.5;
+  }
+  .checklist li .check { color: var(--hire); flex-shrink: 0; font-weight: 700; }
+
+  /* Key Phrases */
+  .key-phrases {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; padding: 18px 22px; margin-bottom: 20px;
+  }
+  .key-phrases-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-teal); margin-bottom: 12px;
+  }
+  .key-phrases blockquote {
+    font-family: var(--font-mono); font-size: 12px; color: var(--accent-teal);
+    background: rgba(45,212,191,0.06); border: 1px solid rgba(45,212,191,0.15);
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; line-height: 1.55;
+  }
+  .key-phrases blockquote:last-child { margin-bottom: 0; }
+
+  /* Wow Block */
+  .wow-block {
+    background: rgba(249,115,22,0.05); border: 1px solid rgba(249,115,22,0.2);
+    border-radius: 8px; padding: 16px 20px; margin-bottom: 20px;
+  }
+  .wow-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-orange); margin-bottom: 10px;
+  }
+  .wow-item {
+    font-family: var(--font-body); font-size: 13px; color: #fdba74;
+    line-height: 1.65; margin-bottom: 8px;
+    padding-left: 16px; border-left: 2px solid rgba(249,115,22,0.3);
+  }
+  .wow-item:last-child { margin-bottom: 0; }
+
+  /* Code */
+  code {
+    font-family: var(--font-mono); font-size: 12px;
+    background: rgba(45,212,191,0.08); color: var(--accent-teal);
+    padding: 2px 6px; border-radius: 4px;
+  }
+  pre {
+    background: #080809; border: 1px solid var(--border);
+    border-radius: 10px; overflow-x: auto; margin-bottom: 16px;
+    position: relative;
+  }
+  .pre-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .pre-lang {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted);
+  }
+  .pre-copy {
+    background: var(--bg4); border: 1px solid var(--border2); border-radius: 5px;
+    padding: 3px 9px; font-family: var(--font-ui); font-size: 10px;
+    color: var(--text-muted); cursor: pointer; transition: all 0.2s;
+  }
+  .pre-copy:hover { color: var(--accent-teal); border-color: rgba(45,212,191,0.4); }
+  .pre-copy.copied { color: var(--accent-green); border-color: var(--accent-green); }
+  pre code {
+    display: block; background: transparent; color: #b8d9b8; font-size: 12.5px;
+    padding: 18px 20px; border-radius: 0; line-height: 1.65;
+  }
+
+  /* Layer Cards — for polyglot persistence sections */
+  .layer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+  .layer-card {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px;
+  }
+  .layer-card-num {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+    color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.1em;
+  }
+  .layer-card-title {
+    font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    color: var(--text-primary); margin-bottom: 4px;
+  }
+  .layer-card-tech {
+    font-family: var(--font-mono); font-size: 11px; margin-bottom: 10px;
+    padding: 3px 8px; border-radius: 4px; display: inline-block;
+  }
+  .layer-card-tech.pg  { background: rgba(74,158,255,0.1); color: var(--accent-blue); }
+  .layer-card-tech.ch  { background: rgba(249,115,22,0.1); color: #fb923c; }
+  .layer-card-tech.s3  { background: rgba(245,158,11,0.1); color: #fbbf24; }
+  .layer-card-desc { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+  /* Schema Table */
+  .schema-block {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; margin-bottom: 20px;
+  }
+  .schema-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .schema-entity {
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-teal);
+  }
+  .schema-storage-badge {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 10px;
+  }
+  .schema-storage-badge.pg  { background: rgba(74,158,255,0.1); color: var(--accent-blue); border: 1px solid rgba(74,158,255,0.2); }
+  .schema-storage-badge.ch  { background: rgba(249,115,22,0.1); color: #fb923c; border: 1px solid rgba(249,115,22,0.2); }
+  .schema-storage-badge.s3  { background: rgba(245,158,11,0.1); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+  .schema-table { width: 100%; border-collapse: collapse; }
+  .schema-table th {
+    padding: 8px 18px; text-align: left; font-family: var(--font-ui);
+    font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.01);
+  }
+  .schema-table td {
+    padding: 9px 18px; font-family: var(--font-mono); font-size: 12px;
+    color: var(--text-secondary); border-bottom: 1px solid rgba(42,42,48,0.6);
+    vertical-align: top; line-height: 1.5;
+  }
+  .schema-table tr:last-child td { border-bottom: none; }
+  .schema-table td.field-name { color: var(--accent-teal); font-weight: 500; }
+  .schema-table td.field-type { color: #fb923c; }
+  .schema-table td.field-note { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); font-style: italic; }
+
+  /* Index callout */
+  .index-block {
+    background: rgba(74,158,255,0.05); border: 1px solid rgba(74,158,255,0.15);
+    border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;
+  }
+  .index-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-blue); margin-bottom: 10px;
+  }
+  .index-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .index-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .index-list li code { font-size: 11px; flex-shrink: 0; }
+
+  /* Insight callout */
+  .insight-block {
+    background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.2);
+    border-radius: 8px; padding: 16px 20px; margin-bottom: 20px;
+  }
+  .insight-label {
+    font-family: var(--font-ui); font-size: 9px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-purple); margin-bottom: 8px;
+  }
+  .insight-block p {
+    font-family: var(--font-body); font-size: 13px;
+    color: #c4b5fd; line-height: 1.7;
+  }
+
+  /* Progression Table */
+  .progression-section { padding-top: 56px; padding-bottom: 16px; }
+  .section-title {
+    font-family: var(--font-display); font-size: 28px; font-weight: 800;
+    color: var(--text-primary); margin-bottom: 24px; letter-spacing: -0.01em;
+  }
+  .progression-table {
+    width: 100%; border-collapse: collapse; border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; font-family: var(--font-ui);
+  }
+  .progression-table thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+  .progression-table th {
+    padding: 12px 18px; text-align: left; font-size: 10px;
+    font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+  }
+  .progression-table td {
+    padding: 14px 18px; font-size: 13px; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.55;
+  }
+  .progression-table tr:last-child td { border-bottom: none; }
+  .progression-table td:first-child { font-weight: 600; color: var(--text-primary); white-space: nowrap; width: 220px; }
+
+  /* Key Lesson */
+  .key-lesson {
+    background: linear-gradient(135deg, rgba(45,212,191,0.07), rgba(167,139,250,0.04));
+    border: 1px solid rgba(45,212,191,0.18); border-radius: 12px;
+    padding: 28px 32px; margin-top: 40px; position: relative; overflow: hidden;
+  }
+  .key-lesson::before { content: '🎯'; font-size: 32px; position: absolute; top: 24px; right: 28px; opacity: 0.35; }
+  .key-lesson-label {
+    font-family: var(--font-ui); font-size: 10px; font-weight: 600;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-teal); margin-bottom: 10px;
+  }
+  .key-lesson-title {
+    font-family: var(--font-display); font-size: 22px; font-weight: 700;
+    color: var(--text-primary); margin-bottom: 12px;
+  }
+  .key-lesson p { font-family: var(--font-body); font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+  /* Divider */
+  .phase-divider { border: none; border-top: 1px solid var(--border); margin: 56px 0 0; }
+
+  /* Body text */
+  .body-text {
+    font-family: var(--font-body); font-size: 14px; color: var(--text-secondary);
+    line-height: 1.75; margin-bottom: 16px;
+  }
+  .body-text strong { color: var(--text-primary); font-weight: 600; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* Anchor */
+  .anchor { scroll-margin-top: 24px; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    #sidebar { transform: translateX(-100%); transition: transform 0.3s; }
+    #main { margin-left: 0; }
+    .hero, .content-area { padding-left: 24px; padding-right: 24px; }
+    .hero-title { font-size: 36px; }
+    .analysis-grid, .layer-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-system-label">Sentry System Design</div>
+    <div class="sidebar-title">L6/L7 Study Guide</div>
+    <div class="sidebar-subtitle">Part 2 — Phase 3b: Data Modeling</div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="search-input" placeholder="Search sections..." oninput="filterNav(this.value)">
+  </div>
+  <div class="sidebar-nav" id="nav-tree">
+
+    <div class="nav-section-label">Navigation</div>
+    <a class="nav-part-link" href="sentry-system-design-part1.html">
+      <span>← Part 1</span>Phases 1 · 2 · 3a (API Design)
+    </a>
+
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-item" href="#hero">Configuration</a>
+
+    <div class="nav-section-label">Phase 3b · 10–15 min</div>
+    <a class="nav-item" href="#p3b-intro">Data Modeling</a>
+    <a class="nav-item" href="#p3b-no-hire"><span class="nav-dot dot-no"></span> No Hire</a>
+    <a class="nav-item" href="#p3b-lean"><span class="nav-dot dot-lean"></span> Lean Hire</a>
+    <a class="nav-item" href="#p3b-hire"><span class="nav-dot dot-hire"></span> Hire</a>
+    <a class="nav-item" href="#p3b-strong"><span class="nav-dot dot-strong"></span> Strong Hire</a>
+    <a class="nav-item" href="#p3b-progression">Progression Summary</a>
+    <a class="nav-item" href="#p3b-lesson">Key Lesson</a>
+
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-part-badge">Part 2 of the Series</div>
+    <div class="hero-eyebrow">System Design Interview — Study Guide</div>
+    <h1 class="hero-title">
+      <span class="phase-label">Phase 3b</span>
+      <span class="sub-label">Data Modeling</span>
+    </h1>
+    <div class="hero-meta">
+      <div class="hero-badge"><span class="hero-badge-icon">🗄️</span> Polyglot Persistence</div>
+      <div class="hero-badge"><span class="hero-badge-icon">📊</span> 4-Tier Framework</div>
+      <div class="hero-badge"><span class="hero-badge-icon">⚡</span> ClickHouse · PostgreSQL · S3</div>
+    </div>
+    <div class="hero-config-card">
+      <div class="hero-config-item">
+        <div class="config-label">Preparation Level</div>
+        <div class="config-value">Targeting L6 / L7</div>
+      </div>
+      <div class="hero-config-item">
+        <div class="config-label">Focus Area</div>
+        <div class="config-value">Data Modeling</div>
+      </div>
+      <div class="hero-config-item">
+        <div class="config-label">Default Mode</div>
+        <div class="config-value">Study / AOMB</div>
+      </div>
+    </div>
+    <p class="hero-description">The data modeling phase separates candidates who understand access patterns from those who just define tables. Master the events/issues split, polyglot persistence, counter write contention, fingerprint race conditions, and GDPR-aware schema design.</p>
+  </section>
+
+  <div class="content-area">
+
+    <!-- ═══════════════════════════════════════
+         PHASE 3b — DATA MODELING
+    ═══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="p3b-intro">
+      <div class="phase-header">
+        <span class="phase-pill">Phase 3b</span>
+        <span class="phase-time">10 – 15 minutes</span>
+      </div>
+      <h2 class="phase-title">Data Modeling</h2>
+
+      <div class="phase-question-card">
+        <div class="phase-question-label">The Interviewer Prompt</div>
+        <p class="phase-question-text">"Show me your data model — entities, relationships, and key indexes. Why did you make the denormalization choices you made? How do you handle tag-based multi-dimensional queries? How do you manage write contention on counters at 100K events/second? And how does the fingerprint-to-issue mapping stay consistent across distributed ingestion nodes?"</p>
+      </div>
+
+      <!-- NO HIRE -->
+      <div class="tier-card anchor" id="p3b-no-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge no-hire"><span class="tier-dot no"></span> NO HIRE</div>
+          <div class="tier-level-label">L4 / Weak L5 Signal</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "For the data model I'd have a few tables. A <em>users</em> table with id, name, email, password. A <em>projects</em> table with id, name, organization_id, and created_at. An <em>errors</em> table with id, project_id, message, stack_trace, timestamp, and status. And maybe an <em>organizations</em> table.<br><br>
+              For indexes I'd put an index on project_id in the errors table so I can query errors by project quickly. And probably an index on timestamp so I can sort by time.<br><br>
+              I'd use PostgreSQL for this. It's reliable and most companies use it."
+            </div>
+          </div>
+
+          <div class="fatal-block">
+            <div class="fatal-label">Fatal Mistakes</div>
+            <ul class="fatal-list">
+              <li>No events vs issues separation — the most fundamental data modeling mistake for this system. Raw events and grouped issues are completely different entities with different access patterns, different storage requirements, and different retention policies.</li>
+              <li>Stack trace stored as a text column — at 10KB per event × 8.6B events/day, this is a catastrophic design choice in a relational DB column.</li>
+              <li>No fingerprint/grouping model — the core feature of the system has no data representation whatsoever.</li>
+              <li>No mention of write volume — PostgreSQL at 100K writes/second with 10KB payloads is immediately saturated.</li>
+              <li>"PostgreSQL because most companies use it" — cargo cult reasoning, not architecture reasoning.</li>
+              <li>Single-column indexes on project_id and timestamp separately don't serve the dominant query pattern: "all open issues for project X sorted by last_seen."</li>
+            </ul>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Conflated events and issues into a single table — doesn't understand the core data model of the system. Stack trace as a text column at 100K writes/second would destroy any relational DB. No fingerprint model. 'PostgreSQL because everyone uses it' is not an engineering answer. Significant data modeling gap."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- LEAN HIRE -->
+      <div class="tier-card anchor" id="p3b-lean">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge lean-hire"><span class="tier-dot lean"></span> LEAN HIRE</div>
+          <div class="tier-level-label">Meets L5 bar — not L6</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "The key insight for the data model is separating raw events from issues. An issue is a group of similar events — they're fundamentally different entities with different access patterns.<br><br>
+              <strong>Issues table</strong> (PostgreSQL): issue_id, project_id, fingerprint, title, culprit, status (open/resolved/ignored), first_seen, last_seen, times_seen, users_seen, environment, level, assignee_id, created_at. Index on (project_id, status, last_seen) for the main dashboard query.<br><br>
+              <strong>Events table:</strong> event_id, issue_id, project_id, timestamp, platform, level, environment, release. I'd store the raw event payload — stack trace, breadcrumbs, tags — separately in object storage like S3, not in the relational DB. The events table just stores queryable metadata.<br><br>
+              <strong>Tags table:</strong> tag_id, event_id, key, value, project_id. This gets complex — tags are arbitrary key-value pairs and there are a lot of them.<br><br>
+              For the fingerprint-to-issue mapping, the fingerprint would be a unique field on the issues table with a unique index on (project_id, fingerprint). When a new event comes in, I look up the fingerprint, get the issue_id, and increment the counter.<br><br>
+              I'd use PostgreSQL for the issues and metadata layer, and S3 for raw event payloads."
+            </div>
+          </div>
+
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label signals">What's Good</div>
+              <ul class="analysis-list">
+                <li>Correct events/issues separation — fundamental insight present</li>
+                <li>Raw payload offloaded to object storage — correct from storage math</li>
+                <li>Fingerprint model present with unique constraint</li>
+                <li>Composite index on (project_id, status, last_seen) — correct for primary query pattern</li>
+                <li>DSN stored in projects table — shows understanding of auth model</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label missing">What's Missing for L6</div>
+              <ul class="analysis-list">
+                <li>No tag index strategy — a naive normalized tags table with one row per tag per event creates billions of rows and makes multi-tag queries impossible without full table scans</li>
+                <li>No event search strategy — how do you filter by arbitrary tag combinations at scale?</li>
+                <li>No counter update strategy — UPDATE issues SET times_seen = times_seen + 1 at 100K QPS causes severe lock contention</li>
+                <li>No time-series aggregation — the event frequency histogram requires pre-aggregated data, not a COUNT on raw events</li>
+                <li>Fingerprint TOCTOU race condition — two identical events arriving simultaneously at different nodes both try to create a new issue</li>
+                <li>No multi-tenancy data isolation in the schema</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="upgrade-block">
+            <div class="upgrade-label">Upgrade Needed to Reach L6</div>
+            <p>Add a tag indexing strategy: "I'd use a columnar store like ClickHouse for tag-based event search — a normalized tag table in PostgreSQL doesn't support multi-dimensional filtering at this scale." Add a counter update strategy: "instead of row-level updates at 100K QPS, I'd batch counter increments in Redis and flush periodically." Handle the fingerprint race: "INSERT ... ON CONFLICT DO UPDATE — atomic in PostgreSQL, prevents duplicate issue creation."</p>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Good separation of events and issues, correct storage strategy for raw payloads. But no tag indexing strategy — that's the hardest query problem in this system. No counter update strategy at 100K QPS. Fingerprint race condition not addressed. Lean hire — needs depth on the hard problems."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- HIRE -->
+      <div class="tier-card anchor" id="p3b-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge hire"><span class="tier-dot yes"></span> HIRE</div>
+          <div class="tier-level-label">Meets L6 bar</div>
+          <div class="tier-toggle open">▼</div>
+        </div>
+        <div class="tier-body">
+
+          <div class="script-block">
+            <div class="script-label">Opening Framing</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "The data model has a fundamental separation: raw events vs aggregated issues. These have completely different access patterns, different scale requirements, and different retention policies. Let me walk through each entity — I'll define the schema, justify the indexes by the query they serve, and call out every denormalization decision explicitly."
+            </div>
+          </div>
+
+          <!-- Entities -->
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">organizations</span>
+              <span class="schema-storage-badge pg">PostgreSQL</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name">org_id</td><td class="field-type">UUID PK</td><td class="field-note">Primary key</td></tr>
+                <tr><td class="field-name">name</td><td class="field-type">VARCHAR</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">slug</td><td class="field-type">VARCHAR UNIQUE</td><td class="field-note">URL-safe org identifier</td></tr>
+                <tr><td class="field-name">plan_tier</td><td class="field-type">VARCHAR</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">settings</td><td class="field-type">JSONB</td><td class="field-note">Flexible org-level config</td></tr>
+                <tr><td class="field-name">created_at</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note"></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">projects</span>
+              <span class="schema-storage-badge pg">PostgreSQL</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name">project_id</td><td class="field-type">UUID PK</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">org_id</td><td class="field-type">UUID FK</td><td class="field-note">Tenant scoping key — always included in queries</td></tr>
+                <tr><td class="field-name">name</td><td class="field-type">VARCHAR</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">platform</td><td class="field-type">VARCHAR</td><td class="field-note">python, javascript, java, etc.</td></tr>
+                <tr><td class="field-name">dsn_public</td><td class="field-type">VARCHAR UNIQUE</td><td class="field-note">SDK uses this to route events</td></tr>
+                <tr><td class="field-name">dsn_secret_hash</td><td class="field-type">VARCHAR</td><td class="field-note">Hashed — never store plaintext</td></tr>
+                <tr><td class="field-name">rate_limit_per_second</td><td class="field-type">INT</td><td class="field-note">Default 1000 — per-project ingestion cap</td></tr>
+                <tr><td class="field-name">created_at</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note"></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">issues</span>
+              <span class="schema-storage-badge pg">PostgreSQL</span>
+              <span style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-left:auto;">Core transactional entity</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name">issue_id</td><td class="field-type">UUID PK</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">project_id</td><td class="field-type">UUID FK</td><td class="field-note">All dashboard queries are project-scoped</td></tr>
+                <tr><td class="field-name">fingerprint</td><td class="field-type">CHAR(64)</td><td class="field-note">SHA-256 of normalized stack — deduplication key</td></tr>
+                <tr><td class="field-name">title</td><td class="field-type">VARCHAR(256)</td><td class="field-note">Derived from exception type + value</td></tr>
+                <tr><td class="field-name">culprit</td><td class="field-type">VARCHAR(256)</td><td class="field-note">"app/views.py in handle_request"</td></tr>
+                <tr><td class="field-name">status</td><td class="field-type">ENUM</td><td class="field-note">open, resolved, ignored</td></tr>
+                <tr><td class="field-name">level</td><td class="field-type">ENUM</td><td class="field-note">fatal, error, warning, info</td></tr>
+                <tr><td class="field-name">first_seen</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">last_seen</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note">Updated asynchronously via Redis flush</td></tr>
+                <tr><td class="field-name">times_seen</td><td class="field-type">BIGINT</td><td class="field-note">Denormalized counter — eventual consistency, 30s lag</td></tr>
+                <tr><td class="field-name">users_seen</td><td class="field-type">BIGINT</td><td class="field-note">Denormalized counter — same pattern</td></tr>
+                <tr><td class="field-name">assignee_id</td><td class="field-type">UUID nullable</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">created_at</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note"></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="index-block">
+            <div class="index-label">Critical Indexes — issues table</div>
+            <ul class="index-list">
+              <li><code>(project_id, status, last_seen DESC)</code> — primary dashboard query: "show me open issues for this project sorted by most recent"</li>
+              <li><code>(project_id, fingerprint) UNIQUE</code> — fingerprint deduplication lookup; uniqueness constraint prevents duplicate issue creation</li>
+              <li><code>(project_id, first_seen DESC)</code> — "new issues this week" query</li>
+            </ul>
+          </div>
+
+          <div class="insight-block">
+            <div class="insight-label">Denormalization Decision — Counter Trade-off</div>
+            <p><strong>times_seen</strong> and <strong>users_seen</strong> are denormalized counters on the issue. The alternative — COUNT queries against raw events — is impossible at 100K events/second and 90 days of retention. The trade-off: these counters are eventually consistent. I update them asynchronously via batched Redis increments flushed every 30 seconds, not via synchronous row updates on every event ingestion. This converts 100K random writes/second into ~1 bulk update every 30 seconds per issue. Acceptable given our NFRs — the count shown may lag by up to 30 seconds.</p>
+          </div>
+
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">events</span>
+              <span class="schema-storage-badge ch">ClickHouse</span>
+              <span style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-left:auto;">Queryable metadata only</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name">event_id</td><td class="field-type">UUID</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">issue_id</td><td class="field-type">UUID</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">project_id</td><td class="field-type">UUID</td><td class="field-note">Included on every row for partition pruning</td></tr>
+                <tr><td class="field-name">timestamp</td><td class="field-type">DateTime</td><td class="field-note">Partition key — toYYYYMM(timestamp)</td></tr>
+                <tr><td class="field-name">platform</td><td class="field-type">String</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">level</td><td class="field-type">String</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">environment</td><td class="field-type">String</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">release</td><td class="field-type">String</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">user_email_hash</td><td class="field-type">String</td><td class="field-note">SHA-256 hash — never plaintext PII</td></tr>
+                <tr><td class="field-name">tags_keys</td><td class="field-type">Array(String)</td><td class="field-note">Parallel arrays for multi-tag filtering</td></tr>
+                <tr><td class="field-name">tags_values</td><td class="field-type">Array(String)</td><td class="field-note">Accessed via indexOf pattern in ClickHouse</td></tr>
+                <tr><td class="field-name">payload_s3_key</td><td class="field-type">String</td><td class="field-note">Reference to full payload in object storage</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="insight-block">
+            <div class="insight-label">Why Not PostgreSQL for Events?</div>
+            <p>At 100K writes/second with 90-day retention, that's ~8.6 billion rows. PostgreSQL's row-level MVCC and B-tree indexes don't scale to this write rate. ClickHouse — a columnar OLAP database — can sustain 100K+ inserts/second with background merging and no MVCC overhead. MergeTree tables handle time-series aggregation natively. Partition pruning on <code>toYYYYMM(timestamp)</code> means date-range queries skip entire month partitions.</p>
+          </div>
+
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">raw event payloads</span>
+              <span class="schema-storage-badge s3">S3 / GCS</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name" style="font-family:var(--font-ui);font-size:12px;">Key Structure</td><td class="field-note" style="font-family:var(--font-mono);font-size:12px;color:var(--accent-teal);">{org_id}/{project_id}/{date}/{event_id}.json.gz</td></tr>
+                <tr><td class="field-name" style="font-family:var(--font-ui);font-size:12px;">Contents</td><td class="field-note">Full stack trace frames, breadcrumbs, HTTP request context, local variable values</td></tr>
+                <tr><td class="field-name" style="font-family:var(--font-ui);font-size:12px;">Access Pattern</td><td class="field-note">Fetched on demand when developer clicks a specific event — cold path</td></tr>
+                <tr><td class="field-name" style="font-family:var(--font-ui);font-size:12px;">Lifecycle Policy</td><td class="field-note">90-day expiry per date prefix. Enables per-org deletion for GDPR compliance.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="script-block" style="margin-bottom:24px">
+            <div class="script-label">Tag Multi-Dimensional Query Strategy</div>
+            <div class="script-text">
+              "Tags are arbitrary key-value pairs — browser=Chrome, release=v2.1, region=us-east. The query pattern is multi-dimensional: 'show me all issues where browser=Chrome AND release=v2.1.' A normalized tags table in PostgreSQL — event_id, key, value — is a dead end. Multi-tag filtering requires self-joins that don't scale to billions of rows.<br><br>
+              Instead, I store tags as parallel arrays in ClickHouse: tags_keys and tags_values. The query pattern — <code>WHERE has(tags_keys, 'browser') AND tags_values[indexOf(tags_keys, 'browser')] = 'Chrome'</code> — handles multi-dimensional filtering efficiently at scale. For the most common tags (release, environment, level), I'd promote them to first-class columns for even faster filtering."
+            </div>
+          </div>
+
+          <div class="script-block" style="margin-bottom:24px">
+            <div class="script-label">Counter Update Strategy — Avoiding Write Contention</div>
+            <div class="script-text">
+              "times_seen at 100K events/second means 100K UPDATE issues SET times_seen = times_seen + 1 queries per second — this creates severe lock contention on hot issues. Instead:<br><br>
+              I buffer increments in Redis using <code>INCR issue:{issue_id}:count</code> for atomic per-issue increments. A background job flushes these counters to PostgreSQL every 30 seconds via a single bulk UPDATE. This converts 100K random writes/second into 1 batch update every 30 seconds. Trade-off: 30-second eventual consistency on counts. Acceptable for our use case."
+            </div>
+          </div>
+
+          <div class="script-block" style="margin-bottom:24px">
+            <div class="script-label">Fingerprint Race Condition — Handling TOCTOU</div>
+            <div class="script-text">
+              "When a new event arrives with a new fingerprint, we need to create a new issue. Two events with identical fingerprints arriving simultaneously at different ingestion nodes could both try to create a new issue, resulting in duplicate issues.<br><br>
+              Solution: <code>INSERT INTO issues (project_id, fingerprint, ...) ON CONFLICT (project_id, fingerprint) DO UPDATE SET last_seen = EXCLUDED.last_seen RETURNING issue_id</code> — the upsert is atomic at the DB level and prevents duplicates. The RETURNING clause gives us the issue_id regardless of whether we inserted or updated — a single atomic round-trip."
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label signals">AOMB Completeness Checklist — L6 Script</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Events vs issues separation with explicit reasoning on access patterns</li>
+              <li><span class="check">✅</span> Raw payloads in object storage with key structure defined</li>
+              <li><span class="check">✅</span> ClickHouse for events with technical justification (MVCC/B-tree failure at 100K WPS)</li>
+              <li><span class="check">✅</span> Composite indexes defined and justified by query pattern</li>
+              <li><span class="check">✅</span> Counter update strategy via Redis batching — avoids lock contention</li>
+              <li><span class="check">✅</span> Fingerprint race condition handled with upsert + RETURNING</li>
+              <li><span class="check">✅</span> Tag indexing strategy with ClickHouse array approach</li>
+              <li><span class="check">✅</span> Denormalization decisions acknowledged with consistency trade-off stated</li>
+              <li><span class="check">✅</span> Multi-tenancy via org_id/project_id scoping on all queries</li>
+            </ul>
+          </div>
+
+          <div class="key-phrases">
+            <div class="key-phrases-label">Key Phrases That Signal L6 — Memorize These</div>
+            <blockquote>"PostgreSQL's row-level MVCC and B-tree indexes don't scale to this write rate — I'd use ClickHouse, a columnar OLAP database optimized for append-only writes."</blockquote>
+            <blockquote>"I buffer increments in Redis using INCR — a background job flushes every 30 seconds. This converts 100K random writes into 1 bulk update. Trade-off: 30-second eventual consistency on counts."</blockquote>
+            <blockquote>"INSERT ... ON CONFLICT (project_id, fingerprint) DO UPDATE — the upsert is atomic at the DB level and prevents duplicate issue creation from concurrent nodes."</blockquote>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Excellent data modeling. Events/issues separation was crisp, ClickHouse selection was well-justified with specific technical reasoning, counter update via Redis batching is a real production pattern. Tag indexing strategy was handled correctly — most candidates punt on this. Fingerprint upsert was precise. Strong L6."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- STRONG HIRE -->
+      <div class="tier-card anchor" id="p3b-strong">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge strong-hire"><span class="tier-dot strong"></span> STRONG HIRE</div>
+          <div class="tier-level-label">L7 Signal — Exceptional</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+
+          <div class="script-block">
+            <div class="script-label">Opening Framing — Polyglot Persistence</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Before I define individual entities, let me call out the core data modeling tension in this system: we have three fundamentally different data access patterns that pull in opposite directions. Raw event ingestion is write-optimized — append-only, extremely high throughput, no reads during write. Issue querying is read-optimized — low cardinality filters, needs fast aggregation, accessed constantly. Tag-based search is OLAP-style — arbitrary multi-dimensional filtering across billions of rows. No single storage engine handles all three optimally, so this is inherently a polyglot persistence problem. I'll design each layer for its dominant access pattern."
+            </div>
+          </div>
+
+          <!-- Three layer cards -->
+          <div class="layer-grid">
+            <div class="layer-card">
+              <div class="layer-card-num">LAYER 1</div>
+              <div class="layer-card-title">Transactional Metadata</div>
+              <div class="layer-card-tech pg">PostgreSQL</div>
+              <div class="layer-card-desc">Organizations, Projects, Issues, AlertRules, IssueStats. Low-cardinality, read-optimized, strong consistency for fingerprint upserts.</div>
+            </div>
+            <div class="layer-card">
+              <div class="layer-card-num">LAYER 2</div>
+              <div class="layer-card-title">Columnar Event Store</div>
+              <div class="layer-card-tech ch">ClickHouse</div>
+              <div class="layer-card-desc">Events with metadata and tags. MergeTree engine. Append-only, 100K+ inserts/sec, month-partitioned TTL, OLAP tag filtering.</div>
+            </div>
+            <div class="layer-card">
+              <div class="layer-card-num">LAYER 3</div>
+              <div class="layer-card-title">Raw Payload Store</div>
+              <div class="layer-card-tech s3">S3 / GCS</div>
+              <div class="layer-card-desc">Full stack traces, breadcrumbs, HTTP context. Fetched on demand. Key structure enables GDPR deletion and per-org lifecycle policies.</div>
+            </div>
+          </div>
+
+          <!-- ClickHouse DDL -->
+          <div class="pre-header" style="border-radius:10px 10px 0 0; border:1px solid var(--border); border-bottom:none; background:rgba(255,255,255,0.02);">
+            <div class="pre-lang">ClickHouse DDL — Production-Ready</div>
+            <button class="pre-copy" onclick="copyPre(this)">⎘ Copy</button>
+          </div>
+          <pre style="border-radius:0 0 10px 10px; margin-bottom:20px;"><code>CREATE TABLE events (
+  event_id     UUID,
+  issue_id     UUID,
+  project_id   UUID,
+  org_id       UUID,
+  timestamp    DateTime,
+  platform     LowCardinality(String),   -- low-cardinality → dictionary encoding
+  level        LowCardinality(String),
+  environment  LowCardinality(String),
+  release      String,
+  user_id      String,
+  user_email_hash String,                -- SHA-256, never plaintext
+  tags_keys    Array(String),
+  tags_values  Array(String),
+  payload_s3_key String                  -- reference to full payload
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)         -- month partitions, prune on date range
+ORDER BY (project_id, timestamp)         -- clustering key for project queries
+TTL timestamp + INTERVAL 90 DAY;        -- automatic retention, no cleanup job needed</code></pre>
+
+          <div class="insight-block">
+            <div class="insight-label">Why This DDL Is Exceptional</div>
+            <p><strong>LowCardinality(String)</strong> for platform, level, environment — ClickHouse applies dictionary encoding, dramatically reducing storage and improving filter performance for these repeated values. <strong>TTL policy in DDL</strong> — instead of a scheduled cleanup job with its own failure modes and operational overhead, the 90-day retention is enforced by the engine automatically. <strong>MergeTree ORDER BY (project_id, timestamp)</strong> — data is sorted on disk by project and time, making the primary dashboard query (latest events for a project) an index scan rather than a full table scan. Column compression compounds on top: 10KB logical events compress to ~1KB on disk due to high similarity within columns.</p>
+          </div>
+
+          <div class="schema-block">
+            <div class="schema-header">
+              <span class="schema-entity">issue_stats</span>
+              <span class="schema-storage-badge pg">PostgreSQL</span>
+              <span style="font-family:var(--font-ui);font-size:11px;color:var(--text-muted);margin-left:auto;">Pre-aggregated time-series</span>
+            </div>
+            <table class="schema-table">
+              <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody>
+                <tr><td class="field-name">issue_id</td><td class="field-type">UUID FK</td><td class="field-note"></td></tr>
+                <tr><td class="field-name">bucket_start</td><td class="field-type">TIMESTAMPTZ</td><td class="field-note">1-hour or 24-hour granularity</td></tr>
+                <tr><td class="field-name">bucket_1h_count</td><td class="field-type">INT</td><td class="field-note">Pre-aggregated for histogram queries</td></tr>
+                <tr><td class="field-name">bucket_24h_count</td><td class="field-type">INT</td><td class="field-note">Updated by stream processor during ingestion</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="index-block">
+            <div class="index-label">Partial/Filtered Index — The L7 Optimization</div>
+            <ul class="index-list">
+              <li><code>(project_id, status, last_seen DESC)</code> — standard composite index, all issues</li>
+              <li><code>(project_id, first_seen DESC) WHERE status = 0</code> — <strong>partial index</strong> on open issues only. Open issues are ~10% of all issues in a mature system. This index is 10x smaller, has 10x lower write amplification, and fits entirely in buffer pool cache. At 100K issue updates/second, the write amplification difference is the difference between PostgreSQL coping and PostgreSQL becoming the bottleneck.</li>
+              <li><code>(project_id, times_seen DESC)</code> — "highest volume issues" sort</li>
+            </ul>
+          </div>
+
+          <div class="script-block" style="margin-bottom:24px">
+            <div class="script-label">Hot Fingerprint Shard Routing — The L7 Insight</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "For standard fingerprint races, the atomic upsert handles it: <code>INSERT INTO issues ... ON CONFLICT (project_id, fingerprint) DO UPDATE SET last_seen = EXCLUDED.last_seen RETURNING issue_id</code>. The unique constraint guarantees at most one issue per fingerprint, globally. The RETURNING clause gives us the issue_id in a single round-trip regardless of insert or update.<br><br>
+              But there's a second-order failure mode most candidates miss: extremely hot fingerprints. During a major production incident, a single issue can receive 10,000 events/second — all with the same fingerprint. At that rate, even the upsert operation becomes a write bottleneck: 10K concurrent writers contending on the same row in PostgreSQL.<br><br>
+              Mitigation: route events with the same fingerprint to the same ingestion shard via consistent hashing on fingerprint. hash(fingerprint) mod N_shards determines which ingestion node handles this fingerprint, collapsing 10K concurrent writers to a single writer per fingerprint. This is the same principle as sticky routing in load balancers — we sacrifice write distribution for write serialization on the hot path."
+            </div>
+          </div>
+
+          <div class="script-block" style="margin-bottom:24px">
+            <div class="script-label">GDPR Deletion — Designed Into the Schema</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Error events routinely capture PII — user emails, IP addresses, and local variable values that may contain passwords. I've addressed this at three levels in the data model.<br><br>
+              First, <strong>user_email_hash</strong> in ClickHouse is a SHA-256 hash, never plaintext. Full PII lives only in the S3 payload with a separate encryption key per organization.<br><br>
+              Second, the S3 key structure — <code>raw-events/{org_id}/{project_id}/{YYYY}/{MM}/{DD}/{event_id}.json.gz</code> — enables prefix-based bulk deletion per organization for GDPR right-to-erasure. Deleting an organization means an S3 prefix delete: O(1) operation regardless of event count.<br><br>
+              Third, for individual user erasure requests (GDPR Article 17), I'd implement a <strong>DeleteQueue</strong>: enqueue the user_id, a background job (1) deletes their S3 payload objects, (2) issues a ClickHouse mutation to zero their user_id field, and (3) removes the hashed email. SLA: 30 days as required by GDPR Article 17. The soft_delete flag on organizations handles account-level deletion without immediate cascade."
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label exceptional">AOMB Completeness Checklist — Strong Hire</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Polyglot persistence framing upfront — three layers for three access patterns</li>
+              <li><span class="check">✅</span> Full ClickHouse DDL with MergeTree engine, partitioning, ordering key, LowCardinality, and TTL</li>
+              <li><span class="check">✅</span> Partial index on WHERE status = 0 — non-obvious optimization with explicit write amplification reasoning</li>
+              <li><span class="check">✅</span> DSN secret stored as hash — security detail present at schema definition time</li>
+              <li><span class="check">✅</span> Counter update via Redis HINCR with explicit write amplification math</li>
+              <li><span class="check">✅</span> Hot fingerprint shard routing — handles 10K events/second on single issue</li>
+              <li><span class="check">✅</span> S3 key structure enabling GDPR deletion, cost attribution, and lifecycle policies</li>
+              <li><span class="check">✅</span> GDPR Article 17 erasure implementation with explicit SLA</li>
+              <li><span class="check">✅</span> ClickHouse TTL for automatic 90-day retention — operational simplicity</li>
+              <li><span class="check">✅</span> Column compression insight (10KB logical → 1KB physical)</li>
+            </ul>
+          </div>
+
+          <div class="wow-block">
+            <div class="wow-label">The "Wow" Moments</div>
+            <div class="wow-item">"For extremely hot fingerprints — one issue receiving 10K events/second during an incident — even the upsert becomes a write bottleneck. Mitigation: route events with the same fingerprint to the same ingestion shard via consistent hashing on fingerprint." — A real production failure mode that almost no candidate anticipates.</div>
+            <div class="wow-item">"I'd implement a DeleteQueue to process GDPR erasure requests asynchronously with an SLA of 30 days as required by GDPR Article 17." — Citing the specific regulation article shows real compliance experience.</div>
+            <div class="wow-item">Partial index WHERE status = 0 — voluntarily offered without prompting. Reduces index size by ~90%, dramatically lowers write amplification at 100K events/second. Almost no application engineers have used filtered indexes.</div>
+          </div>
+
+          <div class="insight-block">
+            <div class="insight-label">The Non-Obvious Insight — Partial Indexes</div>
+            <p>The dominant query is "show me open issues for project X." Open issues are roughly 10% of all issues in a mature system — most issues get resolved. A partial index <code>WHERE status = 0</code> (open) is roughly 10x smaller than a full index, has 10x lower write amplification, and fits entirely in the buffer pool cache. This is a routine PostgreSQL optimization that experienced DBAs know but most application engineers have never used. At 100K issue updates/second, the write amplification difference is the difference between PostgreSQL coping and PostgreSQL becoming the bottleneck.</p>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Outstanding data model. The polyglot persistence framing was exactly right — three layers, three access patterns. The ClickHouse DDL was production-ready. The partial index insight was something I've never seen a candidate volunteer unprompted. The hot fingerprint shard routing shows they've operated this class of system at scale. The GDPR deletion architecture embedded in the S3 key design shows they think about compliance at the data model level, not as an afterthought. Strong hire, would give top rating."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progression -->
+      <div class="progression-section anchor" id="p3b-progression">
+        <div class="section-title">Progression Summary — Phase 3b</div>
+        <table class="progression-table">
+          <thead>
+            <tr><th>Gap</th><th>What Changes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No Hire → Lean Hire</td>
+              <td>Separate events from issues. Move raw payloads to object storage. Define composite indexes justified by query patterns. Stop storing stack traces in relational columns.</td>
+            </tr>
+            <tr>
+              <td>Lean Hire → Hire (L6)</td>
+              <td>Add tag indexing strategy with ClickHouse. Solve counter write contention with Redis batching. Handle fingerprint race with atomic upsert. Pre-aggregate time-series stats for histograms.</td>
+            </tr>
+            <tr>
+              <td>Hire → Strong Hire (L7)</td>
+              <td>Frame as polyglot persistence before touching a single entity. Write production-ready ClickHouse DDL with TTL and LowCardinality. Use partial indexes. Handle hot fingerprint shard routing. Design GDPR deletion into S3 key structure from day one.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="key-lesson anchor" id="p3b-lesson">
+        <div class="key-lesson-label">🎯 Key Lesson from Phase 3b</div>
+        <div class="key-lesson-title">Access Patterns Drive Storage, Not the Other Way Around.</div>
+        <p>The L5 → L6 shift is about solving the hard query problems — tag multi-dimensional filtering, counter write contention, fingerprint race conditions — not just modeling the happy path. The L6 → L7 shift is about framing the data model as a polyglot persistence strategy <em>before</em> touching a single entity, then designing compliance and operational requirements (GDPR, TTL, partial indexes) into the schema at definition time rather than bolting them on later.<br><br>
+        <strong>Practice this:</strong> For every entity you define, ask "What is the dominant query against this entity, and does my index serve that query with an index seek rather than a scan?" Then ask "What happens to this entity at 100x write volume?" Those two questions catch 80% of data modeling gaps.</p>
+      </div>
+
+    </div><!-- /phase 3b -->
+
+  </div><!-- /content-area -->
+
+</main>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const doc = document.documentElement;
+    const scrollTop = doc.scrollTop || document.body.scrollTop;
+    const scrollHeight = doc.scrollHeight - doc.clientHeight;
+    const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+    document.getElementById('progress-bar').style.width = progress + '%';
+  }, { passive: true });
+
+  // Tier toggle
+  function toggleTier(header) {
+    const body = header.nextElementSibling;
+    const toggle = header.querySelector('.tier-toggle');
+    if (body.classList.contains('collapsed')) {
+      body.classList.remove('collapsed');
+      toggle.classList.add('open');
+    } else {
+      body.classList.add('collapsed');
+      toggle.classList.remove('open');
+    }
+  }
+
+  // Collapse No Hire and Lean Hire by default
+  document.querySelectorAll('.tier-card').forEach(card => {
+    const badge = card.querySelector('.tier-badge');
+    if (badge && (badge.classList.contains('no-hire') || badge.classList.contains('lean-hire'))) {
+      card.querySelector('.tier-body').classList.add('collapsed');
+      card.querySelector('.tier-toggle').classList.remove('open');
+    }
+  });
+
+  // Copy script block
+  function copyScript(btn) {
+    const block = btn.closest('.script-block');
+    const text = block.querySelector('.script-text').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Copy pre block
+  function copyPre(btn) {
+    const pre = btn.closest('.pre-header').nextElementSibling;
+    const text = pre.querySelector('code').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Active nav on scroll
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+  const sections = [];
+  navItems.forEach(item => {
+    const id = item.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ el, item });
+  });
+  window.addEventListener('scroll', () => {
+    const scrollPos = window.scrollY + 80;
+    let active = null;
+    sections.forEach(({ el, item }) => { if (el.offsetTop <= scrollPos) active = item; });
+    navItems.forEach(i => i.classList.remove('active'));
+    if (active) active.classList.add('active');
+  }, { passive: true });
+
+  // Search filter
+  function filterNav(q) {
+    const query = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.style.display = item.textContent.toLowerCase().includes(query) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-section-label').forEach(label => {
+      label.style.display = query ? 'none' : '';
+    });
+  }
+</script>
+</body>
+</html>
