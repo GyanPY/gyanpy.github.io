@@ -233,6 +233,12 @@
         "file": "pages/Memcached/Memcached.html"
       }
     ],
+    "Databases": [
+      {
+        "title": "Internals",
+        "file": "pages/Databases/Databases.html"
+      }
+    ], 
     "Datadog": [
       {
         "title": "Internals",
