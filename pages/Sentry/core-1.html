@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentry System Design — L6/L7 Study Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0e10;
+    --bg2: #141416;
+    --bg3: #1a1a1d;
+    --bg4: #202024;
+    --border: #2a2a30;
+    --border2: #323238;
+    --text-primary: #f0ede8;
+    --text-secondary: #a8a4a0;
+    --text-muted: #6a6670;
+    --accent-blue: #4a9eff;
+    --accent-teal: #2dd4bf;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-green: #22c55e;
+    --accent-purple: #a78bfa;
+    --accent-orange: #f97316;
+    --no-hire: #ef4444;
+    --lean-hire: #f59e0b;
+    --hire: #22c55e;
+    --strong-hire: #f59e0b;
+    --sidebar-w: 280px;
+    --progress-h: 3px;
+    --font-display: 'Playfair Display', Georgia, serif;
+    --font-body: 'Source Serif 4', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-ui: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; font-size: 16px; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* Progress Bar */
+  #progress-bar {
+    position: fixed;
+    top: 0; left: 0;
+    height: var(--progress-h);
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-teal));
+    width: 0%;
+    z-index: 1000;
+    transition: width 0.1s linear;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: var(--sidebar-w);
+    height: 100vh;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    z-index: 100;
+    padding-top: var(--progress-h);
+    display: flex;
+    flex-direction: column;
+  }
+
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-track { background: transparent; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .sidebar-header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-system-label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 4px;
+  }
+
+  .sidebar-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+
+  .sidebar-subtitle {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .sidebar-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-search input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 12px;
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .sidebar-search input:focus { border-color: var(--accent-blue); }
+  .sidebar-search input::placeholder { color: var(--text-muted); }
+
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+
+  .nav-section-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 8px 20px 4px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    border-left: 2px solid transparent;
+  }
+
+  .nav-item:hover { color: var(--text-primary); background: var(--bg3); }
+  .nav-item.active { color: var(--accent-blue); border-left-color: var(--accent-blue); background: rgba(74,158,255,0.06); }
+
+  .nav-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-no { background: var(--no-hire); }
+  .dot-lean { background: var(--lean-hire); }
+  .dot-hire { background: var(--hire); }
+  .dot-strong { background: var(--strong-hire); }
+
+  /* Main Content */
+  #main {
+    margin-left: var(--sidebar-w);
+    min-height: 100vh;
+    padding-top: var(--progress-h);
+  }
+
+  /* Hero */
+  .hero {
+    padding: 64px 72px 56px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--bg2) 0%, var(--bg) 60%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 360px; height: 360px;
+    background: radial-gradient(circle, rgba(74,158,255,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-eyebrow {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .hero-eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 20px; height: 1px;
+    background: var(--accent-blue);
+  }
+
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1.05;
+    color: var(--text-primary);
+    margin-bottom: 24px;
+    letter-spacing: -0.02em;
+  }
+
+  .hero-title span { color: var(--accent-blue); }
+
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+
+  .hero-badge {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .hero-badge-icon { font-size: 15px; }
+
+  .hero-config-card {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--bg3);
+    max-width: 640px;
+  }
+
+  .hero-config-item {
+    padding: 16px 20px;
+    border-right: 1px solid var(--border);
+  }
+  .hero-config-item:last-child { border-right: none; }
+
+  .config-label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+
+  .config-value {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .hero-description {
+    margin-top: 24px;
+    font-size: 15px;
+    color: var(--text-secondary);
+    max-width: 680px;
+    line-height: 1.65;
+  }
+
+  /* Content Area */
+  .content-area {
+    padding: 0 72px 120px;
+  }
+
+  /* Phase Block */
+  .phase-block {
+    padding-top: 64px;
+  }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .phase-pill {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-teal);
+    background: rgba(45,212,191,0.1);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(45,212,191,0.2);
+  }
+
+  .phase-time {
+    font-family: var(--font-ui);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .phase-title {
+    font-family: var(--font-display);
+    font-size: 38px;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    letter-spacing: -0.015em;
+  }
+
+  .phase-question-card {
+    border: 1px solid var(--border2);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: 8px;
+    padding: 20px 24px;
+    background: var(--bg3);
+    margin: 24px 0 40px;
+  }
+
+  .phase-question-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 8px;
+  }
+
+  .phase-question-text {
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+
+  /* Tier Cards */
+  .tier-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 32px;
+    background: var(--bg2);
+    transition: border-color 0.2s;
+  }
+
+  .tier-card:hover { border-color: var(--border2); }
+
+  .tier-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .tier-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 20px;
+    flex-shrink: 0;
+  }
+
+  .tier-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  .tier-badge.no-hire { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+  .tier-badge.lean-hire { background: rgba(245,158,11,0.1); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+  .tier-badge.hire { background: rgba(34,197,94,0.1); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+  .tier-badge.strong-hire { background: rgba(245,158,11,0.1); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+
+  .tier-dot.no { background: #ef4444; }
+  .tier-dot.lean { background: #f59e0b; }
+  .tier-dot.yes { background: #22c55e; }
+  .tier-dot.strong { background: #f59e0b; box-shadow: 0 0 6px #f59e0b80; }
+
+  .tier-level-label {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  .tier-toggle {
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+
+  .tier-toggle.open { transform: rotate(180deg); }
+
+  .tier-body {
+    padding: 28px 28px 32px;
+  }
+
+  .tier-body.collapsed { display: none; }
+
+  /* Script Block */
+  .script-block {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+
+  .script-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  .script-text {
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-style: italic;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    border-left: 2px solid var(--border2);
+    padding-left: 16px;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: var(--bg4);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .copy-btn:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+  .copy-btn.copied { color: var(--accent-green); border-color: var(--accent-green); }
+
+  /* Analysis sections */
+  .analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .analysis-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+
+  .analysis-card-label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .analysis-card-label.fails { color: var(--no-hire); }
+  .analysis-card-label.missing { color: var(--lean-hire); }
+  .analysis-card-label.signals { color: var(--hire); }
+  .analysis-card-label.exceptional { color: var(--strong-hire); }
+
+  .analysis-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .analysis-list li {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+  }
+
+  .analysis-list li::before {
+    content: '—';
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* Interviewer Notes */
+  .interviewer-note {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-purple);
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: rgba(167,139,250,0.04);
+    margin-bottom: 20px;
+  }
+
+  .interviewer-note-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-purple);
+    margin-bottom: 8px;
+  }
+
+  .interviewer-note p {
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-style: italic;
+    color: var(--text-secondary);
+    line-height: 1.65;
+  }
+
+  /* Fatal mistakes */
+  .fatal-block {
+    background: rgba(239,68,68,0.06);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+  }
+
+  .fatal-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--no-hire);
+    margin-bottom: 8px;
+  }
+
+  .fatal-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .fatal-list li {
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: #fca5a5;
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+  }
+
+  .fatal-list li::before { content: '✗'; color: var(--no-hire); }
+
+  /* Upgrade block */
+  .upgrade-block {
+    background: rgba(245,158,11,0.05);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+
+  .upgrade-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-amber);
+    margin-bottom: 8px;
+  }
+
+  .upgrade-block p {
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: #fcd34d;
+    line-height: 1.65;
+  }
+
+  /* Checklist */
+  .checklist {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 20px;
+  }
+
+  .checklist li {
+    font-family: var(--font-ui);
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.5;
+  }
+
+  .checklist li .check { color: var(--hire); flex-shrink: 0; font-weight: 700; }
+
+  /* Key phrases */
+  .key-phrases {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 20px;
+  }
+
+  .key-phrases-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-teal);
+    margin-bottom: 12px;
+  }
+
+  .key-phrases blockquote {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--accent-teal);
+    background: rgba(45,212,191,0.06);
+    border: 1px solid rgba(45,212,191,0.15);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    line-height: 1.55;
+  }
+
+  .key-phrases blockquote:last-child { margin-bottom: 0; }
+
+  /* Wow moments */
+  .wow-block {
+    background: rgba(249,115,22,0.05);
+    border: 1px solid rgba(249,115,22,0.2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+
+  .wow-label {
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-orange);
+    margin-bottom: 10px;
+  }
+
+  .wow-item {
+    font-family: var(--font-body);
+    font-size: 13px;
+    color: #fdba74;
+    line-height: 1.65;
+    margin-bottom: 8px;
+    padding-left: 16px;
+    border-left: 2px solid rgba(249,115,22,0.3);
+  }
+
+  /* Progression Table */
+  .progression-section {
+    padding-top: 56px;
+    padding-bottom: 16px;
+  }
+
+  .section-title {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 24px;
+    letter-spacing: -0.01em;
+  }
+
+  .progression-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-family: var(--font-ui);
+  }
+
+  .progression-table thead tr {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border2);
+  }
+
+  .progression-table th {
+    padding: 12px 18px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .progression-table td {
+    padding: 14px 18px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.55;
+  }
+
+  .progression-table tr:last-child td { border-bottom: none; }
+
+  .progression-table td:first-child {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    width: 200px;
+  }
+
+  /* Key Lesson */
+  .key-lesson {
+    background: linear-gradient(135deg, rgba(74,158,255,0.08), rgba(45,212,191,0.05));
+    border: 1px solid rgba(74,158,255,0.2);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-top: 40px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .key-lesson::before {
+    content: '🎯';
+    font-size: 32px;
+    position: absolute;
+    top: 24px; right: 28px;
+    opacity: 0.4;
+  }
+
+  .key-lesson-label {
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-blue);
+    margin-bottom: 10px;
+  }
+
+  .key-lesson-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+  }
+
+  .key-lesson p {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  /* Divider */
+  .phase-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 56px 0 0;
+  }
+
+  /* Inline code */
+  code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: rgba(74,158,255,0.1);
+    color: var(--accent-blue);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  pre {
+    background: #0a0a0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  pre code {
+    background: transparent;
+    color: #a8d8a8;
+    font-size: 12px;
+    padding: 0;
+    border-radius: 0;
+    line-height: 1.6;
+  }
+
+  /* Body text */
+  .body-text {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.75;
+    margin-bottom: 16px;
+  }
+
+  .body-text strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    #sidebar { transform: translateX(-100%); transition: transform 0.3s; }
+    #sidebar.open { transform: translateX(0); }
+    #main { margin-left: 0; }
+    .hero, .content-area { padding-left: 24px; padding-right: 24px; }
+    .hero-title { font-size: 36px; }
+    .analysis-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Section anchor helper */
+  .anchor { scroll-margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-system-label">Sentry System Design</div>
+    <div class="sidebar-title">L6/L7 Study Guide</div>
+    <div class="sidebar-subtitle">Part 1 — Phases 1 through 3a</div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="search-input" placeholder="Search sections..." oninput="filterNav(this.value)">
+  </div>
+  <div class="sidebar-nav" id="nav-tree">
+
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-item" href="#hero">Configuration</a>
+
+    <div class="nav-section-label">Phase 1 · 0–5 min</div>
+    <a class="nav-item" href="#p1-intro">Problem Clarification</a>
+    <a class="nav-item" href="#p1-no-hire"><span class="nav-dot dot-no"></span> No Hire</a>
+    <a class="nav-item" href="#p1-lean"><span class="nav-dot dot-lean"></span> Lean Hire</a>
+    <a class="nav-item" href="#p1-hire"><span class="nav-dot dot-hire"></span> Hire</a>
+    <a class="nav-item" href="#p1-strong"><span class="nav-dot dot-strong"></span> Strong Hire</a>
+    <a class="nav-item" href="#p1-progression">Progression Summary</a>
+    <a class="nav-item" href="#p1-lesson">Key Lesson</a>
+
+    <div class="nav-section-label">Phase 2 · 5–10 min</div>
+    <a class="nav-item" href="#p2-intro">Requirements Gathering</a>
+    <a class="nav-item" href="#p2-no-hire"><span class="nav-dot dot-no"></span> No Hire</a>
+    <a class="nav-item" href="#p2-lean"><span class="nav-dot dot-lean"></span> Lean Hire</a>
+    <a class="nav-item" href="#p2-hire"><span class="nav-dot dot-hire"></span> Hire</a>
+    <a class="nav-item" href="#p2-strong"><span class="nav-dot dot-strong"></span> Strong Hire</a>
+    <a class="nav-item" href="#p2-progression">Progression Summary</a>
+    <a class="nav-item" href="#p2-lesson">Key Lesson</a>
+
+    <div class="nav-section-label">Phase 3 · 10–15 min</div>
+    <a class="nav-item" href="#p3-intro">API Design</a>
+    <a class="nav-item" href="#p3-no-hire"><span class="nav-dot dot-no"></span> No Hire</a>
+    <a class="nav-item" href="#p3-lean"><span class="nav-dot dot-lean"></span> Lean Hire</a>
+    <a class="nav-item" href="#p3-hire"><span class="nav-dot dot-hire"></span> Hire</a>
+
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-eyebrow">System Design Interview — Study Guide</div>
+    <h1 class="hero-title">Design Sentry<br><span>L6 / L7 Bar</span></h1>
+    <div class="hero-meta">
+      <div class="hero-badge"><span class="hero-badge-icon">📋</span> Interviewer: Principal Engineer</div>
+      <div class="hero-badge"><span class="hero-badge-icon">🎯</span> Three Phases Covered</div>
+      <div class="hero-badge"><span class="hero-badge-icon">📊</span> 4-Tier Framework</div>
+    </div>
+    <div class="hero-config-card">
+      <div class="hero-config-item">
+        <div class="config-label">Preparation Level</div>
+        <div class="config-value">Targeting L6 / L7</div>
+      </div>
+      <div class="hero-config-item">
+        <div class="config-label">Focus Area</div>
+        <div class="config-value">All Areas Evenly</div>
+      </div>
+      <div class="hero-config-item">
+        <div class="config-label">Default Mode</div>
+        <div class="config-value">Study / AOMB</div>
+      </div>
+    </div>
+    <p class="hero-description">This guide shows exactly how candidates at each level respond — No Hire through Strong Hire — with complete scripts, analysis, and the specific signals that separate each tier. Study the patterns, internalize the sequencing, practice the phrases.</p>
+  </section>
+
+  <div class="content-area">
+
+    <!-- ═══════════════════════════════════════
+         PHASE 1
+    ═══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="p1-intro">
+      <div class="phase-header">
+        <span class="phase-pill">Phase 1</span>
+        <span class="phase-time">0 – 5 minutes</span>
+      </div>
+      <h2 class="phase-title">Problem Clarification</h2>
+
+      <div class="phase-question-card">
+        <div class="phase-question-label">The Problem — Interviewer Prompt</div>
+        <p class="phase-question-text">"Design a system like Sentry." — That's all you get. The floor is yours.</p>
+      </div>
+
+      <!-- P1 NO HIRE -->
+      <div class="tier-card" id="p1-no-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge no-hire"><span class="tier-dot no"></span> NO HIRE</div>
+          <div class="tier-level-label">L4 / Weak L5 Signal</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Okay, so Sentry is an error monitoring tool. I've used it before. It basically captures exceptions from your application and shows them in a dashboard. So I'm thinking we need to design something that can receive errors, store them, and display them.<br><br>
+              How many users are we expecting? Like, are we talking millions of developers using this, or is it more of an internal tool? I want to know the scale so I can figure out what kind of database to use.<br><br>
+              Also, is this going to be real-time? Like, do errors show up instantly on the dashboard? I'm assuming yes because that's how Sentry works.<br><br>
+              I think I have enough to get started. So basically, we'll have SDKs sending errors to a backend, and the backend stores them in a database, and then we have a frontend that queries the database to show the errors. Should I start drawing the architecture?"
+            </div>
+          </div>
+
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label fails">Why This Fails</div>
+              <ul class="analysis-list">
+                <li>Opens with a scale question before establishing what the system actually needs to do — a classic L4 signal</li>
+                <li>Assumes product definition based on personal Sentry usage — no curiosity about what's unique or hard</li>
+                <li>No concept of scope control — immediately jumps toward drawing architecture</li>
+                <li>Doesn't ask about who the users are or what workflows matter most</li>
+                <li>Treats error monitoring as a solved, understood problem</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label fails">Fatal Mistakes</div>
+              <ul class="analysis-list">
+                <li>First question was a scale question, not a scope/success question</li>
+                <li>Declared "I have enough to get started" with essentially zero clarification</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Jumped to 'how many users' before establishing what we're building. Assumed product scope from prior tool usage. Asked for permission to start designing within 60 seconds. No depth of curiosity. Would not pass phone screen for L5."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P1 LEAN HIRE -->
+      <div class="tier-card" id="p1-lean">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge lean-hire"><span class="tier-dot lean"></span> LEAN HIRE</div>
+          <div class="tier-level-label">Meets L5 bar — not L6</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Alright, so before I jump into the design, let me make sure I understand what we're actually building here. Sentry is an error and performance monitoring platform — it captures exceptions, stack traces, breadcrumbs, and now also does performance tracing. So the question is: which parts of that are in scope for this design session?<br><br>
+              I'd want to understand: are we designing the full SaaS product — meaning multi-tenant, thousands of organizations onboarding their apps — or is this more of a single-organization internal deployment? That changes the architecture significantly.<br><br>
+              Is error capture the core feature, or are we also covering performance monitoring — things like distributed tracing, transaction sampling, and profiling? I'd prefer to focus on error capture first since that's the core value proposition, unless you want me to cover both.<br><br>
+              What's the expected event volume? Are we talking millions of error events per day, or closer to billions? And are we targeting real-time alerting — like, sub-minute from error occurring to developer being notified?<br><br>
+              I'll also note: I'm assuming the SDK side is a black box for now — we're designing the backend ingestion, storage, and querying system. Does that sound right?"
+            </div>
+          </div>
+
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label signals">What's Good</div>
+              <ul class="analysis-list">
+                <li>Correctly separates error monitoring from performance monitoring</li>
+                <li>Asks about multi-tenant vs single-org — a meaningful architectural scope question</li>
+                <li>Attempts to narrow scope proactively</li>
+                <li>Identifies SDK as out of scope — reasonable boundary-setting</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label missing">What's Missing for L6</div>
+              <ul class="analysis-list">
+                <li>Still asks volume before defining success criteria — the sequence matters at L6</li>
+                <li>Never asks: "What does success look like for this system?"</li>
+                <li>Doesn't ask about existing infrastructure constraints — is this greenfield?</li>
+                <li>Doesn't explicitly call out what they are NOT building</li>
+                <li>Misses: "What is the read pattern?" — querying vs dashboards vs alerting are very different workloads</li>
+                <li>No mention of compliance/data residency — error events often contain PII</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="upgrade-block">
+            <div class="upgrade-label">Upgrade Needed to Reach L6</div>
+            <p>An explicit success-criteria question first. A stated out-of-scope list ("I'm explicitly not designing the SDK, billing, or SSO today"). A compliance/PII flag ("Error events may contain sensitive data — is data residency or GDPR a concern here?").</p>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Solid L5. Shows product knowledge, makes reasonable scoping choices, asks relevant questions. But the sequence was off — jumped to volume before success criteria. Didn't surface the PII/compliance angle which is critical for error monitoring. Missing the senior instinct to define outcomes before inputs."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P1 HIRE -->
+      <div class="tier-card" id="p1-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge hire"><span class="tier-dot yes"></span> HIRE</div>
+          <div class="tier-level-label">Meets L6 bar</div>
+          <div class="tier-toggle open">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Before I touch scale or architecture, I want to make sure I'm solving the right problem. Let me ask a few scoping questions.<br><br>
+              First — what does success look like here? Is this primarily about reducing developer mean-time-to-resolution on production errors? Or is the core value proposition the discoverability — being able to search across billions of events and find the one error that correlates to a user complaint? Those are different optimization targets and they'd lead me to different designs.<br><br>
+              Second — who are the primary users, and what's their core workflow? I'm thinking three personas: a developer who gets paged at 3 AM and needs to triage fast, a team lead who's doing weekly error review, and potentially an SRE doing post-mortem analysis. The latency and freshness requirements for each of those are very different.<br><br>
+              Third — scope check: is this a SaaS product serving multiple organizations — multi-tenant — or an internal platform for a single org? Multi-tenancy affects data isolation, storage strategy, and rate limiting fundamentally.<br><br>
+              Fourth — what's in scope vs out of scope? I'd propose focusing on: error ingestion from SDKs, deduplication and grouping of errors into 'issues,' storage and querying, and real-time alerting. I'd explicitly leave out: the SDK implementation itself, billing, SSO/authentication federation, and profiling/performance tracing. Does that scope sound right to you?<br><br>
+              One more — error events frequently contain stack traces, local variable values, and HTTP headers. That means we may be inadvertently capturing PII, API keys, or credentials. Is data residency or GDPR compliance in scope? That would affect how we design storage, retention, and deletion workflows.<br><br>
+              Let me also ask: is there an existing tech ecosystem I need to be aware of, or is this greenfield?"
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label signals">AOMB Completeness Checklist — L6 Script</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Structured opening that frames the approach ("before I touch scale or architecture")</li>
+              <li><span class="check">✅</span> Success criteria question asked before scale</li>
+              <li><span class="check">✅</span> User persona identification (developer, team lead, SRE)</li>
+              <li><span class="check">✅</span> Explicit scope definition and explicit out-of-scope list</li>
+              <li><span class="check">✅</span> PII/compliance flag — security-adjacent awareness</li>
+              <li><span class="check">✅</span> Multi-tenancy as a scope clarifier</li>
+              <li><span class="check">✅</span> Clear transition signal ("Let me also ask...")</li>
+            </ul>
+          </div>
+
+          <div class="key-phrases">
+            <div class="key-phrases-label">Key Phrases That Signal L6 — Memorize These</div>
+            <blockquote>"Before I touch scale or architecture, I want to make sure I'm solving the right problem."</blockquote>
+            <blockquote>"Those are different optimization targets and they'd lead me to different designs."</blockquote>
+            <blockquote>"I'd explicitly leave out... Does that scope sound right to you?"</blockquote>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Strong opener. Asked about success criteria before scale — that's the right instinct. User persona decomposition was practical and led somewhere useful. The PII/compliance flag was unprompted and shows real production experience with this class of system. Proposed a clear scope and asked for confirmation. Ready to move to requirements."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P1 STRONG HIRE -->
+      <div class="tier-card" id="p1-strong">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge strong-hire"><span class="tier-dot strong"></span> STRONG HIRE</div>
+          <div class="tier-level-label">L7 Signal — Exceptional</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me take 3–4 minutes here because the clarification phase will save us 20 minutes of rework later. I want to think about this at the problem level before the solution level.<br><br>
+              The core job of a system like Sentry is to compress the feedback loop between a production failure and a developer understanding it. That sounds simple, but it actually spans three very different sub-problems: high-throughput, loss-tolerant ingestion of raw events; intelligent grouping and deduplication of those events into actionable issues (which is actually a hard distributed systems problem — you need fingerprinting to be consistent across multiple ingestion nodes); and low-latency querying and search across potentially billions of stored events. These three sub-problems have conflicting requirements — ingestion wants write throughput, querying wants read-optimized indexes, and grouping wants strong consistency for deduplication. So before I start drawing boxes, I want to confirm which of these is the primary challenge you want me to focus on.<br><br>
+              On scope: I'd propose keeping in scope — event ingestion pipeline, issue grouping and deduplication, alert rule evaluation and notification dispatch, and issue search and querying. Out of scope for today: SDK design, the frontend application, billing infrastructure, SSO federation, source map processing, and performance/profiling tracing.<br><br>
+              On users: I'm thinking three personas with very different SLAs. A developer being paged needs to see the error with full context within seconds of it occurring. That's a freshness requirement of under 30 seconds end-to-end. A team lead doing weekly triage cares more about grouping quality. An SRE doing post-mortem analysis needs ad-hoc querying across historical data with arbitrary filters. Those are three different read patterns that probably need different storage strategies.<br><br>
+              Critical compliance question: error events routinely contain stack traces with local variable values, request headers including Authorization tokens, and user-supplied data. We are almost certainly capturing PII and potentially secrets. I'd want to know: is GDPR in scope? Are there data residency requirements? And do we need a scrubbing layer before persistence to strip PII and credentials?<br><br>
+              One final question: are there existing infrastructure components I should build around — an existing Kafka cluster, a data warehouse, an alerting platform? Or is this fully greenfield? And is there a hard latency SLA I should be targeting — specifically, what's the acceptable P99 latency from SDK captureException() call to event appearing in the UI?"
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label exceptional">AOMB Completeness Checklist — Strong Hire</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Frames the problem at conceptual level before asking any questions</li>
+              <li><span class="check">✅</span> Decomposes into three distinct sub-problems with conflicting requirements</li>
+              <li><span class="check">✅</span> Identifies core tension (ingestion throughput vs read optimization vs deduplication consistency)</li>
+              <li><span class="check">✅</span> Proposes explicit out-of-scope list with reasoning</li>
+              <li><span class="check">✅</span> User personas with quantified SLA implications ("under 30 seconds end-to-end")</li>
+              <li><span class="check">✅</span> Multi-tenancy flag with specific downstream implications</li>
+              <li><span class="check">✅</span> PII/secrets scrubbing — non-obvious compliance surface</li>
+              <li><span class="check">✅</span> Data residency / GDPR — regulatory constraint that affects architecture</li>
+              <li><span class="check">✅</span> Asks about existing ecosystem constraints</li>
+              <li><span class="check">✅</span> Asks for explicit latency SLA tied to specific user journey</li>
+            </ul>
+          </div>
+
+          <div class="wow-block">
+            <div class="wow-label">The "Wow" Moments</div>
+            <div class="wow-item">"These three sub-problems have conflicting requirements — ingestion wants write throughput, querying wants read-optimized indexes, and grouping wants strong consistency for deduplication." — Core architectural tension named in the clarification phase.</div>
+            <div class="wow-item">"Error events routinely contain stack traces with local variable values, request headers including Authorization tokens" — Shows they've seen this break in production.</div>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Exceptional opener. Decomposed the problem into three sub-systems with conflicting requirements before asking a single question — that's the mental model of someone who has built this class of system. The fingerprinting consistency observation is something I've never heard a candidate surface unprompted. The secrets scrubbing angle is real — we've had actual security incidents from this. Strong hire signal in the first 4 minutes."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P1 Progression -->
+      <div class="progression-section anchor" id="p1-progression">
+        <div class="section-title">Progression Summary — Phase 1</div>
+        <table class="progression-table">
+          <thead>
+            <tr>
+              <th>Gap</th>
+              <th>What Changes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No Hire → Lean Hire</td>
+              <td>Ask scope questions, not just scale questions. Show product awareness.</td>
+            </tr>
+            <tr>
+              <td>Lean Hire → Hire (L6)</td>
+              <td>Sequence matters: success criteria before scale. Proactive out-of-scope list. PII/compliance flag unprompted.</td>
+            </tr>
+            <tr>
+              <td>Hire → Strong Hire (L7)</td>
+              <td>Reframe the problem space before asking questions. Decompose into sub-problems with conflicting requirements. Quantify SLAs tied to user journeys. Surface non-obvious production concerns (fingerprinting, secrets scrubbing).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="key-lesson anchor" id="p1-lesson">
+        <div class="key-lesson-label">🎯 Key Lesson from Phase 1</div>
+        <div class="key-lesson-title">Sequence is Everything at L6. Reframing is Everything at L7.</div>
+        <p>The L5 → L6 shift is about sequence — asking <em>what</em> before <em>how much</em>. The L6 → L7 shift is about reframing — showing you understand the core architectural tensions before the interviewer has to draw them out of you. If you can name the conflicts inherent in the problem in Phase 1, you've already demonstrated L7 signal before touching a single component.</p>
+      </div>
+    </div>
+
+    <hr class="phase-divider">
+
+    <!-- ═══════════════════════════════════════
+         PHASE 2
+    ═══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="p2-intro">
+      <div class="phase-header">
+        <span class="phase-pill">Phase 2</span>
+        <span class="phase-time">5 – 10 minutes</span>
+      </div>
+      <h2 class="phase-title">Requirements Gathering</h2>
+
+      <div class="phase-question-card">
+        <div class="phase-question-label">The Interviewer Prompt</div>
+        <p class="phase-question-text">"Alright, let's formalize requirements. Give me your functional requirements, your non-functional requirements, and your top 3 NFRs with justification. Also — what are you explicitly not building? And what's your DAU assumption and why?"</p>
+      </div>
+
+      <!-- P2 NO HIRE -->
+      <div class="tier-card" id="p2-no-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge no-hire"><span class="tier-dot no"></span> NO HIRE</div>
+          <div class="tier-level-label">L4 / Weak L5 Signal</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Okay so for functional requirements, we need: users can send errors to the system, the system stores the errors, users can view errors on a dashboard, and we should have alerting so developers get notified when new errors happen. Also search — developers should be able to search for specific errors.<br><br>
+              For non-functional requirements, the system needs to be fast, highly available, and scalable. We don't want it to go down because if it goes down, developers won't know about errors in production. It should also be secure.<br><br>
+              My top 3 NFRs are: performance, availability, and scalability. Performance is important because developers need to see errors quickly. Availability is important because the system needs to always be up. Scalability is important because we might have a lot of errors coming in.<br><br>
+              As for DAU, let's say 10 million users. I'm not sure exactly, but that seems like a reasonable number for a large system."
+            </div>
+          </div>
+          <div class="fatal-block">
+            <div class="fatal-label">Fatal Mistakes</div>
+            <ul class="fatal-list">
+              <li>NFRs are completely vague — "fast," "scalable," "secure" are meaningless without numbers</li>
+              <li>No SLAs defined — no latency targets, no availability percentages, no durability guarantees</li>
+              <li>DAU pulled from thin air with zero reasoning — "10 million seems reasonable" is not engineering</li>
+              <li>Missed deduplication/grouping entirely — the single hardest functional requirement of this system</li>
+              <li>No explicit out-of-scope list</li>
+            </ul>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"NFRs were buzzwords — fast, available, scalable — with zero quantification. DAU was a guess with no derivation. Missed deduplication entirely, which is the hardest functional requirement in this system. No SLAs. No out-of-scope list. This is an L4 answer. Would not advance."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P2 LEAN HIRE -->
+      <div class="tier-card" id="p2-lean">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge lean-hire"><span class="tier-dot lean"></span> LEAN HIRE</div>
+          <div class="tier-level-label">Meets L5 bar — not L6</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me split this into functional and non-functional.<br><br>
+              For functional requirements: SDK clients can capture and send error events with full context — stack trace, breadcrumbs, tags, user info. The backend ingests these events at high volume. Similar errors get grouped into 'issues' to avoid noise. Developers can query and search issues. Alerts fire when new issues are detected or error rates spike. Issues have a lifecycle — open, resolved, ignored. Notification integrations — email, Slack, PagerDuty.<br><br>
+              For non-functional requirements: low latency ingestion — under 100ms for the SDK to get an acknowledgment so it doesn't block the application. High availability — 99.9% or higher. Durability — we can't lose error events. Searchability — across potentially billions of stored events with reasonable latency.<br><br>
+              My top 3 NFRs: first, ingestion availability — 99.99%. Second, low ingestion latency — under 100ms P99. Third, search latency — under 2 seconds.<br><br>
+              For DAU — Sentry has around 4 million developers. 1 million DAU for active developers. For event volume: 10,000 active projects each generating 10 events per second on average = 100,000 events per second or 100K write QPS.<br><br>
+              What I'm not building: SDK, billing, SSO, source map processing, frontend UI."
+            </div>
+          </div>
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label signals">What's Good</div>
+              <ul class="analysis-list">
+                <li>Correct FR/NFR separation with reasonable completeness</li>
+                <li>Correctly identifies ingestion availability as top NFR</li>
+                <li>Makes a reasonable attempt at event volume derivation</li>
+                <li>Proposes specific numbers — better than no numbers</li>
+                <li>Explicit out-of-scope list</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label missing">What's Missing for L6</div>
+              <ul class="analysis-list">
+                <li>No consistency model named — what happens if event is written to one region but not another?</li>
+                <li>No durability SLA — "we can't lose events" isn't an SLA</li>
+                <li>No explicit read/write ratio stated or used to drive decisions</li>
+                <li>Deduplication consistency not elevated to an NFR</li>
+                <li>Rate limiting as an NFR missed — a noisy SDK client can flood the system</li>
+                <li>No data retention policy driving storage tier decisions</li>
+              </ul>
+            </div>
+          </div>
+          <div class="upgrade-block">
+            <div class="upgrade-label">Upgrade Needed to Reach L6</div>
+            <p>Add an explicit consistency model statement. A durability SLA ("11 nines of durability for raw event storage"). A rate limiting NFR ("per-project ingestion rate limits to prevent noisy tenants"). A data retention policy ("raw events for 90 days, aggregated issue data for 1 year — this drives our tiered storage design").</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P2 HIRE -->
+      <div class="tier-card" id="p2-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge hire"><span class="tier-dot yes"></span> HIRE</div>
+          <div class="tier-level-label">Meets L6 bar</div>
+          <div class="tier-toggle open">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me structure this carefully — functional requirements first, then NFRs with explicit SLAs, then what I'm explicitly not building.<br><br>
+              <strong>Functional Requirements — P0:</strong> SDK event ingestion with structured payload (exception type, stack trace, breadcrumbs, tags, user context, environment, release version). Issue grouping and deduplication — raw events are fingerprinted and grouped into 'issues.' This is the core value differentiator and the hardest engineering problem. Issue lifecycle management — open, resolved, ignored, regression detection. Real-time alerting — fire alerts when new issues are detected or error rates exceed thresholds. Issue search and querying — filter by environment, release, user, tag, time range across billions of events.<br><br>
+              <strong>Functional Requirements — P1:</strong> Notification integrations (Slack, PagerDuty, email), basic dashboards, user and team management within an organization.<br><br>
+              <strong>Not building today:</strong> SDK implementation, source map processing, performance/APM tracing, billing, SSO federation, frontend UI layer.<br><br>
+              <strong>Non-Functional Requirements with SLAs:</strong><br>
+              Ingestion availability: 99.99%. This is the most critical path — I'd architect ingestion independently from the query path so a read spike can't degrade write availability.<br>
+              Ingestion latency: P99 under 100ms for SDK acknowledgment. Fire-and-forget — we ack and process asynchronously.<br>
+              Event durability: at-least-once delivery with 99.999% durability on persisted events. We can tolerate duplicates, not lost events.<br>
+              Search latency: P95 under 3 seconds. This is an analytical workload, not transactional.<br>
+              Alert freshness: P99 under 60 seconds from event ingestion to alert notification.<br><br>
+              <strong>Consistency model:</strong> Ingestion is write-heavy — I'll accept eventual consistency on the read side. But issue grouping requires strong consistency on fingerprint matching — two identical events must map to the same issue ID even across distributed ingestion nodes.<br><br>
+              <strong>DAU and volume:</strong> 1 million DAU. For write volume: 50,000 active projects at 2 events/second = 100,000 events/second baseline. Peak during an incident: 10x — 1M events/second. That peak handling is a core design constraint. Read/write ratio: 10:1 write-to-read on raw events, 100:1 read-to-write on the issue layer.<br><br>
+              <strong>Data retention:</strong> Raw events for 90 days, aggregated issue data for 1 year — this drives a tiered storage strategy. Hot storage for recent events, cold for historical."
+            </div>
+          </div>
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label signals">AOMB Completeness Checklist — L6 Script</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Explicit FR/NFR separation with P0/P1 prioritization</li>
+              <li><span class="check">✅</span> Specific SLAs with numbers tied to business impact</li>
+              <li><span class="check">✅</span> Explicit out-of-scope list</li>
+              <li><span class="check">✅</span> Consistency model named by path (eventual on reads, strong on fingerprint matching)</li>
+              <li><span class="check">✅</span> DAU derivation with reasoning, not a guess</li>
+              <li><span class="check">✅</span> Write/read ratio identified and quantified by layer</li>
+              <li><span class="check">✅</span> Data retention policy with storage tier implication</li>
+              <li><span class="check">✅</span> Clear transition to architecture</li>
+            </ul>
+          </div>
+          <div class="key-phrases">
+            <div class="key-phrases-label">Key Phrases That Signal L6 — Memorize These</div>
+            <blockquote>"This is a write-heavy, read-heavy system but with different consistency requirements per path."</blockquote>
+            <blockquote>"Issue grouping requires strong consistency on fingerprint matching — two identical events must map to the same issue ID even across distributed ingestion nodes."</blockquote>
+            <blockquote>"Raw events for 90 days, aggregated issue data for 1 year — this drives a tiered storage strategy."</blockquote>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Excellent requirements phase. P0/P1 separation was crisp, SLAs were specific and business-justified, consistency model was called out by path which shows real depth. The write-heavy vs read-heavy decomposition by layer was insightful. One gap: rate limiting as an explicit NFR was implied but not named. Strong hire direction."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P2 STRONG HIRE -->
+      <div class="tier-card" id="p2-strong">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge strong-hire"><span class="tier-dot strong"></span> STRONG HIRE</div>
+          <div class="tier-level-label">L7 Signal — Exceptional</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "I want to be really deliberate here because the requirements phase is where most designs go wrong. Let me structure this as: functional requirements by priority, NFRs with explicit SLAs, consistency model, volume model, and explicit non-goals.<br><br>
+              <strong>Volume model:</strong> Sentry publicly reports ~28 billion events per month. That's 28B / 2.5M seconds = ~11,000 events/second average. Peak is typically 5–10x, so design for 100,000 events/second peak write throughput. For reads: 1M DAU × 20 queries/session = 20M queries/day, ~230 QPS average, peak ~2,000 QPS. Write/read ratio: 50:1 on raw event volume.<br><br>
+              <strong>Storage math done inline:</strong> At 100K events/second, each event averaging 10KB including stack trace — that's 1GB/second of raw ingestion. Over 90 days retention = 8 petabytes. That immediately tells me I cannot store raw events in a relational database. I need object storage for raw events and a separate indexed store for queryable metadata.<br><br>
+              <strong>Rate limiting as explicit NFR:</strong> A single misbehaving SDK — an infinite error loop in production, for example — can generate millions of events/second from a single project. Without per-project rate limiting, one bad actor degrades the entire platform. Per-project limits with graceful degradation: drop events beyond the limit rather than blocking the SDK. Default: 1,000 events/second per project.<br><br>
+              <strong>SLA Summary:</strong> Ingestion availability: 99.99%. Ingestion P99 latency: 100ms. Durability: 99.999%. Alert freshness: 60 seconds. Query P95: 3 seconds.<br><br>
+              <strong>Fingerprint assignment consistency:</strong> This is the consistency-critical path, not ingestion itself. Two identical events arriving at different nodes must resolve to the same issue ID. This is the key architectural decision I'll revisit in the design phase."
+            </div>
+          </div>
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label exceptional">AOMB Completeness Checklist — Strong Hire</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> P0/P1/P2 prioritization with explicit reasoning</li>
+              <li><span class="check">✅</span> SLAs for every NFR with business justification</li>
+              <li><span class="check">✅</span> Consistency model named per path — fingerprint assignment called out explicitly</li>
+              <li><span class="check">✅</span> Volume derived from public data ("Sentry reports 28B events/month")</li>
+              <li><span class="check">✅</span> Storage math done inline — 8PB conclusion immediately implies object storage</li>
+              <li><span class="check">✅</span> Rate limiting as explicit NFR with a real failure scenario</li>
+              <li><span class="check">✅</span> Data retention driving tiered storage — business policy to architecture</li>
+              <li><span class="check">✅</span> Read/write asymmetry quantified (50:1)</li>
+            </ul>
+          </div>
+          <div class="wow-block">
+            <div class="wow-label">The "Wow" Moments</div>
+            <div class="wow-item">"At 100K events/second, each event averaging 10KB — that's 1GB per second. Over 90 days, that's 8 petabytes. That immediately tells me I cannot store raw events in a relational database." — Math-to-architecture reasoning in real time.</div>
+            <div class="wow-item">"A single misbehaving SDK — an infinite error loop in production — can generate millions of events per second from a single project." — Real production failure mode showing operational experience.</div>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Exceptional requirements phase. Derived volume from public Sentry data — that's intellectual honesty. Did storage math inline and immediately drew the right architectural conclusion. Rate limiting NFR with a real failure scenario shows production experience. The consistency model discussion was the best I've heard — correctly identified that fingerprint assignment is the consistency-critical path, not ingestion itself. Strong hire, no hesitation."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P2 Progression -->
+      <div class="progression-section anchor" id="p2-progression">
+        <div class="section-title">Progression Summary — Phase 2</div>
+        <table class="progression-table">
+          <thead>
+            <tr><th>Gap</th><th>What Changes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>No Hire → Lean Hire</td>
+              <td>Add specific numbers to NFRs. Derive DAU with reasoning. Add explicit out-of-scope list.</td>
+            </tr>
+            <tr>
+              <td>Lean Hire → Hire (L6)</td>
+              <td>Add consistency model per path. Justify SLAs with business impact. Identify read/write ratio by layer. Add retention policy driving tiered storage.</td>
+            </tr>
+            <tr>
+              <td>Hire → Strong Hire (L7)</td>
+              <td>Anchor estimates in real-world data. Do storage math inline to drive architectural conclusions. Frame rate limiting as a platform stability NFR. Name fingerprint assignment as the consistency-critical path.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="key-lesson anchor" id="p2-lesson">
+        <div class="key-lesson-label">🎯 Key Lesson from Phase 2</div>
+        <div class="key-lesson-title">Every Number Must Imply a Design Decision.</div>
+        <p>The L5 → L6 shift is about replacing vague qualifiers ("fast," "scalable") with specific, business-justified SLAs. The L6 → L7 shift is about using requirements as architectural drivers — every number you state should immediately imply a design decision. When your storage math tells you "8 petabytes in 90 days," that's not just a number — it's the sentence that eliminates relational databases from your design before you've drawn a single box.</p>
+      </div>
+    </div>
+
+    <hr class="phase-divider">
+
+    <!-- ═══════════════════════════════════════
+         PHASE 3 — API DESIGN
+    ═══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="p3-intro">
+      <div class="phase-header">
+        <span class="phase-pill">Phase 3a</span>
+        <span class="phase-time">10 – 15 minutes</span>
+      </div>
+      <h2 class="phase-title">API Design</h2>
+
+      <div class="phase-question-card">
+        <div class="phase-question-label">The Interviewer Prompt</div>
+        <p class="phase-question-text">"Define your core APIs — endpoints, request/response payloads, and key design decisions. How do you handle pagination for large result sets? Where are your idempotency keys? How do you handle API versioning and backward compatibility? And why did you make the denormalization choices you made?"</p>
+      </div>
+
+      <!-- P3 NO HIRE -->
+      <div class="tier-card" id="p3-no-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge no-hire"><span class="tier-dot no"></span> NO HIRE</div>
+          <div class="tier-level-label">L4 / Weak L5 Signal</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Okay so for APIs we need a few endpoints. We'll have a POST endpoint to send errors, something like POST /errors. It takes the error data in the body — the stack trace, the message, things like that. And then we have GET /errors to get a list of errors, and GET /errors/{id} to get a specific error.<br><br>
+              For the response, POST /errors returns a 200 OK if it worked. GET /errors returns a list of error objects. GET /errors/{id} returns the full error details.<br><br>
+              For pagination I'd use limit and offset parameters on the GET /errors endpoint. Something like GET /errors?limit=20&offset=0.<br><br>
+              I think that covers the main APIs. Should I move on to the data model?"
+            </div>
+          </div>
+          <div class="fatal-block">
+            <div class="fatal-label">Fatal Mistakes</div>
+            <ul class="fatal-list">
+              <li>No versioning — /errors with no version prefix will cause breaking changes on day one</li>
+              <li>Offset-based pagination is explicitly the wrong answer — at billions of rows, OFFSET 1000000 is a full table scan</li>
+              <li>No idempotency key on the write endpoint — SDK retries on network failure = duplicate events</li>
+              <li>No authentication header — how does the system know which project/organization this event belongs to?</li>
+              <li>No error contract — what does a 400 look like? A 429? A 503?</li>
+              <li>POST /errors returns 200 instead of 202 — for async ingestion, 202 Accepted is correct semantics</li>
+            </ul>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"No versioning, wrong pagination strategy, no idempotency, no auth headers, no error contract. The candidate treats APIs as URL stubs rather than contracts. Would not pass L4 bar for a backend role."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P3 LEAN HIRE -->
+      <div class="tier-card" id="p3-lean">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge lean-hire"><span class="tier-dot lean"></span> LEAN HIRE</div>
+          <div class="tier-level-label">Meets L5 bar — not L6</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me define the core APIs. I'll version them with a /v1/ prefix.<br><br>
+              First, the event ingestion endpoint: POST /v1/store. The request body includes: event_id as a UUID for idempotency, timestamp, platform, level, exception object with type, value, and stacktrace frames, breadcrumbs array, tags as key-value pairs, user context, environment, and release fields. The response is 202 Accepted — we're acknowledging receipt asynchronously.<br><br>
+              Second, issue listing: GET /v1/issues. Query parameters: project_id, environment, status, cursor for pagination, limit. I'd use cursor-based rather than offset because offset doesn't work at scale. Returns a list of issue summaries with a next_cursor token.<br><br>
+              Third, issue detail: GET /v1/issues/{issue_id}. Returns full issue data including event samples, stack trace, tags, user count, event count.<br><br>
+              For auth, each SDK authenticates using a DSN — Data Source Name — which is a project-specific token passed in the Authorization header.<br><br>
+              For error responses: 400 for bad payload, 401 for invalid DSN, 429 for rate limit exceeded with a Retry-After header."
+            </div>
+          </div>
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label signals">What's Good</div>
+              <ul class="analysis-list">
+                <li>Correct versioning with /v1/ prefix</li>
+                <li>Correct pagination choice — cursor-based, not offset</li>
+                <li>Idempotency key present (event_id UUID)</li>
+                <li>Correct HTTP semantics — 202 Accepted for async ingestion</li>
+                <li>DSN-based auth mentioned</li>
+                <li>Structured error responses with correct status codes</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label missing">What's Missing for L6</div>
+              <ul class="analysis-list">
+                <li>No rate limiting headers on success responses (X-RateLimit-Remaining, X-RateLimit-Reset)</li>
+                <li>No backward compatibility strategy beyond "versioning"</li>
+                <li>No envelope/batch format — at 100K events/second, per-event HTTP is impractical</li>
+                <li>No compression discussion — stack traces are verbose, gzip/zstd is critical</li>
+                <li>Alert management API missing</li>
+                <li>No idempotency semantics — what happens if same event_id arrives twice?</li>
+              </ul>
+            </div>
+          </div>
+          <div class="upgrade-block">
+            <div class="upgrade-label">Upgrade Needed to Reach L6</div>
+            <p>Add an envelope/batch ingestion format ("at 100K events/second, we cannot afford one HTTP call per event"). Rate limit headers on every response. Explicit idempotency semantics ("duplicate event_id within 24-hour window is silently deduplicated"). A backward compatibility policy ("we never remove fields in v1 — breaking changes require a v2 with a 6-month deprecation window").</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- P3 HIRE -->
+      <div class="tier-card" id="p3-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge hire"><span class="tier-dot yes"></span> HIRE</div>
+          <div class="tier-level-label">Meets L6 bar</div>
+          <div class="tier-toggle open">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me define the API layer in three groups: the ingestion API used by SDKs, the query API used by the dashboard, and the management API for alert rules.<br><br>
+              <strong>Ingestion API — POST /v1/envelope</strong><br>
+              The key design decision here is batching. At 100K events per second, one HTTP round-trip per event is impractical — the network overhead alone would be catastrophic. The SDK batches events into an envelope — a newline-delimited structure with a header line followed by alternating item-header and item-payload lines.<br><br>
+              Request headers: Authorization: DSN &lt;dsn_value&gt;, Content-Encoding: gzip (stack traces are verbose, compression is mandatory), X-Sentry-Auth for protocol negotiation.<br><br>
+              Response: 202 Accepted with rate limit headers — X-RateLimit-Limit: 1000, X-RateLimit-Remaining: 847, X-RateLimit-Reset: timestamp.<br><br>
+              Idempotency: each event carries an event_id UUID generated by the SDK. If the same event_id is received within a 24-hour window, the second occurrence is silently dropped. This handles SDK retries on network failure gracefully.<br><br>
+              <strong>Query API — GET /v1/projects/{project_id}/issues</strong><br>
+              Cursor-based pagination, not offset. At billions of events, OFFSET 1000000 forces the database to scan and discard a million rows. A cursor encodes the last seen sort key — typically a composite of (last_seen_at, issue_id) — allowing the query to start exactly where the last page ended via an index seek.<br><br>
+              Response includes issues array, next_cursor, prev_cursor, has_more.<br><br>
+              <strong>Alert Rule Management</strong><br>
+              POST /v1/projects/{project_id}/alert-rules, GET, PUT, DELETE with soft-delete semantics.<br><br>
+              <strong>Versioning and Backward Compatibility:</strong> URL-versioned with /v1/. Policy: additive changes only within v1 — we never remove or rename fields. Breaking changes require a new /v2/ prefix with a 6-month parallel deprecation window.<br><br>
+              <strong>Error Contract:</strong> All errors return structured JSON with detail, error_code, and retry_after. Status codes: 400 malformed payload, 401 invalid DSN, 413 envelope too large, 429 rate limit with Retry-After, 503 degraded ingestion with Retry-After."
+            </div>
+          </div>
+
+          <div style="background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:18px 22px; margin-bottom:16px;">
+            <div style="font-family:var(--font-ui); font-size:9px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-muted); margin-bottom:12px;">Envelope Format Example</div>
+            <pre><code>{"event_id":"uuid","sent_at":"2024-01-01T00:00:00Z","dsn":"..."}
+{"type":"event","length":1234}
+{"event_id":"uuid","timestamp":"...","platform":"python",
+ "exception":{"type":"ValueError","value":"invalid input",
+ "stacktrace":{"frames":[...]}},
+ "breadcrumbs":[...],"tags":{},"environment":"prod",
+ "release":"v1.2.3"}</code></pre>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label signals">AOMB Completeness Checklist — L6 Script</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Envelope/batch ingestion with reasoning ("100K QPS, per-event HTTP is impractical")</li>
+              <li><span class="check">✅</span> Compression mentioned (Content-Encoding: gzip)</li>
+              <li><span class="check">✅</span> DSN-based authentication</li>
+              <li><span class="check">✅</span> 202 Accepted semantics for async ingestion</li>
+              <li><span class="check">✅</span> Idempotency key with explicit semantics ("silently dropped within 24-hour window")</li>
+              <li><span class="check">✅</span> Cursor-based pagination with explanation of why offset fails at scale</li>
+              <li><span class="check">✅</span> Rate limiting headers on success responses</li>
+              <li><span class="check">✅</span> Structured error contract with 413 and 503 included</li>
+              <li><span class="check">✅</span> Alert rule management API included</li>
+              <li><span class="check">✅</span> Versioning policy with deprecation window</li>
+              <li><span class="check">✅</span> Backward compatibility policy ("additive changes only")</li>
+            </ul>
+          </div>
+
+          <div class="key-phrases">
+            <div class="key-phrases-label">Key Phrases That Signal L6 — Memorize These</div>
+            <blockquote>"At 100K events per second, one HTTP round-trip per event is impractical — the network overhead alone would be catastrophic."</blockquote>
+            <blockquote>"A cursor encodes the last seen sort key — typically (last_seen_at, issue_id) — allowing the query to start exactly where the last page ended via an index seek."</blockquote>
+            <blockquote>"We never remove or rename fields in v1 — breaking changes require a new /v2/ prefix with a 6-month parallel deprecation window."</blockquote>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Strong API design. Envelope format was the right call and the candidate justified it with numbers. Cursor pagination explanation was technically correct. Idempotency semantics were precise. Error contract was comprehensive — 413 and 503 tell me this person has operated high-volume ingestion systems. Versioning policy was specific and enforceable. This is L6 API thinking."</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /phase 3 -->
+
+  </div><!-- /content-area -->
+
+</main>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const doc = document.documentElement;
+    const scrollTop = doc.scrollTop || document.body.scrollTop;
+    const scrollHeight = doc.scrollHeight - doc.clientHeight;
+    const progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
+    document.getElementById('progress-bar').style.width = progress + '%';
+  });
+
+  // Tier toggle
+  function toggleTier(header) {
+    const body = header.nextElementSibling;
+    const toggle = header.querySelector('.tier-toggle');
+    const isCollapsed = body.classList.contains('collapsed');
+    if (isCollapsed) {
+      body.classList.remove('collapsed');
+      toggle.classList.add('open');
+    } else {
+      body.classList.add('collapsed');
+      toggle.classList.remove('open');
+    }
+  }
+
+  // Start No Hire and Lean Hire collapsed
+  document.querySelectorAll('.tier-card').forEach(card => {
+    const badge = card.querySelector('.tier-badge');
+    if (badge && (badge.classList.contains('no-hire') || badge.classList.contains('lean-hire'))) {
+      const body = card.querySelector('.tier-body');
+      const toggle = card.querySelector('.tier-toggle');
+      body.classList.add('collapsed');
+      toggle.classList.remove('open');
+    }
+  });
+
+  // Copy script
+  function copyScript(btn) {
+    const block = btn.closest('.script-block');
+    const text = block.querySelector('.script-text').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.innerHTML = '⎘ Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  }
+
+  // Active nav on scroll
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+  const sections = [];
+  navItems.forEach(item => {
+    const id = item.getAttribute('href').slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ el, item });
+  });
+
+  window.addEventListener('scroll', () => {
+    const scrollPos = window.scrollY + 80;
+    let active = null;
+    sections.forEach(({ el, item }) => {
+      if (el.offsetTop <= scrollPos) active = item;
+    });
+    navItems.forEach(i => i.classList.remove('active'));
+    if (active) active.classList.add('active');
+  }, { passive: true });
+
+  // Search filter
+  function filterNav(q) {
+    const query = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.style.display = item.textContent.toLowerCase().includes(query) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-section-label').forEach(label => {
+      label.style.display = query ? 'none' : '';
+    });
+  }
+</script>
+</body>
+</html>
