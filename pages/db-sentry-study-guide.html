@@ -1,0 +1,2291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Database Fundamentals & Sentry System Design — Staff/Principal Level</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,300;1,8..60,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface2: #1c2128;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --amber: #F5A623;
+  --teal: #00BFA5;
+  --gold: #FFD700;
+  --coral: #FF6B6B;
+  --code-bg: #010409;
+  --sidebar-w: 280px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; font-size: 16px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.75;
+  opacity: 0;
+  animation: fadeIn 0.6s ease forwards 0.1s;
+}
+
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* PROGRESS BAR */
+#progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--teal));
+  width: 0%;
+  z-index: 9999;
+  transition: width 0.1s linear;
+}
+
+/* SIDEBAR */
+#sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+}
+
+#sidebar::-webkit-scrollbar { width: 4px; }
+#sidebar::-webkit-scrollbar-track { background: var(--surface); }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 10;
+}
+
+.sidebar-logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+#search-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#search-input:focus { border-color: var(--accent); }
+#search-input::placeholder { color: var(--text-muted); }
+
+#nav-tree {
+  padding: 12px 0 80px;
+  flex: 1;
+}
+
+.nav-part {
+  padding: 10px 20px 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+}
+
+.nav-item {
+  display: block;
+  padding: 5px 20px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-family: 'Source Serif 4', serif;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.nav-item:hover {
+  color: var(--text);
+  border-left-color: var(--accent);
+  background: rgba(88,166,255,0.05);
+}
+
+.nav-item.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: rgba(88,166,255,0.08);
+}
+
+.nav-item.sub {
+  padding-left: 32px;
+  font-size: 0.78rem;
+}
+
+/* MAIN CONTENT */
+#main {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+  padding: 60px 64px 120px;
+  max-width: calc(var(--sidebar-w) + 900px);
+}
+
+/* HAMBURGER */
+#hamburger {
+  display: none;
+  position: fixed;
+  top: 16px; left: 16px;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+/* BACK TO TOP */
+#back-to-top {
+  position: fixed;
+  bottom: 32px; right: 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 1.1rem;
+  text-decoration: none;
+  opacity: 0;
+  transition: all 0.2s ease;
+  z-index: 50;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+#back-to-top.visible { opacity: 1; }
+#back-to-top:hover { background: var(--accent); color: var(--bg); transform: translateY(-2px); }
+
+/* TYPOGRAPHY */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Playfair Display', serif;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 3rem;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--text) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+.doc-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 40px;
+  letter-spacing: 0.05em;
+}
+
+.part-header {
+  margin: 72px 0 48px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.part-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--amber);
+  margin-bottom: 12px;
+}
+
+.part-number {
+  font-family: 'Playfair Display', serif;
+  font-size: 5rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--border);
+  position: absolute;
+  right: 0;
+  top: -20px;
+}
+
+.part-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--text);
+  position: relative;
+}
+
+.section-header {
+  margin: 56px 0 28px;
+}
+
+h2.section-title {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--text);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 36px 0 16px;
+}
+
+h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--teal);
+  margin: 28px 0 12px;
+}
+
+p {
+  margin-bottom: 20px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+ul, ol {
+  margin: 0 0 20px 24px;
+}
+
+li {
+  margin-bottom: 8px;
+  line-height: 1.7;
+}
+
+li > ul, li > ol { margin-top: 8px; }
+
+strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+em { font-style: italic; color: var(--text-muted); }
+
+mark {
+  background: rgba(245,166,35,0.2);
+  color: var(--amber);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* CODE BLOCKS */
+.code-wrapper {
+  margin: 24px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.code-lang {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.code-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  transition: all 0.15s;
+}
+.code-copy:hover { border-color: var(--accent); color: var(--accent); }
+.code-copy.copied { border-color: var(--teal); color: var(--teal); }
+
+pre code {
+  display: block;
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #c9d1d9;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* SQL highlighting */
+.kw { color: #ff7b72; }
+.fn { color: #79c0ff; }
+.str { color: #a5d6ff; }
+.num { color: #79c0ff; }
+.cmt { color: #8b949e; font-style: italic; }
+.type { color: #ffa657; }
+
+/* DIAGRAM BLOCKS */
+.diagram-wrapper {
+  margin: 24px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--code-bg);
+}
+
+.diagram-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.diagram-badge {
+  background: rgba(88,166,255,0.15);
+  border: 1px solid rgba(88,166,255,0.3);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.diagram-wrapper pre {
+  padding: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #8b949e;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* TABLES */
+.table-wrapper {
+  margin: 24px 0;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+thead tr {
+  background: linear-gradient(90deg, var(--surface2), #1e2a38);
+}
+
+thead th {
+  padding: 12px 16px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+tbody tr:hover { background: rgba(88,166,255,0.04); }
+
+td {
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(48,54,61,0.5);
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+td:first-child { font-weight: 600; color: var(--text); }
+
+/* CALLOUT BOXES */
+.callout {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border-left: 3px solid;
+  background: var(--surface);
+}
+
+.callout.info { border-color: var(--accent); background: rgba(88,166,255,0.05); }
+.callout.warning { border-color: var(--gold); background: rgba(255,215,0,0.04); }
+.callout.success { border-color: var(--teal); background: rgba(0,191,165,0.04); }
+.callout.insight { border-color: var(--amber); background: rgba(245,166,35,0.06); }
+.callout.danger { border-color: var(--coral); background: rgba(255,107,107,0.05); }
+
+.callout-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+
+.callout.info .callout-title { color: var(--accent); }
+.callout.warning .callout-title { color: var(--gold); }
+.callout.success .callout-title { color: var(--teal); }
+.callout.insight .callout-title { color: var(--amber); }
+.callout.danger .callout-title { color: var(--coral); }
+
+/* PHASE / SCENARIO CARDS */
+.phase-card {
+  margin: 36px 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.phase-card-header {
+  background: linear-gradient(90deg, var(--surface2) 0%, rgba(22,27,34,0) 100%);
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.phase-num {
+  background: var(--amber);
+  color: var(--bg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.phase-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.phase-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.phase-card-body {
+  padding: 24px 28px;
+}
+
+/* TRADEOFF CARDS */
+.tradeoff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.tradeoff-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tradeoff-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.tradeoff-card h5 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+/* PILLAR HEADERS */
+.pillar-header {
+  position: relative;
+  margin: 64px 0 36px;
+  padding: 28px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.pillar-header::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--amber), var(--teal));
+}
+
+.pillar-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--amber);
+  margin-bottom: 8px;
+}
+
+.pillar-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pillar-bg-num {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Playfair Display', serif;
+  font-size: 6rem;
+  font-weight: 900;
+  color: rgba(255,255,255,0.03);
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* HERO SECTION */
+.hero {
+  padding: 48px 0 60px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 48px;
+  position: relative;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(245,166,35,0.1);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--amber);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 32px;
+  margin-top: 32px;
+  flex-wrap: wrap;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hero-stat-val {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.hero-stat-lbl {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* SECTION SEPARATORS */
+.sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 48px 0;
+}
+
+/* INLINE TAGS */
+.tag {
+  display: inline-block;
+  background: rgba(88,166,255,0.1);
+  border: 1px solid rgba(88,166,255,0.25);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 3px;
+  margin: 0 2px;
+}
+
+/* SEARCH HIGHLIGHT */
+.search-highlight { background: rgba(255,215,0,0.25); border-radius: 2px; }
+.section-hidden { display: none !important; }
+
+/* SIDEBAR OVERLAY */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 99;
+}
+
+/* MOBILE */
+@media (max-width: 900px) {
+  #sidebar { transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); }
+  .sidebar-overlay.active { display: block; }
+  #main { margin-left: 0; padding: 60px 24px 80px; }
+  #hamburger { display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 2rem; }
+  .pillar-title { font-size: 1.3rem; }
+  .tradeoff-grid { grid-template-columns: 1fr; }
+  .hero-stats { gap: 20px; }
+}
+
+/* TOC DECORATIVE LINE */
+.toc-divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+  margin: 8px 16px;
+}
+
+/* SCROLL MARGIN FOR ANCHORS */
+[id] { scroll-margin-top: 20px; }
+
+/* INLINE DEFINITION */
+dfn {
+  font-style: italic;
+  color: var(--amber);
+}
+
+/* SIDEBAR SECTION LABEL */
+.sidebar-section-lbl {
+  padding: 14px 20px 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--border);
+}
+
+/* ANIMATION */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+<button id="hamburger" aria-label="Toggle navigation">☰</button>
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+<a href="#top" id="back-to-top" aria-label="Back to top">↑</a>
+
+<!-- SIDEBAR -->
+<nav id="sidebar" aria-label="Page navigation">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">DB &amp; Systems Study</div>
+    <input type="text" id="search-input" placeholder="Search sections…" aria-label="Search sections">
+  </div>
+  <div id="nav-tree">
+    <div class="nav-part">Part I — Database Fundamentals</div>
+    <a class="nav-item" href="#sec-1">1. Database Fundamentals</a>
+    <a class="nav-item sub" href="#btree-vs-lsm">B-Tree vs LSM Tree</a>
+    <a class="nav-item sub" href="#acid">ACID Properties</a>
+    <a class="nav-item" href="#sec-2">2. Indexing Internals</a>
+    <a class="nav-item sub" href="#btree-index">B-Tree Index</a>
+    <a class="nav-item sub" href="#clustered">Clustered vs Non-Clustered</a>
+    <a class="nav-item sub" href="#composite">Composite &amp; Covering</a>
+    <a class="nav-item sub" href="#partial">Partial &amp; Expression</a>
+    <a class="nav-item" href="#sec-3">3. Query Execution</a>
+    <a class="nav-item sub" href="#parsing">SQL Parsing &amp; Planning</a>
+    <a class="nav-item sub" href="#cbo">Cost-Based Optimization</a>
+    <a class="nav-item sub" href="#joins">Join Algorithms</a>
+    <a class="nav-item sub" href="#explain">EXPLAIN ANALYZE</a>
+    <a class="nav-item" href="#sec-4">4. Pagination</a>
+    <a class="nav-item sub" href="#offset">OFFSET/LIMIT Internals</a>
+    <a class="nav-item sub" href="#keyset">Keyset Pagination</a>
+    <a class="nav-item sub" href="#dist-pag">Distributed Pagination</a>
+    <a class="nav-item" href="#sec-5">5. Partitioning &amp; Sharding</a>
+    <a class="nav-item sub" href="#partition-types">Partition Types</a>
+    <a class="nav-item sub" href="#shard-key">Shard Key Selection</a>
+    <a class="nav-item sub" href="#rebalancing">Rebalancing Strategies</a>
+    <a class="nav-item" href="#sec-6">6. Distributed Transactions</a>
+    <a class="nav-item sub" href="#2pc">2PC Internals</a>
+    <a class="nav-item sub" href="#3pc">3PC Tradeoffs</a>
+    <a class="nav-item sub" href="#saga">Saga Pattern</a>
+    <a class="nav-item sub" href="#consensus">Consensus Approaches</a>
+    <a class="nav-item" href="#sec-7">7. Locking &amp; Concurrency</a>
+    <a class="nav-item sub" href="#lock-types">Lock Types</a>
+    <a class="nav-item sub" href="#mvcc">MVCC Internals</a>
+    <a class="nav-item sub" href="#isolation">Isolation Levels</a>
+    <a class="nav-item sub" href="#deadlock">Deadlock Handling</a>
+    <a class="nav-item" href="#sec-8">8. Advanced Topics</a>
+    <a class="nav-item sub" href="#wal">WAL &amp; Crash Recovery</a>
+    <a class="nav-item sub" href="#replication">Replication</a>
+    <a class="nav-item sub" href="#pooling">Connection Pooling</a>
+    <a class="nav-item sub" href="#vacuum">Vacuum &amp; Bloat</a>
+    <a class="nav-item" href="#sec-9">9. Interview Questions</a>
+    <a class="nav-item" href="#sec-10">10. Quick Reference</a>
+    <div class="toc-divider"></div>
+    <div class="nav-part">Part II — Sentry System Design</div>
+    <a class="nav-item" href="#pillar-1">Pillar 1: Requirements &amp; API</a>
+    <a class="nav-item" href="#pillar-2">Pillar 2: Ingestion &amp; Streaming</a>
+    <a class="nav-item" href="#pillar-3">Pillar 3: Storage Architecture</a>
+    <a class="nav-item" href="#pillar-4">Pillar 4: Query Execution</a>
+    <a class="nav-item" href="#pillar-5">Pillar 5: Alerting &amp; Workflow</a>
+    <a class="nav-item" href="#pillar-6">Pillar 6: Distributed Systems</a>
+    <a class="nav-item" href="#pillar-7">Pillar 7: Reliability Engineering</a>
+    <a class="nav-item" href="#pillar-8">Pillar 8: Security &amp; Compliance</a>
+    <div class="toc-divider"></div>
+    <div class="nav-part">Part III — Simulation</div>
+    <a class="nav-item" href="#scenario">Black Friday Scenario</a>
+    <a class="nav-item sub" href="#phase-1">Phase 1: The Tsunami</a>
+    <a class="nav-item sub" href="#phase-2">Phase 2: Grouping</a>
+    <a class="nav-item sub" href="#phase-3">Phase 3: Alerting</a>
+    <a class="nav-item sub" href="#phase-4">Phase 4: Investigation</a>
+    <a class="nav-item sub" href="#phase-5">Phase 5: Resolution</a>
+    <a class="nav-item sub" href="#phase-6">Phase 6: Cross-Region</a>
+    <a class="nav-item" href="#synthesis">Tradeoff Synthesis</a>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main id="main" id="top">
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">⚙ Staff · Principal · Distinguished Level</div>
+  <h1 id="top">Database Fundamentals &amp; Sentry System Design</h1>
+  <p class="doc-subtitle">A comprehensive staff-level study guide covering storage engines, concurrency control, distributed systems, and end-to-end error tracking architecture</p>
+  <div class="hero-stats">
+    <div class="hero-stat"><span class="hero-stat-val">3</span><span class="hero-stat-lbl">Parts</span></div>
+    <div class="hero-stat"><span class="hero-stat-val">8</span><span class="hero-stat-lbl">Pillars</span></div>
+    <div class="hero-stat"><span class="hero-stat-val">10</span><span class="hero-stat-lbl">DB Sections</span></div>
+    <div class="hero-stat"><span class="hero-stat-val">L7/L8</span><span class="hero-stat-lbl">Target Level</span></div>
+  </div>
+</section>
+
+<!-- ============================= PART I ============================= -->
+<div class="part-header" style="position:relative;">
+  <div class="part-label">Part I</div>
+  <div class="part-title">Database Fundamentals — The Foundational Bedrock</div>
+  <div class="part-number">I</div>
+</div>
+
+<!-- SECTION 1 -->
+<section id="sec-1">
+  <div class="section-header">
+    <h2 class="section-title">1. Database Fundamentals</h2>
+  </div>
+
+  <h3>What is a database really?</h3>
+  <p>At its most fundamental level, a database is a specialized software system designed to solve a single core problem: <mark>persistent, structured data management with controlled concurrent access</mark>. When we strip away the SQL parser, the fancy query optimizer, and the network protocol handlers, what remains is a storage and retrieval engine that must guarantee that when a client writes data, that data survives process crashes, power failures, and operating system kernel panics, and that when multiple clients attempt to read and write simultaneously, the system behaves predictably.</p>
+
+  <p>The "database" abstraction sits at the intersection of three deeply complex computer science domains: <strong>storage systems</strong> (how bits are laid out on disk and moved to memory), <strong>concurrency control</strong> (how to schedule overlapping operations without corrupting state), and <strong>distributed systems</strong> (how to maintain these guarantees when data spans multiple nodes). A database management system (DBMS) is not merely a "bucket for data" — it is a state machine that accepts a stream of operations (transactions), transforms durable storage in a deterministic way, and provides a virtualized, consistent view of that storage to concurrent observers.</p>
+
+  <p>When we talk about a "relational database," we are specifically referring to a system that implements the relational model: data is organized into <strong>relations</strong> (tables), which are sets of <strong>tuples</strong> (rows) adhering to a schema. The power of this model comes from <mark>declarative querying (SQL)</mark>, where the user specifies what they want, and the system's query planner determines how to retrieve it. This separation of logical and physical data independence is the primary reason relational databases have dominated the industry for four decades.</p>
+
+  <hr class="sep">
+
+  <h3 id="btree-vs-lsm">Storage Engines: B-Tree vs LSM Tree</h3>
+  <p>The storage engine is the beating heart of any database. It determines how data is organized on disk, how writes are buffered, how reads are satisfied, and how the system reclaims space. The two dominant storage engine paradigms are <strong>B-Tree engines</strong> (used in PostgreSQL, MySQL InnoDB, SQL Server) and <strong>Log-Structured Merge Tree (LSM Tree) engines</strong> (used in RocksDB, LevelDB, Cassandra, ClickHouse, and underlying systems like Sentry's Snuba).</p>
+
+  <h4>B-Tree Internals</h4>
+  <p>A B-Tree (specifically a B+Tree in most database implementations) is a self-balancing tree data structure that maintains sorted data and allows searches, sequential access, insertions, and deletions in logarithmic time. The "B" stands for "balanced," and the "plus" in B+Tree indicates that all data records are stored in the leaf nodes, while internal nodes contain only keys for navigation.</p>
+  <p>In a B+Tree, each node corresponds to a page (or block) on disk, typically sized between 4KB and 16KB. The branching factor (the number of children per node) is determined by the page size and the key size. For example, <mark>with 8KB pages and 16-byte keys with 8-byte pointers, a node can hold approximately 340 keys, meaning a tree of height 3 can index over 39 million records with only 3 disk I/Os</mark>. This is the mathematical foundation of why B-Trees are so efficient for read-heavy workloads.</p>
+  <p>When an insertion occurs, the storage engine locates the appropriate leaf node. If the leaf has space, the key is inserted in sorted order. If the leaf is full, a <strong>page split</strong> occurs: the leaf is divided into two halves, the median key is promoted to the parent internal node, and the two new leaves are linked via a sibling pointer (enabling efficient range scans). Splits can cascade upward if internal nodes are also full, potentially increasing tree height. Conversely, deletions can cause page merges or rebalancing to maintain minimum occupancy thresholds (typically 50%).</p>
+  <p>The critical characteristic of B-Tree engines is <mark>in-place updating</mark>. When a row is modified, the storage engine overwrites the existing page on disk. This means B-Trees exhibit read-optimized behavior: point lookups require traversing from root to leaf (3–4 disk seeks), and range scans are extremely efficient due to leaf-node sibling pointers and spatial locality. However, B-Trees suffer from <strong>random write amplification</strong>: an update to a single row may require writing the leaf page, updating internal node pointers, and eventually flushing the WAL.</p>
+
+  <h4>LSM Tree Internals</h4>
+  <p>An LSM Tree takes a fundamentally different approach: it treats all writes as <mark>append-only operations</mark>. When a write arrives, it is first appended to an in-memory structure called a <strong>memtable</strong> (often a sorted data structure like a skip list or red-black tree). Once the memtable reaches a size threshold (e.g., 64MB), it is frozen and flushed to disk as an immutable, sorted file called an <strong>SSTable</strong> (Sorted String Table). This flush operation is sequential, meaning it can sustain extremely high write throughput limited primarily by disk bandwidth rather than seek latency.</p>
+  <p>Because SSTables are immutable, updates to existing keys do not overwrite old data. Instead, a newer version of the key is written to a newer SSTable. Deletes are handled via <strong>tombstones</strong> — special markers indicating that a key has been removed. This design means that reads may need to check multiple SSTables (newest to oldest) to find the latest version of a key, which is the primary read penalty of LSM Trees.</p>
+  <p>To prevent read performance from degrading as SSTables accumulate, LSM engines run <strong>compaction</strong> processes in the background. Compaction merges multiple SSTables, discarding overwritten values and tombstones, and producing new, larger SSTables. There are multiple compaction strategies:</p>
+
+  <ul>
+    <li><strong>Leveled Compaction (LevelDB, RocksDB):</strong> SSTables are organized into levels (L0, L1, L2…), where each level is 10x larger than the previous. L0 contains recent flushes and may have overlapping key ranges. L1+ have non-overlapping ranges. Minimizes space amplification but increases write amplification (typically 10–30x).</li>
+    <li><strong>Tiered Compaction (Cassandra, ScyllaDB):</strong> Multiple SSTables of similar size are merged together. This reduces write amplification but increases read amplification and space amplification.</li>
+    <li><strong>Time-Window Compaction:</strong> Optimized for time-series data, where data is naturally ordered by timestamp and older data is rarely updated.</li>
+  </ul>
+
+  <p>The trade-off matrix between these engines is central to Staff-level reasoning:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th>B-Tree (InnoDB/Postgres)</th>
+          <th>LSM Tree (RocksDB/ClickHouse)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Read Latency (Point)</td><td>Low (3–4 disk seeks)</td><td>Higher (may check multiple SSTables)</td></tr>
+        <tr><td>Read Latency (Range)</td><td>Very Low (sequential leaf scan)</td><td>Moderate (merge sort across SSTables)</td></tr>
+        <tr><td>Write Throughput</td><td>Moderate (random I/O, page splits)</td><td>Very High (sequential append)</td></tr>
+        <tr><td>Write Amplification</td><td>2–5x</td><td>10–30x (depending on compaction)</td></tr>
+        <tr><td>Space Amplification</td><td>Low (in-place update)</td><td>Higher (duplicate versions until compaction)</td></tr>
+        <tr><td>Concurrency</td><td>Complex (latches on pages, lock tables)</td><td>Simpler (immutable SSTables, single writer)</td></tr>
+        <tr><td>Crash Recovery</td><td>Complex (WAL + page flushing)</td><td>Simpler (replay memtable WAL)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout insight">
+    <div class="callout-title">⚙ Sentry Architecture Note</div>
+    <p>In Sentry's architecture, this trade-off manifests concretely: <strong>PostgreSQL (B-Tree)</strong> handles metadata, user configurations, and issue states where consistency and complex relational queries matter. <strong>ClickHouse (MergeTree engine, LSM-like)</strong> powers Snuba, Sentry's analytics platform, where massive write throughput of event data and time-series aggregation are paramount.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="acid">ACID Properties and Tradeoffs</h3>
+  <p>ACID is the canonical framework for reasoning about database transaction guarantees, but at the Staff Engineer level, we must understand that <mark>ACID is not a binary switch — it is a spectrum of guarantees</mark> that come with profound performance and availability trade-offs.</p>
+
+  <h4>Atomicity</h4>
+  <p>Atomicity ensures that a transaction is treated as a single unit of work: either all operations complete successfully, or none do. The implementation mechanism is the <strong>Write-Ahead Log (WAL)</strong>. Before any data page is modified in memory, the database writes a log record describing the change to a sequential WAL on disk. If the transaction commits, a commit record is appended. If the system crashes before commit, the recovery process reads the WAL and <em>undoes</em> (rolls back) any uncommitted changes. If it crashes after commit but before dirty pages are flushed to data files, the recovery process <em>redoes</em> the committed changes. This undo/redo protocol is the mechanical foundation of atomicity.</p>
+
+  <h4>Consistency</h4>
+  <p>In the ACID context, consistency means that a transaction brings the database from one valid state to another, preserving all declared integrity constraints (foreign keys, unique constraints, check constraints, triggers). This is distinct from the CAP theorem's consistency or eventual consistency. At scale, strict consistency enforcement becomes expensive: foreign key checks require index lookups on referenced tables, unique constraints require serializable isolation or clever locking, and check constraints must be evaluated for every row affected.</p>
+
+  <h4>Isolation</h4>
+  <p>Isolation determines how much one transaction can observe the effects of concurrently executing transactions. The SQL standard defines four isolation levels. The core trade-off is: <mark>stronger isolation prevents anomalies but requires more locking or multi-version overhead, reducing concurrency and throughput</mark>.</p>
+
+  <h4>Durability</h4>
+  <p>Durability guarantees that once a transaction commits, its effects survive any subsequent failure. The naive implementation is <code>fsync()</code> after every commit — catastrophically slow (milliseconds per transaction). Real databases employ multiple strategies: <strong>group commit</strong> (batching multiple transactions into a single fsync), <strong>asynchronous commit</strong> (acknowledging the client before fsync, risking a small window of loss), and write-through caching on battery-backed RAID controllers or NVMe devices with power-loss protection.</p>
+
+  <div class="callout info">
+    <div class="callout-title">🔬 Staff-Level Insight</div>
+    <p>ACID properties interact antagonistically with distributed systems. In a single-node database, achieving ACID is well-understood engineering. In a sharded, multi-region system, strict ACID requires distributed locking and consensus (2PC, Paxos), which introduces latency penalties and availability risks. This is why modern systems often choose <mark>BASE (Basically Available, Soft state, Eventually consistent)</mark> for certain data paths while maintaining ACID for critical metadata.</p>
+  </div>
+</section>
+
+<!-- SECTION 2 -->
+<section id="sec-2">
+  <div class="section-header">
+    <h2 class="section-title">2. Database Indexing Internals</h2>
+  </div>
+
+  <h3 id="btree-index">B-Tree Index Internals</h3>
+  <p>We previously discussed B-Trees as storage structures, but indexes are a specific application of B-Trees. A B-Tree index is a secondary access path that allows the database to locate rows without scanning the entire table. The leaf nodes of an index B-Tree contain index entries, each consisting of the indexed column value(s) plus a row pointer (in PostgreSQL, this is a TID — Tuple ID, consisting of block number and offset within the block).</p>
+  <p>When the query planner decides to use an index, the execution engine performs an <strong>index scan</strong>: it traverses the B-Tree to find the first matching leaf entry, then follows the row pointer to fetch the actual heap tuple. If the query requires columns not present in the index, this requires a random I/O into the heap, which is expensive. This leads us to covering indexes.</p>
+  <p>Index maintenance is non-trivial. Every INSERT, UPDATE, or DELETE on the table must maintain all indexes. For a table with 6 indexes, a single row insertion may require 6 B-Tree traversals and potential page splits. This is why <mark>excessive indexing hurts write performance</mark>.</p>
+
+  <h4>Page Splits and Fillfactor</h4>
+  <p>PostgreSQL allows specifying a <code>fillfactor</code> (default 90% for tables, 70% for indexes) that leaves space in pages for future updates. A lower fillfactor reduces page splits during heavy update workloads but wastes disk space and increases the tree height, slightly degrading read performance.</p>
+
+  <h4>Index-Only Scans</h4>
+  <p>PostgreSQL maintains a <strong>visibility map</strong> — a bitmap indicating which pages contain only tuples visible to all current transactions. When an index-only scan occurs, if all required columns are in the index and the heap page is marked all-visible, the engine can avoid visiting the heap entirely, dramatically reducing I/O.</p>
+
+  <hr class="sep">
+
+  <h3 id="clustered">Clustered vs Non-Clustered Indexes</h3>
+  <p>A <strong>clustered index</strong> (called "index-organized tables" in Oracle, implemented via CLUSTER or primary key in InnoDB/SQL Server) determines the physical order of rows in the table. In InnoDB, the primary key is a clustered index: the leaf nodes of the primary key B-Tree contain the actual row data, not just pointers. Secondary indexes contain the primary key value as their row pointer, requiring a two-step lookup. This makes primary key lookups extremely fast but means that poor primary key choice (e.g., random UUIDs) causes constant page splits and fragmentation.</p>
+  <p>A <strong>non-clustered index</strong> (the default in PostgreSQL) stores the index separately from the heap. The table rows are stored in an unordered heap structure, and indexes provide logical ordering. PostgreSQL's default architecture means there is no "clustered index" in the SQL Server sense, though the <code>CLUSTER</code> command can physically reorder the table to match an index (this is a one-time operation, not maintained).</p>
+
+  <div class="callout warning">
+    <div class="callout-title">⚠ Trade-off</div>
+    <p>Clustered indexes optimize range scans on the primary key and reduce storage overhead, but they make secondary indexes larger and slower, and they penalize random insertions. Non-clustered indexes offer more flexibility but require additional I/O for index-to-heap lookups.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="composite">Composite Indexes and Covering Indexes</h3>
+  <p>A composite index (or multi-column index) indexes multiple columns in a specific order: <code>CREATE INDEX idx ON table (a, b, c)</code>. The B-Tree sorts entries first by <code>a</code>, then by <code>b</code> within equal <code>a</code> values, then by <code>c</code>. This ordering has strict implications for query usability:</p>
+  <ul>
+    <li>A query filtering on <code>a</code> can use the index.</li>
+    <li>A query filtering on <code>a</code> and <code>b</code> can use the index efficiently.</li>
+    <li>A query filtering on <code>a</code>, <code>b</code>, and <code>c</code> can use the index most efficiently.</li>
+    <li>A query filtering on <code>b</code> and <code>c</code> <strong>cannot</strong> use the index (because the tree is not sorted by <code>b</code> at the top level).</li>
+    <li>A query with <code>a = ? AND c = ?</code> can use the index for <code>a</code>, but <code>c</code> cannot be used for index traversal.</li>
+  </ul>
+  <p>This is the <mark>leftmost prefix rule</mark>, and violating it is one of the most common causes of index underutilization.</p>
+  <p>A <strong>covering index</strong> is an index that contains all columns required by a query. If a query selects <code>a, b, c</code> from a table with a composite index on <code>(a, b, c)</code>, and the filter is on <code>a</code>, the database can satisfy the query entirely from the index without touching the heap. This transforms a potentially expensive operation into a pure sequential scan of index leaf pages.</p>
+
+  <div class="callout success">
+    <div class="callout-title">✅ Sentry Application</div>
+    <p>In high-throughput systems like Sentry, covering indexes are critical for query performance. For example, an issue lookup that filters by <code>project_id</code> and <code>group_id</code> and returns <code>status, priority, last_seen</code> can be satisfied by a covering index on <code>(project_id, group_id, status, priority, last_seen)</code>, eliminating heap fetches entirely.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="partial">Partial and Expression Indexes</h3>
+  <p>A <strong>partial index</strong> indexes only a subset of rows that match a predicate: <code>CREATE INDEX idx ON table (col) WHERE status = 'active'</code>. This dramatically reduces index size and maintenance cost when queries predominantly target a subset of data. For example, if 95% of events in an error tracking system are "resolved" and only 5% are "unresolved," but queries almost always look for unresolved issues, a partial index on <code>WHERE status = 'unresolved'</code> is 20x smaller and faster to maintain than a full index.</p>
+  <p>An <strong>expression index</strong> indexes the result of an expression rather than raw column values: <code>CREATE INDEX idx ON table (lower(email))</code>. This allows efficient case-insensitive lookups. Expression indexes require exact expression matching — the query must use the identical expression <code>lower(email)</code> to utilize the index.</p>
+
+  <div class="callout insight">
+    <div class="callout-title">⚙ Staff-Level Signal</div>
+    <p>Partial indexes demonstrate deep understanding of workload characteristics: they are a form of co-designing the database schema with the application query patterns, which is exactly what separates senior engineers from staff engineers.</p>
+  </div>
+</section>
+
+<!-- SECTION 3 -->
+<section id="sec-3">
+  <div class="section-header">
+    <h2 class="section-title">3. Query Execution</h2>
+  </div>
+
+  <h3 id="parsing">SQL Parsing and Planning</h3>
+  <p>When a SQL statement arrives at the database, it undergoes a multi-stage pipeline before execution:</p>
+  <ol>
+    <li><strong>Parsing:</strong> The raw SQL string is tokenized and parsed into a parse tree. This stage checks syntactic correctness but knows nothing about table existence or column types.</li>
+    <li><strong>Semantic Analysis:</strong> The parser tree is transformed into a query tree by resolving table names, column names, data types, and verifying permissions. This produces a logical representation of the query.</li>
+    <li><strong>Rewriting:</strong> The query tree is rewritten by the rule system (in PostgreSQL, this includes view expansion, rule evaluation, and preliminary optimization). Subqueries may be flattened, views are expanded to their base definitions.</li>
+    <li><strong>Planning:</strong> The rewritten query is handed to the query planner/optimizer, which generates multiple candidate execution plans and selects the cheapest one.</li>
+  </ol>
+  <p>The planner operates on relational algebra — it transforms the logical query (what to retrieve) into a physical plan (how to retrieve it). A complex query with multiple joins, filters, and aggregates may have thousands or millions of possible execution plans. The planner uses <strong>dynamic programming</strong> (specifically, the Selinger-style algorithm for join ordering) to find a good plan without exhaustive enumeration.</p>
+
+  <hr class="sep">
+
+  <h3 id="cbo">Cost-Based Optimization</h3>
+  <p>Cost-based optimization (CBO) is the art of estimating the "cost" of each operation in a plan, where cost is an abstract unit representing a combination of I/O operations, CPU cycles, and memory usage. The optimizer relies heavily on statistics stored in the system catalog:</p>
+  <ul>
+    <li><strong>Table cardinality:</strong> Estimated number of rows.</li>
+    <li><strong>Column statistics:</strong> Most common values, histograms of value distributions, correlation between physical ordering and logical ordering, fraction of nulls.</li>
+    <li><strong>Index statistics:</strong> Tree height, number of leaf pages, index correlation.</li>
+  </ul>
+  <p>The cost model is parameterized by constants like <code>seq_page_cost</code> (default 1.0), <code>random_page_cost</code> (default 4.0), <code>cpu_tuple_cost</code>, and <code>cpu_index_tuple_cost</code>. These can be tuned for different storage media — for example, lowering <code>random_page_cost</code> to ~1.1 for SSDs, as random reads are nearly as fast as sequential reads on flash storage.</p>
+
+  <div class="callout danger">
+    <div class="callout-title">⚠ Critical Warning</div>
+    <p>Statistics become stale. As data is modified, the distribution shifts. If the planner thinks a table has 1,000 rows but it actually has 10,000,000, it may choose a nested loop join when a hash join would be vastly superior. This is why <code>ANALYZE</code> (statistics refresh) is crucial, and why auto-vacuum/auto-analyze policies must be carefully tuned.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="joins">Join Algorithms</h3>
+  <p>Joins are among the most expensive operations in relational databases. The three fundamental algorithms are:</p>
+
+  <h4>Nested Loop Join</h4>
+  <p>The simplest algorithm: for each row in the outer (left) table, scan the inner (right) table for matches. Complexity is <mark>O(M × N)</mark>. This is only efficient when the outer table is tiny, or when the inner table has an index on the join key (reducing the inner scan to O(log N) per outer row). Nested loops are the default choice for small datasets and are essential for index-sensitive joins where one table is filtered down to a handful of rows.</p>
+
+  <h4>Hash Join</h4>
+  <p>The database builds an in-memory hash table from the smaller relation on the join key, then scans the larger relation, probing the hash table for each row. Average complexity is <mark>O(M + N)</mark>. Hash joins require sufficient memory to hold the hash table (or spill to disk via recursive partitioning if memory is insufficient). They are unbeatable for large, unindexed tables with equality join conditions. However, they fail for non-equality conditions (range joins).</p>
+
+  <h4>Merge Join</h4>
+  <p>Both tables are sorted on the join key (or indexes providing sorted output are used), then a synchronized scan walks through both sorted streams, emitting matches. Complexity is <mark>O(M log M + N log N)</mark> for sorting, or O(M + N) if pre-sorted. Merge joins excel when both inputs are large and already sorted, and when the join condition includes range comparisons.</p>
+
+  <div class="callout info">
+    <div class="callout-title">🔬 Staff-Level Note on Join Ordering</div>
+    <p>For a query joining 5 tables, the order matters enormously. A poor order might process billions of intermediate rows, while an optimal order keeps intermediate results small. The planner uses heuristics and cost estimation to determine this, but complex queries with correlated subqueries or non-uniform distributions can defeat the optimizer, necessitating manual hints or query restructuring.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="explain">Execution Models and EXPLAIN ANALYZE</h3>
+  <p>Database execution engines typically implement one of two models:</p>
+  <ul>
+    <li><strong>Iterator Model (Volcano/Pipeline):</strong> Each operator implements a <code>next()</code> method. The top-level operator calls <code>next()</code> on its child, creating a demand-driven pipeline. This is memory-efficient (no need to materialize intermediate results) but can have high function-call overhead.</li>
+    <li><strong>Vectorized Execution:</strong> Operators process batches of rows (e.g., 1,000 rows at a time) using compact columnar representations. This amortizes interpretation overhead and enables SIMD CPU instructions. Vectorization is used in modern analytical databases (ClickHouse, DuckDB, Snowflake) and is why Sentry's Snuba platform can aggregate billions of events in seconds.</li>
+  </ul>
+  <p><code>EXPLAIN ANALYZE</code> is the definitive tool for understanding query execution. It outputs the actual plan tree with actual row counts, actual execution time, and loop counts, alongside the planner's estimates. The critical analysis technique is to look for:</p>
+  <ul>
+    <li>Discrepancies between <em>estimated</em> and <em>actual</em> rows (indicating stale statistics)</li>
+    <li>Sequential scans on large tables (missing indexes)</li>
+    <li>High-cost nested loops (suggesting hash join might be better)</li>
+    <li>Memory spills (indicating <code>work_mem</code> is too small)</li>
+  </ul>
+</section>
+
+<!-- SECTION 4 -->
+<section id="sec-4">
+  <div class="section-header">
+    <h2 class="section-title">4. Pagination</h2>
+  </div>
+
+  <h3 id="offset">OFFSET/LIMIT Internals</h3>
+  <p>The traditional pagination approach is <code>SELECT * FROM table ORDER BY id LIMIT 10 OFFSET 1000</code>. While this appears simple, its performance characteristics are catastrophic at scale. To return 10 rows starting at offset 1000, the database must:</p>
+  <ol>
+    <li>Scan the index (or table) in sorted order.</li>
+    <li>Fetch and discard the first 1000 rows.</li>
+    <li>Return rows 1001–1010.</li>
+  </ol>
+  <p>The database still performs the I/O and CPU work to retrieve those 1000 discarded rows. As offset grows to millions, query latency grows linearly. <mark>At offset 10,000,000, the database may need to process tens of millions of rows just to return a single page of 20 results</mark>. This is O(n) complexity where n is the offset.</p>
+  <p>Furthermore, OFFSET/LIMIT is unstable under concurrent modifications. If a new row is inserted between page requests, the entire offset window shifts, causing rows to be skipped or duplicated across pages.</p>
+
+  <hr class="sep">
+
+  <h3 id="keyset">Keyset Pagination</h3>
+  <p>Keyset pagination (also called "cursor pagination" or "seek method") solves both problems by encoding the position in the data itself. Instead of an offset, the query uses the last seen value of the ordering column:</p>
+
+  <div class="code-wrapper">
+    <div class="code-header">
+      <span class="code-lang">SQL</span>
+      <button class="code-copy" onclick="copyCode(this)">Copy</button>
+    </div>
+    <pre><code><span class="kw">SELECT</span> * <span class="kw">FROM</span> table 
+<span class="kw">WHERE</span> (created_at, id) &gt; (<span class="str">'2026-05-01 12:00:00'</span>, <span class="num">12345</span>) 
+<span class="kw">ORDER BY</span> created_at, id 
+<span class="kw">LIMIT</span> <span class="num">10</span>;</code></pre>
+  </div>
+
+  <p>This leverages the index to seek directly to the starting position, then scan forward for 10 rows. Complexity is <mark>O(log n + page_size)</mark> — the index seek is logarithmic, and the scan is proportional to the page. Even at billion-row scale, retrieving the next page takes milliseconds.</p>
+  <p>Keyset pagination requires a unique, immutable ordering key (or composite key ensuring uniqueness). It is stable under inserts (new rows simply appear in future pages) and is the only viable pagination method for large-scale systems.</p>
+  <p>The trade-off is that it does not support jumping to arbitrary pages (e.g., "go to page 50") without encoding and storing cursors, and it complicates backward navigation.</p>
+
+  <hr class="sep">
+
+  <h3 id="dist-pag">Distributed Pagination Challenges</h3>
+  <p>In a sharded system, pagination becomes significantly harder. If data is partitioned across 100 shards, a global <code>ORDER BY</code> with <code>LIMIT 10</code> requires:</p>
+  <ol>
+    <li>Sending the query to all 100 shards.</li>
+    <li>Each shard returns its top 10 results.</li>
+    <li>The coordinator merges 1000 results, re-sorts, and takes the global top 10.</li>
+  </ol>
+  <p>This is the <strong>scatter-gather pattern</strong>, and it scales poorly. For page 1000 (offset 10,000), the coordinator might need to retrieve and sort 1,000,000 rows from shards. This is why distributed systems often:</p>
+  <ul>
+    <li>Avoid deep pagination entirely (e.g., Google Search stops at ~1000 results)</li>
+    <li>Use sorted indexes with locality (e.g., partition by time so recent queries hit only recent shards)</li>
+    <li>Implement approximate pagination (acceptable for analytics, unacceptable for billing)</li>
+  </ul>
+
+  <div class="callout success">
+    <div class="callout-title">✅ Sentry Application</div>
+    <p>In Sentry's context, when displaying the "latest 20 issues" across a multi-region deployment, keyset pagination on <code>(last_seen, group_id)</code> is essential. The system cannot afford to OFFSET through millions of historical issues.</p>
+  </div>
+</section>
+
+<!-- SECTION 5 -->
+<section id="sec-5">
+  <div class="section-header">
+    <h2 class="section-title">5. Partitioning and Sharding</h2>
+  </div>
+
+  <h3 id="partition-types">Range, Hash, and List Partitioning</h3>
+  <p>Partitioning splits a single logical table into multiple physical chunks within one database instance, managed by the DBMS. Sharding distributes partitions across multiple independent database instances. Both aim to reduce the working set size per chunk, enabling parallel operations and manageable maintenance windows.</p>
+
+  <h4>Range Partitioning</h4>
+  <p>Rows are partitioned by ranges of a column (typically time). For example, an <code>events</code> table might have partitions <code>events_2026_01</code>, <code>events_2026_02</code>. Range partitioning is ideal for time-series data because it naturally supports data lifecycle management (dropping old partitions is instant metadata operations, not massive DELETEs), and queries filtering by time can achieve <strong>partition pruning</strong> — the planner only scans relevant partitions.</p>
+
+  <h4>Hash Partitioning</h4>
+  <p>A hash function on the partition key determines the partition. This distributes data uniformly, eliminating hot spots from sequential keys. However, it complicates range queries (they must scan all partitions), and rebalancing requires moving data when the modulus changes.</p>
+
+  <h4>List Partitioning</h4>
+  <p>Explicitly maps discrete values to partitions (e.g., partition by region or status). This is useful when the domain is small and known.</p>
+
+  <hr class="sep">
+
+  <h3 id="shard-key">Shard Key Selection</h3>
+  <p>Choosing a shard key is one of the most consequential decisions in distributed database design. The ideal shard key:</p>
+  <ul>
+    <li>Has <strong>high cardinality</strong> (many distinct values) to distribute load evenly.</li>
+    <li>Is <strong>immutable</strong> (changing it requires moving the row).</li>
+    <li>Provides <strong>query locality</strong> (queries typically filter or join on it, allowing shard targeting).</li>
+    <li>Avoids <strong>hot spots</strong> (sequential keys like timestamps can concentrate write load on the "latest" shard).</li>
+  </ul>
+  <p>In Sentry, event data is sharded by <code>project_id</code> or <code>organization_id</code>. This provides locality (users query within their projects) and distributes load. However, a viral project can create a hot shard, overwhelming one node. Mitigations include:</p>
+  <ul>
+    <li>Hashing within the project (sub-sharding by <code>event_id</code>)</li>
+    <li>Rebalancing (moving hot shards to dedicated nodes)</li>
+    <li>Rate limiting at ingestion (Sentry's Relay enforces per-project quotas)</li>
+  </ul>
+
+  <hr class="sep">
+
+  <h3 id="rebalancing">Rebalancing Strategies</h3>
+  <p>Rebalancing moves data when shards grow unevenly or nodes are added/removed:</p>
+
+  <h4>Consistent Hashing</h4>
+  <p>Maps both data and nodes to a ring. Adding/removing a node only affects adjacent ranges, minimizing data movement. Used in DynamoDB, Cassandra, and Riak. The trade-off is that load balancing is approximate and requires virtual nodes (vnodes) to smooth distribution.</p>
+
+  <h4>Range-Based Rebalancing</h4>
+  <p>The coordinator maintains a directory mapping key ranges to nodes. It can split hot ranges and migrate them. This is used in Spanner, CockroachDB, and HBase. It provides precise control but requires a centralized metadata service (a potential bottleneck and single point of failure).</p>
+
+  <h4>Online Rebalancing</h4>
+  <p>Modern systems support live migration — copying data to a new node while serving reads/writes from the old node, then atomically switching. This requires logical replication or change data capture (CDC) to stream ongoing changes during the bulk copy.</p>
+
+  <div class="callout insight">
+    <div class="callout-title">⚙ Staff-Level Note</div>
+    <p>Rebalancing is not just a technical problem but an operational and business problem: it requires maintenance windows (or online migration), impacts latency during data transfer, and may violate consistency guarantees if not carefully orchestrated.</p>
+  </div>
+</section>
+
+<!-- SECTION 6 -->
+<section id="sec-6">
+  <div class="section-header">
+    <h2 class="section-title">6. Distributed Transactions</h2>
+  </div>
+
+  <h3 id="2pc">2PC Internals</h3>
+  <p>Two-Phase Commit (2PC) is the classic algorithm for achieving atomic commitment across multiple nodes. It involves a <strong>coordinator</strong> and multiple <strong>participants</strong>:</p>
+
+  <h4>Phase 1 (Voting)</h4>
+  <ol>
+    <li>The coordinator writes a <em>prepare</em> record to its durable log.</li>
+    <li>The coordinator sends <code>PREPARE</code> messages to all participants.</li>
+    <li>Each participant receives the message, forces all transaction changes to its local WAL (making them durable), acquires necessary locks, and replies <code>YES</code> (prepared successfully) or <code>NO</code> (failed).</li>
+  </ol>
+
+  <h4>Phase 2 (Commit/Abort)</h4>
+  <ol>
+    <li>If all participants voted <code>YES</code>, the coordinator writes a commit record and sends <code>COMMIT</code> messages.</li>
+    <li>If any participant voted <code>NO</code>, the coordinator writes an abort record and sends <code>ABORT</code> messages.</li>
+    <li>Participants acknowledge receipt and release locks.</li>
+  </ol>
+
+  <div class="callout danger">
+    <div class="callout-title">⚠ 2PC Fatal Flaw</div>
+    <p>Once a participant votes YES, it is bound to commit or abort based on the coordinator's decision. If the coordinator crashes after sending <code>PREPARE</code> but before completing Phase 2, <mark>participants holding locks must wait for the coordinator to recover</mark>. This blocking window during coordinator failure is 2PC's fundamental limitation.</p>
+  </div>
+
+  <h4>Recovery Scenarios</h4>
+  <ul>
+    <li>If the coordinator crashes before sending <code>PREPARE</code>, it aborts on recovery.</li>
+    <li>If it crashes after receiving all votes but before sending decisions, it reads its log on recovery and re-sends the decisions.</li>
+    <li>If a participant crashes and recovers, it examines its log: if it has a <code>PREPARED</code> record but no final decision, it contacts the coordinator to learn the outcome (or blocks if the coordinator is down).</li>
+  </ul>
+
+  <hr class="sep">
+
+  <h3 id="3pc">3PC Tradeoffs</h3>
+  <p>Three-Phase Commit attempts to solve 2PC's blocking problem by adding an additional phase:</p>
+  <ol>
+    <li><strong>Phase 1:</strong> CanCommit? (Coordinator asks participants if they are able to commit — no durable writes yet)</li>
+    <li><strong>Phase 2:</strong> PreCommit (Coordinator sends pre-commit; participants acknowledge and write to WAL)</li>
+    <li><strong>Phase 3:</strong> DoCommit (Coordinator sends final commit)</li>
+  </ol>
+  <p>3PC assumes synchronous communication and bounded network delays — assumptions that violate the asynchronous system model of real distributed systems. In practice, 3PC is rarely used because:</p>
+  <ul>
+    <li>It doubles message latency (three round-trips vs. two).</li>
+    <li>It does not actually solve blocking under real network partitions (the FLP impossibility result shows consensus is impossible in asynchronous systems with even one faulty process).</li>
+    <li>It adds complexity without practical reliability gains.</li>
+  </ul>
+
+  <hr class="sep">
+
+  <h3 id="saga">Saga Pattern</h3>
+  <p>The Saga pattern accepts that ACID across distributed services is often infeasible and instead models a long-lived transaction as a sequence of <strong>local transactions</strong>, each with a <strong>compensating transaction</strong> to undo its effects if the saga fails.</p>
+  <p>For example, in an e-commerce system:</p>
+  <ul>
+    <li>T1: Reserve payment → C1: Refund payment</li>
+    <li>T2: Create order → C2: Cancel order</li>
+    <li>T3: Reserve inventory → C3: Release inventory</li>
+  </ul>
+  <p>If T3 fails, the saga executes C2 and C1, rolling back the prior steps. Sagas are <mark>eventually consistent</mark> and require the application to handle intermediate states. They are the dominant pattern in microservices architecture because they avoid distributed locking and coordinator bottlenecks.</p>
+
+  <h4>Saga Implementations</h4>
+  <ul>
+    <li><strong>Choreography:</strong> Each service emits events that trigger the next step. Decentralized but harder to trace.</li>
+    <li><strong>Orchestration:</strong> A central saga manager coordinates steps. Easier to monitor but introduces a single point of failure.</li>
+  </ul>
+
+  <div class="callout success">
+    <div class="callout-title">✅ Sentry Application</div>
+    <p>In Sentry's context, a user deletion saga might need to: delete from PostgreSQL, delete from ClickHouse, remove from Redis, and purge from object storage. Each step has a compensating action, and the system must handle partial failures gracefully.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="consensus">Consensus-Based Approaches</h3>
+  <p>Modern distributed databases (Spanner, CockroachDB, TiDB) use consensus algorithms (Paxos, Raft) to replicate transaction logs across nodes. Rather than 2PC across independent databases, they maintain a replicated state machine where all nodes in a shard process the same transaction log in the same order.</p>
+  <p><strong>Raft</strong> (the more understandable alternative to Paxos) elects a leader that accepts writes, appends them to its log, and replicates them to followers. A write is committed once a majority of nodes acknowledge it. If the leader fails, a new leader is elected from nodes with the most up-to-date log.</p>
+  <p>This provides <mark>linearizability (strong consistency)</mark> within a shard without the blocking problems of 2PC, because the "coordinator" (leader) is itself a replicated entity that can fail over. The trade-off is latency: writes require round-trips to a majority, making cross-region consensus slow (typically 100–500ms depending on distance).</p>
+</section>
+
+<!-- SECTION 7 -->
+<section id="sec-7">
+  <div class="section-header">
+    <h2 class="section-title">7. Locking and Concurrency Control</h2>
+  </div>
+
+  <h3 id="lock-types">Lock Types and Granularity</h3>
+  <p>Databases implement multiple lock types to balance concurrency with correctness:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Lock Type</th>
+          <th>Description</th>
+          <th>Compatibility</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Shared (S-lock)</td><td>Acquired for reads</td><td>Compatible with other S-locks</td></tr>
+        <tr><td>Exclusive (X-lock)</td><td>Acquired for writes</td><td>Incompatible with S-locks and other X-locks</td></tr>
+        <tr><td>Intent Locks</td><td>Hierarchical — signals finer-grained locks exist below</td><td>Prevents conflicting table-level locks</td></tr>
+        <tr><td>Update Locks</td><td>Hybrid between S and X, used for SELECT FOR UPDATE</td><td>Prevents deadlock on read-then-upgrade pattern</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Lock Granularity ranges from coarse (table locks, cheap to acquire but low concurrency) to fine (row locks, expensive to manage but high concurrency). Modern databases use <strong>lock escalation</strong> (promoting many row locks to a single table lock when row lock overhead becomes excessive) and <strong>latches</strong> (lightweight in-memory locks protecting internal data structures like buffer pool pages, distinct from transaction locks).</p>
+
+  <hr class="sep">
+
+  <h3 id="mvcc">MVCC Internals</h3>
+  <p>Multi-Version Concurrency Control is the mechanism that allows <mark>readers to not block writers and writers to not block readers</mark>. Instead of locking rows, the database maintains multiple versions of each row, each tagged with the transaction ID (XID) that created it.</p>
+
+  <h4>PostgreSQL's MVCC Implementation</h4>
+  <ul>
+    <li>Every row has system columns <code>xmin</code> (transaction ID that inserted the row) and <code>xmax</code> (transaction ID that deleted/updated it; 0 if live).</li>
+    <li>Every transaction gets a snapshot at its start, recording the current XID counter and the set of active transactions.</li>
+    <li>When a transaction reads a row, it checks visibility: the row is visible if <code>xmin</code> is committed before the snapshot and <code>xmax</code> is either 0 or a transaction that aborted or committed after the snapshot.</li>
+    <li>When a transaction updates a row, it does not overwrite the existing tuple. Instead, it creates a new tuple version with <code>xmin = current XID</code> and sets <code>xmax</code> of the old tuple.</li>
+  </ul>
+  <p>This means <mark>UPDATE is effectively DELETE + INSERT at the storage layer</mark>. The old versions become "dead tuples" that must be reclaimed by VACUUM. MVCC eliminates read locks entirely but introduces storage overhead (multiple versions) and cleanup overhead (vacuuming).</p>
+
+  <hr class="sep">
+
+  <h3 id="isolation">Isolation Levels</h3>
+  <p>The SQL standard defines four isolation levels based on which phenomena are permitted:</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Level</th>
+          <th>Dirty Read</th>
+          <th>Non-Repeatable</th>
+          <th>Phantom</th>
+          <th>Write Skew</th>
+          <th>Implementation Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Read Uncommitted</td><td style="color:var(--coral)">Yes</td><td style="color:var(--coral)">Yes</td><td style="color:var(--coral)">Yes</td><td style="color:var(--coral)">Yes</td><td>None</td></tr>
+        <tr><td>Read Committed</td><td style="color:var(--teal)">No</td><td style="color:var(--coral)">Yes</td><td style="color:var(--coral)">Yes</td><td style="color:var(--coral)">Yes</td><td>Low</td></tr>
+        <tr><td>Repeatable Read</td><td style="color:var(--teal)">No</td><td style="color:var(--teal)">No</td><td style="color:var(--gold)">Sometimes</td><td style="color:var(--coral)">Yes</td><td>Medium</td></tr>
+        <tr><td>Serializable</td><td style="color:var(--teal)">No</td><td style="color:var(--teal)">No</td><td style="color:var(--teal)">No</td><td style="color:var(--teal)">No</td><td>High (aborts)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h4>Level Descriptions</h4>
+  <ul>
+    <li><strong>READ UNCOMMITTED:</strong> Transactions may read changes made by concurrent transactions before they commit (dirty reads). Rarely used in practice.</li>
+    <li><strong>READ COMMITTED:</strong> A transaction sees only committed data. However, executing the same query twice may yield different results. This is the <mark>default in PostgreSQL</mark>.</li>
+    <li><strong>REPEATABLE READ:</strong> A transaction sees a consistent snapshot as of its start time. Re-executing the same query always yields the same results.</li>
+    <li><strong>SERIALIZABLE:</strong> The highest level, guaranteeing that concurrent transactions execute as if serialized. PostgreSQL implements this via Serializable Snapshot Isolation (SSI), which detects serialization conflicts and aborts one transaction.</li>
+  </ul>
+
+  <div class="callout insight">
+    <div class="callout-title">⚙ Staff-Level Insight</div>
+    <p>Most OLTP systems run on READ COMMITTED and handle consistency at the application level (optimistic locking, idempotency keys) because SERIALIZABLE is often 2–10x slower and experiences high abort rates under contention.</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3 id="deadlock">Deadlock Handling</h3>
+  <p>Deadlocks occur when two or more transactions wait indefinitely for each other's locks. For example:</p>
+  <ul>
+    <li>T1 locks row A, requests row B.</li>
+    <li>T2 locks row B, requests row A.</li>
+  </ul>
+  <p>Databases detect deadlocks via <strong>wait-for graphs</strong> — directed graphs where nodes are transactions and edges represent lock waits. If a cycle is detected, the database selects a victim transaction (typically the one with the least work invested) and aborts it. The client must retry.</p>
+  <p>Prevention strategies include:</p>
+  <ul>
+    <li><strong>Lock ordering:</strong> Always acquire locks in a global order (e.g., by primary key). This eliminates cycles but requires application discipline.</li>
+    <li><strong>Timeouts:</strong> Abort transactions waiting longer than a threshold. Simple but may abort transactions unnecessarily.</li>
+    <li><strong>Pre-declaration:</strong> Acquire all needed locks at the start. Rarely practical for complex transactions.</li>
+  </ul>
+</section>
+
+<!-- SECTION 8 -->
+<section id="sec-8">
+  <div class="section-header">
+    <h2 class="section-title">8. Additional Staff-Level Topics</h2>
+  </div>
+
+  <h3 id="wal">WAL and Crash Recovery</h3>
+  <p>The Write-Ahead Log is the fundamental mechanism ensuring durability and atomicity. All modifications are written to an append-only log before being applied to data pages. The WAL is organized into records, each with a <strong>Log Sequence Number (LSN)</strong>.</p>
+
+  <h4>Checkpointing</h4>
+  <p>Periodically, the database performs a checkpoint, flushing all dirty data pages to disk and recording the checkpoint LSN. After a crash, recovery starts from the last checkpoint LSN and replays WAL records (redoing committed transactions and undoing uncommitted ones). Checkpoints must balance frequency: frequent checkpoints reduce recovery time but increase I/O load; infrequent checkpoints risk long recovery times.</p>
+
+  <h4>Full Page Writes</h4>
+  <p>In PostgreSQL, during the first modification of a page after a checkpoint, the entire page image is written to the WAL. This protects against <strong>torn pages</strong> — partial writes that can occur if the OS crashes while writing an 8KB page (since disk sectors are typically 512 bytes or 4KB). This doubles WAL volume during heavy write loads but is essential for crash safety on non-atomic storage.</p>
+
+  <hr class="sep">
+
+  <h3 id="replication">Replication</h3>
+
+  <h4>Physical Replication (Streaming Replication)</h4>
+  <p>The primary node ships WAL records to standbys, which apply them byte-for-byte. This creates an exact binary copy. <strong>Synchronous replication</strong> waits for at least one standby to acknowledge writes before committing, providing <mark>RPO=0 (zero data loss)</mark> at the cost of write latency. <strong>Asynchronous replication</strong> acknowledges immediately, maximizing performance but risking data loss on primary failure.</p>
+
+  <h4>Logical Replication</h4>
+  <p>Decodes WAL records into logical changes (row inserts/updates/deletes) and streams them. This allows replication between different versions, selective table replication, and replication to non-PostgreSQL targets. It operates at the row level and can handle conflicts.</p>
+
+  <h4>Replication Lag</h4>
+  <p>Standbys may fall behind during heavy write loads. Lag is measured in bytes (WAL lag) or time. Applications must handle lag by routing reads to the primary when fresh data is required, or accepting stale reads from standbys.</p>
+
+  <hr class="sep">
+
+  <h3 id="pooling">Connection Pooling</h3>
+  <p>Database connections are expensive (processes or threads, memory allocation, catalog caching). At scale, direct per-client connections exhaust database resources. Connection pooling (via PgBouncer, RDS Proxy, or application pools) multiplexes many client connections over fewer database connections.</p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Mode</th><th>Assignment</th><th>Sharing</th><th>Breaks</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Session pooling</td><td>Client gets dedicated backend for entire session</td><td>Low</td><td>Nothing</td></tr>
+        <tr><td>Transaction pooling</td><td>Backend assigned per transaction, then returned</td><td>High</td><td>Prepared statements, advisory locks, SET</td></tr>
+        <tr><td>Statement pooling</td><td>Rotating backends per statement</td><td>Extreme</td><td>Most session semantics</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>At Staff level, <mark>transaction pooling is usually preferred</mark> for stateless application servers, but requires careful application design (no session state in the database).</p>
+
+  <hr class="sep">
+
+  <h3 id="vacuum">Vacuum and Bloat</h3>
+  <p>In PostgreSQL, UPDATE and DELETE do not immediately reclaim space. They leave <strong>dead tuples</strong> that accumulate as <strong>bloat</strong> — wasted space in tables and indexes. The autovacuum daemon scans tables, marks dead tuples as reusable space in the free space map (FSM), and updates visibility maps.</p>
+  <p>If autovacuum cannot keep up (e.g., massive bulk loads, long-running transactions holding back the cleanup horizon), bloat grows indefinitely, degrading performance and wasting storage. Manual intervention (<code>VACUUM FULL</code>, which rewrites the table exclusively, or <code>pg_repack</code> for online rewriting) becomes necessary.</p>
+
+  <div class="callout danger">
+    <div class="callout-title">⚠ Transaction ID Wraparound</div>
+    <p>PostgreSQL uses 32-bit transaction IDs that wrap around after ~2 billion. If a table is not vacuumed before wraparound, <mark>the database must shut down to prevent data loss</mark>. This is a critical operational monitoring metric: <code>age(datfrozenxid)</code>.</p>
+  </div>
+</section>
+
+<!-- SECTION 9 -->
+<section id="sec-9">
+  <div class="section-header">
+    <h2 class="section-title">9. Staff-Level Interview Questions</h2>
+  </div>
+
+  <h3>UUID vs Sequential PKs</h3>
+  <p>Sequential primary keys (BIGINT, auto-increment) provide locality: new rows are appended at the end of the table, minimizing page splits and maximizing cache locality. They are compact (8 bytes) and efficient for indexing. However, they leak insertion rates (competitors can estimate your growth), complicate multi-master replication (sequence conflicts), and create hot spots in distributed systems (all writes go to the "latest" shard).</p>
+  <p>UUIDv4 (random) eliminates hot spots and leakage but causes severe index fragmentation: every insertion hits a random page in the B-Tree, causing constant page splits, low fillfactor, and poor cache locality. Index sizes can grow 2–3x larger than sequential keys.</p>
+  <p><mark>UUIDv7</mark> (recently standardized) combines the best of both: the first 48 bits are a Unix timestamp (millisecond precision), followed by random bits. This provides time-ordering (locality) while retaining uniqueness and privacy. For Sentry's event storage, UUIDv7 would provide better insertion locality than random UUIDs while avoiding the distributed coordination of sequences. The trade-off is storage size: UUIDs are 16 bytes vs. 8 bytes for BIGINT, doubling index size and reducing cache effectiveness.</p>
+
+  <hr class="sep">
+
+  <h3>Hash Join vs Nested Loop</h3>
+  <p>The interview nuance is: given a query joining a 10-row table to a 10-million-row table, the optimal plan is a <strong>nested loop with an index on the large table</strong> (10 index lookups). A hash join would require scanning and hashing the 10-million-row table, which is catastrophically worse. <mark>The Staff Engineer must demonstrate that algorithm choice is data-dependent, not rule-based.</mark></p>
+
+  <hr class="sep">
+
+  <h3>MVCC Explanation</h3>
+  <p>The candidate should explain tuple versioning, snapshot acquisition, visibility rules, and the cleanup problem (dead tuples, vacuum). They should contrast PostgreSQL's approach (dead tuples in heap, vacuum cleanup) with InnoDB's (undo log in rollback segments, background purge).</p>
+
+  <hr class="sep">
+
+  <h3>Write Skew</h3>
+  <p>Write skew is the anomaly that occurs under snapshot isolation (REPEATABLE READ). Two transactions read the same data, make disjoint modifications based on what they read, and both commit. Individually, each transaction is consistent, but together they violate a constraint.</p>
+  <div class="callout warning">
+    <div class="callout-title">Classic Example: Hospital On-Call</div>
+    <p>A hospital requires at least one doctor on call. Two doctors, Alice and Bob, are on call. Both simultaneously check and see the other is on call. Both decide to go off call. Both commit. <mark>Now no one is on call.</mark></p>
+    <p>Serializable isolation prevents this via SSI. At the application level, it can be prevented by using <code>SELECT FOR UPDATE</code> or by materializing the constraint (e.g., updating a dummy row that both transactions must lock).</p>
+  </div>
+
+  <hr class="sep">
+
+  <h3>Pagination Tradeoffs</h3>
+  <p>OFFSET/LIMIT is simple but O(n) and unstable. Keyset pagination is O(log n) and stable but cannot jump to arbitrary pages and requires immutable ordering. In distributed systems, deep pagination requires scatter-gather and is often prohibitive. The correct answer is usually: <mark>"We use keyset pagination for production APIs, restrict deep pagination in UI, and use pre-aggregated counters or search indexes for analytics pagination."</mark></p>
+</section>
+
+<!-- SECTION 10 -->
+<section id="sec-10">
+  <div class="section-header">
+    <h2 class="section-title">10. Quick Reference Cheat Sheet</h2>
+  </div>
+
+  <h3>Index Selection Guide</h3>
+  <ul>
+    <li><strong>High-cardinality equality filters:</strong> B-Tree index.</li>
+    <li><strong>Range queries:</strong> B-Tree index on the range column.</li>
+    <li><strong>Text search:</strong> GIN (Generalized Inverted Index) for PostgreSQL full-text search, or specialized engines (Elasticsearch).</li>
+    <li><strong>JSONB containment:</strong> GIN index with <code>jsonb_path_ops</code>.</li>
+    <li><strong>Geospatial:</strong> GiST or SP-GiST indexes.</li>
+    <li><strong>Write-heavy, read-light:</strong> Minimize indexes; consider partial indexes for critical queries.</li>
+    <li><strong>Covering queries:</strong> Include all selected columns in the index (<code>INCLUDE</code> clause in PostgreSQL 11+).</li>
+  </ul>
+
+  <hr class="sep">
+
+  <h3>Performance Tuning Priorities</h3>
+  <ol>
+    <li><strong>Schema &amp; Queries:</strong> Proper data types, avoid N+1 queries, use covering indexes.</li>
+    <li><strong>Connection Management:</strong> Pool size ≈ <code>(core_count * 2) + effective_spindle_count</code>; use transaction pooling.</li>
+    <li><strong>Memory:</strong> <code>shared_buffers</code> (typically 25% of RAM); <code>work_mem</code> (per-operation sort/hash memory; too high causes swapping, too low causes disk spills).</li>
+    <li><strong>Storage:</strong> SSD/NVMe for random I/O; tune <code>random_page_cost</code> to 1.1 for SSDs.</li>
+    <li><strong>Concurrency:</strong> Tune autovacuum aggressiveness; monitor lock waits and deadlocks.</li>
+    <li><strong>Replication:</strong> Use read replicas for analytical queries; monitor replication lag.</li>
+  </ol>
+</section>
+
+<!-- ============================= PART II ============================= -->
+<div class="part-header" style="position:relative; margin-top:80px;">
+  <div class="part-label">Part II</div>
+  <div class="part-title">Error Tracking System (Sentry) — Staff/Principal/Distinguished Level</div>
+  <div class="part-number">II</div>
+</div>
+
+<p>Now we apply the foundational database theory to a concrete, large-scale system. Sentry is an error tracking and performance monitoring platform that ingests billions of events daily from millions of applications. At the L7/L8 level, you are not designing a toy system — you are reasoning about a production platform serving 1B+ users indirectly.</p>
+
+<!-- PILLAR 1 -->
+<div class="pillar-header" id="pillar-1">
+  <div class="pillar-num">Pillar 1</div>
+  <div class="pillar-title">Requirements &amp; API Design</div>
+  <div class="pillar-bg-num">1</div>
+</div>
+
+<h3>Functional Requirements</h3>
+<p>An error tracking system must accept events (errors, exceptions, transactions, replays) from client SDKs, process them into issues (grouped occurrences of the same error), and provide a web UI and API for developers to query, triage, and resolve these issues.</p>
+<p>The core entities are:</p>
+<ul>
+  <li><strong>Organization:</strong> The billing and administrative unit (e.g., "Google," "Acme Corp").</li>
+  <li><strong>Project:</strong> A logical application within an organization (e.g., "Google Search Frontend").</li>
+  <li><strong>Event:</strong> A single occurrence — an exception with stack trace, context, tags, and metadata.</li>
+  <li><strong>Issue (Group):</strong> A deduplicated cluster of events sharing the same "fingerprint" (derived from stack trace, exception type, and grouping rules).</li>
+  <li><strong>Release:</strong> A software version, used for regression detection and suspect commit identification.</li>
+</ul>
+
+<p>The ingestion API must support:</p>
+<ul>
+  <li>Event submission: <code>POST /api/{project_id}/store/</code> with a JSON payload.</li>
+  <li>Envelope protocol: A structured format supporting multiple items (events, attachments, sessions) in one request, with chunked transfer encoding for large payloads.</li>
+  <li>DSN (Data Source Name): A URL containing the project public key, used for authentication and routing.</li>
+</ul>
+
+<h3>Non-Functional Requirements</h3>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Requirement</th><th>Target</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Ingestion throughput</td><td>100,000+ events/second globally, with burst handling</td></tr>
+      <tr><td>Query latency</td><td>P95 &lt; 200ms for issue list; P95 &lt; 2s for complex aggregates over 30 days</td></tr>
+      <tr><td>Availability (ingestion)</td><td>99.99% — events cannot be lost during outages</td></tr>
+      <tr><td>Availability (web UI)</td><td>99.9%</td></tr>
+      <tr><td>Durability</td><td>WAL or replicated stream persistence before acknowledgment</td></tr>
+      <tr><td>Data retention</td><td>90 days default for events; issue metadata retained longer</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>API Design Deep Dive</h3>
+
+<div class="code-wrapper">
+  <div class="code-header">
+    <span class="code-lang">JSON — Event Payload</span>
+    <button class="code-copy" onclick="copyCode(this)">Copy</button>
+  </div>
+  <pre><code>{
+  <span class="str">"event_id"</span>: <span class="str">"uuid"</span>,
+  <span class="str">"timestamp"</span>: <span class="str">"2026-05-14T12:00:00Z"</span>,
+  <span class="str">"platform"</span>: <span class="str">"python"</span>,
+  <span class="str">"level"</span>: <span class="str">"error"</span>,
+  <span class="str">"logger"</span>: <span class="str">"myapp.views"</span>,
+  <span class="str">"transaction"</span>: <span class="str">"/api/checkout"</span>,
+  <span class="str">"exception"</span>: {<span class="str">"values"</span>: [{<span class="str">"type"</span>: <span class="str">"ValueError"</span>, <span class="str">"value"</span>: <span class="str">"..."</span>, <span class="str">"stacktrace"</span>: {...}}]},
+  <span class="str">"tags"</span>: {<span class="str">"environment"</span>: <span class="str">"production"</span>, <span class="str">"version"</span>: <span class="str">"1.2.3"</span>},
+  <span class="str">"contexts"</span>: {<span class="str">"trace"</span>: {<span class="str">"trace_id"</span>: <span class="str">"..."</span>, <span class="str">"span_id"</span>: <span class="str">"..."</span>}}
+}</code></pre>
+</div>
+
+<p>The API must be <strong>idempotent</strong> — if the SDK retries due to network timeout, the system must not create duplicate events. This is achieved by the client generating a UUIDv7 event ID and the ingestion layer (Relay) deduplicating based on a short-term cache of seen IDs.</p>
+<p>Rate limiting is critical: each project has a quota (e.g., 50,000 events/hour). The API must reject events with a <code>429 Too Many Requests</code> and a <code>Retry-After</code> header, while providing client-side sampling recommendations.</p>
+
+<!-- PILLAR 2 -->
+<div class="pillar-header" id="pillar-2">
+  <div class="pillar-num">Pillar 2</div>
+  <div class="pillar-title">Event Ingestion &amp; Stream Processing</div>
+  <div class="pillar-bg-num">2</div>
+</div>
+
+<h3>Architecture: Relay, Kafka, and Consumers</h3>
+<p>Sentry's ingestion architecture follows the <mark>edge-buffer-core pattern</mark>:</p>
+
+<h4>Edge Layer (Relay)</h4>
+<p>Relay is Sentry's edge proxy, written in Rust. It runs in multiple regions close to clients. Its responsibilities are:</p>
+<ul>
+  <li><strong>Authentication:</strong> Validates the DSN (public key) and project configuration.</li>
+  <li><strong>Rate Limiting:</strong> Enforces per-project quotas using a token bucket algorithm backed by Redis.</li>
+  <li><strong>PII Scrubbing:</strong> Applies data scrubbing rules (regex-based) to remove sensitive information (passwords, credit cards, tokens) before events enter the core infrastructure.</li>
+  <li><strong>Normalization:</strong> Validates JSON schema, normalizes timestamps, enforces size limits (e.g., stack traces truncated to 250 frames), and extracts metrics.</li>
+  <li><strong>Batched Writes:</strong> Buffers events and writes them to Kafka in batches for efficiency.</li>
+</ul>
+<p>Relay is stateless and horizontally scalable. It uses <strong>backpressure</strong> — if Kafka is slow, Relay stops reading from clients, causing their TCP buffers to fill and naturally slowing them down.</p>
+
+<h4>Buffer Layer (Kafka)</h4>
+<p>Apache Kafka acts as the durable, replicated buffer between ingestion and processing. Events are written to a topic (e.g., <code>ingest-events</code>) with partitioning by <code>project_id</code> (ensuring per-project ordering). Kafka provides:</p>
+<ul>
+  <li><strong>Durability:</strong> Events are replicated across 3 brokers before Relay acknowledges the client.</li>
+  <li><strong>Decoupling:</strong> The ingestion rate and processing rate can differ temporarily.</li>
+  <li><strong>Replay:</strong> If downstream processors have bugs, they can be rewound and replayed from Kafka.</li>
+</ul>
+<p>The choice of Kafka over a simple queue (RabbitMQ, SQS) is deliberate: Kafka's log-based model provides higher throughput, better retention, and consumer group semantics that allow multiple independent consumer groups to read the same stream.</p>
+
+<h4>Processing Layer (Consumers)</h4>
+<p>Multiple consumer groups read from Kafka:</p>
+<ul>
+  <li><strong>Event Consumer:</strong> Deserializes events, runs grouping algorithms, writes event data to object storage and metadata to PostgreSQL/ClickHouse.</li>
+  <li><strong>Post-Process Consumer:</strong> Handles issue state transitions (new issue, regression, resolved), triggers alerts, and updates search indexes.</li>
+  <li><strong>Metrics Consumer:</strong> Extracts span metrics, trace metrics, and custom metrics into time-series storage.</li>
+  <li><strong>Attachment Consumer:</strong> Handles large files (replays, profiles) uploaded alongside events.</li>
+</ul>
+
+<h3>Grouping Algorithm</h3>
+<p>Grouping is the process of converting an event into an issue fingerprint. This is a deterministic hash of normalized attributes:</p>
+<ul>
+  <li><em>For exceptions:</em> the exception type, stripped stack trace (module names, function names, line numbers; but not absolute file paths).</li>
+  <li><em>For transactions:</em> the transaction name and op-code.</li>
+</ul>
+<p>The algorithm must be stable (the same error always groups to the same issue) but adaptable (if a code change shifts line numbers, the issue should not fragment). Sentry uses multiple strategies: legacy grouping by stack trace, "new" grouping by in-app frames only, and AI-powered dynamic grouping that uses machine learning to cluster similar-looking issues.</p>
+
+<h3>Stream Processing Trade-offs</h3>
+<div class="tradeoff-grid">
+  <div class="tradeoff-card">
+    <h5 style="color:var(--accent)">Ordering vs. Parallelism</h5>
+    <p>Kafka partitions provide per-project ordering, but global ordering is impossible at scale. Two events for the same issue arriving on different partitions may temporarily have inconsistent counters until asynchronous reconciliation.</p>
+  </div>
+  <div class="tradeoff-card">
+    <h5 style="color:var(--teal)">Exactly-Once Semantics</h5>
+    <p>Kafka supports exactly-once delivery via idempotent producers and transactional consumers. Sentry opts for at-least-once delivery with idempotent writes (upserts on event ID) because 2PC across Kafka and PostgreSQL would introduce unacceptable latency.</p>
+  </div>
+  <div class="tradeoff-card">
+    <h5 style="color:var(--amber)">Schema Evolution</h5>
+    <p>The event schema evolves constantly as SDKs add new fields. The processing layer uses a schema registry to enforce backward and forward compatibility. Unknown fields are passed through opaquely to prevent data loss.</p>
+  </div>
+  <div class="tradeoff-card">
+    <h5 style="color:var(--gold)">Hot Partition Problem</h5>
+    <p>Partitioning by project_id means a viral project can create a hot partition. Mitigation: large number of partitions (thousands) to reduce hot spot probability, or sub-partitioning by event_id within a project.</p>
+  </div>
+</div>
+
+<!-- PILLAR 3 -->
+<div class="pillar-header" id="pillar-3">
+  <div class="pillar-num">Pillar 3</div>
+  <div class="pillar-title">Storage Architecture &amp; Data Model</div>
+  <div class="pillar-bg-num">3</div>
+</div>
+
+<h3>The Dual-Storage Strategy</h3>
+<p>Sentry employs a <mark>polyglot persistence architecture</mark>, which is the correct Staff-level answer for any system with heterogeneous access patterns:</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Store</th><th>Data</th><th>Access Pattern</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>PostgreSQL</strong></td>
+        <td>Organizations, projects, users, issue state, alert rules</td>
+        <td>OLTP: small rows, frequent updates, strong consistency</td>
+        <td>ACID, complex relational queries, mutable metadata</td>
+      </tr>
+      <tr>
+        <td><strong>ClickHouse (Snuba)</strong></td>
+        <td>Raw event attributes, tags, spans, metrics</td>
+        <td>OLAP: massive volume, append-only, aggregate-heavy</td>
+        <td>Columnar compression (10:1), vectorized analytics</td>
+      </tr>
+      <tr>
+        <td><strong>Redis</strong></td>
+        <td>Rate limiting, config cache, real-time counts, deduplication</td>
+        <td>Caching &amp; coordination</td>
+        <td>Sub-millisecond latency, HyperLogLog, atomic ops</td>
+      </tr>
+      <tr>
+        <td><strong>Object Storage (S3/GCS)</strong></td>
+        <td>Raw event payloads, attachments, replays</td>
+        <td>Write-once, read-rarely</td>
+        <td>Infinite scale, $0.023/GB; payloads can be 100KB+</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>PostgreSQL Schema Deep Dive</h3>
+<p>The core tables demonstrate advanced relational modeling:</p>
+<ul>
+  <li><code>sentry_project</code>: Project metadata, DSN configuration, grouping settings.</li>
+  <li><code>sentry_groupedmessage</code> (the "Issue" table): Contains <code>status</code>, <code>priority</code>, <code>times_seen</code>, <code>last_seen</code>, <code>first_seen</code>, <code>score</code>. This table is heavily contended.</li>
+  <li><code>sentry_eventmapping</code>: Maps event IDs to group IDs and project IDs.</li>
+  <li><code>sentry_userreport</code>: User feedback linked to issues.</li>
+</ul>
+<p>The <code>sentry_groupedmessage</code> table illustrates the <strong>write hotspot problem</strong>: a viral issue receiving 10,000 events/second causes constant updates to the same row. PostgreSQL's row-level locking means these updates serialize. Sentry mitigates this by:</p>
+<ul>
+  <li>Counter buffering in Redis (per-issue counters with 10-second TTL)</li>
+  <li>Batch updates: flushing to PostgreSQL every 5 seconds via <code>UPDATE ... SET times_seen = times_seen + 50</code></li>
+  <li>Advisory locks to serialize flushes per group ID</li>
+</ul>
+
+<h3>ClickHouse / Snuba Deep Dive</h3>
+<p>ClickHouse is a columnar OLAP database using the MergeTree engine family (an LSM-Tree variant optimized for time-series). Data is partitioned by time and ordered by a primary key (typically <code>(project_id, timestamp, event_id)</code>).</p>
+
+<h4>MergeTree Mechanics</h4>
+<ul>
+  <li>Data is stored in <strong>parts</strong> — immutable, compressed column files.</li>
+  <li>Background merges combine smaller parts into larger ones, applying sort order and compression.</li>
+  <li><code>ReplacingMergeTree</code> is used for event data: if the same event ID is written twice (e.g., retry), the merge process eventually keeps only the latest version.</li>
+</ul>
+
+<div class="code-wrapper">
+  <div class="code-header">
+    <span class="code-lang">SQL — ClickHouse Schema</span>
+    <button class="code-copy" onclick="copyCode(this)">Copy</button>
+  </div>
+  <pre><code><span class="kw">CREATE TABLE</span> events (
+    project_id <span class="type">UInt64</span>,
+    timestamp  <span class="type">DateTime64</span>(<span class="num">6</span>),
+    event_id   <span class="type">UUID</span>,
+    group_id   <span class="type">UInt64</span>,
+    platform   <span class="type">LowCardinality(String)</span>,
+    level      <span class="type">LowCardinality(String)</span>,
+    tags       <span class="type">Nested</span>(key <span class="type">String</span>, value <span class="type">String</span>),
+    message    <span class="type">String</span>,
+    <span class="cmt">-- ... many columns</span>
+) <span class="kw">ENGINE</span> = MergeTree()
+<span class="kw">PARTITION BY</span> <span class="fn">toYYYYMM</span>(timestamp)
+<span class="kw">ORDER BY</span> (project_id, timestamp, event_id);</code></pre>
+</div>
+
+<p>The <code>ORDER BY</code> clause is critical: it determines the physical sort order on disk. Queries filtering by <code>project_id</code> and <code>timestamp</code> achieve excellent pruning and cache locality. The <code>PARTITION BY</code> clause enables dropping old data (<code>ALTER TABLE ... DROP PARTITION</code>) instantly.</p>
+
+<!-- PILLAR 4 -->
+<div class="pillar-header" id="pillar-4">
+  <div class="pillar-num">Pillar 4</div>
+  <div class="pillar-title">Query Execution &amp; Retrieval Systems</div>
+  <div class="pillar-bg-num">4</div>
+</div>
+
+<h3>The Query Problem</h3>
+<p>Sentry faces a dual query load:</p>
+<ul>
+  <li><strong>OLTP Queries:</strong> "Show me the 20 unresolved issues for project X, sorted by last seen." These hit PostgreSQL.</li>
+  <li><strong>OLAP Queries:</strong> "Show me the error rate for my API over the last 24 hours, broken down by release." These hit Snuba/ClickHouse.</li>
+</ul>
+
+<h3>PostgreSQL Query Path</h3>
+
+<div class="code-wrapper">
+  <div class="code-header">
+    <span class="code-lang">SQL — Issue List Query</span>
+    <button class="code-copy" onclick="copyCode(this)">Copy</button>
+  </div>
+  <pre><code><span class="kw">SELECT</span> g.id, g.status, g.priority, g.times_seen, g.last_seen
+<span class="kw">FROM</span> sentry_groupedmessage g
+<span class="kw">WHERE</span> g.project_id = <span class="num">123</span> 
+  <span class="kw">AND</span> g.status = <span class="num">0</span>  <span class="cmt">-- unresolved</span>
+<span class="kw">ORDER BY</span> g.last_seen <span class="kw">DESC</span>
+<span class="kw">LIMIT</span> <span class="num">20</span>;</code></pre>
+</div>
+
+<p>This requires a composite index on <code>(project_id, status, last_seen DESC)</code> or, better, a covering index including <code>priority</code> and <code>times_seen</code> to avoid heap fetches. However, with millions of issues per project, even index scans become heavy. This is why partial indexes are powerful:</p>
+
+<div class="code-wrapper">
+  <div class="code-header">
+    <span class="code-lang">SQL — Partial Index</span>
+    <button class="code-copy" onclick="copyCode(this)">Copy</button>
+  </div>
+  <pre><code><span class="kw">CREATE INDEX</span> idx_unresolved <span class="kw">ON</span> sentry_groupedmessage (project_id, last_seen <span class="kw">DESC</span>) 
+<span class="kw">WHERE</span> status = <span class="num">0</span>;</code></pre>
+</div>
+
+<h3>ClickHouse / Snuba Query Path</h3>
+
+<div class="code-wrapper">
+  <div class="code-header">
+    <span class="code-lang">SQL — Snuba Analytical Query</span>
+    <button class="code-copy" onclick="copyCode(this)">Copy</button>
+  </div>
+  <pre><code><span class="kw">SELECT</span> 
+    <span class="fn">toStartOfFiveMinute</span>(timestamp) <span class="kw">as</span> bucket,
+    <span class="fn">countIf</span>(level = <span class="str">'error'</span>) / <span class="fn">count</span>() <span class="kw">as</span> error_rate,
+    <span class="fn">uniq</span>(user) <span class="kw">as</span> affected_users
+<span class="kw">FROM</span> events
+<span class="kw">WHERE</span> project_id = <span class="num">123</span> 
+  <span class="kw">AND</span> timestamp &gt;= <span class="fn">now</span>() - <span class="kw">INTERVAL</span> <span class="num">24</span> HOUR
+<span class="kw">GROUP BY</span> bucket
+<span class="kw">ORDER BY</span> bucket;</code></pre>
+</div>
+
+<p>ClickHouse executes this using <strong>vectorized processing</strong>: it reads compressed column blocks, applies predicates using SIMD instructions, and aggregates in memory. The <code>countIf</code> and <code>uniq</code> (approximate distinct count via HyperLogLog) are native, highly optimized functions.</p>
+
+<h3>Caching Strategy</h3>
+<p>Query results are cached in Redis with TTLs based on data freshness:</p>
+<ul>
+  <li>Real-time dashboards: 5-second TTL</li>
+  <li>Issue lists: 30-second TTL</li>
+  <li>Historical reports: 1-hour TTL</li>
+</ul>
+<p>Cache invalidation is time-based rather than event-based (since events arrive constantly, invalidating on every event would nullify caching).</p>
+
+<!-- PILLAR 5 -->
+<div class="pillar-header" id="pillar-5">
+  <div class="pillar-num">Pillar 5</div>
+  <div class="pillar-title">Alerting, Workflow Engine &amp; ACI</div>
+  <div class="pillar-bg-num">5</div>
+</div>
+
+<h3>Workflow Engine Architecture</h3>
+<p>In Sentry v26.x (2025–2026), the platform underwent a major migration to the <strong>Workflow Engine</strong> and ACI (Alert and Condition Interface) architecture. This separates concerns into discrete, composable components:</p>
+<ul>
+  <li><strong>Detectors:</strong> Define what to watch — a data source (errors, metrics, uptime checks), evaluation conditions (thresholds, anomaly detection), and issue creation logic.</li>
+  <li><strong>Data Sources:</strong> Abstracted streams of data feeding detectors (error events, trace metrics, custom application metrics).</li>
+  <li><strong>Workflows:</strong> Define what to do when a detector fires. Contain a trigger (detector state change) and a sequence of actions.</li>
+  <li><strong>Actions:</strong> Reusable notification and integration steps (Slack, PagerDuty, Jira).</li>
+</ul>
+
+<h3>Detector Evaluation</h3>
+<p>For metric alerts (e.g., "error rate > 5% over 5 minutes"), the detector queries pre-aggregated time-series buckets stored in ClickHouse or Redis. The evaluation happens in a dedicated alert evaluation consumer that reads from a Kafka topic of aggregated metrics. This <mark>decouples alert latency from raw event volume</mark>.</p>
+<p>For issue alerts (e.g., "new issue created"), the evaluation is event-driven: the post-process consumer emits a notification event to Kafka, and the workflow engine evaluates whether any workflows subscribe to that issue type.</p>
+
+<h3>Open Periods &amp; Metric Issues</h3>
+<p>A critical concept in the new system is the <strong>Open Period</strong>. When a detector fires, it creates an "open period" representing the active incident. The period tracks start time, duration, severity, associated events and traces, and resolution status. Open periods enable <strong>metric issues</strong> — issues created directly from metric detectors rather than individual events. This allows Sentry to represent "my checkout API has a high error rate" as a first-class issue with its own timeline, assignment, and resolution workflow.</p>
+
+<h3>AI-Powered Alerting</h3>
+<p>Recent versions have introduced AI-detected issues and <strong>Autofix</strong>. The platform uses Seer (Sentry's AI infrastructure) to:</p>
+<ul>
+  <li>Detect anomalous patterns in traces and logs that traditional threshold alerts miss.</li>
+  <li>Suggest root causes by analyzing stack traces, recent commits, and production changes.</li>
+  <li>Generate fix suggestions (Autofix) that can be reviewed and applied as pull requests.</li>
+</ul>
+
+<div class="callout insight">
+  <div class="callout-title">⚙ Trade-off: Alerting</div>
+  <p><strong>Latency vs. Accuracy:</strong> Alert evaluation must be fast (&lt;1s) but accurate. Pre-aggregated metrics sacrifice per-event granularity for speed. <strong>Alert Fatigue:</strong> The system must prevent over-alerting through grouping (one issue, one alert), deduplication windows, and escalation policies. Running Autofix on every high-volume alert is expensive — the workflow gates this on impact (e.g., &gt;1000 users/minute affected).</p>
+</div>
+
+<!-- PILLAR 6 -->
+<div class="pillar-header" id="pillar-6">
+  <div class="pillar-num">Pillar 6</div>
+  <div class="pillar-title">Distributed Systems, Consistency &amp; Multi-Region</div>
+  <div class="pillar-bg-num">6</div>
+</div>
+
+<h3>Multi-Region Architecture</h3>
+<p>The architecture follows a <strong>multi-region active-active pattern with regional affinity</strong>:</p>
+<ul>
+  <li><strong>Ingestion:</strong> Events are ingested at the nearest Relay edge (us-east, eu-west, asia-southeast). Relay validates and forwards to the regional Kafka cluster.</li>
+  <li><strong>Processing:</strong> Regional consumers process events and write to regional ClickHouse and PostgreSQL replicas.</li>
+  <li><strong>Querying:</strong> Users are routed to their "home" region (based on organization configuration) for querying, ensuring data locality.</li>
+  <li><strong>Replication:</strong> Metadata changes (issue resolution, alert configuration) are replicated across regions using PostgreSQL logical replication or the outbox pattern.</li>
+</ul>
+
+<h3>The Outbox Pattern</h3>
+<p>For cross-region metadata consistency, Sentry uses the <strong>Transactional Outbox pattern</strong>. When an issue is resolved in us-east:</p>
+<ol>
+  <li>The web application updates <code>sentry_groupedmessage</code> in the local PostgreSQL within a transaction.</li>
+  <li>In the <em>same transaction</em>, it inserts a row into an outbox table.</li>
+  <li>A background consumer reads the outbox, publishes the change to a cross-region Kafka topic.</li>
+  <li>Regional consumers in eu-west and asia-southeast apply the change to their local PostgreSQL.</li>
+</ol>
+<p>This provides <mark>eventual consistency for metadata across regions while preserving local ACID semantics</mark>. The outbox pattern is preferred over distributed transactions (2PC) because it decouples availability: if the cross-region link fails, local operations continue, and replication catches up later.</p>
+
+<h3>Consistency Models</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Data Type</th><th>Store</th><th>Consistency</th><th>Rationale</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Issue metadata</td><td>PostgreSQL</td><td>Strong within region; eventual across regions</td><td>Two engineers resolving the same issue simultaneously is rare; LWW is acceptable</td></tr>
+      <tr><td>Event counts</td><td>ClickHouse</td><td>Eventual</td><td>Counter increments are batched and asynchronous; temporary under-count is acceptable</td></tr>
+      <tr><td>Rate limiting</td><td>Redis</td><td>Approximate</td><td>Redis replicas may lag, causing slight quota overages; better to over-serve than reject</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Cells and Locality</h3>
+<p>Sentry v26.x introduced <strong>cells</strong> — units of deployment containing a subset of organizations. This allows the platform to:</p>
+<ul>
+  <li>Isolate large enterprise customers to dedicated cells (no noisy neighbors).</li>
+  <li>Perform regional data residency at the cell level.</li>
+  <li>Scale by adding cells rather than rebalancing individual shards.</li>
+</ul>
+<p>The <strong>Synapse</strong> component provides cell-aware routing and pagination, solving the distributed pagination problem by maintaining organization-to-cell mappings.</p>
+
+<!-- PILLAR 7 -->
+<div class="pillar-header" id="pillar-7">
+  <div class="pillar-num">Pillar 7</div>
+  <div class="pillar-title">Reliability Engineering &amp; Operational Excellence</div>
+  <div class="pillar-bg-num">7</div>
+</div>
+
+<h3>SLAs and Error Budgets</h3>
+<p>At Staff level, reliability is quantified. The system operates under an <strong>error budget</strong>: if the availability SLA is 99.99%, the system can be down for <mark>4.32 minutes per month</mark>. This budget is consumed by planned maintenance, deployments, and unexpected outages. When the budget is exhausted, feature launches halt until reliability improves.</p>
+
+<h3>Backpressure &amp; Circuit Breakers</h3>
+<p>The ingestion pipeline implements multiple layers of protection:</p>
+<ul>
+  <li><strong>Relay backpressure:</strong> When Kafka is saturated, Relay stops reading HTTP requests, causing client SDKs to buffer locally or drop events (with telemetry).</li>
+  <li><strong>Circuit breakers:</strong> If ClickHouse query latency exceeds a threshold, the query layer opens the circuit and returns cached or degraded results rather than cascading failure to the web tier.</li>
+  <li><strong>Load shedding:</strong> During extreme overload (e.g., DDoS, misconfigured SDK sending infinite loops), the system drops events probabilistically based on project quotas and system health metrics.</li>
+</ul>
+
+<h3>Observability</h3>
+<p>The system must monitor itself with the same rigor it monitors customer applications:</p>
+<ul>
+  <li><strong>RED Metrics:</strong> Rate (requests/sec), Errors (5xx rate), Duration (P50/P95/P99 latency) for every service.</li>
+  <li><strong>Golden Signals:</strong> Ingestion lag (Kafka consumer lag), replication lag (PostgreSQL and ClickHouse), storage capacity, vacuum bloat.</li>
+  <li><strong>Distributed Tracing:</strong> Every event is traced through Relay → Kafka → Consumers → PostgreSQL/ClickHouse/S3, with trace IDs propagated across service boundaries.</li>
+</ul>
+
+<h3>Disaster Recovery</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Objective</th><th>Metadata (PostgreSQL)</th><th>Events (Kafka/ClickHouse)</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>RPO</strong> (max data loss)</td>
+        <td>0 (synchronous replication to standby)</td>
+        <td>5 minutes (asynchronous; acceptable for error data)</td>
+      </tr>
+      <tr>
+        <td><strong>RTO</strong> (restore time)</td>
+        <td>5 minutes (DNS failover to healthy region)</td>
+        <td>2 minutes (automated failover to standby Kafka)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Vacuum &amp; Bloat in Production</h3>
+<p>Operational runbooks for PostgreSQL include:</p>
+<ul>
+  <li>Monitoring <code>pg_stat_user_tables</code> for dead tuple ratios &gt; 20%.</li>
+  <li>Adjusting <code>autovacuum_vacuum_scale_factor</code> (default 0.2) for large tables — for a 100M-row table, lowering to 0.05 or a fixed threshold.</li>
+  <li>Using <code>pg_repack</code> during low-traffic windows to rebuild bloated indexes online.</li>
+</ul>
+
+<!-- PILLAR 8 -->
+<div class="pillar-header" id="pillar-8">
+  <div class="pillar-num">Pillar 8</div>
+  <div class="pillar-title">Security, Privacy, Compliance &amp; Multi-tenancy</div>
+  <div class="pillar-bg-num">8</div>
+</div>
+
+<h3>Multi-Tenancy Isolation</h3>
+<p>Sentry is a multi-tenant SaaS. Strict isolation prevents:</p>
+<ul>
+  <li><strong>Data leakage:</strong> Organization A must never see Organization B's events. Enforced at the API layer (every query includes <code>organization_id</code> and <code>project_id</code> filters) and at the database layer (row-level security policies).</li>
+  <li><strong>Resource monopolization:</strong> Enforced via per-project rate limits, query timeouts (<code>max_execution_time</code> in ClickHouse), and resource quotas.</li>
+</ul>
+
+<h3>PII Scrubbing &amp; Data Sanitization</h3>
+<p>Privacy is architected into the ingestion pipeline:</p>
+<ul>
+  <li><strong>Server-side scrubbing:</strong> Relay applies regex-based rules to strip PII before events reach storage. Rules are configurable per project.</li>
+  <li><strong>Hashing:</strong> User IDs and IP addresses may be one-way hashed for analytics while preserving anonymity.</li>
+  <li><strong>Retention Policies:</strong> Automated jobs delete raw events after 90 days. ClickHouse partitions are dropped; S3 objects are lifecycle-managed.</li>
+</ul>
+
+<h3>GDPR Right to Erasure</h3>
+<p>When a user requests deletion, the system must:</p>
+<ol>
+  <li>Remove the user from PostgreSQL (accounts, preferences).</li>
+  <li>Purge all events containing the user's email/IP from ClickHouse (using mutations — expensive but necessary).</li>
+  <li>Delete attachments and replays from object storage.</li>
+  <li>Propagate deletion to downstream systems (Slack notifications, partner integrations).</li>
+</ol>
+<p>This is implemented as an <strong>asynchronous deletion saga</strong> with idempotent steps and compensating actions for partial failures.</p>
+
+<h3>Encryption</h3>
+<ul>
+  <li><strong>At-rest:</strong> Database volumes (EBS/GCE PD) are encrypted. Object storage (S3/GCS) uses server-side encryption (AES-256). ClickHouse data is encrypted at the filesystem level.</li>
+  <li><strong>In-transit:</strong> All service communication uses TLS 1.3. Internal service mesh provides mTLS between microservices.</li>
+  <li><strong>In-use:</strong> Sensitive fields (integration tokens, DSN secrets) are encrypted in PostgreSQL using application-level encryption (e.g., AWS KMS or HashiCorp Vault) before storage.</li>
+</ul>
+
+<!-- ============================= PART III ============================= -->
+<div class="part-header" style="position:relative; margin-top:80px;">
+  <div class="part-label">Part III</div>
+  <div class="part-title">End-to-End Real-World Simulation</div>
+  <div class="part-number">III</div>
+</div>
+
+<section id="scenario">
+  <div class="section-header">
+    <h2 class="section-title">Scenario: Black Friday E-Commerce Outage</h2>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">📋 Context</div>
+    <p>You are the Staff Engineer responsible for the error tracking infrastructure at "ShopStream," a global e-commerce platform serving 50 million users. It is Black Friday. At 09:00 UTC, the checkout service deploys a bad release (v2.5.1) that nullifies the payment gateway response handler. Errors explode.</p>
+  </div>
+
+  <!-- PHASE 1 -->
+  <div class="phase-card" id="phase-1">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 1</span>
+      <span class="phase-title">The Tsunami</span>
+      <span class="phase-time">09:00 – 09:05 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>Client Side</h4>
+      <p>The checkout service runs Sentry SDK (Python) on 5,000 Kubernetes pods. Each pod throws <code>AttributeError: 'NoneType' object has no attribute 'status_code'</code> on every checkout attempt.</p>
+
+      <h4>Ingestion</h4>
+      <p>Event volume spikes from baseline 2,000 events/sec to <mark>500,000 events/sec — a 250x burst</mark>.</p>
+
+      <h4>Relay Edge</h4>
+      <p>Regional Relays in us-east, eu-west, and asia-southeast see incoming HTTP connections spike. The token bucket rate limiters (backed by Redis) activate. ShopStream's project quota is 100,000 events/minute. Relay begins dropping excess events with <code>429 Too Many Requests</code> and <code>Retry-After: 60</code>.</p>
+
+      <h4>SDK Behavior</h4>
+      <p>The Python SDK has a local buffer (100 events) and a background thread sender. When Relay returns 429, the SDK switches to client-side sampling, dropping 99% of events locally to prevent memory bloat in the application pods. This protects the checkout service from OOM kills during the incident — a critical design trade-off (sacrificing observability completeness for application stability).</p>
+
+      <h4>Kafka Hot Partition</h4>
+      <p>Despite the rate limiting, 100,000 events/sec still enter Kafka. The <code>ingest-events</code> topic has 100 partitions. Because partitioning is by <code>project_id % 100</code>, all ShopStream events land on a single partition. This creates a <mark>hot partition</mark> — one broker handles disproportionate load.</p>
+
+      <div class="callout insight">
+        <div class="callout-title">⚙ Staff Decision: Hot Partition</div>
+        <p>Kafka preserves per-project ordering, but the hot partition limits throughput to that partition's single consumer. If we partitioned by <code>event_id</code> instead, we'd distribute load but lose ordering (events for the same issue might be processed out of order, causing incorrect counter increments). The Staff decision: accept the hot partition and scale the consumer group vertically, or implement sub-partitioning (e.g., <code>hash(project_id + event_id) % 1000</code> for ingestion, then re-order in a buffer stage).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2 -->
+  <div class="phase-card" id="phase-2">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 2</span>
+      <span class="phase-title">Grouping &amp; Issue Creation</span>
+      <span class="phase-time">09:01 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>Fingerprint Collision</h4>
+      <p>All 100,000 events/minute share the same fingerprint: <code>checkout/payment.py:process_response at line 42</code> + <code>AttributeError</code>. They map to a single issue, <code>GROUP-12345</code>.</p>
+
+      <h4>PostgreSQL Write Load</h4>
+      <p>The post-process consumer must update <code>sentry_groupedmessage</code> for <code>GROUP-12345</code>. With 100K events/minute, that's ~1,600 updates/second to the same row. PostgreSQL serializes these via row-level locks. The <code>times_seen</code> counter becomes a massive bottleneck.</p>
+
+      <h4>Mitigation Strategy</h4>
+      <p>The consumer does not update PostgreSQL on every event. Instead, it:</p>
+      <ol>
+        <li>Buffers increments in Redis (per-issue counters with 10-second TTL).</li>
+        <li>Flushes to PostgreSQL every 5 seconds via <code>UPDATE ... SET times_seen = times_seen + 50, last_seen = NOW()</code>.</li>
+        <li>Uses advisory locks to serialize flushes per group ID, preventing multiple consumers from conflicting.</li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-title">⚠ Trade-off</div>
+        <p>This introduces a 5-second lag in the issue counter. The UI shows "Seen 12,000 times" when the actual count might be 12,340. For an incident response, approximate counts are acceptable; precise counts can be reconciled later via ClickHouse aggregation.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 3 -->
+  <div class="phase-card" id="phase-3">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 3</span>
+      <span class="phase-title">Alerting &amp; Workflow Engine</span>
+      <span class="phase-time">09:02 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>Detector Evaluation</h4>
+      <p>The Workflow Engine has a detector configured: "If error rate on checkout transaction &gt; 1% for 5 minutes, page the on-call engineer." The metrics consumer reads events and updates time-series counters in Redis/ClickHouse: <code>errors_per_minute{transaction="checkout", release="v2.5.1"}</code>.</p>
+
+      <h4>Threshold Breach</h4>
+      <p>At 09:02, the 5-minute rolling window shows <mark>95% error rate</mark>. The detector fires, creating a metric issue (new in Sentry v26.x) titled "High error rate in checkout."</p>
+
+      <h4>Workflow Execution</h4>
+      <p>The workflow associated with this detector triggers:</p>
+      <ul>
+        <li><strong>PagerDuty:</strong> High-urgency page sent to the SRE rotation.</li>
+        <li><strong>Slack:</strong> Message to #incidents channel with a link to the issue.</li>
+        <li><strong>Autofix:</strong> The AI system (Seer) is triggered. It analyzes the stack trace, compares it to the GitHub commit history, and identifies that <code>payment.py</code> was modified in release v2.5.1 by commit <code>abc123</code>. It suggests a fix: add a null check for the gateway response.</li>
+      </ul>
+
+      <div class="callout insight">
+        <div class="callout-title">⚙ Cost vs. Value Trade-off</div>
+        <p>Running Autofix on every high-volume alert is computationally expensive (LLM inference costs). The workflow gates this: Autofix only runs for issues affecting &gt;1000 users/minute or critical transactions (checkout, payment). This is a cost-vs-value trade-off.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 4 -->
+  <div class="phase-card" id="phase-4">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 4</span>
+      <span class="phase-title">Query &amp; Investigation</span>
+      <span class="phase-time">09:05 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>Engineer Response</h4>
+      <p>The on-call engineer opens Sentry. The issue list query runs:</p>
+
+      <div class="code-wrapper">
+        <div class="code-header">
+          <span class="code-lang">SQL</span>
+          <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code><span class="kw">SELECT</span> id, title, count, last_seen 
+<span class="kw">FROM</span> sentry_groupedmessage 
+<span class="kw">WHERE</span> project_id = <span class="num">42</span> <span class="kw">AND</span> status = <span class="num">0</span> 
+<span class="kw">ORDER BY</span> score <span class="kw">DESC LIMIT</span> <span class="num">20</span>;</code></pre>
+      </div>
+
+      <p>This uses the partial index on unresolved issues and returns in 50ms.</p>
+
+      <h4>Trace Analysis</h4>
+      <p>The engineer clicks into the issue. Sentry displays a trace waterfall showing the distributed trace: frontend → API gateway → checkout service → payment gateway. The trace reveals that the payment gateway returned <code>204 No Content</code> (unexpected), and the checkout service crashed trying to parse it.</p>
+
+      <h4>ClickHouse Query</h4>
+
+      <div class="code-wrapper">
+        <div class="code-header">
+          <span class="code-lang">SQL — Snuba Release Breakdown</span>
+          <button class="code-copy" onclick="copyCode(this)">Copy</button>
+        </div>
+        <pre><code><span class="kw">SELECT</span> release, <span class="fn">count</span>(), <span class="fn">uniq</span>(user) 
+<span class="kw">FROM</span> events 
+<span class="kw">WHERE</span> group_id = <span class="num">12345</span> 
+  <span class="kw">AND</span> timestamp &gt; <span class="fn">now</span>() - <span class="num">300</span> 
+<span class="kw">GROUP BY</span> release;</code></pre>
+      </div>
+
+      <p>This shows <mark>100% of errors are from release v2.5.1</mark>. ClickHouse processes this via vectorized aggregation over the last 5 minutes of data (a few million rows), returning in 200ms.</p>
+    </div>
+  </div>
+
+  <!-- PHASE 5 -->
+  <div class="phase-card" id="phase-5">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 5</span>
+      <span class="phase-title">Resolution &amp; Recovery</span>
+      <span class="phase-time">09:10 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>Rollback</h4>
+      <p>The SRE triggers a rollback to v2.5.0. Error volume drops to zero within 2 minutes (pod restart time).</p>
+
+      <h4>Issue Resolution</h4>
+      <p>The engineer marks <code>GROUP-12345</code> as resolved in v2.5.1. PostgreSQL updates the row: <code>status = 1, resolved_at = NOW(), resolution_release = 'v2.5.1'</code>.</p>
+
+      <h4>Regression Detection</h4>
+      <p>If v2.5.2 is deployed later and the same fingerprint reappears, Sentry detects a <strong>regression</strong> (the issue was resolved but recurred). This is implemented by comparing the event's release to <code>resolution_release</code> at ingestion time.</p>
+
+      <h4>Post-Incident Analysis</h4>
+      <ul>
+        <li><strong>Data Retention:</strong> Raw events from the incident are retained for 90 days in S3/ClickHouse, then moved to cold storage (Glacier) for compliance.</li>
+        <li><strong>Aggregate Metrics:</strong> The error rate time-series is retained for 1 year in ClickHouse (downsampled to hourly buckets after 30 days).</li>
+        <li><strong>Cost Analysis:</strong> The incident consumed 45 million events against ShopStream's monthly quota. The account manager reviews whether to adjust the plan or implement more aggressive client-side sampling.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- PHASE 6 -->
+  <div class="phase-card" id="phase-6">
+    <div class="phase-card-header">
+      <span class="phase-num">Phase 6</span>
+      <span class="phase-title">Cross-Region Consistency (The Global View)</span>
+      <span class="phase-time">09:00 – 09:15 UTC</span>
+    </div>
+    <div class="phase-card-body">
+      <h4>EU Data Residency</h4>
+      <p>ShopStream has users in Germany. Their events were ingested in eu-west and never left the region. The German engineer investigating the incident sees the same issue data, but it was processed entirely within EU boundaries.</p>
+
+      <h4>Global Dashboard</h4>
+      <p>ShopStream's US headquarters views a dashboard aggregating error rates across all regions. The dashboard queries each regional ClickHouse cluster via the Synapse cell router and merges results. Because replication is asynchronous, the US dashboard shows asia-southeast data lagging by <mark>3 seconds</mark> — an acceptable eventual consistency for a global overview.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SYNTHESIS -->
+<section id="synthesis">
+  <div class="section-header">
+    <h2 class="section-title">L7/L8 Trade-off Synthesis: The Staff Engineer's Decision Framework</h2>
+  </div>
+
+  <p>Throughout this deep-dive, the recurring theme is <strong>conscious trade-off selection</strong>. At the L7/L8 level, you are not expected to know every knob in PostgreSQL or ClickHouse. You are expected to reason about:</p>
+
+  <div class="tradeoff-grid">
+    <div class="tradeoff-card">
+      <h5 style="color:var(--accent)">Consistency vs. Latency</h5>
+      <p>We chose asynchronous counter updates (eventual consistency) to protect PostgreSQL from write hotspots, accepting a 5-second counter lag. For financial billing data, we would choose strong consistency despite the latency cost.</p>
+    </div>
+    <div class="tradeoff-card">
+      <h5 style="color:var(--teal)">Completeness vs. Cost</h5>
+      <p>We chose client-side sampling and rate limiting during the Black Friday surge. We lost 80% of error events, but preserved application availability. In a safety-critical system, we would choose backpressure with unbounded queues and horizontal scaling, accepting the cost.</p>
+    </div>
+    <div class="tradeoff-card">
+      <h5 style="color:var(--amber)">Flexibility vs. Performance</h5>
+      <p>The Workflow Engine's composable detectors/workflows provide powerful user customization but add evaluation overhead. We mitigate this with pre-aggregated metrics and caching. A simpler rule engine would be faster but less expressive.</p>
+    </div>
+    <div class="tradeoff-card">
+      <h5 style="color:var(--gold)">Storage Efficiency vs. Query Speed</h5>
+      <p>We store raw events in object storage and metadata in PostgreSQL/ClickHouse. This adds a network hop for full event retrieval but makes analytical queries 100x faster and cheaper than scanning JSON blobs.</p>
+    </div>
+    <div class="tradeoff-card">
+      <h5 style="color:var(--coral)">Availability vs. Durability</h5>
+      <p>Kafka acknowledges writes after replication to 3 brokers, providing durability with a slight latency penalty (milliseconds). For the web UI, we serve from read replicas that may lag by seconds, maximizing availability at the cost of fresh data.</p>
+    </div>
+    <div class="tradeoff-card">
+      <h5 style="color:var(--accent)">Operational Complexity vs. Correctness</h5>
+      <p>We rejected 2PC for cross-region metadata replication in favor of the outbox pattern. This introduces temporary inconsistency and requires reconciliation logic, but eliminates the availability risk of a coordinator failure.</p>
+    </div>
+  </div>
+
+  <div class="callout insight" style="margin-top:40px;">
+    <div class="callout-title">🏆 Super Strong Hire Signal at Google</div>
+    <p>Demonstrating that you can navigate these trade-offs with quantitative reasoning: <mark>"If we adopt X, write latency decreases by 40% but we accept a 0.1% chance of duplicate events during partition recovery. Given our business requirement of exactly-once billing, this is unacceptable, so we adopt Y instead, which adds 15ms to the critical path."</mark></p>
+  </div>
+</section>
+
+</main>
+
+<script>
+// PROGRESS BAR
+const progressBar = document.getElementById('progress-bar');
+const backToTop = document.getElementById('back-to-top');
+
+window.addEventListener('scroll', () => {
+  const scrollTop = window.scrollY;
+  const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+  const progress = (scrollTop / docHeight) * 100;
+  progressBar.style.width = progress + '%';
+  
+  if (scrollTop > 400) {
+    backToTop.classList.add('visible');
+  } else {
+    backToTop.classList.remove('visible');
+  }
+});
+
+// ACTIVE NAV
+const navItems = document.querySelectorAll('.nav-item');
+const sections = [];
+
+navItems.forEach(item => {
+  const href = item.getAttribute('href');
+  if (href && href.startsWith('#')) {
+    const id = href.slice(1);
+    const el = document.getElementById(id);
+    if (el) sections.push({ item, el });
+  }
+});
+
+function updateActiveNav() {
+  const scrollY = window.scrollY + 80;
+  let current = null;
+  sections.forEach(({ el }) => {
+    if (el.offsetTop <= scrollY) {
+      current = el;
+    }
+  });
+  navItems.forEach(i => i.classList.remove('active'));
+  if (current) {
+    const active = sections.find(s => s.el === current);
+    if (active) active.item.classList.add('active');
+  }
+}
+
+window.addEventListener('scroll', updateActiveNav, { passive: true });
+updateActiveNav();
+
+// HAMBURGER
+const hamburger = document.getElementById('hamburger');
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+
+hamburger.addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('active');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('active');
+});
+
+// SEARCH
+const searchInput = document.getElementById('search-input');
+
+searchInput.addEventListener('input', () => {
+  const query = searchInput.value.toLowerCase().trim();
+  
+  if (!query) {
+    navItems.forEach(item => item.style.display = '');
+    return;
+  }
+  
+  navItems.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(query) ? '' : 'none';
+  });
+});
+
+// CODE COPY
+function copyCode(btn) {
+  const pre = btn.closest('.code-wrapper').querySelector('pre code');
+  const text = pre.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  });
+}
+</script>
+</body>
+</html>
