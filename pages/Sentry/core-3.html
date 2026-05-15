@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentry System Design — Part 3: High-Level Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --bg2: #131316;
+    --bg3: #19191d;
+    --bg4: #1f1f24;
+    --border: #28282e;
+    --border2: #303038;
+    --text-primary: #f0ede8;
+    --text-secondary: #a8a4a0;
+    --text-muted: #68646a;
+    --accent-blue: #4a9eff;
+    --accent-teal: #2dd4bf;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-green: #22c55e;
+    --accent-purple: #a78bfa;
+    --accent-orange: #f97316;
+    --accent-pink: #f472b6;
+    --no-hire: #ef4444;
+    --lean-hire: #f59e0b;
+    --hire: #22c55e;
+    --strong-hire: #f59e0b;
+    --sidebar-w: 284px;
+    --progress-h: 3px;
+    --font-display: 'Playfair Display', Georgia, serif;
+    --font-body: 'Source Serif 4', Georgia, serif;
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-ui: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text-primary); font-family: var(--font-body); line-height: 1.7; overflow-x: hidden; }
+
+  /* ── Progress Bar ── */
+  #progress-bar { position: fixed; top: 0; left: 0; height: var(--progress-h); background: linear-gradient(90deg, var(--accent-purple), var(--accent-pink)); width: 0%; z-index: 1000; transition: width 0.1s linear; }
+
+  /* ── Sidebar ── */
+  #sidebar { position: fixed; top: 0; left: 0; width: var(--sidebar-w); height: 100vh; background: var(--bg2); border-right: 1px solid var(--border); overflow-y: auto; z-index: 100; padding-top: var(--progress-h); display: flex; flex-direction: column; }
+  #sidebar::-webkit-scrollbar { width: 3px; }
+  #sidebar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .sidebar-header { padding: 20px 20px 14px; border-bottom: 1px solid var(--border); }
+  .sidebar-system-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 4px; }
+  .sidebar-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--text-primary); line-height: 1.2; margin-bottom: 3px; }
+  .sidebar-subtitle { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); }
+
+  .sidebar-search { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .sidebar-search input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 7px 11px; color: var(--text-primary); font-family: var(--font-ui); font-size: 12px; outline: none; transition: border-color 0.2s; }
+  .sidebar-search input:focus { border-color: var(--accent-purple); }
+  .sidebar-search input::placeholder { color: var(--text-muted); }
+
+  .sidebar-nav { padding: 10px 0; flex: 1; }
+  .nav-section-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); padding: 8px 20px 3px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 5px 20px; font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; text-decoration: none; border-left: 2px solid transparent; }
+  .nav-item:hover { color: var(--text-primary); background: var(--bg3); }
+  .nav-item.active { color: var(--accent-purple); border-left-color: var(--accent-purple); background: rgba(167,139,250,0.06); }
+
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot-no { background: var(--no-hire); }
+  .dot-lean { background: var(--lean-hire); }
+  .dot-hire { background: var(--hire); }
+  .dot-strong { background: var(--strong-hire); box-shadow: 0 0 5px rgba(245,158,11,0.5); }
+
+  .nav-part-link { display: block; margin: 6px 12px 2px; padding: 7px 13px; background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); text-decoration: none; transition: all 0.2s; }
+  .nav-part-link:hover { color: var(--accent-blue); border-color: rgba(74,158,255,0.3); }
+  .nav-part-link span { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 1px; }
+
+  /* ── Main ── */
+  #main { margin-left: var(--sidebar-w); min-height: 100vh; padding-top: var(--progress-h); }
+
+  /* ── Hero ── */
+  .hero { padding: 60px 72px 52px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, var(--bg2) 0%, var(--bg) 65%); position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -100px; right: -60px; width: 400px; height: 400px; background: radial-gradient(circle, rgba(167,139,250,0.055) 0%, transparent 70%); pointer-events: none; }
+  .hero::after  { content: ''; position: absolute; bottom: -60px; left: 30%; width: 300px; height: 300px; background: radial-gradient(circle, rgba(244,114,182,0.035) 0%, transparent 70%); pointer-events: none; }
+
+  .hero-part-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(167,139,250,0.09); border: 1px solid rgba(167,139,250,0.22); border-radius: 20px; padding: 4px 12px; font-family: var(--font-ui); font-size: 11px; font-weight: 600; color: var(--accent-purple); margin-bottom: 14px; }
+  .hero-eyebrow { font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .hero-eyebrow::before { content: ''; display: inline-block; width: 20px; height: 1px; background: var(--accent-purple); }
+  .hero-title { font-family: var(--font-display); font-size: 52px; font-weight: 900; line-height: 1.05; color: var(--text-primary); margin-bottom: 8px; letter-spacing: -0.02em; }
+  .hero-title .phase-accent { color: var(--accent-purple); }
+  .hero-title .sub-label { display: block; font-size: 30px; font-weight: 700; color: var(--text-secondary); margin-top: 4px; letter-spacing: -0.01em; }
+
+  .hero-meta { display: flex; gap: 22px; flex-wrap: wrap; margin: 18px 0 26px; }
+  .hero-badge { display: flex; align-items: center; gap: 7px; font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary); }
+
+  .hero-config-card { display: inline-grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border2); border-radius: 10px; overflow: hidden; background: var(--bg3); max-width: 640px; }
+  .hero-config-item { padding: 15px 18px; border-right: 1px solid var(--border); }
+  .hero-config-item:last-child { border-right: none; }
+  .config-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .config-value { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .hero-description { margin-top: 22px; font-size: 15px; color: var(--text-secondary); max-width: 700px; line-height: 1.65; }
+
+  /* ── Content ── */
+  .content-area { padding: 0 72px 120px; }
+
+  /* ── Phase block ── */
+  .phase-block { padding-top: 60px; }
+  .phase-header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .phase-pill { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); background: rgba(167,139,250,0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(167,139,250,0.2); }
+  .phase-time { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); }
+  .phase-title { font-family: var(--font-display); font-size: 36px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; letter-spacing: -0.015em; }
+
+  .phase-question-card { border: 1px solid var(--border2); border-left: 3px solid var(--accent-purple); border-radius: 8px; padding: 18px 22px; background: var(--bg3); margin: 22px 0 36px; }
+  .phase-question-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 8px; }
+  .phase-question-text { font-family: var(--font-body); font-size: 15px; font-style: italic; color: var(--text-secondary); line-height: 1.6; }
+
+  /* ── Tier Cards ── */
+  .tier-card { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 28px; background: var(--bg2); transition: border-color 0.2s; }
+  .tier-card:hover { border-color: var(--border2); }
+  .tier-header { display: flex; align-items: center; gap: 14px; padding: 18px 26px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+  .tier-badge { display: flex; align-items: center; gap: 8px; font-family: var(--font-ui); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 20px; flex-shrink: 0; }
+  .tier-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .tier-badge.no-hire   { background: rgba(239,68,68,0.1);  color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+  .tier-badge.lean-hire { background: rgba(245,158,11,0.1);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+  .tier-badge.hire      { background: rgba(34,197,94,0.1);   color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+  .tier-badge.strong-hire { background: rgba(245,158,11,0.1); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .tier-dot.no     { background: #ef4444; }
+  .tier-dot.lean   { background: #f59e0b; }
+  .tier-dot.yes    { background: #22c55e; }
+  .tier-dot.strong { background: #f59e0b; box-shadow: 0 0 6px #f59e0b80; }
+  .tier-level-label { font-family: var(--font-ui); font-size: 12px; color: var(--text-muted); flex: 1; }
+  .tier-toggle { font-size: 12px; color: var(--text-muted); transition: transform 0.2s; }
+  .tier-toggle.open { transform: rotate(180deg); }
+  .tier-body { padding: 26px 26px 30px; }
+  .tier-body.collapsed { display: none; }
+
+  /* ── Script Block ── */
+  .script-block { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 22px 26px; margin-bottom: 22px; position: relative; }
+  .script-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; }
+  .script-text { font-family: var(--font-body); font-size: 14px; font-style: italic; color: var(--text-secondary); line-height: 1.78; border-left: 2px solid var(--border2); padding-left: 16px; }
+  .copy-btn { position: absolute; top: 14px; right: 14px; background: var(--bg4); border: 1px solid var(--border2); border-radius: 6px; padding: 5px 10px; font-family: var(--font-ui); font-size: 10px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 4px; }
+  .copy-btn:hover { color: var(--text-primary); border-color: var(--accent-purple); }
+  .copy-btn.copied { color: var(--accent-green); border-color: var(--accent-green); }
+
+  /* ── Analysis Grid ── */
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+  .analysis-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 15px 18px; }
+  .analysis-card-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+  .analysis-card-label.fails      { color: var(--no-hire); }
+  .analysis-card-label.missing    { color: var(--lean-hire); }
+  .analysis-card-label.signals    { color: var(--hire); }
+  .analysis-card-label.exceptional{ color: var(--strong-hire); }
+  .analysis-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .analysis-list li { font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary); line-height: 1.45; display: flex; align-items: flex-start; gap: 7px; }
+  .analysis-list li::before { content: '—'; color: var(--text-muted); flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Special Blocks ── */
+  .fatal-block { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; padding: 13px 17px; margin-bottom: 18px; }
+  .fatal-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--no-hire); margin-bottom: 8px; }
+  .fatal-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .fatal-list li { font-family: var(--font-ui); font-size: 12px; color: #fca5a5; display: flex; align-items: flex-start; gap: 7px; line-height: 1.45; }
+  .fatal-list li::before { content: '✗'; color: var(--no-hire); flex-shrink: 0; }
+
+  .upgrade-block { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; }
+  .upgrade-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-amber); margin-bottom: 8px; }
+  .upgrade-block p { font-family: var(--font-body); font-size: 13px; color: #fcd34d; line-height: 1.65; }
+
+  .interviewer-note { border: 1px solid var(--border); border-left: 3px solid var(--accent-purple); border-radius: 8px; padding: 14px 18px; background: rgba(167,139,250,0.04); margin-bottom: 18px; }
+  .interviewer-note-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 8px; }
+  .interviewer-note p { font-family: var(--font-body); font-size: 13px; font-style: italic; color: var(--text-secondary); line-height: 1.65; }
+
+  .checklist { list-style: none; display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; }
+  .checklist li { font-family: var(--font-ui); font-size: 12.5px; color: var(--text-secondary); display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+  .checklist li .check { color: var(--hire); flex-shrink: 0; font-weight: 700; }
+
+  .key-phrases { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 18px; }
+  .key-phrases-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 11px; }
+  .key-phrases blockquote { font-family: var(--font-mono); font-size: 12px; color: var(--accent-purple); background: rgba(167,139,250,0.07); border: 1px solid rgba(167,139,250,0.15); border-radius: 6px; padding: 9px 13px; margin-bottom: 7px; line-height: 1.55; }
+  .key-phrases blockquote:last-child { margin-bottom: 0; }
+
+  .wow-block { background: rgba(249,115,22,0.05); border: 1px solid rgba(249,115,22,0.2); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; }
+  .wow-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-orange); margin-bottom: 9px; }
+  .wow-item { font-family: var(--font-body); font-size: 13px; color: #fdba74; line-height: 1.65; margin-bottom: 8px; padding-left: 14px; border-left: 2px solid rgba(249,115,22,0.3); }
+  .wow-item:last-child { margin-bottom: 0; }
+
+  .insight-block { background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.2); border-radius: 8px; padding: 14px 18px; margin-bottom: 18px; }
+  .insight-label { font-family: var(--font-ui); font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 8px; }
+  .insight-block p { font-family: var(--font-body); font-size: 13px; color: #c4b5fd; line-height: 1.7; }
+
+  /* ── Architecture Principles Card ── */
+  .principles-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .principle-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; position: relative; overflow: hidden; }
+  .principle-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .principle-card.p1::before { background: var(--accent-purple); }
+  .principle-card.p2::before { background: var(--accent-orange); }
+  .principle-card.p3::before { background: var(--accent-teal); }
+  .principle-num { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.1em; }
+  .principle-title { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; line-height: 1.3; }
+  .principle-desc { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+  /* ── Write Path Steps ── */
+  .write-path { display: flex; flex-direction: column; gap: 0; margin-bottom: 22px; }
+  .path-step { display: flex; gap: 16px; position: relative; }
+  .path-step:not(:last-child)::after { content: ''; position: absolute; left: 19px; top: 40px; bottom: -8px; width: 1px; background: var(--border2); }
+  .path-step-num { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 12px; font-weight: 600; flex-shrink: 0; margin-top: 2px; }
+  .path-step-num.write { background: rgba(167,139,250,0.12); color: var(--accent-purple); border: 1px solid rgba(167,139,250,0.25); }
+  .path-step-num.read  { background: rgba(45,212,191,0.10); color: var(--accent-teal); border: 1px solid rgba(45,212,191,0.22); }
+  .path-step-body { flex: 1; padding-bottom: 20px; }
+  .path-step-title { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 5px; }
+  .path-step-desc { font-family: var(--font-ui); font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+  .path-step-desc .est { display: inline-block; font-family: var(--font-mono); font-size: 11px; background: rgba(167,139,250,0.08); color: var(--accent-purple); border: 1px solid rgba(167,139,250,0.15); border-radius: 4px; padding: 1px 6px; margin-top: 4px; }
+
+  /* ── CAP Trade-off Table ── */
+  .cap-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-family: var(--font-ui); margin-bottom: 20px; }
+  .cap-table thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+  .cap-table th { padding: 10px 16px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .cap-table td { padding: 11px 16px; font-size: 12.5px; color: var(--text-secondary); border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+  .cap-table tr:last-child td { border-bottom: none; }
+  .cap-table td:first-child { font-family: var(--font-mono); font-size: 11px; color: var(--accent-purple); font-weight: 500; }
+  .cap-badge { display: inline-block; font-family: var(--font-mono); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+  .cap-badge.ap { background: rgba(249,115,22,0.1); color: #fb923c; }
+  .cap-badge.cp { background: rgba(74,158,255,0.1); color: var(--accent-blue); }
+  .cap-badge.ev { background: rgba(34,197,94,0.1); color: var(--accent-green); }
+  .cap-badge.st { background: rgba(167,139,250,0.1); color: var(--accent-purple); }
+
+  /* ── Comparison Table (Approach Deep Dive) ── */
+  .comparison-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-family: var(--font-ui); margin-bottom: 20px; }
+  .comparison-table thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+  .comparison-table th { padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
+  .comparison-table td { padding: 10px 14px; font-size: 12px; color: var(--text-secondary); border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+  .comparison-table tr:last-child td { border-bottom: none; }
+  .comparison-table td:first-child { font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+  .pill { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; font-family: var(--font-mono); }
+  .pill.good { background: rgba(34,197,94,0.1); color: var(--accent-green); }
+  .pill.ok   { background: rgba(245,158,11,0.1); color: #fbbf24; }
+  .pill.bad  { background: rgba(239,68,68,0.1);  color: #f87171; }
+
+  /* ── Approach Card ── */
+  .approach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .approach-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .approach-num { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+  .approach-title { font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+  .approach-tag { display: inline-block; font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-bottom: 10px; font-weight: 600; }
+  .approach-tag.recommended { background: rgba(34,197,94,0.1); color: var(--accent-green); border: 1px solid rgba(34,197,94,0.2); }
+  .approach-tag.eliminated  { background: rgba(239,68,68,0.08); color: #f87171; border: 1px solid rgba(239,68,68,0.15); }
+  .approach-tag.early-stage { background: rgba(245,158,11,0.08); color: #fbbf24; border: 1px solid rgba(245,158,11,0.15); }
+  .approach-tag.advanced    { background: rgba(167,139,250,0.08); color: var(--accent-purple); border: 1px solid rgba(167,139,250,0.15); }
+  .approach-pros, .approach-cons { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .approach-pros li, .approach-cons li { font-family: var(--font-ui); font-size: 11px; color: var(--text-muted); line-height: 1.4; display: flex; gap: 6px; }
+  .approach-pros li::before { content: '+'; color: var(--accent-green); flex-shrink: 0; font-weight: 700; }
+  .approach-cons li::before { content: '−'; color: #f87171; flex-shrink: 0; font-weight: 700; }
+  .approach-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin: 8px 0 4px; }
+
+  /* ── Decision Framework ── */
+  .decision-steps { display: flex; flex-direction: column; gap: 0; }
+  .decision-step { display: flex; gap: 14px; }
+  .decision-step:not(:last-child)::after { content: ''; display: block; width: 1px; background: var(--border2); height: 16px; margin-left: 15px; }
+  .decision-step-num { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; font-weight: 600; flex-shrink: 0; background: rgba(167,139,250,0.1); color: var(--accent-purple); border: 1px solid rgba(167,139,250,0.2); margin-top: 2px; }
+  .decision-step-body { flex: 1; padding-bottom: 14px; }
+  .decision-step-title { font-family: var(--font-ui); font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+  .decision-step-desc  { font-family: var(--font-ui); font-size: 12px; color: var(--text-muted); line-height: 1.55; }
+
+  /* ── Progression Table ── */
+  .progression-section { padding-top: 52px; padding-bottom: 12px; }
+  .section-title { font-family: var(--font-display); font-size: 26px; font-weight: 800; color: var(--text-primary); margin-bottom: 20px; letter-spacing: -0.01em; }
+  .progression-table { width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-family: var(--font-ui); }
+  .progression-table thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+  .progression-table th { padding: 11px 16px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .progression-table td { padding: 13px 16px; font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.55; }
+  .progression-table tr:last-child td { border-bottom: none; }
+  .progression-table td:first-child { font-weight: 600; color: var(--text-primary); white-space: nowrap; width: 220px; }
+
+  /* ── Key Lesson ── */
+  .key-lesson { background: linear-gradient(135deg, rgba(167,139,250,0.07), rgba(244,114,182,0.04)); border: 1px solid rgba(167,139,250,0.18); border-radius: 12px; padding: 26px 30px; margin-top: 36px; position: relative; overflow: hidden; }
+  .key-lesson::before { content: '🎯'; font-size: 30px; position: absolute; top: 22px; right: 26px; opacity: 0.32; }
+  .key-lesson-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-purple); margin-bottom: 9px; }
+  .key-lesson-title { font-family: var(--font-display); font-size: 21px; font-weight: 700; color: var(--text-primary); margin-bottom: 11px; }
+  .key-lesson p { font-family: var(--font-body); font-size: 14px; color: var(--text-secondary); line-height: 1.72; }
+
+  /* ── Section dividers ── */
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 52px 0 0; }
+  .section-label { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-purple); margin: 52px 0 16px; display: flex; align-items: center; gap: 10px; }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── Code ── */
+  code { font-family: var(--font-mono); font-size: 12px; background: rgba(167,139,250,0.08); color: var(--accent-purple); padding: 2px 6px; border-radius: 4px; }
+  pre { background: #08080a; border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; margin-bottom: 16px; }
+  .pre-header { display: flex; align-items: center; justify-content: space-between; padding: 9px 15px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.015); border-radius: 10px 10px 0 0; }
+  .pre-lang { font-family: var(--font-ui); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .pre-copy { background: var(--bg4); border: 1px solid var(--border2); border-radius: 5px; padding: 3px 9px; font-family: var(--font-ui); font-size: 10px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+  .pre-copy:hover { color: var(--accent-purple); border-color: rgba(167,139,250,0.4); }
+  .pre-copy.copied { color: var(--accent-green); border-color: var(--accent-green); }
+  pre code { display: block; background: transparent; color: #b8c8b8; font-size: 12.5px; padding: 16px 18px; border-radius: 0 0 10px 10px; line-height: 1.65; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  .anchor { scroll-margin-top: 24px; }
+
+  @media (max-width: 900px) {
+    #sidebar { transform: translateX(-100%); }
+    #main { margin-left: 0; }
+    .hero, .content-area { padding-left: 24px; padding-right: 24px; }
+    .hero-title { font-size: 34px; }
+    .analysis-grid, .principles-grid, .approach-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- ══════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════ -->
+<nav id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-system-label">Sentry System Design</div>
+    <div class="sidebar-title">L6/L7 Study Guide</div>
+    <div class="sidebar-subtitle">Part 3 — Phase 4: High-Level Design</div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="search-input" placeholder="Search sections…" oninput="filterNav(this.value)">
+  </div>
+  <div class="sidebar-nav" id="nav-tree">
+
+    <div class="nav-section-label">Series Navigation</div>
+    <a class="nav-part-link" href="sentry-system-design-part1.html"><span>← Part 1</span>Phases 1 · 2 · 3a (API Design)</a>
+    <a class="nav-part-link" href="sentry-system-design-part2.html"><span>← Part 2</span>Phase 3b (Data Modeling)</a>
+
+    <div class="nav-section-label">Overview</div>
+    <a class="nav-item" href="#hero">Configuration</a>
+
+    <div class="nav-section-label">Phase 4 · 15–30 min</div>
+    <a class="nav-item" href="#p4-intro">High-Level Design</a>
+    <a class="nav-item" href="#p4-no-hire"><span class="nav-dot dot-no"></span> No Hire</a>
+    <a class="nav-item" href="#p4-lean"><span class="nav-dot dot-lean"></span> Lean Hire</a>
+    <a class="nav-item" href="#p4-hire"><span class="nav-dot dot-hire"></span> Hire</a>
+    <a class="nav-item" href="#p4-strong"><span class="nav-dot dot-strong"></span> Strong Hire</a>
+    <a class="nav-item" href="#p4-progression">Progression Summary</a>
+    <a class="nav-item" href="#p4-lesson">Key Lesson</a>
+
+    <div class="nav-section-label">Deep Dive</div>
+    <a class="nav-item" href="#deep-dive">Stream Processing Architecture</a>
+    <a class="nav-item" href="#approach-sync">Approach 1: Synchronous</a>
+    <a class="nav-item" href="#approach-kafka">Approach 2: Kafka (Recommended)</a>
+    <a class="nav-item" href="#approach-kinesis">Approach 3: Kinesis / Cloud</a>
+    <a class="nav-item" href="#approach-pulsar">Approach 4: Pulsar</a>
+    <a class="nav-item" href="#comparison">Comparison Table</a>
+    <a class="nav-item" href="#decision-framework">Decision Framework</a>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════
+     MAIN
+══════════════════════════════════════ -->
+<main id="main">
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-part-badge">Part 3 of the Series</div>
+    <div class="hero-eyebrow">System Design Interview — Study Guide</div>
+    <h1 class="hero-title">
+      <span class="phase-accent">Phase 4</span>
+      <span class="sub-label">High-Level Design</span>
+    </h1>
+    <div class="hero-meta">
+      <div class="hero-badge"><span>🏗️</span> Write &amp; Read Paths</div>
+      <div class="hero-badge"><span>⚡</span> CAP Trade-offs</div>
+      <div class="hero-badge"><span>🌍</span> Multi-Region Strategy</div>
+      <div class="hero-badge"><span>🔬</span> Stream Processing Deep Dive</div>
+    </div>
+    <div class="hero-config-card">
+      <div class="hero-config-item"><div class="config-label">Preparation Level</div><div class="config-value">Targeting L6 / L7</div></div>
+      <div class="hero-config-item"><div class="config-label">Focus Area</div><div class="config-value">System Architecture</div></div>
+      <div class="hero-config-item"><div class="config-label">Default Mode</div><div class="config-value">Study / AOMB</div></div>
+    </div>
+    <p class="hero-description">The longest phase. Covers component selection, write path, read path, CAP trade-offs, SPOF analysis, multi-region strategy, and inline estimation — all woven together. Includes a complete decision deep dive on stream processing architecture across four approaches.</p>
+  </section>
+
+  <div class="content-area">
+
+    <!-- ══════════════════════════════════════
+         PHASE 4
+    ══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="p4-intro">
+      <div class="phase-header">
+        <span class="phase-pill">Phase 4</span>
+        <span class="phase-time">15 – 30 minutes</span>
+      </div>
+      <h2 class="phase-title">High-Level Design</h2>
+
+      <div class="phase-question-card">
+        <div class="phase-question-label">The Interviewer Prompt</div>
+        <p class="phase-question-text">"Walk me through the system end-to-end. I want the write path, the read path, your component choices with justification, your consistency model across components, and how this handles users across multiple regions. Weave estimation numbers into your component discussions as you go — not as a separate exercise at the end. Where are your single points of failure? What are your CAP trade-offs?"</p>
+      </div>
+
+      <!-- NO HIRE -->
+      <div class="tier-card anchor" id="p4-no-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge no-hire"><span class="tier-dot no"></span> NO HIRE</div>
+          <div class="tier-level-label">L4 / Weak L5 Signal</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Okay so for the high level design, we'll have a few main components. First, the SDKs send errors to our backend. We'll have a load balancer in front to distribute traffic. Then we have an API server that receives the errors and saves them to a database. I'll use PostgreSQL for the database because it's reliable. We should also have a cache — Redis — to make reads faster. And then we have a frontend that queries the API to show the errors.<br><br>
+              For the message queue, I'd use Kafka. Kafka is great for high throughput and it's used by a lot of companies. We'll put Kafka between the API server and the database so we can handle spikes in traffic.<br><br>
+              For storage, I'd use S3 to store the raw error files. And we can use Elasticsearch for search because it's good at full-text search.<br><br>
+              I think that covers the main components. The load balancer distributes traffic, the API servers process events, Kafka buffers the writes, PostgreSQL stores the data, Redis caches reads, S3 stores raw files, and Elasticsearch handles search."
+            </div>
+          </div>
+          <div class="fatal-block">
+            <div class="fatal-label">Fatal Mistakes</div>
+            <ul class="fatal-list">
+              <li>Components listed as a menu, not justified by requirements — "Kafka is used by a lot of companies" is cargo cult reasoning</li>
+              <li>No write path narration — what actually happens to an event from SDK call to durable storage?</li>
+              <li>No read path narration — how does a developer's dashboard query resolve?</li>
+              <li>No estimation woven in — what's the QPS? How many API servers? What's the Kafka partition count?</li>
+              <li>No single point of failure analysis</li>
+              <li>No consistency model discussion</li>
+              <li>No multi-region awareness</li>
+              <li>PostgreSQL for the events store contradicts the 8PB storage math established in Phase 2</li>
+              <li>No deduplication/grouping component — the core feature has no architectural representation</li>
+            </ul>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Listed components like a shopping list. No write path, no read path, no estimation, no SPOF analysis, no consistency model. Said 'Kafka is used by a lot of companies' — that's not architecture reasoning. PostgreSQL for events after we established 8PB storage requirement shows no connection between requirements and design. Would not advance."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- LEAN HIRE -->
+      <div class="tier-card anchor" id="p4-lean">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge lean-hire"><span class="tier-dot lean"></span> LEAN HIRE</div>
+          <div class="tier-level-label">Meets L5 bar — not L6</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+          <div class="script-block">
+            <div class="script-label">What They Say</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me walk through this end to end — write path first, then read path.<br><br>
+              <strong>Write path:</strong> The SDK calls POST /v1/envelope. This hits a load balancer — I'd use an L7 load balancer like AWS ALB — which routes to one of our ingestion API servers. The API server validates the DSN, checks the project rate limit, and if valid, publishes the envelope to Kafka. We return 202 Accepted immediately. Kafka buffers the events and a consumer group of workers pulls from the queue, processes each event — parses the envelope, normalizes the stack trace, computes the fingerprint, does the upsert to PostgreSQL to find or create the issue — and then writes the event metadata to ClickHouse and the raw payload to S3.<br><br>
+              <strong>Read path:</strong> Developer opens their dashboard, calls GET /v1/projects/{project_id}/issues. This hits the API servers, which query PostgreSQL for the issue list. For popular projects, we'd cache the issue list in Redis with a 30-second TTL. Individual issue detail fetches the issue from PostgreSQL and the latest event sample from ClickHouse.<br><br>
+              <strong>Key components:</strong> AWS ALB, stateless ingestion API servers, Kafka (3 brokers minimum), Event Processing workers, PostgreSQL (issues metadata), ClickHouse (event metadata), S3 (raw payloads), Redis (read cache), Notification service.<br><br>
+              <strong>Single points of failure:</strong> PostgreSQL is a SPOF — I'd add a read replica and use streaming replication for HA. Redis is a SPOF — I'd use Redis Sentinel or Redis Cluster.<br><br>
+              <strong>Scale estimate:</strong> At 100K events/second into Kafka, I'd need at least 100 Kafka partitions — each partition handles about 1,000 events/second at 10KB each, so 100 partitions for 100K events/second."
+            </div>
+          </div>
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <div class="analysis-card-label signals">What's Good</div>
+              <ul class="analysis-list">
+                <li>Write path and read path narrated clearly</li>
+                <li>Correct async ingestion pattern — Kafka buffer, 202 Accepted</li>
+                <li>Component choices reasonable with some justification</li>
+                <li>SPOF identification for PostgreSQL and Redis</li>
+                <li>Kafka partition math is correct and shows estimation instinct</li>
+                <li>Notification service as a separate component</li>
+              </ul>
+            </div>
+            <div class="analysis-card">
+              <div class="analysis-card-label missing">What's Missing for L6</div>
+              <ul class="analysis-list">
+                <li>No multi-region discussion — explicitly asked for in the prompt</li>
+                <li>No consistency model across components — what if Kafka consumer fails mid-write?</li>
+                <li>Estimation incomplete — API server count, PostgreSQL sizing, Redis sizing, ClickHouse node count all absent</li>
+                <li>Fingerprinting architecture gap — concurrency challenge not addressed</li>
+                <li>Redis cache invalidation strategy missing</li>
+                <li>No alert evaluation architecture</li>
+                <li>No CAP trade-off discussion — explicitly asked for</li>
+              </ul>
+            </div>
+          </div>
+          <div class="upgrade-block">
+            <div class="upgrade-label">Upgrade Needed to Reach L6</div>
+            <p>Add an explicit CAP trade-off statement by path: "I'm choosing AP on ingestion — during a partition, ingestion nodes continue accepting events; I'm choosing CP on fingerprint-to-issue mapping — I'd rather drop events during a partition than create duplicate issues." Add a multi-region sketch with latency numbers. Add complete inline estimation: "at 100K QPS with 5ms processing, I need 500 concurrent threads — roughly 50 workers at 10 threads each."</p>
+          </div>
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Good write and read path narration. Component choices were reasonable. SPOF identification was present. But no multi-region discussion, no consistency model across components, incomplete estimation, and no CAP trade-off. The fingerprinting architecture gap is significant — that's the hardest part of the design. Lean hire."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- HIRE -->
+      <div class="tier-card anchor" id="p4-hire">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge hire"><span class="tier-dot yes"></span> HIRE</div>
+          <div class="tier-level-label">Meets L6 bar</div>
+          <div class="tier-toggle open">▼</div>
+        </div>
+        <div class="tier-body">
+
+          <div class="script-block">
+            <div class="script-label">Opening — Architecture Philosophy</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Let me structure this as: architecture philosophy, write path end-to-end, read path end-to-end, consistency model, multi-region strategy — and I'll weave estimation in as I go.<br><br>
+              This system has two fundamentally different traffic patterns that must be isolated from each other. The ingestion path receives 100K events/second and must maintain 99.99% availability — it cannot be degraded by read traffic. The query path serves 2,000 read QPS and can tolerate brief degradation. I'll design these as completely separate service tiers with independent scaling and independent failure domains. A read spike cannot degrade write availability."
+            </div>
+          </div>
+
+          <!-- Write path -->
+          <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-purple);margin-bottom:14px;">Write Path — End to End</div>
+          <div class="write-path">
+            <div class="path-step">
+              <div class="path-step-num write">1</div>
+              <div class="path-step-body">
+                <div class="path-step-title">SDK → Edge (Global LB)</div>
+                <div class="path-step-desc">SDK batches events into an envelope, sends POST /v1/envelope. Behind a global load balancer — AWS Route 53 latency-based routing or Cloudflare — routing to the nearest regional ingestion cluster. DNS-based routing adds ~10ms overhead but gets SDKs to the nearest region, critical for our 100ms P99 ingestion SLA.<br><span class="est">Latency budget: +10ms</span></div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num write">2</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Ingestion API Servers (Stateless)</div>
+                <div class="path-step-desc">Validate DSN against local LRU cache (no DB hit on hot path), enforce rate limit via Redis token bucket, validate payload size (reject >1MB), publish to Kafka. Return 202. Processing target: 5ms per envelope. At 100K events/second × 0.005s = 500 concurrent threads → 65 ingestion servers (50 cores + 30% headroom), autoscaling at 70% CPU.<br><span class="est">65 ingestion servers · 5ms per envelope</span></div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num write">3</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Kafka Buffer (100 partitions)</div>
+                <div class="path-step-desc">At 100K events/second × 10KB = 1GB/second into Kafka. Each partition handles ~50MB/s → 1GB/s ÷ 50MB/s = 20 partitions minimum. Use 100 for headroom. 3 brokers, replication factor 3, min.insync.replicas=2. 7-day retention for replay.<br><span class="est">100 partitions · 3 brokers · 1GB/s</span></div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num write">4</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Event Processor Workers</div>
+                <div class="path-step-desc">Consumer group — one thread per partition. Each: parse envelope → normalize stack trace → compute SHA-256 fingerprint → PostgreSQL upsert (ON CONFLICT RETURNING issue_id) → write metadata to ClickHouse → write raw payload to S3 (async) → publish to alert-evaluation topic. Processing target: 10ms per event. 100K events/second × 0.010s = 1,000 concurrent threads → 100 processor servers.<br><span class="est">100 processor servers · 10ms per event</span></div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num write">5</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Alert Evaluation → Notification Dispatch</div>
+                <div class="path-step-desc">Alert Evaluator consumes the alert-evaluation topic. Checks alert rules (loaded from local cache, refreshed every 60s) against each event. Deduplicates via Redis. Publishes to notification topic. Notification Dispatcher fans out to Slack, PagerDuty, email with retry + circuit breakers.<br><span class="est">Total E2E: 100ms + &lt;1s + 10ms + 20ms + 30ms = ~160ms</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Read path -->
+          <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-teal);margin:22px 0 14px;">Read Path — End to End</div>
+          <div class="write-path">
+            <div class="path-step">
+              <div class="path-step-num read">1</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Query API Tier (Separate from Ingestion)</div>
+                <div class="path-step-desc">Completely isolated from ingestion tier — its own load balancer, its own autoscaling group. Reads only. Serves GET /v1/projects/{project_id}/issues.</div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num read">2</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Redis Cache Check</div>
+                <div class="path-step-desc">Cache key: (project_id, status, environment, cursor). TTL: 30 seconds. Target cache hit rate: 80%. Cache hit: &lt;50ms response. Cache miss: query PostgreSQL read replica on composite index (project_id, status, last_seen DESC) → &lt;500ms.<br><span class="est">80% cache hit rate · 30s TTL</span></div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num read">3</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Issue Detail + Event Sample</div>
+                <div class="path-step-desc">Issue from PostgreSQL. Latest event sample from ClickHouse (SELECT * FROM events WHERE issue_id = ? ORDER BY timestamp DESC LIMIT 1). Full raw payload via pre-signed S3 URL — browser fetches directly from S3, never through our API. Saves ~2MB/s of proxied bandwidth at 2,000 QPS with 10% full-payload requests.</div>
+              </div>
+            </div>
+            <div class="path-step">
+              <div class="path-step-num read">4</div>
+              <div class="path-step-body">
+                <div class="path-step-title">Tag-Based Event Search</div>
+                <div class="path-step-desc">Routed to ClickHouse for columnar scan with partition pruning. P95 target: &lt;3 seconds per our NFR. Result pages cursor-paginated on (project_id, timestamp).</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CAP Trade-offs -->
+          <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-orange);margin:22px 0 14px;">Explicit CAP Trade-offs by Path</div>
+          <table class="cap-table">
+            <thead><tr><th>Path / Component</th><th>Model</th><th>Justification</th></tr></thead>
+            <tbody>
+              <tr><td>Ingestion API → Kafka</td><td><span class="cap-badge ap">AP</span></td><td>During a partition, ingestion nodes continue accepting events. May get duplicates — handled by idempotency keys. Availability over consistency.</td></tr>
+              <tr><td>Fingerprint → Issue mapping</td><td><span class="cap-badge cp">CP</span></td><td>Would rather the Event Processor retry than create a duplicate issue. PostgreSQL upsert guarantees uniqueness; if PG is unreachable, event stays in Kafka.</td></tr>
+              <tr><td>Read path (dashboard)</td><td><span class="cap-badge ev">Eventually consistent</span></td><td>Counts may be 30 seconds stale due to batched Redis flushes. Explicitly acceptable per NFRs.</td></tr>
+              <tr><td>Alert deduplication</td><td><span class="cap-badge st">Strong (Redis NX)</span></td><td>Must not double-alert on the same issue. Redis SET NX EX 300 — 5-minute dedup window.</td></tr>
+            </tbody>
+          </table>
+
+          <!-- SPOF -->
+          <div class="analysis-card" style="margin-bottom:18px;">
+            <div class="analysis-card-label signals">SPOF Analysis &amp; Mitigations</div>
+            <ul class="analysis-list">
+              <li><strong style="color:var(--text-primary);">PostgreSQL</strong> — synchronous streaming replication to 1 standby + async to 1 read replica. Patroni automatic failover in ~30 seconds. Event Processors retry via Kafka during failover — no events lost.</li>
+              <li><strong style="color:var(--text-primary);">Kafka</strong> — 3-broker cluster, replication factor 3, min.insync.replicas=2. Not a SPOF.</li>
+              <li><strong style="color:var(--text-primary);">Redis</strong> — Redis Cluster with 3 primary + 3 replica shards. Loss of one shard degrades cache hit rate temporarily; Query API falls back to PostgreSQL.</li>
+              <li><strong style="color:var(--text-primary);">ClickHouse</strong> — 2-shard, 2-replica cluster. Loss of one replica degrades read performance but not data durability.</li>
+            </ul>
+          </div>
+
+          <!-- Multi-region -->
+          <div class="script-block">
+            <div class="script-label">Multi-Region Strategy</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "I'd deploy ingestion clusters in 3 regions — US-East, EU-West, AP-Southeast. SDKs route to nearest region via latency-based DNS. Each regional cluster has its own Kafka and Event Processor fleet. The PostgreSQL instance is global with a primary in US-East and read replicas in EU-West and AP-Southeast — this introduces ~80ms cross-region write latency for fingerprint upserts from EU and AP nodes. That's acceptable given our processing SLA.<br><br>
+              The Query API reads from the local read replica in each region — eventual consistency, 2-5 seconds of replication lag. Issue mutations write to the primary and replicate asynchronously. Object storage uses S3 with cross-region replication for durability. ClickHouse is regional — we don't replicate event data cross-region at 1GB/second, that would be prohibitively expensive."
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label signals">AOMB Completeness Checklist — L6 Script</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Architecture philosophy stated upfront — ingestion/query isolation as failure domain decision</li>
+              <li><span class="check">✅</span> Write path narrated step-by-step with component responsibilities</li>
+              <li><span class="check">✅</span> Read path narrated with cache strategy and fallback</li>
+              <li><span class="check">✅</span> Inline estimation throughout: server count (65 ingestion, 100 processors), Kafka partitions (100), cache TTL, latency budget (160ms)</li>
+              <li><span class="check">✅</span> Explicit CAP trade-offs named by path (AP for ingestion, CP for fingerprinting)</li>
+              <li><span class="check">✅</span> SPOF analysis with specific named mitigations (Patroni, Redis Cluster, replication factors)</li>
+              <li><span class="check">✅</span> Multi-region strategy with cross-region write latency quantified (80ms)</li>
+              <li><span class="check">✅</span> Pre-signed URL for S3 payload fetch — bandwidth optimization with math</li>
+              <li><span class="check">✅</span> Alert evaluation as a separate service tier</li>
+              <li><span class="check">✅</span> Alert deduplication via Redis NX</li>
+            </ul>
+          </div>
+
+          <div class="key-phrases">
+            <div class="key-phrases-label">Key Phrases That Signal L6 — Memorize These</div>
+            <blockquote>"I'm making explicit CAP trade-offs by path — ingestion is AP, fingerprint mapping is CP."</blockquote>
+            <blockquote>"Total end-to-end latency budget: 100ms + sub-second + 10ms + 20ms + 30ms = 160ms — well within our 60-second SLA."</blockquote>
+            <blockquote>"A read spike cannot degrade write availability — these are completely separate service tiers with independent failure domains."</blockquote>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Excellent high-level design. Write and read paths were crisp and complete. Inline estimation was woven in naturally — server counts, Kafka partitions, latency budget. CAP trade-offs were named per path, not just waved at. Multi-region strategy was concrete. SPOF analysis was specific with named solutions. This is L6 architecture thinking."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- STRONG HIRE -->
+      <div class="tier-card anchor" id="p4-strong">
+        <div class="tier-header" onclick="toggleTier(this)">
+          <div class="tier-badge strong-hire"><span class="tier-dot strong"></span> STRONG HIRE</div>
+          <div class="tier-level-label">L7 Signal — Exceptional</div>
+          <div class="tier-toggle">▼</div>
+        </div>
+        <div class="tier-body">
+
+          <div class="script-block">
+            <div class="script-label">Opening — Architecture Manifesto</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "I want to start with an architecture manifesto before I draw any boxes — the component choices flow from a few non-negotiable principles."
+            </div>
+          </div>
+
+          <div class="principles-grid">
+            <div class="principle-card p1">
+              <div class="principle-num">PRINCIPLE 01</div>
+              <div class="principle-title">The Ingestion Path is Sacred</div>
+              <div class="principle-desc">Must be available even when everything else is degraded. Own failure domain, own scaling group, no synchronous dependencies on anything not also 99.99% available.</div>
+            </div>
+            <div class="principle-card p2">
+              <div class="principle-num">PRINCIPLE 02</div>
+              <div class="principle-title">Loss-Tolerant Ingestion, Loss-Intolerant Grouping</div>
+              <div class="principle-desc">Dropping 0.1% of events is acceptable. Creating duplicate issues for the same error fragments developer attention and degrades the core product.</div>
+            </div>
+            <div class="principle-card p3">
+              <div class="principle-num">PRINCIPLE 03</div>
+              <div class="principle-title">Eventually Consistent Reads — by Design</div>
+              <div class="principle-desc">Developers don't need millisecond-fresh issue counts. Optimize read latency over read freshness. 30-second eventual consistency is acceptable and stated in NFRs.</div>
+            </div>
+          </div>
+
+          <div class="script-block">
+            <div class="script-label">Layer 1 — Edge &amp; Ingestion</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "SDKs send envelopes to a global Anycast IP or Cloudflare routing layer — within ~20ms of origin. At the regional level, NGINX or AWS ALB in front of stateless Ingestion API servers.<br><br>
+              Ingestion API responsibilities are deliberately minimal. Authenticate the DSN via local LRU cache (10K DSNs per server, refreshed every 5 minutes — no DB hit on hot path). Enforce rate limits via Redis token bucket (~1ms, one Redis call per envelope). Validate structure and size (reject >1MB). Publish to Kafka with acks=1. That's it. The API server does not touch PostgreSQL. It does not compute fingerprints. It does not make any synchronous call that could be slow.<br><br>
+              Why acks=1 instead of acks=all: with acks=all, a Kafka broker failure or slow follower can add 50–200ms to ingestion latency — violating our 100ms P99 SLA. With acks=1, we trade a small durability window for reliable latency. Given raw events are eventually written to S3, this is an acceptable trade-off.<br><br>
+              Estimation: 100K events/second. Each envelope averages 5 events at 10KB = 50KB, so 20K envelopes/second. At 5ms per envelope, 100 concurrent threads needed. Each server handles 50 threads → 10 Ingestion API servers with 5x headroom for spikes and rolling deploys."
+            </div>
+          </div>
+
+          <div class="script-block">
+            <div class="script-label">Layer 2 — Stream Processing (The Key Insight)</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "200 Kafka consumer threads matching our 200 partitions — one thread per partition for ordered processing. Partitioned by project_id % num_partitions.<br><br>
+              A critical design choice: <strong>the Event Processor is the only writer to the issues table. By having ordered, single-threaded processing per project partition, we eliminate the fingerprint race condition for events within the same project.</strong> Two events from the same project land on the same Kafka partition, processed sequentially. The only race condition is cross-partition, which is handled by the PostgreSQL upsert. This turns a distributed consistency problem into a local ordering problem — a fundamental simplification that eliminates the need for distributed locks on the hot path.<br><br>
+              Each processor: deserialize → normalize stack trace → compute fingerprint (pure local computation, no network calls) → PostgreSQL upsert RETURNING issue_id → batch ClickHouse insert (buffer 1,000 events or 500ms, whichever first — ClickHouse bulk insert is 100x more efficient than row-by-row) → write S3 payload async via dead letter queue → publish (issue_id, is_new_issue) to alert-evaluation topic."
+            </div>
+          </div>
+
+          <div class="script-block">
+            <div class="script-label">Alert Evaluation — Preventing Alert Storms</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Alert Evaluator consumes from the alert-evaluation topic. For each event batch, loads alert rules from local cache (refreshed every 60s). Evaluates conditions: is_new_issue, error_rate_per_minute via Redis sliding window counter.<br><br>
+              If rule fires: deduplicates via Redis — <code>SET alert:{rule_id}:{issue_id} NX EX 300</code>. Don't re-fire the same alert within a 5-minute window. Without this, a 10K events/second incident fires 10,000 Slack messages in one minute, gets us rate-limited by Slack, and causes alert fatigue. The Redis NX pattern is not a nice-to-have — it's a platform stability requirement."
+            </div>
+          </div>
+
+          <!-- Storage sizing -->
+          <div class="analysis-card" style="margin-bottom:18px;">
+            <div class="analysis-card-label exceptional">Storage Sizing — Full Stack</div>
+            <ul class="analysis-list">
+              <li><strong style="color:var(--text-primary);">PostgreSQL</strong> — 3TB estimated: 100K issues/day × 90 days × 1KB/issue. Primary + 1 sync replica + 1 async read replica.</li>
+              <li><strong style="color:var(--text-primary);">ClickHouse</strong> — 8PB raw → ~800GB after columnar compression at 10:1 ratio. 2 shards × 2 replicas.</li>
+              <li><strong style="color:var(--text-primary);">S3</strong> — 8PB raw payloads, tiered to Glacier after 30 days. Cross-region replication.</li>
+              <li><strong style="color:var(--text-primary);">Redis Cluster</strong> — 6 nodes, ~50GB working set: DSN cache + rate limit counters + alert dedup state + issue counter buffers.</li>
+            </ul>
+          </div>
+
+          <!-- Consistency table -->
+          <div style="font-family:var(--font-ui);font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent-orange);margin:22px 0 14px;">Consistency Model — Full Table</div>
+          <table class="cap-table">
+            <thead><tr><th>Component</th><th>Model</th><th>Justification</th></tr></thead>
+            <tbody>
+              <tr><td>Ingestion API → Kafka</td><td><span class="cap-badge ap">AP, at-least-once</span></td><td>Availability over consistency on hot path</td></tr>
+              <tr><td>Kafka → PostgreSQL (fingerprint)</td><td><span class="cap-badge cp">CP, idempotent producer</span></td><td>Duplicate issues are unacceptable</td></tr>
+              <tr><td>PostgreSQL replication</td><td><span class="cap-badge ev">Eventual (async replicas)</span></td><td>2–5 second lag acceptable on reads</td></tr>
+              <tr><td>Issue counters (Redis → PG)</td><td><span class="cap-badge ev">Eventual, 30s lag</span></td><td>Count accuracy not time-critical</td></tr>
+              <tr><td>ClickHouse writes</td><td><span class="cap-badge ev">Eventually consistent</span></td><td>Analytics workload tolerates seconds of lag</td></tr>
+              <tr><td>Alert deduplication</td><td><span class="cap-badge st">Strong (Redis NX)</span></td><td>Must not double-alert on same incident</td></tr>
+            </tbody>
+          </table>
+
+          <!-- Multi-region options -->
+          <div class="script-block">
+            <div class="script-label">Multi-Region — Three Options Compared</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "Three regions: US-East (primary), EU-West, AP-Southeast. Ingestion is fully regional — SDKs route via Cloudflare Anycast. Each region has its own Kafka cluster and Event Processor fleet. This means EU events are processed entirely in EU — critical for GDPR data residency.<br><br>
+              The hard problem is the PostgreSQL fingerprint upsert across regions. Three options:<br><br>
+              <strong>Option 1 — Single global PostgreSQL primary in US-East.</strong> EU and AP Event Processors make cross-region writes (~80ms latency). Simple, consistent. Processing SLA still met.<br><br>
+              <strong>Option 2 — Regional PostgreSQL primaries with global issue ID coordination via distributed lock (etcd/Chubby).</strong> Complex, high operational burden. Not recommended.<br><br>
+              <strong>Option 3 — CockroachDB or Google Spanner.</strong> Externally consistent, multi-region writes. ~20ms global write latency via Spanner TrueTime. Significant cost increase.<br><br>
+              My recommendation: start with Option 1. Accept 80ms cross-region write overhead — Event Processor SLA is still met. Migrate to Spanner if cross-region latency becomes the bottleneck. Don't pay for Spanner until you need it."
+            </div>
+          </div>
+
+          <!-- Operational section -->
+          <div class="script-block">
+            <div class="script-label">Operational Dashboards + Runbook (L7 Signal)</div>
+            <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+            <div class="script-text">
+              "I'd instrument five key metric dashboards immediately:<br><br>
+              1. Ingestion pipeline — events/second by region, P99 acknowledgment latency, Kafka consumer lag by partition<br>
+              2. Processing pipeline — events processed/second, fingerprint upsert latency P99, PostgreSQL write latency, DLQ depth<br>
+              3. Storage health — PostgreSQL primary write IOPS, ClickHouse insert queue depth, S3 error rate<br>
+              4. Alert pipeline — alert evaluation latency, notification dispatch success rate by destination<br>
+              5. Business metrics — new issues/hour per project, alert fire rate, P99 issue query latency<br><br>
+              On-call runbook for the most common failure — Kafka consumer lag growing: check processor CPU/memory, check PostgreSQL write latency (is the upsert slow?), check if a specific project is flooding (per-project event rate). Fix: scale out Event Processor fleet, or temporarily tighten rate limits to shed load."
+            </div>
+          </div>
+
+          <div class="analysis-card" style="margin-bottom:16px">
+            <div class="analysis-card-label exceptional">AOMB Completeness Checklist — Strong Hire</div>
+            <ul class="checklist">
+              <li><span class="check">✅</span> Architecture principles stated before components — drives all subsequent decisions</li>
+              <li><span class="check">✅</span> Five distinct layers named and justified</li>
+              <li><span class="check">✅</span> Kafka acks=1 vs acks=all trade-off with latency numbers</li>
+              <li><span class="check">✅</span> Event Processor as single writer per partition — eliminates fingerprint race elegantly</li>
+              <li><span class="check">✅</span> ClickHouse bulk insert batching (1,000 events or 500ms) — production optimization</li>
+              <li><span class="check">✅</span> Alert deduplication via Redis NX EX 300 with failure scenario</li>
+              <li><span class="check">✅</span> Full storage sizing table with compression ratio</li>
+              <li><span class="check">✅</span> Explicit consistency model table by component</li>
+              <li><span class="check">✅</span> Three multi-region options compared with recommendation and migration path</li>
+              <li><span class="check">✅</span> Pre-signed URL bandwidth optimization with math</li>
+              <li><span class="check">✅</span> Five operational dashboards named</li>
+              <li><span class="check">✅</span> On-call runbook for most common failure</li>
+            </ul>
+          </div>
+
+          <div class="wow-block">
+            <div class="wow-label">The "Wow" Moments</div>
+            <div class="wow-item">"The Event Processor is the only writer to the issues table. By having ordered, single-threaded processing per project partition, we eliminate the fingerprint race condition for events within the same project." — Solving a distributed consistency problem with a data partitioning strategy, not a lock. Almost no candidate sees this.</div>
+            <div class="wow-item">"Redis SET NX EX 300 — without this, a 10K events/second incident fires 10,000 Slack messages in one minute, gets us rate-limited by Slack, and causes alert fatigue." — A production story, not a theory.</div>
+            <div class="wow-item">Three multi-region options compared with explicit recommendation and migration path — the defining L7 communication skill: compare, decide, evolve.</div>
+          </div>
+
+          <div class="interviewer-note">
+            <div class="interviewer-note-label">Interviewer's Notes</div>
+            <p>"Exceptional. The architecture principles upfront set the tone for every subsequent decision. The Kafka partition ordering insight to eliminate fingerprint race conditions is something I've only heard from engineers who've actually built event processing pipelines at scale. Alert deduplication via Redis NX is a real production pattern. The multi-region options comparison was exactly how I'd want a principal engineer to approach that decision. The operational dashboards and on-call runbook show they think about building systems, not just designing them. Strongest hire rating."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progression -->
+      <div class="progression-section anchor" id="p4-progression">
+        <div class="section-title">Progression Summary — Phase 4</div>
+        <table class="progression-table">
+          <thead><tr><th>Gap</th><th>What Changes</th></tr></thead>
+          <tbody>
+            <tr><td>No Hire → Lean Hire</td><td>Narrate write and read paths. Justify component choices with reasoning. Do at least one inline estimation. Identify SPOFs with mitigations.</td></tr>
+            <tr><td>Lean Hire → Hire (L6)</td><td>Name CAP trade-offs by path. Complete inline estimation across all components. Add multi-region strategy with latency numbers. Add alert deduplication. Show pre-signed URL optimization.</td></tr>
+            <tr><td>Hire → Strong Hire (L7)</td><td>State architecture principles before components. Use Kafka ordering as consistency mechanism. Compare multi-region options with recommendation. Add operational dashboards and runbook. Show acks=1 vs acks=all reasoning with latency math.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="key-lesson anchor" id="p4-lesson">
+        <div class="key-lesson-label">🎯 Key Lesson from Phase 4</div>
+        <div class="key-lesson-title">Close the Loop. Then Derive Elegance from Constraints.</div>
+        <p>The L5 → L6 shift is about closing the loop between requirements and design: every SLA from Phase 2 should appear as a constraint or calculation in Phase 4. The 60-second alert SLA becomes a 160ms latency budget calculation.<br><br>
+        The L6 → L7 shift is about deriving architectural elegance from constraints — the best L7 answers use the system's own constraints (Kafka ordering, partition strategy, upsert atomicity) to solve its hardest problems, eliminating complexity rather than adding it. Before naming any component, state the principle that component serves. That single habit is the most visible L6 signal in Phase 4.</p>
+      </div>
+    </div>
+
+    <hr class="section-divider">
+
+    <!-- ══════════════════════════════════════
+         DEEP DIVE
+    ══════════════════════════════════════ -->
+    <div class="phase-block anchor" id="deep-dive">
+      <div class="phase-header">
+        <span class="phase-pill" style="color:var(--accent-pink);background:rgba(244,114,182,0.1);border-color:rgba(244,114,182,0.2);">Decision Deep Dive</span>
+      </div>
+      <h2 class="phase-title">Stream Processing Architecture</h2>
+      <p class="hero-description" style="margin: 0 0 32px;">Four approaches compared — when each is right, when each breaks, and the complete decision framework script. Knowing the trade-offs between approaches is an L6/L7 signal that separates candidates who have <em>used</em> Kafka from those who have <em>operated</em> it.</p>
+
+      <div class="approach-grid" id="approach-sync">
+        <div class="approach-card">
+          <div class="approach-num">APPROACH 1</div>
+          <div class="approach-title">Synchronous Processing</div>
+          <div class="approach-tag eliminated">Eliminated for This System</div>
+          <div class="approach-label">Pros</div>
+          <ul class="approach-pros">
+            <li>Simplest architecture — no queue infrastructure</li>
+            <li>Immediate consistency — issue created before SDK ack</li>
+            <li>Easier to debug — no distributed processing state</li>
+          </ul>
+          <div class="approach-label">Cons</div>
+          <ul class="approach-cons">
+            <li>10ms PG upsert + 5ms CH write = 15ms minimum overhead, violates 100ms P99 SLA under load</li>
+            <li>Downstream slowness directly degrades SDK experience</li>
+            <li>Cannot absorb spikes — DB slow during incident = SDK pileup</li>
+          </ul>
+          <div class="approach-label">When it breaks</div>
+          <ul class="approach-cons">
+            <li>At &gt;10K events/second, DB latency violates ingestion SLA</li>
+            <li>During incidents — 10x volume spike — system degrades exactly when it matters most</li>
+          </ul>
+        </div>
+
+        <div class="approach-card" id="approach-kafka">
+          <div class="approach-num">APPROACH 2</div>
+          <div class="approach-title">Kafka-Backed Async Processing</div>
+          <div class="approach-tag recommended">Recommended</div>
+          <div class="approach-label">Pros</div>
+          <ul class="approach-pros">
+            <li>Ingestion latency fully decoupled from processing latency</li>
+            <li>Absorbs traffic spikes — Kafka retains messages if consumers slow</li>
+            <li>Replayable — bug in processing? Reprocess from Kafka</li>
+            <li>Independently scalable ingestion and processor fleets</li>
+            <li>Consumer lag is observable and alertable — natural backpressure</li>
+          </ul>
+          <div class="approach-label">Cons</div>
+          <ul class="approach-cons">
+            <li>Eventual consistency — issue appears 1–2 seconds after SDK call</li>
+            <li>Operational complexity — cluster management, offset management</li>
+            <li>At-least-once semantics require idempotent consumers</li>
+            <li>Consumer lag during incidents may delay alerts (within 60s SLA)</li>
+          </ul>
+        </div>
+
+        <div class="approach-card" id="approach-kinesis">
+          <div class="approach-num">APPROACH 3</div>
+          <div class="approach-title">Kinesis / Cloud-Managed Streaming</div>
+          <div class="approach-tag early-stage">Early-Stage / Cloud-Native</div>
+          <div class="approach-label">Pros</div>
+          <ul class="approach-pros">
+            <li>Zero operational overhead for broker management</li>
+            <li>Auto-scaling shards on demand</li>
+            <li>Integrated with cloud ecosystem (Lambda, CloudWatch)</li>
+          </ul>
+          <div class="approach-label">Cons</div>
+          <ul class="approach-cons">
+            <li>At 100K events/second: 100 shards × $0.015/shard-hour = $1,080/month just in shard capacity</li>
+            <li>No partition-by-project_id with custom partition counts — loses ordering guarantee</li>
+            <li>No exactly-once semantics natively — complex consumer deduplication</li>
+            <li>Pub/Sub: ~100ms latency vs ~10ms for Kafka batch consumers</li>
+          </ul>
+        </div>
+
+        <div class="approach-card" id="approach-pulsar">
+          <div class="approach-num">APPROACH 4</div>
+          <div class="approach-title">Apache Pulsar</div>
+          <div class="approach-tag advanced">Advanced — Team Expertise Required</div>
+          <div class="approach-label">Pros</div>
+          <ul class="approach-pros">
+            <li>Native multi-tenancy — perfect for SaaS model</li>
+            <li>Geo-replication built in — native cross-region topic replication</li>
+            <li>Tiered storage — auto-offloads old messages to S3, reduces cost</li>
+            <li>Separate storage (BookKeeper) and compute (brokers) — scale independently</li>
+          </ul>
+          <div class="approach-label">Cons</div>
+          <ul class="approach-cons">
+            <li>Higher operational complexity — two separate systems to operate</li>
+            <li>Smaller ecosystem than Kafka — fewer tools, less operational knowledge</li>
+            <li>BookKeeper adds a write path hop — can bottleneck at &gt;500K msg/sec</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Comparison table -->
+      <div class="anchor" id="comparison">
+        <div class="section-label">Comparison Table</div>
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Approach</th>
+              <th>Ingestion Latency</th>
+              <th>Throughput Ceiling</th>
+              <th>Operational Cost</th>
+              <th>Replay</th>
+              <th>Multi-Region</th>
+              <th>Best For</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Synchronous</td>
+              <td><span class="pill bad">Coupled to DB</span></td>
+              <td><span class="pill bad">~10K QPS</span></td>
+              <td><span class="pill good">Very Low</span></td>
+              <td><span class="pill bad">No</span></td>
+              <td>N/A</td>
+              <td>Internal tools</td>
+            </tr>
+            <tr>
+              <td>Kafka ✓</td>
+              <td><span class="pill good">Decoupled</span></td>
+              <td><span class="pill good">1M+ QPS</span></td>
+              <td><span class="pill ok">Medium-High</span></td>
+              <td><span class="pill good">Yes</span></td>
+              <td>Manual</td>
+              <td>100K+ QPS SaaS</td>
+            </tr>
+            <tr>
+              <td>Kinesis / Pub-Sub</td>
+              <td><span class="pill good">Decoupled</span></td>
+              <td><span class="pill ok">~500K QPS</span></td>
+              <td><span class="pill good">Low</span></td>
+              <td><span class="pill ok">Yes (7d)</span></td>
+              <td>Cloud-native</td>
+              <td>Early-stage</td>
+            </tr>
+            <tr>
+              <td>Pulsar</td>
+              <td><span class="pill good">Decoupled</span></td>
+              <td><span class="pill good">500K+ QPS</span></td>
+              <td><span class="pill bad">High</span></td>
+              <td><span class="pill good">Yes (tiered)</span></td>
+              <td><span class="pill good">Native</span></td>
+              <td>Multi-tenant, geo-distributed</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Decision framework -->
+      <div class="anchor" id="decision-framework">
+        <div class="section-label">The Decision Framework Script — 6 Steps</div>
+        <div class="decision-steps">
+          <div class="decision-step">
+            <div class="decision-step-num">1</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">State Requirements</div>
+              <div class="decision-step-desc">"For this system, I need a buffer that provides: decoupled ingestion latency, at-least-once delivery, replayability for reprocessing, and 100K+ QPS throughput."</div>
+            </div>
+          </div>
+          <div class="decision-step">
+            <div class="decision-step-num">2</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">Eliminate</div>
+              <div class="decision-step-desc">"I can rule out synchronous processing — it couples ingestion latency to DB write latency, a hard no at 100K QPS. I can rule out Pulsar — operational complexity isn't justified without strong geo-replication requirements at the queue layer."</div>
+            </div>
+          </div>
+          <div class="decision-step">
+            <div class="decision-step-num">3</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">Compare Finalists</div>
+              <div class="decision-step-desc">"Between Kafka and Kinesis: Kafka gives more control — partition count, consumer customization, exactly-once semantics. Kinesis is simpler but at 100K QPS the shard cost becomes significant and we lose partition-by-project_id ordering guarantees."</div>
+            </div>
+          </div>
+          <div class="decision-step">
+            <div class="decision-step-num">4</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">Decide</div>
+              <div class="decision-step-desc">"Kafka — because we need partition-by-project_id semantics for ordering guarantees, and the team operating at this scale should have Kafka expertise. I'd run on Confluent Cloud or AWS MSK to reduce self-management burden."</div>
+            </div>
+          </div>
+          <div class="decision-step">
+            <div class="decision-step-num">5</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">Acknowledge Trade-off</div>
+              <div class="decision-step-desc">"Operational complexity — we need dedicated Kafka expertise, partition rebalancing automation, consumer lag monitoring. Mitigate with Confluent Cloud or MSK."</div>
+            </div>
+          </div>
+          <div class="decision-step">
+            <div class="decision-step-num">6</div>
+            <div class="decision-step-body">
+              <div class="decision-step-title">Show Flexibility</div>
+              <div class="decision-step-desc">"If earlier-stage or cloud-native, I'd start with Kinesis and migrate to Kafka when shard costs exceed $5K/month or when we need custom consumer group semantics."</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="script-block" style="margin-top:24px;">
+          <div class="script-label">Complete Strong Hire Script — Stream Processing Decision</div>
+          <button class="copy-btn" onclick="copyScript(this)">⎘ Copy</button>
+          <div class="script-text">
+            "For the ingestion buffer, I need to decouple SDK acknowledgment latency from processing latency — those must be independently controllable. Synchronous processing is immediately eliminated: at 100K QPS, a 10ms PostgreSQL upsert means 10ms minimum ingestion overhead which under load will blow our 100ms P99 SLA.<br><br>
+            Between Kafka, Kinesis, and Pulsar: Pulsar is architecturally elegant for multi-tenant geo-replication but the operational complexity — BookKeeper plus brokers — is hard to justify unless we have strong team expertise. I'll set it aside unless we later need native cross-region queue replication.<br><br>
+            Between Kafka and Kinesis: at 100K events/second, Kinesis needs 100 shards at $1,080/month just for shard capacity. The more important constraint: Kinesis doesn't give us partition-by-project_id semantics with custom partition counts. I want to partition by project_id so that all events from the same project land on the same partition and are processed in order. This turns the fingerprint race condition — two identical events from the same project creating duplicate issues — into a local ordering problem. Kafka gives me that control explicitly.<br><br>
+            So: Kafka with 200 partitions, partitioned by project_id hash. Replication factor 3, min.insync.replicas=2, acks=1 on the producer side — I accept the small durability window of acks=1 over the latency penalty of acks=all. With acks=all and a slow follower, Kafka publish can take 50–200ms — that's most of our 100ms ingestion budget. I'd run on Confluent Cloud or AWS MSK to reduce operational burden while keeping Kafka API semantics.<br><br>
+            Migration path: if we add native geo-replication requirements at the queue layer — events from EU must never leave EU before processing — I'd evaluate Pulsar or region-local Kafka clusters with topic mirroring via MirrorMaker 2."
+          </div>
+        </div>
+
+        <div class="insight-block">
+          <div class="insight-label">The Non-Obvious L7 Insight</div>
+          <p>Using Kafka partition ordering as a consistency mechanism. By partitioning events by project_id, all events from the same project land on the same Kafka partition and are processed sequentially by the same consumer thread. For any single project, fingerprint computation and issue upsert happen in strict order — no concurrent fingerprint race within a project. The only race condition is between events from different projects that share a fingerprint (which can't happen since fingerprint includes project_id). This turns a distributed consistency problem into a local ordering problem — eliminating the need for distributed locks on the hot path entirely.</p>
+        </div>
+      </div>
+
+    </div><!-- /deep dive -->
+
+  </div><!-- /content-area -->
+</main>
+
+<script>
+  // Progress bar
+  window.addEventListener('scroll', () => {
+    const s = document.documentElement;
+    const pct = (s.scrollTop / (s.scrollHeight - s.clientHeight)) * 100;
+    document.getElementById('progress-bar').style.width = Math.min(pct, 100) + '%';
+  }, { passive: true });
+
+  // Tier toggle
+  function toggleTier(header) {
+    const body = header.nextElementSibling;
+    const toggle = header.querySelector('.tier-toggle');
+    const collapsed = body.classList.toggle('collapsed');
+    toggle.classList.toggle('open', !collapsed);
+  }
+
+  // Collapse No Hire + Lean Hire on load
+  document.querySelectorAll('.tier-card').forEach(card => {
+    const badge = card.querySelector('.tier-badge');
+    if (badge && (badge.classList.contains('no-hire') || badge.classList.contains('lean-hire'))) {
+      card.querySelector('.tier-body').classList.add('collapsed');
+      card.querySelector('.tier-toggle').classList.remove('open');
+    }
+  });
+
+  // Copy script
+  function copyScript(btn) {
+    const text = btn.closest('.script-block').querySelector('.script-text').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied'; btn.classList.add('copied');
+      setTimeout(() => { btn.innerHTML = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Copy pre
+  function copyPre(btn) {
+    const text = btn.closest('.pre-header').nextElementSibling.querySelector('code').innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Active nav
+  const navItems = document.querySelectorAll('.nav-item[href^="#"]');
+  const sections = [...navItems].map(item => {
+    const el = document.getElementById(item.getAttribute('href').slice(1));
+    return el ? { el, item } : null;
+  }).filter(Boolean);
+
+  window.addEventListener('scroll', () => {
+    const pos = window.scrollY + 90;
+    let active = null;
+    sections.forEach(({ el, item }) => { if (el.offsetTop <= pos) active = item; });
+    navItems.forEach(i => i.classList.remove('active'));
+    if (active) active.classList.add('active');
+  }, { passive: true });
+
+  // Search filter
+  function filterNav(q) {
+    const query = q.toLowerCase();
+    document.querySelectorAll('.nav-item').forEach(i => {
+      i.style.display = i.textContent.toLowerCase().includes(query) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-section-label').forEach(l => {
+      l.style.display = query ? 'none' : '';
+    });
+  }
+</script>
+</body>
+</html>
